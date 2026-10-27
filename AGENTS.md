@@ -1645,7 +1645,12 @@ the start of this section).
   release binaries (CI downloads them and checks their sha256), and
   checkbashisms as the single `scripts/checkbashisms.pl` from the devscripts
   tag, or `apt install devscripts`. PSScriptAnalyzer installs with
-  `pwsh -NoProfile -Command 'Install-Module PSScriptAnalyzer -Scope CurrentUser -RequiredVersion 1.25.0 -Force'`.
+  `pwsh -NoProfile -Command 'Install-Module PSScriptAnalyzer -Scope CurrentUser -RequiredVersion 1.25.0 -Force'`;
+  CI instead downloads the same nupkg from the
+  [PSScriptAnalyzer release](https://github.com/PowerShell/PSScriptAnalyzer/releases)
+  on GitHub, checks its sha256 and unzips it into the user module path,
+  because the Gallery's v2 API fails intermittently and `Install-Module`
+  does not retry.
 - The tree was reformatted once with `ruff format` in a commit of its
   own, listed in `.git-blame-ignore-revs`; enable it locally with
   `git config blame.ignoreRevsFile .git-blame-ignore-revs`.

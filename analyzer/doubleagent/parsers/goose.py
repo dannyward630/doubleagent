@@ -1,182 +1,31 @@
 """Goose CLI and desktop sessions.
 
-Goose (block/goose, checked at 591edd4) resolves its directories with
-etcetera's app strategy: XDG paths on Linux and macOS, `AppData/Roaming/
-Block/goose/{config,data}` on Windows, where state falls back to data. See
-`research/goose.md`.
+Reads, relative to the home (`<data>` is `.local/share/goose` or
+`AppData/Roaming/Block/goose/data`, `<state>` is `.local/state/goose` or the Windows data
+directory, `<config>` is `.config/goose` or `AppData/Roaming/Block/goose/config`):
+`<data>/sessions/sessions.db`, the legacy `<data>/sessions/<YYYYMMDD_HHMMSS>.jsonl`, the
+request logs `<state>/logs/llm_request.<N>.jsonl` and the prompt histories
+`<state>/history.txt` and `.config/goose/history.txt` (both secondary), and the standing files
+`<config>/permission.yaml`, `<config>/roaming_trust.json` and `<data>/schedule.json`. Yields
+session start rows, one row per content block, model, permission, relay and scheduled-task
+`system` rows, and `parser:` rows for stored values that do not decode.
 
-Files, relative to the home directory (`<data>` is `.local/share/goose` or
-`AppData/Roaming/Block/goose/data`, `<state>` is `.local/state/goose` or the
-Windows data directory):
+Fields the parser depends on:
 
-* `<data>/sessions/sessions.db`, with `-wal` and `-shm` sidecars (WAL mode),
-  schema version 16. Older databases lack columns added by later
-  migrations, so every column is read with a default.
-  - `sessions`: `id`, `name`, `description`, `session_type`, `working_dir`,
-    `created_at` (SQLite `CURRENT_TIMESTAMP` text or RFC 3339),
-    `provider_name`, `model_config_json` (`model_name`),
-    `parent_session_id`, `schedule_id`, `accumulated_total_tokens`.
-  - `messages`: `id`, `session_id`, `role` (`user`, `assistant`),
-    `content_json`, `created_timestamp` (epoch seconds; values above 1e10
-    are milliseconds, as Goose itself normalises them),
-    `metadata_json` (`userVisible`, `inference.provider`,
-    `inference.requestedModel`, `inference.resolvedModel`).
-* `<data>/sessions/<YYYYMMDD_HHMMSS>.jsonl`: legacy sessions, imported into
-  the database once. Line 1 is metadata (`id`, `description`,
-  `working_dir`, `created_at`); each later line is a message with `id`,
-  `role`, `created` (epoch seconds) and `content`.
-* `<state>/logs/llm_request.<N>.jsonl`: one file per provider call, the
-  last 10 kept. A request line with `model_config.model_name` and
-  `input.messages`, then response lines with `data` (a message: `id`,
-  `role`, `created`, `content`) and `usage`. A streaming provider logs one
-  line per chunk; consecutive chunks with the same `data.id` are assembled
-  into one message as `Conversation::push` does
-  (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose
-  fb9e3c8), so the assembled text equals the `sessions.db` row's. A
-  secondary source (issue 126): `secondary()` is True for it, because the
-  response messages repeat the database's assistant messages, and it
-  outlives a session removed, cleared or rewound until 10 later calls rotate
-  it out. `secondary_tolerance()` is 600 seconds: the log stamps a message
-  with its first chunk's `created`, while `sessions.db` stores
-  `max(created, the session's newest created_timestamp)`
-  (session/session_manager.rs:2109-2118 at fb9e3c8), so the database row
-  can be later by as long as the tool calls before it ran, and a chunk
-  with no message id keeps its own, later, time. The request row has no
-  twin in the database and is always kept. Source-derived; not observed on
-  any real install.
-* `<config>/permission.yaml` (`<config>` is `.config/goose` or
-  `AppData/Roaming/Block/goose/config`): the standing tool lists, a map
-  from category (`user`, `smart_approve`) to `always_allow`, `ask_before`
-  and `never_allow` block lists, as serde_yaml writes them
-  (config/permission.rs:13-44, 260-262 at fb9e3c8). Only that nesting is
-  read, without a YAML dependency; any other line is a bad line.
-* `<config>/roaming_trust.json`: `{allowed: [<peer key>], revoked_keys:
-  [<peer key>]}`, the roaming peers allowed or refused
-  (goose-roaming/src/trust.rs:19-26 at fb9e3c8).
-* `<data>/schedule.json`: a JSON array of scheduled jobs, `id`, `source`,
-  `cron`, `last_run` (RFC 3339 or null), `currently_running`, `paused`,
-  `current_session_id`, `parameters` (pairs), `recipe_base_dir`
-  (scheduler/common.rs:167-187 at fb9e3c8).
-* `<state>/history.txt` and the older `.config/goose/history.txt`: rustyline
-  V2 history, `#V2` header then one prompt per line with `\\n` and `\\\\`
-  escaped. No timestamps and no session id. A secondary source (issue
-  122): `secondary()` is True for it and the database is the primary
-  store. The CLI adds every non-empty line typed at its prompt, slash
-  commands included, and saves the file before the message is sent
-  (`goose-cli/src/session/input.rs`, `session/mod.rs` at 591edd4), so a
-  prompt's text equals its `messages` row's once both are stripped; a
-  session removed with `goose session remove` leaves its prompts here.
-  Rows have an empty `timestamp_utc`, `session_id` and `project_path`, so
-  `dedup.deduplicate` pairs them with a database `user` row of any
-  session on text alone. rustyline keeps the last 100 entries and drops
-  a consecutive repeat. When both files exist each is read.
+* `sessions`: `id`, `name`, `description`, `session_type`, `working_dir`, `created_at`,
+  `provider_name`, `model_config_json.model_name`, `parent_session_id`, `schedule_id`,
+  `archived_at`, `goose_mode`; every column is read with a default.
+* `messages`: `id`, `session_id`, `role`, `content_json`, `created_timestamp`,
+  `metadata_json` (`userVisible`, `inference.provider`, `.requestedModel`, `.resolvedModel`).
+* Content blocks by `type`: `text`, `image`, `document`, `toolRequest` (`_meta`
+  `goose.executable`), `toolResponse`, `thinking`, `redactedThinking`,
+  `toolConfirmationRequest`, `actionRequired` (`data.actionType`), `systemNotification`,
+  `error`.
+* Legacy and request-log lines: `id`, `role`, `created`, `content`, `metadata`,
+  `model_config.model_name`, `input.messages`, `data`, `error`.
 
-Content blocks (`type`, camelCase): `text` {`text`}; `image` {`mimeType`};
-`document` {`name`, `mimeType`}; `toolRequest` {`id`, `toolCall`: {`status`,
-`value`: {`name`, `arguments`} | `error`}}; `toolResponse` {`id`,
-`toolResult`: {`status`, `value`: {`content`, `isError`} or a bare content
-array | `error`}}; `thinking` {`thinking`}; `redactedThinking`;
-`toolConfirmationRequest` {`toolName`, `arguments`, `prompt`};
-`actionRequired` {`data`}; `systemNotification` {`notificationType`, `msg`};
-`error` {`kind`, `message`}.
-
-Rows: one `system` row per session; one row per content block: text by
-role, `toolRequest` as `tool_use`, `toolResponse` as `tool_result` (the tool
-name looked up from the request with the same id), thinking blocks only with
-`--include-thinking`, the rest as `system`. Text the user never saw
-(`userVisible: false`, such as compaction summaries) is prefixed
-`[hidden]`. The model is `inference.provider/resolvedModel` (or
-`requestedModel`) per message, falling back to the session's
-`provider_name/model_config_json.model_name`. No git branch is recorded.
-The request log has no session id or cwd: its request line becomes one
-`system` row and each response message becomes rows like a transcript's,
-timestamped by the response's `created`; the request row inherits the first
-response's time. History entries carry no timestamp.
-
-Model and permission rows from `sessions.db` (issues 96 and 97), all
-`system`:
-
-* `model: <model_config_json.model_name> provider=<provider_name>` and
-  `permission mode: <goose_mode>` after each session's start row, at
-  `created_at`. `goose_mode` (default `auto`) is one value per session row,
-  so there is no mode change row.
-* `model: <old> -> <new> provider=<inference.provider>` before the rows of
-  a message whose `metadata_json.inference` names a different model
-  (`resolvedModel`, else `requestedModel`), with ` requested=<requestedModel>`
-  when the two differ; the start value is the session's model. Messages
-  without `inference` (user messages) do not change it.
-* Per call (issue 209), from `actionRequired` blocks
-  (`data.actionType`, message.rs:194-219 at fb9e3c8):
-  `permission request: <toolName> | <prompt> | <arguments>` for a
-  `toolConfirmation` (an empty prompt is left out) and `permission
-  decision: <permission> (toolConfirmationResponse)` for its answer
-  (`allow_once`, `always_allow`, `deny_once`, `always_deny`, `cancel`),
-  each with the block's `id` as `tool_use_id` and the tool name (the
-  answer's looked up from the request). A `toolRequest` whose `_meta`
-  holds `goose.executable` `false` and that no `toolConfirmationResponse`
-  of its session answers, a call the permission check refused or held, is
-  followed by `permission decision: not executable
-  (goose.executable=false)` with its tool name and id
-  (agents/state_machine/ops_tool_approval.rs:23, 57-127, 271-289 at
-  fb9e3c8); only `sessions.db` is checked. An `elicitation` or
-  `elicitationResponse` keeps the generic `action required: <compact
-  JSON>` row; an older `toolConfirmationRequest` block keeps its
-  `confirmation requested:` row.
-* Standing (issue 209), at the file's modification time with an empty
-  `session_id`: `permission setting: <category>.<level>=<tool> (from
-  <file>, file mtime)` per tool in `permission.yaml` and `permission
-  setting: roaming_trust.<allowed|revoked_keys>=<key> (from <file>, file
-  mtime)` per peer key, `<file>` the path relative to the home.
-* Scheduled jobs (issue 209), one row per `schedule.json` job at the
-  file's modification time with an empty `session_id`: `scheduled task:
-  <id> <cron> paused=<true|false> running=<true|false> source=<source>
-  last_run=<time> current_session=<id> recipe_base_dir=<dir>[
-  parameters=<compact JSON>] (from <file>, file mtime)`, `-` for an absent
-  value, `parameters` only when the job has any. A job's sessions run in
-  mode `auto` (scheduler/full.rs:876-882 at fb9e3c8) and name it in their
-  start row's `schedule=`.
-* Every row from these sources is source-derived; not observed on any
-  real install. A whole-file problem in `roaming_trust.json` or
-  `schedule.json` (unreadable, not JSON, not the expected type) is one
-  `parser: <message>` row; a `schedule.json` job that is not an object is
-  `parser: unparseable record <N> (not a JSON object): <record>`.
-
-The legacy JSONL sessions record no model, and the request log has no
-session id, so neither yields model rows.
-
-Bad stored values in `sessions.db` (issue 183): a `content_json`,
-`metadata_json` or `model_config_json` that does not decode as JSON, or
-decodes to another type than Goose writes (an array for `content_json`,
-an object for the other two), is one `system` row through `error_rows`,
-`parser: unparseable record <N> (<table>.<column>: <reason>): <stored
-value>`, the stored text in full, `<N>` the `messages.id` or the
-`sessions` rowid, with the session's `session_id` and `working_dir`, an
-empty `timestamp_utc` and `source_line` `<N>`. A NULL or empty
-`content_json` gives the same row with reason `empty` and no value. The
-session's other rows are still yielded: a bad `model_config_json` row
-follows the session start row and the session has no model; a bad
-`metadata_json` row precedes the message's content rows, which are kept
-with the session's model and as visible; a bad `content_json` row stands
-in for the message's content rows. Fixture only: the shapes are
-source-derived (block/goose at 591edd4), no real install has shown a bad
-value.
-
-Relayed sessions (issue 153): a `sessions` row whose `session_type` is
-`gateway` was carried through the gateway's chat bot (Telegram, the one
-platform implemented), so the chat keeps a copy on the platform. Its
-`name` is `<platform>/<display name or user id>` and its `working_dir`
-`.config/goose/gateway/<platform>/<user_id>`
-(`crates/goose/src/gateway/handler.rs:304-326` at aaif-goose/goose
-bfcc6ee). One `system` row after the session's start row, at
-`created_at`: `session relayed: gateway <platform> user <user_id> display
-<display> (from sessions.db session_type gateway, created_at)`, platform
-and user id from `working_dir` (the platform from `name` when the path
-does not match), display from `name`, `-` when it is absent or is the user
-id. It is not vendor sync, so `records_sync` stays False; `records_relay`
-is set, so a session without the row is `relayed` `no`. `config.yaml`
-`gateway_pairings` repeats the platform and user id and adds `paired_at`,
-but it is nested YAML (no YAML dependency) and a secret glob, so it is
-not read. Fixture only: no real install has shown a gateway session.
+Validated against source, block/goose at 591edd4 and aaif-goose/goose at fb9e3c8 and bfcc6ee,
+with a synthetic fixture; no real install. See `research/goose.md`.
 """
 
 from __future__ import annotations
@@ -215,7 +64,7 @@ TRUST_RX = re.compile(r"^%s/roaming_trust\.json$" % CONFIG)
 SCHEDULE_RX = re.compile(r"^%s/schedule\.json$" % DATA)
 # The request log stamps each streamed chunk when it arrives, while
 # `sessions.db` stamps the assembled message with the later of its first
-# chunk's time and the session's newest stored message (issue 126).
+# chunk's time and the session's newest stored message.
 LLM_TOLERANCE_SECONDS = 600.0
 TOOL_EXECUTABLE_KEY = "goose.executable"
 # A gateway session's working directory, `<config>/gateway/<platform>/<user_id>`.
@@ -223,21 +72,24 @@ GATEWAY_DIR_RX = re.compile(r"[/\\]gateway[/\\]([^/\\]+)[/\\]([^/\\]+)[/\\]?$")
 
 
 def epoch(value) -> str:
-    """`created_timestamp` is seconds, but some clients write milliseconds;
-    Goose divides anything above 1e10 by 1000 (session_manager.rs:729-741)."""
+    """Return a `created_timestamp` as UTC.
+
+    The value is in seconds, but some clients write milliseconds: Goose divides anything above 1e10
+    by 1000 (session_manager.rs:729-741).
+    """
     if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 10_000_000_000:
         value = value / 1000.0
     return to_utc(value)
 
 
 def _stored_json(value, kind: type) -> tuple[object, str, str]:
-    """(decoded value, reason, stored text) of a JSON column of `sessions.db`.
-    `kind` is the type Goose writes there (`list` for `content_json`, `dict`
-    for `metadata_json` and `model_config_json`). A NULL or empty column
-    gives (None, "", ""); a value that does not decode, or decodes to a
-    type other than `kind` (a JSON `null` excepted), gives (None, reason,
-    the stored text in full) for an `unparseable record` row (issue 183).
-    A BLOB is read as UTF-8 with replacement."""
+    """Decode a JSON column of `sessions.db`.
+
+    `kind` is the type Goose writes there (`list` for `content_json`, `dict` otherwise); a BLOB is
+    read as UTF-8 with replacement. Returns (decoded value, reason, stored text): (None, "", "") for
+    a NULL or empty column, and (None, reason, the stored text in full) for a value that does not
+    decode or decodes to another type than `kind` (a JSON `null` excepted).
+    """
     if value is None or value == "" or value == b"":
         return None, "", ""
     if isinstance(value, bytes):
@@ -254,15 +106,17 @@ def _stored_json(value, kind: type) -> tuple[object, str, str]:
 
 
 def _join(*parts: str) -> str:
+    """Join the non-empty parts with ` | `."""
     return " | ".join(part for part in parts if part)
 
 
 def gateway_text(session: dict) -> str:
-    """The `session relayed:` text of a `gateway` session, `""` for any
-    other: platform and user id from `working_dir`
-    (`<config>/gateway/<platform>/<user_id>`), else the platform from
-    `name`; the display name from `name` (`<platform>/<display name or user
-    id>`), `-` when it is the user id or absent."""
+    """Return the `session relayed:` text of a `gateway` session, `""` for any other.
+
+    The platform and user id come from `working_dir` (`<config>/gateway/<platform>/<user_id>`), else
+    the platform from `name`; the display name comes from `name` (`<platform>/<display name or user
+    id>`), `-` when it is the user id or absent.
+    """
     if session.get("session_type") != "gateway":
         return ""
     match = GATEWAY_DIR_RX.search(str(session.get("working_dir") or ""))
@@ -279,11 +133,12 @@ def gateway_text(session: dict) -> str:
 
 
 def _model(provider: str, name: str) -> str:
+    """Return `<provider>/<name>`, or the name alone when the provider is unknown."""
     return "%s/%s" % (provider, name) if provider and name else name or ""
 
 
 def result_text(tool_result) -> tuple[str, bool]:
-    """(text, is_error) of a toolResponse.toolResult."""
+    """Return (text, is_error) of a `toolResponse.toolResult`."""
     if not isinstance(tool_result, dict):
         return compact_json(tool_result), False
     if tool_result.get("status") == "error":
@@ -300,6 +155,7 @@ def result_text(tool_result) -> tuple[str, bool]:
 
 
 def unescape_history(line: str) -> str:
+    r"""Undo the backslash escapes of a rustyline `#V2` history line (`\n` is a line feed)."""
     out: list[str] = []
     i = 0
     while i < len(line):
@@ -315,8 +171,7 @@ def unescape_history(line: str) -> str:
 
 
 def _unquote(value: str) -> str:
-    """A YAML scalar as `serde_yaml` writes it: plain, single-quoted (`''`
-    for a quote) or double-quoted (JSON escapes)."""
+    """Return a YAML scalar as `serde_yaml` writes it: plain, single-quoted or double-quoted."""
     if len(value) >= 2 and value[0] == value[-1] == "'":
         return value[1:-1].replace("''", "'")
     if len(value) >= 2 and value[0] == value[-1] == '"':
@@ -329,13 +184,13 @@ def _unquote(value: str) -> str:
 
 
 def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]]:
-    """(line, category, level, tool) for each tool in `permission.yaml`,
-    which `serde_yaml` writes as a map from category (`user`,
-    `smart_approve`) to `{always_allow, ask_before, never_allow}`, each a
-    block list of tool names or `[]` (config/permission.rs:13-44, 260-262 at
-    aaif-goose/goose fb9e3c8). Only that one nesting level is read: a line
-    that is not a category, a level or a list item under both is appended to
-    `errors` as (line, message, raw), as `iter_jsonl` does for JSONL."""
+    """Yield (line, category, level, tool) for each tool in `permission.yaml`.
+
+    `serde_yaml` writes a map from category (`user`, `smart_approve`) to `always_allow`,
+    `ask_before` and `never_allow`, each a block list of tool names or `[]`
+    (config/permission.rs:13-44, 260-262 at aaif-goose/goose fb9e3c8). Only that nesting is read:
+    any other line is appended to `errors` as (line, message, raw), as `iter_jsonl` does.
+    """
     category = level = ""
     with open(path, "rb") as handle:
         for line_number, raw in enumerate(handle, 1):
@@ -367,17 +222,19 @@ def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]
 
 
 def _audience(block: dict):
+    """Return the `annotations.audience` of a content block, or None."""
     annotations = block.get("annotations")
     return annotations.get("audience") if isinstance(annotations, dict) else None
 
 
 def merge_delta(blocks: list, new: list) -> None:
-    """Append one streamed chunk's content blocks to the message assembled so
-    far, as `Conversation::push` does for chunks with the same message id
-    (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose
-    fb9e3c8): a one-block text chunk extends a last text block of the same
-    audience, a one-block thinking chunk extends a last thinking block that
-    is unsigned or has its signature, and anything else is appended."""
+    """Append one streamed chunk's content blocks to the message assembled so far.
+
+    As `Conversation::push` does for chunks with the same message id
+    (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose fb9e3c8): a one-block text
+    chunk extends a last text block of the same audience, a one-block thinking chunk extends a last
+    thinking block that is unsigned or has its signature, and anything else is appended.
+    """
     if len(new) == 1 and blocks and isinstance(blocks[-1], dict) and isinstance(new[0], dict):
         last, block = blocks[-1], new[0]
         kind = last.get("type")
@@ -398,10 +255,11 @@ def merge_delta(blocks: list, new: list) -> None:
 
 
 def schedule_text(job: dict, rel: str) -> str:
-    """The `scheduled task:` text of one `schedule.json` job
-    (`ScheduledJob`, scheduler/common.rs:167-187 at aaif-goose/goose
-    fb9e3c8), `-` for an absent value; `parameters` is added only when the
-    job has any."""
+    """Return the `scheduled task:` text of one `schedule.json` job.
+
+    The job is a `ScheduledJob` (scheduler/common.rs:167-187 at aaif-goose/goose fb9e3c8); `-`
+    stands for an absent value, and `parameters` is added only when the job has any.
+    """
 
     def value(key: str) -> str:
         stored = job.get(key)
@@ -427,12 +285,15 @@ def schedule_text(job: dict, rel: str) -> str:
 
 
 class GooseParser(Parser):
+    """Parse Goose's session database, legacy sessions, request logs, histories and settings."""
+
     agent = "goose"
     name = "goose"
     has_secondary = True
     records_relay = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the Goose files this parser reads."""
         rel = artifact.rel
         return any(
             pattern.match(rel)
@@ -448,14 +309,17 @@ class GooseParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the prompt histories and request logs, which repeat `sessions.db`."""
         return bool(HISTORY_RX.match(artifact.rel) or LLM_RX.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return `LLM_TOLERANCE_SECONDS` for a request log, else the default window."""
         if LLM_RX.match(artifact.rel):
             return LLM_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Goose file."""
         rel = artifact.rel
         if DB_RX.match(rel):
             yield from self._parse_db(artifact, opts)
@@ -511,11 +375,13 @@ class GooseParser(Parser):
         opts: Options,
         answered: set[str] | None = None,
     ) -> Iterator[Row]:
-        """`answered` holds the ids of the tool requests the session's
-        `toolConfirmationResponse` blocks answer; when it is given (only for
-        `sessions.db`), a `toolRequest` whose `_meta` holds
-        `goose.executable` `false` and no answer is followed by its
-        `permission decision: not executable` row."""
+        """Yield the rows of a message's content blocks.
+
+        `answered` holds the ids of the tool requests the session's `toolConfirmationResponse`
+        blocks answer; when it is given (only for `sessions.db`), a `toolRequest` whose `_meta`
+        holds `goose.executable` `false` and no answer is followed by its `permission decision: not
+        executable` row.
+        """
         if isinstance(content, str):
             text_block: dict = {"type": "text", "text": content}
             content = [text_block]
@@ -605,10 +471,12 @@ class GooseParser(Parser):
 
     @staticmethod
     def _action_text(row: Row, data, tool_names: dict[str, str]) -> str:
-        """The text of an `actionRequired` block, setting `row`'s tool join:
-        a tool confirmation is a `permission request:`, its answer a
-        `permission decision:` (message.rs:194-219 at aaif-goose/goose
-        fb9e3c8); an elicitation keeps the generic `action required:` row."""
+        """Return the text of an `actionRequired` block, setting `row`'s tool join.
+
+        A tool confirmation is a `permission request:` and its answer a `permission decision:`
+        (message.rs:194-219 at aaif-goose/goose fb9e3c8); an elicitation keeps the generic `action
+        required:` row.
+        """
         kind = data.get("actionType") if isinstance(data, dict) else None
         if isinstance(data, dict) and kind == "toolConfirmation":
             row.tool_name = str(data.get("toolName") or "")
@@ -800,9 +668,11 @@ class GooseParser(Parser):
 
     @staticmethod
     def _answered(connection) -> dict[str, set[str]]:
-        """Session id to the tool request ids its `toolConfirmationResponse`
-        blocks answer. A pre-scan: a `content_json` that does not decode is
-        skipped here and reported by the full read of the same row."""
+        """Map each session id to the tool request ids its `toolConfirmationResponse` blocks answer.
+
+        A pre-scan: a `content_json` that does not decode is skipped here and reported by the full
+        read of the same row.
+        """
         answered: dict[str, set[str]] = {}
         for session_id, stored in connection.execute(
             "select session_id, content_json from messages"
@@ -959,7 +829,7 @@ class GooseParser(Parser):
         return row
 
     def _read_json_file(self, artifact: Artifact) -> tuple[object, str]:
-        """(document, error message) of a whole-file JSON store."""
+        """Return (document, error message) of a whole-file JSON store."""
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
         except OSError as error:

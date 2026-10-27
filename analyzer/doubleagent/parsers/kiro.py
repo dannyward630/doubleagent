@@ -1,131 +1,33 @@
-"""Amazon Q Developer CLI conversations, the open-source predecessor of the
-Kiro CLI (catalog agent `kiro`).
+"""Amazon Q Developer CLI conversations, the open-source predecessor of the Kiro CLI.
 
-Validated against the source of aws/amazon-q-developer-cli at 15cc8f3
-(1.19.7, `crates/chat-cli`), with a synthetic fixture; see
-`research/kiro.md`. No real install was used. Files, relative to
-the home directory:
+Reads, relative to the home: `data.sqlite3` under `.local/share`, `Library/Application
+Support` or `AppData/Local`, in `amazon-q/` or `kiro-cli/` (tables `conversations(key, value)`,
+one serialised `ConversationState` per working directory, and the legacy Fig shell `history`;
+`auth_kv` and `state` hold tokens and are never read); `/save` exports, a `.json` whose
+top-level object has `conversation_id` and `history`; `.aws/amazonq/.cli_bash_history`, the
+prompt's rustyline history (secondary); agent configurations
+`{.aws/amazonq,.amazonq}/cli-agents/<name>.json`; and the delegate tool's
+`.amazonq/.subagents/<agent>.json`. Kiro CLI's `.kiro/sessions/` files are not read.
 
-* `data.sqlite3` under `.local/share/amazon-q/`, `Library/Application
-  Support/amazon-q/` or `AppData/Local/amazon-q/`, and the same three under
-  `kiro-cli/` (the rebrand; those directories are from the catalog and not
-  verified from source). Rollback journal, not WAL. Tables read:
-  - `conversations(key, value)`: one row per working directory. `key` is the
-    cwd, `value` is the serialised `ConversationState` below. Only the
-    latest conversation per directory survives.
-  - `history(command, shell, pid, session_id, cwd, start_time | time,
-    end_time, duration, hostname, exit_code)`: legacy Fig shell history with
-    no writer in the current source; old installs may hold rows. Each row
-    becomes a `system` row prefixed `shell history:` since it records a
-    shell command, not an agent turn. `session_id` is the shell session.
-  - `auth_kv` and `state` hold tokens and are never read.
-* Saved `/save` exports anywhere under the agent's directories: a `.json`
-  file whose top-level object has `conversation_id` and `history`, the same
-  `ConversationState` schema pretty-printed.
+Fields the parser depends on:
 
-`ConversationState` fields used: `conversation_id`, `history[]`,
-`next_message`, `latest_summary` (`[text, RequestMetadata]`),
-`model_info.model_id`, legacy `model`. Each history entry is `{user,
-assistant, request_metadata}`:
+* `ConversationState`: `conversation_id`, `history[]` of `{user, assistant,
+  request_metadata}`, `next_message`, `latest_summary`, `model_info.model_id`, legacy
+  `model`, `checkpoint_manager.checkpoints[]` (`tag`, `timestamp`, `description`,
+  `tool_name`, `history_snapshot`) and `tangent_state.main_history`.
+* `user.content` (`Prompt`, `ToolUseResults`, `CancelledToolUses`), `user.timestamp`,
+  `user.env_context.env_state.current_working_directory`; `assistant` (`Response`,
+  `ToolUse` with `tool_uses[]` `id`, `name`, `orig_name`, `args`); `request_metadata`
+  (`request_start_timestamp_ms`, `stream_end_timestamp_ms`, `model_id`,
+  `message_meta_tags`).
+* `history` columns `command`, `shell`, `session_id`, `cwd`, `start_time` or `time`,
+  `duration`, `hostname`, `exit_code`; agent `allowedTools` and `toolsSettings`; delegate
+  `agent`, `task`, `status`, `launched_at`, `completed_at`, `pid`, `exit_code`, `output`,
+  `summary`, `cwd`.
 
-  - `user.content` is `{"Prompt": {prompt}}`, `{"ToolUseResults":
-    {tool_use_results}}` or `{"CancelledToolUses": {prompt,
-    tool_use_results}}`; each result is `{tool_use_id, content: [{"Text"} |
-    {"Json"}], status}`. `user.timestamp` is RFC 3339 with the local offset
-    or null; `user.env_context.env_state.current_working_directory`.
-  - `assistant` is `{"Response": {message_id, content}}` or `{"ToolUse":
-    {message_id, content, tool_uses: [{id, name, orig_name, args}]}}`.
-  - `request_metadata`: `request_start_timestamp_ms`,
-    `stream_end_timestamp_ms`, `model_id`, `message_meta_tags`.
-
-Rows: `user` per prompt; `tool_result` per tool use result (text suffixed
-with the status, and `cancelled` for CancelledToolUses), named by looking up
-the id among earlier tool uses; `assistant` per response text; `tool_use`
-per `tool_uses[]` entry with `name` as the tool name and the JSON `args` as
-the text (prefixed `orig_name=` when the MCP original name differs);
-`system` rows for a `Compact` meta tag, the `latest_summary` and a pending
-`next_message`. There are no thinking blocks in this format.
-
-Timestamps: user and tool_result rows use `user.timestamp`, which is null
-on tool-result messages; they fall back to the same entry's
-`request_start_timestamp_ms`. Assistant and tool_use rows use
-`stream_end_timestamp_ms`, then `request_start_timestamp_ms`. Entries with
-neither (old releases without `request_metadata`) inherit the previous
-row's timestamp. `project_path` is the database row key, else the first
-`current_working_directory`. No git branch is recorded.
-
-Model rows (issue 96), `system`: `model: <id>` before the rows of the first
-history entry and `model: <old> -> <new>` before the rows of each entry
-whose model differs, timestamped like the entry's user row. The model is
-the entry's `request_metadata.model_id`; an entry without one falls back to
-the conversation's `model_info.model_id` (or the legacy `model`), and the
-row then ends ` source=model_info` (or ` source=model`), because that field
-is a conversation-level value serialised with the whole state, not a record
-of the request.
-
-Everything below was added from the same source on 2026-10-21
-(issue 212); it is source-derived and not observed on any real install.
-
-Permission rows, `system`. A cancelled tool use stays a `tool_result`
-prefixed `cancelled` and is followed by a row with its `tool_use_id` and
-`tool_name`, chosen by the CancelledToolUses `prompt`: `permission
-decision: denied by=n` for the fixed text a bare `n` sends ("I deny this
-tool request. Ask a follow up question clarifying the expected action"),
-`permission decision: denied by=deny-rule tool=<name>` for "Tool use with
-<name> was rejected because the arguments supplied were forbidden" (a
-deny rule of the agent's `toolsSettings`), `permission decision: cancelled
-by=interrupt` for "The user interrupted the tool execution.", `permission
-decision: denied by=user-text` for any other prompt (what the user typed
-instead of `y` or `t`) and `permission decision: cancelled` for none. The
-deny-rule text in a `Prompt` message (no pending call to cancel) gives the
-same deny-rule row after the user row, with `tool_name` and no id. An
-approval (`y`, `t`, `--trust-all-tools`) is not persisted.
-
-Standing grants: `cli-agents/<name>.json` under `.aws/amazonq/` (global)
-or `.amazonq/` (a project; `project_path` is the project): camelCase
-`allowedTools` (a list) and `toolsSettings` (`{<tool>: {<key>: value}}`,
-e.g. `allowedCommands`, `deniedCommands`, `denyByDefault`,
-`autoAllowReadonly`, `allowedPaths`, `deniedPaths`). One row per entry,
-`permission setting: allowedTools=<entry> (from <file>, file mtime)` and
-`permission setting: toolsSettings.<tool>.<key>=<value> (from <file>, file
-mtime)`, at the file's modification time with no session.
-
-Past use. `.aws/amazonq/.cli_bash_history`, the chat prompt's rustyline 15
-history, is secondary: a first line `#V2` marks the multi-line format, in
-which `\\n` is a line feed and `\\\\` a backslash; without it each line is
-one entry as written. One `user` row per entry with no timestamp, session
-or project. A line that is not UTF-8 is a bad line. Inside each blob,
-`checkpoint_manager.checkpoints[]` (`tag`, `timestamp`, `description`,
-`tool_name`, `history_snapshot`) and `tangent_state.main_history` are copies
-of `history`: the entries the history no longer holds (equal on user
-content, user timestamp and assistant message) are yielded after the
-history's rows, behind one `system` row `checkpoint snapshot: tag=<tag>[
-tool=<tool_name>] recovered=<n> entries[: <description>]` at the
-checkpoint's time or `tangent mode: main conversation held aside,
-recovered=<n> entries`, and every non-`system` row of them is marked
-`recovered` "yes"; their model rows track their own sequence.
-`.amazonq/.subagents/<agent>.json` (`agent`, `task`, `status`,
-`launched_at` and `completed_at` in Unix seconds, `pid`, `exit_code`,
-`output`, `summary`, `cwd`) is primary: `delegate task launched:
-agent=<agent> pid=<pid>[ trust_all_tools=true]: <task>` at `launched_at`
-(`trust_all_tools` for the default agent `q_cli_default`, which the
-delegate tool runs with `--trust-all-tools`) and, once it ended, `delegate
-task <status>: agent=<agent> exit_code=<code>` with `summary:` and
-`output:` lines at `completed_at`; `project_path` is `cwd`.
-
-Kiro CLI's `settings/permissions.yaml`, `sandbox-state/` and
-`workspace-roots/<hash>/.trust-migration.json` have no recorded shape and
-are not read.
-
-A blob or export that fails to parse as a whole (an export truncated
-mid-write) is salvaged entry by entry: the history entries before the cut
-are still yielded, followed by one `system` row.
-
-Not parsed: Kiro CLI's `.kiro/sessions/` files. That closed-source format is
-unverified (the research suggests the camelCase `crates/agent` schema, but
-that is inference), so `wants()` ignores it until the format is confirmed
-from a shipped binary or a real install. The Kiro IDE stores are not parsed
-either.
+Validated against source, aws/amazon-q-developer-cli at 15cc8f3 (1.19.7), with a synthetic
+fixture; no real install. A blob cut mid-write is salvaged entry by entry. See
+`research/kiro.md`.
 """
 
 from __future__ import annotations
@@ -176,6 +78,7 @@ _HISTORY_RX = re.compile(r'"history"\s*:\s*\[')
 
 
 def _sniff_export(path) -> bool:
+    """Return True when a file starts like a `/save` export (an object with `conversation_id`)."""
     try:
         with open(path, "rb") as handle:
             head = handle.read(SNIFF_BYTES)
@@ -185,9 +88,12 @@ def _sniff_export(path) -> bool:
 
 
 def salvage(text: str) -> tuple[dict | None, str]:
-    """Parse a ConversationState. On failure, recover `conversation_id` and
-    every complete `history` entry before the damage; the second value is the
-    error message, empty when the whole document parsed."""
+    """Parse a `ConversationState`, salvaging what precedes the damage when it does not parse.
+
+    On failure, `conversation_id` and every complete `history` entry before the damage are
+    recovered. Returns (state or None, error message), the message empty when the whole document
+    parsed.
+    """
     try:
         state = json.loads(text)
         if isinstance(state, dict):
@@ -223,7 +129,7 @@ def salvage(text: str) -> tuple[dict | None, str]:
 
 
 def _variant(value) -> tuple[str, dict]:
-    """Unpack a serde externally tagged enum: {"Tag": {...}}."""
+    """Unpack a serde externally tagged enum, `{"Tag": {...}}`, as (tag, body)."""
     if isinstance(value, dict) and len(value) == 1:
         tag, body = next(iter(value.items()))
         return str(tag), body if isinstance(body, dict) else {}
@@ -231,6 +137,7 @@ def _variant(value) -> tuple[str, dict]:
 
 
 def result_text(result: dict) -> str:
+    """Return the text of a tool use result, its `status` in brackets after it."""
     parts: list[str] = []
     for block in result.get("content") or []:
         if not isinstance(block, dict):
@@ -249,10 +156,11 @@ def result_text(result: dict) -> str:
 
 
 def unescape_history(line: str) -> str:
-    """One entry of a rustyline `#V2` history file: `\\n` becomes a line
-    feed and `\\\\` a backslash. A line with any other escape, or a trailing
-    backslash, is kept exactly as written, as rustyline 15's `load_from`
-    keeps it."""
+    r"""Return one entry of a rustyline `#V2` history file: `\n` a line feed, `\\` a backslash.
+
+    A line with any other escape, or a trailing backslash, is kept exactly as written, as rustyline
+    15's `load_from` keeps it.
+    """
     out: list[str] = []
     i = 0
     length = len(line)
@@ -274,10 +182,11 @@ def unescape_history(line: str) -> str:
 
 
 def decision_text(prompt) -> str:
-    """The `permission decision:` row text for a CancelledToolUses message
-    whose `prompt` is `prompt`: a bare `n` answer (the fixed denial text), a
-    deny rule of the agent's `toolsSettings`, an interrupt, or the user's own
-    words typed at the approval prompt."""
+    """Return the `permission decision:` text of a CancelledToolUses message's `prompt`.
+
+    The fixed denial text of a bare `n`, a deny rule of the agent's `toolsSettings`, an interrupt,
+    or the user's own words typed at the approval prompt.
+    """
     if not isinstance(prompt, str) or not prompt:
         return "permission decision: cancelled"
     if prompt == DENY_TEXT:
@@ -291,20 +200,25 @@ def decision_text(prompt) -> str:
 
 
 def _entry_key(entry: dict) -> str:
-    """What identifies a history entry across the copies one blob holds:
-    the user content and time and the assistant message. A snapshot entry is
-    a clone of the history entry, so the two are equal on these."""
+    """Return what identifies a history entry across the copies one blob holds.
+
+    The user content and time and the assistant message: a snapshot entry is a clone of the history
+    entry, so the two are equal on these.
+    """
     user = entry.get("user")
     user = user if isinstance(user, dict) else {}
     return compact_json([user.get("content"), user.get("timestamp"), entry.get("assistant")])
 
 
 class KiroParser(Parser):
+    """Parse the Amazon Q Developer CLI database, exports, prompt history and agent files."""
+
     agent = "kiro"
     name = "kiro"
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the database, history and agent files and for `/save` exports."""
         rel = artifact.rel
         if DB_RX.match(rel) or HISTORY_RX.match(rel):
             return True
@@ -315,9 +229,11 @@ class KiroParser(Parser):
         return _sniff_export(artifact.disk_path)
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the prompt history, which repeats the conversations' prompts."""
         return bool(HISTORY_RX.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Amazon Q Developer CLI file."""
         rel = artifact.rel
         if DB_RX.match(rel):
             yield from self._parse_db(artifact, opts)
@@ -332,8 +248,7 @@ class KiroParser(Parser):
 
     # -- .cli_bash_history ---------------------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
-        """One `user` row per entry, with no timestamp, session or project,
-        since the file records none."""
+        """Yield one `user` row per history entry, with no timestamp, session or project."""
         errors: list = []
         multiline = False
         with open(artifact.disk_path, "rb") as handle:
@@ -360,7 +275,7 @@ class KiroParser(Parser):
 
     # -- cli-agents/<name>.json ---------------------------------------------------
     def _json_doc(self, artifact: Artifact, what: str) -> tuple[dict | None, Row | None]:
-        """The file as a JSON object, or a `system` row saying it is not one."""
+        """Return the file as a JSON object, or a `system` row saying it is not one."""
         try:
             document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
@@ -375,8 +290,7 @@ class KiroParser(Parser):
         return None, row
 
     def _parse_agent_config(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting:` row per `allowedTools` entry and per key
-        of each `toolsSettings` tool, at the file's modification time."""
+        """Yield one `permission setting:` row per `allowedTools` entry and `toolsSettings` key."""
         document, bad = self._json_doc(artifact, "agent configuration")
         if document is None:
             if bad is not None:
@@ -412,8 +326,10 @@ class KiroParser(Parser):
 
     # -- .amazonq/.subagents/<agent>.json -----------------------------------------
     def _parse_delegate(self, artifact: Artifact) -> Iterator[Row]:
-        """A `system` row at `launched_at` and, once the task ended, one at
-        `completed_at` with its status, exit code, summary and output."""
+        """Yield a delegate task's `launched` row and, once it ended, its status row.
+
+        The status row, at `completed_at`, holds the exit code, summary and output.
+        """
         document, bad = self._json_doc(artifact, "delegate record")
         if document is None:
             if bad is not None:
@@ -479,6 +395,7 @@ class KiroParser(Parser):
                 yield from self._shell_history(artifact, opts, connection)
 
     def _shell_history(self, artifact: Artifact, opts: Options, connection) -> Iterator[Row]:
+        """Yield one `shell history:` row per legacy Fig shell history row."""
         for position, history_row in enumerate(
             connection.execute("select * from history order by rowid"), 1
         ):
@@ -507,6 +424,7 @@ class KiroParser(Parser):
 
     # -- /save exports ------------------------------------------------------------
     def _parse_export(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of a `/save` export."""
         with open(artifact.disk_path, "rb") as handle:
             text = handle.read().decode("utf-8", errors="replace")
         yield from self._conversation(artifact, opts, text, "", 0)
@@ -515,6 +433,12 @@ class KiroParser(Parser):
     def _conversation(
         self, artifact: Artifact, opts: Options, text: str, key: str, line: int
     ) -> Iterator[Row]:
+        """Yield the rows of one serialised `ConversationState`.
+
+        Entries without a time of their own inherit the previous row's; the entries that only a
+        checkpoint snapshot or the tangent-mode copy still holds follow the history's rows, marked
+        recovered.
+        """
         state, problem = salvage(text)
         if state is None or not isinstance(state.get("history"), list):
             if problem:
@@ -666,15 +590,18 @@ class KiroParser(Parser):
 
     @staticmethod
     def _assistant(row: Row, content, fill) -> Row:
+        """Return `row` as the `assistant` row of a response's content."""
         row.turn_type = "assistant"
         return fill(row, content if isinstance(content, str) else compact_json(content))
 
     @staticmethod
     def _history_copies(state: dict) -> Iterator[tuple[str, str, str, list]]:
-        """(row text before and after the entry count, timestamp, entries)
-        for each checkpoint's `history_snapshot`, in checkpoint order, then
-        for `tangent_state.main_history`. The tangent row has no time of its
-        own (`tangent_start_time` is not read)."""
+        """Yield (row text before and after the entry count, timestamp, entries) per history copy.
+
+        Each checkpoint's `history_snapshot`, in checkpoint order, then
+        `tangent_state.main_history`. The tangent row has no time of its own (`tangent_start_time`
+        is not read).
+        """
         manager = state.get("checkpoint_manager")
         checkpoints = manager.get("checkpoints") if isinstance(manager, dict) else None
         for checkpoint in checkpoints if isinstance(checkpoints, list) else []:
@@ -696,6 +623,7 @@ class KiroParser(Parser):
     def _user(
         content, timestamp: str, model: str, names: dict[str, str], base, fill
     ) -> Iterator[Row]:
+        """Yield the rows of a history entry's `user` content."""
         tag, body = _variant(content)
         prompt = body.get("prompt")
         if tag in ("Prompt", "CancelledToolUses") and prompt:
@@ -732,6 +660,7 @@ class KiroParser(Parser):
 
     @staticmethod
     def _first_cwd(state: dict) -> str:
+        """Return the first `current_working_directory` recorded in the history, or `""`."""
         for entry in state.get("history") or []:
             try:
                 cwd = entry["user"]["env_context"]["env_state"]["current_working_directory"]

@@ -1,125 +1,30 @@
-"""Muse Code (Meta) session logs.
+"""Muse Code (Meta) session logs, prompt history and trusted projects.
 
-Closed source. Validated against the shipped Linux binary 1.4.2-R4684.1
-(serde field names from `strings`), the vendor skills unpacked beside it
-(`read-session/SKILL.md`, `doctor/scripts/session-evidence.py`) and a real
-install on Linux, October 2026, with a synthetic fixture; see
-`research/muse-code.md`. Files, relative to the home (the same layout on
-macOS and Windows, which resolve `XDG_DATA_HOME` or the home):
+Reads, relative to the home (the same layout on macOS and Windows):
 
-* `.local/share/muse/sessions/YYYY/MM/DD/<session id>/session.jsonl` and
-  `.../<session id>/subagent/<child id>/session.jsonl` (one log per
-  subagent, same format). One JSON object per line, three shapes:
-  - envelope: `stream.id` (session id, or the subagent's own id),
-    `recorded_at` (integer microseconds since the epoch, UTC),
-    `payload_type`, `payload`.
-  - `retained_frame`: `children[].child_index`, `children[].record_json`
-    (a JSON string holding a whole envelope; the observed children are the
-    permission records below).
-  - `retained_marker`: a placeholder for a live-only record; skipped.
-  A file whose first parseable record is neither an envelope nor a frame
-  is not Muse and gives no rows.
-* `payload_type: "runtime.session"`, `payload.kind: "run"`, `payload.run_id`,
-  `payload.event.kind`:
-  - `started` (`prompt`): `user` in a top-level log, `system` in a
-    subagent log (the task the runtime gave the child).
-  - `inbox_item_queued` (`source.source`, `payload.prompt`, `body`,
-    `summary`): `user` when the source is `user_steer`, else `system`.
-  - `assistant_message_committed` (`text`): `assistant`.
-  - `reasoning_summary_committed` (`message_id`, `text`) and
-    `reasoning_committed` with non-empty `text`: `thinking`, only with
-    `include_thinking`. `reasoning_summary_delta` (`message_id`, `text`)
-    repeats the committed record and is skipped, unless its `message_id`
-    has no committed record (a cut log): then the deltas joined by a blank
-    line give one `thinking` row at the last delta.
-  - `assistant_tool_calls_committed` (`tool_calls[].name`, `.call_id`,
-    `.args`, a JSON string or an object): one `tool_use` each.
-  - `tool_result_batch_committed` (`results[].tool_call_id`, `.text`), and
-    the alternative names `tool_results_committed`, `tool_result_committed`
-    and `tool_result` (`tool_call_id` or `call_id`; `text`, `output`,
-    `result`, `tool_result_model_visible_content` or `content`): one
-    `tool_result` each, joined on the call id. A result `text` that decodes
-    to an object with `output` (bash) gives that output, prefixed
-    `[exit N]` when `exit_code` is non-zero.
-  - `provider_tool_call_completed` (`call_id`, `status`, `action`,
-    `results`): a `tool_use` and a `tool_result`, not observed on disk.
-  - `terminal` (`terminal`, `reason`): a `system` row unless `completed`.
-  - `context_compaction_installed`, `run_retracted`, `turn_task_died`:
-    `system` rows with the event as compact JSON.
-  - `model_completed` (`model`): the run's model when
-    `run.model.configured` gave none (and then a model row, below).
-* `payload.kind: "approval"`, all `system` rows carrying the tool name and
-  call id: `requested` (`tool_name`, `tool_call_id`, `raw_args`,
-  `pending_action_id`) is `approval requested: <raw_args>`;
-  `automated_review_completed` (`assessment.outcome`, `.risk_level`,
-  `.user_authorization`, `.rationale`, `status`) is `permission decision:
-  <outcome> kind=automated_review_completed risk_level=<r>
-  user_authorization=<u> status=<s> <rationale>`, joined to the latest
-  request before it (the record names no pending action);
-  `decision_applied` (`decision`, `decision_source.kind`, `policy_result`,
-  `amendment`, `pending_action_id`, joined to the request) is
-  `permission decision: <decision> source=<decision_source.kind>
-  policy_result=<p> amendment=<a>`. A missing or null value is `-`. These
-  rows stay at the record's place in the log, before the call's
-  `tool_result`, because the decision precedes the execution.
-* Permission mode (issue 97), tracked per log: a
-  `runtime.session.permission_profile_committed` record (a frame child;
-  `resolved_snapshot.approval`, `resolved_snapshot.reviewer`, `source.id`,
-  `cause`) is `permission mode: approval=<a> reviewer=<r> profile=<id>`
-  the first time and `permission mode: <old> -> <new>` on a change,
-  followed by ` cause=<cause>` and ` format=<format>` from the
-  `runtime.session.permission_format_declared` record (`format`) before it.
-  `session.opened.observed` (`security_mode`) is tracked on its own as
-  `permission mode: security_mode=<value>`.
-* Model (issue 96), tracked per log: the first model named by
-  `runtime.session.metadata` `model_id`, `run.model.configured`
-  `model_id` or a run's `model_completed` `model` (when the run has no
-  configured model) is `model: <id>`, and each different one later
-  `model: <old> -> <new>`, followed by ` provider=<provider_id>` when the
-  record has one. `runtime.model_reconfigure.completed` (a `/model`
-  change; `effective.model_id`, `previous.model_id`, `apply_outcome`)
-  first yields `model: <previous>` when no model was named yet, then
-  `model: <old> -> <effective>` (even when unchanged, since the user typed
-  it), followed by ` apply_outcome=<value>` when set; without an
-  `effective.model_id` it is a `system` row of its compact JSON. The
-  research lists `previous{...}` without its fields; `model_id` is read
-  there because `effective` carries it.
-* Fact records, read from `payload.record` then `payload`:
-  `runtime.session.metadata` (`workspace_root`, `model_id`),
-  `runtime.session.route_facts` (`cwd`, the project fallback),
-  `session.workspace_branch.observed` (`reference.kind`, `reference.name`),
-  `run.model.configured` (`model_id`, `run_stream.id` = the run id,
-  `provider_id`) fill columns and give only the model rows above.
-  `session.name.changed` (`new_name`) is a `system` row.
-  `runtime.user_intent.accepted` (`intent_id`,
-  `model_messages[].content[].text`) repeats the run's `started` prompt
-  and is used only when that run has no `started` record.
-  `user_shell.command` (`command_id`, `command_text`) and
-  `user_shell.result` (`command_id`, `visible_output`, `exit_code`,
-  `terminal_state`) are a `tool_use` and `tool_result` named `user_shell`;
-  `subagent.control.spawn_accepted` and `.start_attested` are `system`
-  rows of compact JSON. These three are binary field names only, not
-  observed. Task, effect, telemetry and every unknown type are skipped.
-* A subagent log records no workspace: its project path and branch come
-  from the parent `session.jsonl` above its `subagent/` directory, read up
-  to `PARENT_SCAN_LINES` lines.
-* `.local/share/muse/tui-history.jsonl`: two lines per prompt, a JSON
-  string (the text) then `{project, session}`. No timestamp. A secondary
-  source (`dedup.py`): its rows have an empty `timestamp_utc`, so each
-  matches a session row of the same session and text with no time
-  constraint, and is kept only when no session row has the text.
-* `.config/muse/trust.json` (`projects.<absolute path>.decision`): one
-  `system` row per project, `permission setting:
-  projects.<path>.decision=<decision> (from .config/muse/trust.json, file
-  mtime)`, with `project_path` the path, `timestamp_utc` the file's
-  modification time and `session_id` empty; a file that is not a JSON
-  object is one `system` row. No other key is read. The `trust` key of
-  `.config/muse/skills/.muse/lock.json` is not read: the research names
-  the file's keys but not its structure.
+* `.local/share/muse/sessions/YYYY/MM/DD/<session id>/session.jsonl` and its
+  `subagent/<child id>/session.jsonl` logs: one JSON object per line, an envelope
+  (`stream.id`, `recorded_at` in microseconds, `payload_type`, `payload`), a `retained_frame`
+  (`children[].child_index`, `children[].record_json`, a whole envelope as a JSON string) or
+  a skipped `retained_marker`. A file whose first record is neither is not Muse.
+* `runtime.session` records: `payload.kind` `run` (`run_id`, `event.kind` and its fields, see
+  `_run_event`) or `approval` (`requested`, `automated_review_completed`,
+  `decision_applied`); fact records, read from `payload.record` then `payload`:
+  `runtime.session.metadata` (`workspace_root`, `model_id`), `route_facts` (`cwd`),
+  `permission_format_declared`, `permission_profile_committed`, `session.opened.observed`,
+  `session.workspace_branch.observed`, `session.name.changed`, `run.model.configured`,
+  `runtime.model_reconfigure.completed`, `runtime.user_intent.accepted`, `user_shell.command`
+  and `.result`, and `SUBAGENT_CONTROL`. Everything else is skipped.
+* `.local/share/muse/tui-history.jsonl` (secondary): a JSON string, then `{project, session}`.
+* `.config/muse/trust.json`: `projects.<path>.decision`.
 
-Not read: `approval-review/*.jsonl` (the automated reviewer's log, on a
-synthetic clock), `tool-outputs/`, `cli-*.log`, `.msp-view-v1/`, the
-SQLite stores.
+A subagent log records no workspace: its project and branch come from the parent log, read up
+to `PARENT_SCAN_LINES` lines. Model and permission mode rows are tracked per log.
+
+Validated against the shipped Linux binary 1.4.2-R4684.1 (serde field names from `strings`),
+the vendor skills unpacked beside it and a real install on Linux, with a synthetic fixture.
+The `user_shell` and `subagent.control` records are binary field names only, not observed.
+See `research/muse-code.md`.
 """
 
 from __future__ import annotations
@@ -169,28 +74,30 @@ SUBAGENT_CONTROL = ("subagent.control.spawn_accepted", "subagent.control.start_a
 
 
 def _dict(value) -> dict:
+    """Return the value if it is a dict, else `{}`."""
     return value if isinstance(value, dict) else {}
 
 
 def _str(value) -> str:
+    """Return the value as text: `""` for None, compact JSON for anything but a string."""
     if value is None:
         return ""
     return value if isinstance(value, str) else compact_json(value)
 
 
 def _pair_value(value) -> str:
-    """A field value in a `key=value` pair: `-` when missing or null."""
+    """Return a field value in a `key=value` pair: `-` when missing or null."""
     return "-" if value in (None, "") else setting_value(value)
 
 
 def _fact(payload: dict) -> dict:
-    """A fact record's fields: `payload.record`, falling back to `payload`."""
+    """Return a fact record's fields: `payload.record`, falling back to `payload`."""
     record = payload.get("record")
     return record if isinstance(record, dict) else payload
 
 
 def micros_to_utc(value) -> str:
-    """`recorded_at` is microseconds; `to_utc` reads large numbers as ms."""
+    """Return `recorded_at`, in microseconds, as UTC; `to_utc` reads large numbers as ms."""
     if isinstance(value, bool):
         return ""
     if isinstance(value, (int, float)):
@@ -201,6 +108,7 @@ def micros_to_utc(value) -> str:
 
 
 def args_summary(args) -> str:
+    """Return the first `ARG_KEYS` argument of a tool call, else its arguments as compact JSON."""
     if isinstance(args, str):
         try:
             decoded = json.loads(args)
@@ -217,7 +125,7 @@ def args_summary(args) -> str:
 
 
 def result_text(text) -> str:
-    """A tool result's text; bash results are a JSON object with `output`."""
+    """Return a tool result's text; a bash result is a JSON object with `output` and `exit_code`."""
     if not isinstance(text, str):
         return _str(text)
     if text.startswith("{"):
@@ -235,8 +143,10 @@ def result_text(text) -> str:
 
 
 def records(path, errors: list) -> Iterator[tuple[int, dict]]:
-    """(line, envelope) for every envelope, frames unpacked in child order,
-    markers dropped. Stops at once when the first record is not Muse."""
+    """Yield (line, envelope) for every envelope, frames unpacked in child order, markers dropped.
+
+    Stops at once when the first record is not Muse.
+    """
     first = True
     for line_number, record in iter_jsonl(path, errors):
         if first:
@@ -267,9 +177,11 @@ def records(path, errors: list) -> Iterator[tuple[int, dict]]:
 
 
 def workspace(log_records: Iterable[tuple[int, dict]], limit: int = 0) -> tuple[str, str]:
-    """(project path, branch) from a session log's records: the last
-    metadata `workspace_root` (else `route_facts` `cwd`) and the last branch
-    name. `limit` caps the lines read (0 reads them all)."""
+    """Return (project path, branch) from a session log's records.
+
+    The last metadata `workspace_root` (else `route_facts` `cwd`) and the last branch name. `limit`
+    caps the lines read (0 reads them all).
+    """
     project = cwd = branch = ""
     for line_number, record in log_records:
         if limit and line_number > limit:
@@ -291,20 +203,26 @@ def workspace(log_records: Iterable[tuple[int, dict]], limit: int = 0) -> tuple[
 
 
 class MuseCodeParser(Parser):
+    """Parse Muse Code session logs, the TUI prompt history and the trusted projects."""
+
     agent = "muse-code"
     name = "muse-code"
     has_secondary = True
 
     def __init__(self) -> None:
+        """Start with an empty cache of parent-log workspaces."""
         self._parent_cache: dict[Path, tuple[str, str]] = {}
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for session logs, the prompt history and `trust.json`."""
         return artifact.rel in (HISTORY_REL, TRUST_REL) or bool(SESSION_RX.match(artifact.rel))
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the prompt history, which repeats the sessions' prompts."""
         return artifact.rel == HISTORY_REL
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Muse Code file."""
         if artifact.rel == HISTORY_REL:
             yield from self._parse_history(artifact, opts)
         elif artifact.rel == TRUST_REL:
@@ -315,8 +233,10 @@ class MuseCodeParser(Parser):
     # -- session logs -------------------------------------------------------
 
     def _parent_workspace(self, artifact: Artifact) -> tuple[str, str]:
-        """Project and branch of the nearest ancestor log that has them,
-        walking up through `subagent/<id>/` levels. Symlinks are not read."""
+        """Return the project and branch of the nearest ancestor log that has them.
+
+        The walk goes up through `subagent/<id>/` levels; symlinks are not read.
+        """
         directory = artifact.disk_path.parent
         while directory.parent.name == "subagent":
             directory = directory.parent.parent
@@ -331,6 +251,7 @@ class MuseCodeParser(Parser):
         return "", ""
 
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one session log."""
         errors: list = []
         log_records = list(records(artifact.disk_path, errors))
         if not log_records:
@@ -598,8 +519,10 @@ class MuseCodeParser(Parser):
 
     @staticmethod
     def _model_row(row, models: dict, session_id: str, model: str, fact: dict) -> Iterator[Row]:
-        """`model: <id>` at the log's first model and `model: <old> -> <new>`
-        on a change, with ` provider=<provider_id>` when the record has one."""
+        """Yield `model: <id>` at the log's first model and `model: <old> -> <new>` on a change.
+
+        ` provider=<provider_id>` follows when the record has one.
+        """
         text = track_change("model", models, session_id, model)
         if text:
             if fact.get("provider_id") not in (None, ""):
@@ -609,8 +532,7 @@ class MuseCodeParser(Parser):
     # -- trusted projects ---------------------------------------------------
 
     def _parse_trust(self, artifact: Artifact) -> Iterator[Row]:
-        """`~/.config/muse/trust.json`: one `permission setting:` row per
-        `projects.<path>.decision`, at the file's modification time."""
+        """Yield one `permission setting:` row per `projects.<path>.decision`."""
         timestamp = file_mtime(artifact)
         try:
             document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
@@ -653,6 +575,13 @@ class MuseCodeParser(Parser):
         committed_summaries: set[str],
         last_delta: dict[str, int],
     ) -> Iterator[Row]:
+        """Yield the rows of one `run` event of a session log.
+
+        `started` is the prompt (a `subagent task:` row in a subagent log), `inbox_item_queued` a
+        steer or an inbox row, committed messages, reasoning and tool calls and results their rows,
+        reasoning deltas only when no committed summary exists, `terminal` a row unless `completed`,
+        and `LOGGED_EVENTS` rows of compact JSON.
+        """
         kind = event.get("kind")
         if kind == "started":
             prompt = _str(event.get("prompt"))
@@ -672,8 +601,8 @@ class MuseCodeParser(Parser):
             if text:
                 yield row("assistant", text)
         elif kind in ("reasoning_summary_committed", "reasoning_committed"):
-            # reasoning_committed text was empty in every observed record;
-            # its content is the opaque encrypted_content.
+            # reasoning_committed text is usually empty: its content is the
+            # opaque encrypted_content.
             if opts.include_thinking and event.get("text"):
                 yield row("thinking", _str(event.get("text")))
         elif kind == "reasoning_summary_delta":
@@ -721,6 +650,7 @@ class MuseCodeParser(Parser):
     # -- prompt history -----------------------------------------------------
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield one `user` row per prompt of the TUI history, with its session and project."""
         errors: list = []
         pending: tuple[int, str] | None = None
 

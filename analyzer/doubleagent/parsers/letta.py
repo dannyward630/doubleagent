@@ -1,172 +1,30 @@
-"""Letta Code transcripts.
+"""Letta Code transcripts, settings, channel routes, scheduled tasks and interrupted turns.
 
-Validated against source, letta-ai/letta-code at 77faf36e (October 2026)
-and, for the settings permissions, channel routing, scheduled tasks and
-interrupted turns, at 2a46615d (0.34.17, reviewed 2026-10-21), with a
-synthetic fixture; see `research/letta.md`. Letta keeps conversations on
-the Letta server by default; these local stores are parsed:
+Letta keeps conversations on the Letta server by default; these local files are read, under
+`.letta/` unless said:
 
-* `~/.letta/lc-local-backend/conversations/<base64url key>/messages.jsonl`
-  (local backend only; the key is `conversation:<id>` or
-  `default:<agent id>`). `manifest.json` `message_format`
-  `pi-session-entry-jsonl` (schema 2): pi's session format, read with
-  `pi.read_session` and `pi.entry_rows`. Header `id` (conversation id,
-  falling back to the decoded directory name) and `cwd`; entries `message`
-  and `compaction`. `message.id` starts `letta-msg-` and a message may be
-  re-appended with the same `id` as a replacement snapshot, so only the
-  last copy of each `message.id` is kept. Schema 1 files
-  (`pi-ai-message-jsonl`, one bare message per line, no header) are read
-  too, timed by `message.metadata.created_at` or `message.timestamp`.
-* `~/.letta/transcripts/<agent>/<conversation>/transcript.jsonl` (both
-  backends, appended after each turn): `kind` user, assistant, reasoning
-  (a `thinking` row, opt-in) or error (system) with `text`; or
-  `kind: "tool_call"` with `name`, `argsText`, `resultText`, `resultOk`,
-  emitted as a tool_use and a tool_result with no tool id. `argsText` is
-  the streamed arguments JSON; when it parses, the tool_use text is
-  `pi.args_summary` of it (the command, path or query), as the
-  `messages.jsonl` row for the same call renders it, else the raw text.
-  Every line has `captured_at` (ISO 8601 Z, shared by a turn's lines). No
-  model and no cwd: the session id is the conversation directory name
-  (the conversation id, `local-conv-<n>` or `default`, which the directory
-  sanitisation leaves unchanged, so it equals the `messages.jsonl` header
-  `id`) and the project path is the `project` of the `sessions.jsonl` line
-  with the same `agent_id` and the earliest `timestamp` at or after
-  `captured_at` (the exit line of the CLI session the turn belongs to),
-  else of the latest line before it, a heuristic.
+* `lc-local-backend/conversations/<base64url key>/messages.jsonl` (local backend): pi's session
+  format, read with `pi.read_session` and `pi.entry_rows` (header `id`, `cwd`; entries
+  `message`, `compaction`); only the last copy of each `message.id` is kept. Schema 1 files
+  (one bare message per line, no header) are timed by `message.metadata.created_at`.
+* `transcripts/<agent>/<conversation>/transcript.jsonl` (secondary): `kind` (`user`,
+  `assistant`, `reasoning`, `error`, `tool_call` with `name`, `argsText`, `resultText`,
+  `resultOk`), `text` and `captured_at`, stamped once per turn when the turn ends, hence
+  `TURN_TOLERANCE_SECONDS`. The project comes from `sessions.jsonl` by time, a heuristic.
+* `sessions.jsonl`: `agent_id`, `session_id`, `timestamp` (ms), `project`, `model`,
+  `provider`, `message_count`, `tool_call_count`, `exit_reason`, `duration.wall_ms`.
+* `settings.json`, the legacy `.config/letta/settings.json` and a project's
+  `.letta/settings.json` and `.letta/settings.local.json`: `sessionsByServer` (`agentId`,
+  `conversationId`), `permissions` (`PERMISSION_KEYS`) and `agents[]` (`agentId`, `baseUrl`).
+  No other key is read: `env` and the token keys hold credentials.
+* `channels/<channel>/routing.{json,yaml}` `routes[]`, `crons.json` `tasks[]`,
+  `runs/<task id>.jsonl` and `listener-state/<24 hex>/<agent>_<conversation>.json` (`agentId`,
+  `conversationId`, `runId`, `toolCallIds`, `unstartedToolCallIds`, `results`,
+  `workingDirectory`, `actingUserId`); the row texts name every field they read.
 
-  A secondary source (`secondary()`, issue 122): in local-backend mode it
-  repeats the turns of the conversation's `messages.jsonl`, the store of
-  record, and it is read always, whether or not that file was collected,
-  so a conversation whose local-backend directory was deleted (deleting an
-  agent removes its conversation directories, not its transcripts) or a
-  server-backend conversation (no local store at all) is still recovered.
-  Letta stamps `captured_at` once per turn, when the turn ends
-  (`new Date()` in `appendTranscriptDeltaJsonl`, called after the turn's
-  `end_turn` stop reason), so every line of a turn is later than its
-  `messages.jsonl` twin by up to the turn's duration, the user prompt by
-  all of it. `secondary_tolerance()` is therefore `TURN_TOLERANCE_SECONDS`
-  (one hour) instead of the default 2 seconds; a turn longer than that
-  (a long unattended run, an approval left waiting) leaves its earlier
-  lines unpaired, shown twice. The pairing is confined to one
-  conversation and one text, so the wide window can only pair a line with
-  an identical event of the same conversation. Turns that end in an
-  error or an interrupt are never appended, so the transcript lacks them.
-* `~/.letta/sessions.jsonl`: one exit line per CLI session that ended
-  with `/exit` (`exit_reason` `exit_command`) or `/logout` (`logout`),
-  written by `recordSessionEnd`; `recordSessionStart` has no caller at
-  77faf36e or 2a46615d (issue 158), so a session still running or ended
-  any other way has no line. Keys: `agent_id`, `session_id` (the CLI's
-  telemetry session id), `timestamp` (ms, the time of exit), `project`,
-  `model`, `provider`, `message_count`, `tool_call_count`, `exit_reason`,
-  `duration.wall_ms`. One system row per line (`letta session end: ...`;
-  a line without `exit_reason` or `message_count`, which no caller writes,
-  reads `letta session start: ...`), followed by `model: <model>
-  provider=<provider>` on the first line of a `session_id` that names a
-  model and `model: <old> -> <new> provider=<provider>` when a later line
-  of it names another.
-
-* `~/.letta/settings.json`, the legacy `~/.config/letta/settings.json`,
-  and a project's `.letta/settings.json` and `.letta/settings.local.json`
-  (an artifact whose `home.project` is set; `project_path` is the
-  project): `sessionsByServer` (not in the legacy file, which Letta reads
-  only for permissions), an object keyed by the server's host and port
-  (`api.letta.com`, `localhost:8283`) or `local:<store path>` for the
-  local backend, each value `{agentId, conversationId}`, the last session
-  used on that server; the `permissions` object (`mode`, `allow`, `deny`,
-  `ask`, `alwaysAsk`, `additionalDirectories`); and, in
-  `~/.letta/settings.json`, `agents[]` (`agentId`, `baseUrl`, absent for
-  Letta Cloud) for the transcript rows below. No other key is read: `env`
-  and the token keys hold credentials. A file that is not a JSON object
-  is one `parser:` row.
-
-Read since the 2026-10-21 review of letta-ai/letta-code at 2a46615d
-(0.34.17), source-derived; not observed on any real install (issue 202):
-
-* Permission rows: one `system` row per entry of a settings file's
-  `permissions` object, `permission setting: permissions.<key>=<value>
-  (from <file>, file mtime)`, one per rule of `allow`, `deny`, `ask` and
-  `alwaysAsk` (Claude Code's rule form, `Bash(npm test)`), one per
-  `additionalDirectories` entry and one for `mode` (as recorded: `standard`,
-  `acceptEdits`, `unrestricted`, `strict`, or a legacy `default`,
-  `bypassPermissions`, `fullAccess`), at the file's modification time with
-  an empty `session_id`. `/approve-always` appends to `allow`.
-* `~/.letta/channels/<channel>/routing.json` (or the legacy
-  `routing.yaml`, which holds the same JSON): `routes[]` with `accountId`,
-  `chatId`, `chatType`, `threadId`, `agentId`, `conversationId`,
-  `enabled`, `outboundEnabled`, `detached`, `createdAt`, `updatedAt`. One
-  row per route, `session relayed: <channel> chat <chatId> type
-  <chatType> thread <threadId> account <accountId> agent <agentId>
-  enabled=<enabled> outbound=<outboundEnabled> detached=<detached>
-  updated=<updatedAt> (from <file>, createdAt)`, at `createdAt` (the file's
-  modification time, ending `file mtime)`, when it has none), with the
-  `conversationId` as `session_id`; so `records_relay` is set. A file
-  without a `routes` list is one `parser:` row.
-* `~/.letta/crons.json`: `tasks[]` with `id`, `agent_id`,
-  `conversation_id` (`default`, `new` or a conversation id), `name`,
-  `description`, `cron`, `timezone`, `recurring`, `prompt`, `status`,
-  `created_at`, `scheduled_for`, `last_fired_at`, `fire_count`,
-  `cancel_reason`, `last_run_at`, `last_run_outcome`, `last_run_reason`,
-  `last_run_error`. One row per task, `scheduled task: <id> name=<name>
-  status=<status> cron=<cron> timezone=<tz> recurring=<bool>
-  scheduled_for=<UTC> agent=<agent_id> conversation=<conversation_id>
-  fire_count=<n> last_fired=<UTC> last_run=<UTC> outcome=<outcome>
-  reason=<reason> error=<error> cancel_reason=<reason> (from
-  .letta/crons.json, created_at) description: <description> prompt:
-  <prompt>`, at `created_at`, `session_id` the conversation (empty for
-  `new`). Primary: the scheduled turn sends the prompt wrapped in a
-  header (`formatScheduledTaskPrompt`), so no transcript line repeats it,
-  and fired, missed and cancelled tasks are dropped after a day.
-* `~/.letta/runs/<task id>.jsonl`, one line per run: `ts` (ms), `jobId`,
-  `action`, `status`, `outcome`, `reason`, `error`, `summary`, `agentId`,
-  `conversationId`, `runId`, `scheduledFor`, `firedAt`, `missedCount`. One
-  row per line, `scheduled task run: <jobId> action=<action>
-  status=<status> outcome=<outcome> reason=<reason> agent=<agentId>
-  conversation=<conversationId> run=<runId> scheduled_for=<UTC>
-  fired=<UTC> missed=<n> summary=<summary> error=<error> (from <file>,
-  ts)`, at `ts`. Primary; bad lines are reported.
-* `~/.letta/listener-state/<24 hex>/<agent id>_<conversation id>.json`,
-  a turn the remote listener did not finish, which no transcript holds:
-  `agentId`, `conversationId`, `runId`, `toolCallIds`,
-  `unstartedToolCallIds`, `results`, `workingDirectory`, `actingUserId`.
-  One row `interrupted turn: agent <agentId> conversation
-  <conversationId> run <runId> tool_calls=<ids> unstarted=<ids>
-  results=<n> working_directory=<dir> acting_user=<id> (from <file>, file
-  mtime)`, then per `results` entry (the Letta client SDK's
-  `ApprovalReturn` `{type, approve, tool_call_id, reason}` or `ToolReturn`
-  `{type, status, tool_call_id, tool_return, stdout, stderr}`) a
-  `permission decision: <approve|deny> reason=<reason> (from <file>,
-  interrupted turn, file mtime)` row or a `tool_result` row (`[error] `
-  before the text when `status` is `error`), each with the
-  `tool_call_id` as `tool_use_id`; all at the file's modification time
-  (the record holds no time), `session_id` the conversation and
-  `project_path` the working directory. Primary. The `.json.recovery-*`
-  sidecars and `.tmp` files beside it are not wanted.
-
-`-` stands for an absent value in all of these rows.
-
-Sync rows (issue 153), so `records_sync` is set. In the default `api`
-backend a conversation is server state, so a transcript directory whose
-agent id does not start `agent-local-` (the local backend's prefix) gets
-one `system` row before its first line's rows, at that line's
-`captured_at`: `session synced: server conversation <conversation id>
-agent <agent id> server <server> (from .letta/transcripts path, first
-captured_at)`, `<server>` the matching `agents[]` entry's `baseUrl` in
-`~/.letta/settings.json`, `api.letta.com` when the entry has none, `-`
-when there is no entry or no file. Each `sessionsByServer` entry whose
-key does not start `local:` gives one row at the file's modification
-time, `session_id` the `conversationId`: `session synced: last session
-on <key> agent <agentId> conversation <conversationId> (from <file>,
-file mtime)`, `<file>` the path relative to the home or project, `-` for
-an absent value.
-
-Model rows in `messages.jsonl` come from the pi reader (`pi.model_text`):
-`model: <id> provider=<provider>` at the first assistant `message.model`
-(or `responseModel`) of a conversation and `model: <old> -> <new> ...` on
-each change. The reflection transcript records no model.
-
-Not parsed: `logs/chunk-logs/` (stream chunks cut to 200 characters),
-the input ledger `state/<24 hex>/input-dispositions-v2.json`, and the
-retired Letta server's `sqlite.db` (column encodings unverified).
+A transcript of an agent that does not start `agent-local-` is a server conversation and gets
+a `session synced:` row. Validated against source, letta-ai/letta-code at 77faf36e and
+2a46615d (0.34.17), with a synthetic fixture; no real install. See `research/letta.md`.
 """
 
 from __future__ import annotations
@@ -211,8 +69,7 @@ TURN_TOLERANCE_SECONDS = 3600.0
 
 
 def decode_key(name: str) -> str:
-    """`conversation:<id>` or `default:<agent id>` from a base64url
-    directory name, or empty."""
+    """Return `conversation:<id>` or `default:<agent id>` from a base64url name, or `""`."""
     try:
         return base64.urlsafe_b64decode(name + "=" * (-len(name) % 4)).decode("utf-8")
     except (binascii.Error, ValueError, UnicodeDecodeError):
@@ -220,14 +77,16 @@ def decode_key(name: str) -> str:
 
 
 def sanitize(segment: str) -> str:
-    """The transcript directory name Letta derives from an id."""
+    """Return the transcript directory name Letta derives from an id."""
     name = re.sub(r"[^a-zA-Z0-9._-]", "_", segment).strip()
     return name or "unknown"
 
 
 def _args_text(args) -> str:
-    """A transcript `argsText` as the pi reader renders the same call's
-    arguments: `args_summary` of the parsed JSON, else the text itself."""
+    """Return a transcript `argsText` as the pi reader renders the same call's arguments.
+
+    That is `args_summary` of the parsed JSON, else the text itself.
+    """
     if not isinstance(args, str):
         return args_summary(args)
     try:
@@ -237,8 +96,7 @@ def _args_text(args) -> str:
 
 
 def read_settings(path) -> dict | None:
-    """A Letta settings file as a dict, or None when it cannot be read or
-    is not a JSON object."""
+    """Return a Letta settings file as a dict, or None when it is unreadable or not an object."""
     try:
         with open(path, "rb") as handle:
             document = json.loads(handle.read().decode("utf-8", errors="replace"))
@@ -248,14 +106,14 @@ def read_settings(path) -> dict | None:
 
 
 def _val(value) -> str:
-    """A record value as row text, `-` when absent or empty."""
+    """Return a record value as row text, `-` when absent or empty."""
     if value is None or value == "":
         return "-"
     return setting_value(value)
 
 
 def _bare_messages(session: SessionFile) -> SessionFile:
-    """Schema 1: every line a bare pi-ai message. Wrapped as entries."""
+    """Wrap the bare pi-ai messages of a schema 1 file as session entries."""
     out = SessionFile()
     out.errors = session.errors
     for line_number, record in session.entries:
@@ -289,11 +147,11 @@ def _last_snapshots(session: SessionFile) -> SessionFile:
 
 
 def _session_project(sessions: list[tuple[str, str]], timestamp: str) -> str:
-    """The project of a transcript line captured at `ts`: that of the
-    agent's earliest `sessions.jsonl` line at or after `ts` (the exit line
-    of the CLI session the turn belongs to), else, when no line is later (a
-    session still running, or one that ended without `/exit`), that of the
-    latest line before it."""
+    """Return the project of a transcript line captured at `timestamp`.
+
+    That of the agent's earliest `sessions.jsonl` line at or after it (the exit line of the CLI
+    session the turn belongs to), else, when no line is later, that of the latest line before it.
+    """
     if not timestamp:
         return ""
     before = ""
@@ -305,6 +163,8 @@ def _session_project(sessions: list[tuple[str, str]], timestamp: str) -> str:
 
 
 class LettaParser(Parser):
+    """Parse Letta Code's local conversations, transcripts, settings and task records."""
+
     agent = "letta"
     name = "letta"
     has_secondary = True
@@ -312,6 +172,7 @@ class LettaParser(Parser):
     records_relay = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the Letta files this parser reads."""
         rel = artifact.rel
         return (
             rel in (SESSIONS_REL, SETTINGS_REL, LOCAL_SETTINGS_REL, LEGACY_SETTINGS_REL, CRONS_REL)
@@ -323,12 +184,15 @@ class LettaParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the transcripts, which repeat the local backend's messages."""
         return bool(TRANSCRIPT_RX.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return the window a transcript line may lag its `messages.jsonl` twin."""
         return TURN_TOLERANCE_SECONDS
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Letta file."""
         if artifact.rel == SESSIONS_REL:
             yield from self._parse_sessions(artifact, opts)
             return
@@ -389,8 +253,7 @@ class LettaParser(Parser):
     # -- reflection transcript ------------------------------------------
 
     def _sessions(self, artifact: Artifact, agent_dir: str) -> list[tuple[str, str]]:
-        """(timestamp, project) of the sessions.jsonl lines for this agent,
-        sorted by time."""
+        """Return (timestamp, project) of this agent's `sessions.jsonl` lines, sorted by time."""
         sessions_path = artifact.home.disk_path / SESSIONS_REL
         if (
             sessions_path.is_symlink()
@@ -408,9 +271,11 @@ class LettaParser(Parser):
 
     @staticmethod
     def _server(artifact: Artifact, agent_dir: str) -> str:
-        """The server of a transcript's agent: the `baseUrl` of its
-        `agents[]` entry in `~/.letta/settings.json`, `api.letta.com` when
-        the entry has none, `-` when there is no entry or no file."""
+        """Return the server of a transcript's agent.
+
+        The `baseUrl` of its `agents[]` entry in `~/.letta/settings.json`, `api.letta.com` when the
+        entry has none, `-` when there is no entry or no file.
+        """
         settings_path = artifact.home.disk_path / SETTINGS_REL
         if (
             settings_path.is_symlink()
@@ -490,12 +355,12 @@ class LettaParser(Parser):
     # -- settings.json and settings.local.json ---------------------------
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """One sync row per `sessionsByServer` entry whose key does not
-        start `local:` (not in the legacy `.config/letta/settings.json`,
-        which Letta reads only for its permissions), then one permission
-        row per entry of the `permissions` object, all at the file's
-        modification time; one `parser:` row when the file is not a JSON
-        object."""
+        """Yield the sync and permission rows of a settings file, at its modification time.
+
+        One sync row per `sessionsByServer` entry whose key does not start `local:` (not in the
+        legacy file, which Letta reads only for its permissions), then one permission row per entry
+        of `permissions`; one `parser:` row when the file is not a JSON object.
+        """
         document = read_settings(artifact.disk_path)
         project = artifact.home.original if artifact.home.project else ""
         timestamp = file_mtime(artifact)
@@ -548,8 +413,7 @@ class LettaParser(Parser):
     # -- channels/<channel>/routing.json -----------------------------------
 
     def _parse_routing(self, artifact: Artifact, channel: str) -> Iterator[Row]:
-        """One `session relayed:` row per route, at its `createdAt`, or at
-        the file's modification time when it has none."""
+        """Yield one `session relayed:` row per route, at its `createdAt`, else the file's mtime."""
         document = read_settings(artifact.disk_path)
         routes = document.get("routes") if document is not None else None
         if not isinstance(routes, list):
@@ -590,8 +454,7 @@ class LettaParser(Parser):
     # -- crons.json and runs/<task id>.jsonl ---------------------------------
 
     def _parse_crons(self, artifact: Artifact) -> Iterator[Row]:
-        """One `scheduled task:` row per task, at its `created_at`, or at
-        the file's modification time when it has none."""
+        """Yield one `scheduled task:` row per task, at its `created_at`, else the file's mtime."""
         document = read_settings(artifact.disk_path)
         if document is None:
             row = self.base_row(artifact)
@@ -641,7 +504,7 @@ class LettaParser(Parser):
             yield row
 
     def _parse_runs(self, artifact: Artifact) -> Iterator[Row]:
-        """One `scheduled task run:` row per line, at its `ts`."""
+        """Yield one `scheduled task run:` row per line, at its `ts`."""
         errors: list = []
         for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
@@ -675,11 +538,12 @@ class LettaParser(Parser):
     # -- listener-state/<hash>/<agent>_<conversation>.json -------------------
 
     def _parse_interrupted(self, artifact: Artifact) -> Iterator[Row]:
-        """An interrupted remote-listener turn: one `interrupted turn:` row,
-        then per entry of `results` a `permission decision:` row (an
-        `ApprovalReturn`, with `approve`) or a `tool_result` row (a
-        `ToolReturn`, with `status`), joined on `tool_call_id`; all at the
-        file's modification time, since the record holds no time."""
+        """Yield the rows of an interrupted remote-listener turn, at the file's modification time.
+
+        One `interrupted turn:` row, then per `results` entry a `permission decision:` row (an
+        `ApprovalReturn`, with `approve`) or a `tool_result` row (a `ToolReturn`, with `status`),
+        joined on `tool_call_id`; the record holds no time.
+        """
         document = read_settings(artifact.disk_path)
         timestamp = file_mtime(artifact)
         if document is None:
@@ -746,6 +610,7 @@ class LettaParser(Parser):
     # -- sessions.jsonl --------------------------------------------------
 
     def _parse_sessions(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield one `letta session` row per `sessions.jsonl` line, then its model row."""
         errors: list = []
         seen: dict = {}  # the model per CLI session, for the `model:` rows
         for line_number, record in iter_jsonl(artifact.disk_path, errors):

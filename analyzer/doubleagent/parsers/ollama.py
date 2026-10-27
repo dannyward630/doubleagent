@@ -1,96 +1,28 @@
 """Ollama desktop chats, REPL prompt history and launcher auto-mode settings.
 
-ollama/ollama at v0.35.1 (b0c1ca4), read from source with a synthetic
-fixture; the desktop app does not exist on Linux, so no real `db.sqlite`
-was checked. See `research/ollama.md`. Files, relative to the home:
+Reads, relative to the home:
 
-* `Library/Application Support/Ollama/db.sqlite` (macOS) and
-  `AppData/Local/Ollama/db.sqlite` (Windows, `%LOCALAPPDATA%`), written by
-  the desktop app only, with `-wal` and `-shm` sidecars that `sqlite_util`
-  reads beside the database. Schema versions 16 to 19 have the same
-  transcript tables (the migrations add `settings` columns only), and no
-  `settings` column is read.
-  - `messages`: `id`, `chat_id`, `role` (`user`, `assistant`, `tool`,
-    `system`), `content`, `thinking`, `model_name`, `created_at`,
-    `tool_result` (JSON, the fallback text of a `tool` row).
-  - `tool_calls`: `id`, `message_id`, `function_name`,
-    `function_arguments` (a JSON string).
-  - `attachments`: `message_id`, `filename`, and the byte length of
-    `data`, computed in SQL so the file contents are never read.
-  `created_at` is go-sqlite3's text form of a Go `time.Time`,
-  `2006-01-02 15:04:05.999999999-07:00` (local time with an offset,
-  trailing fraction zeros trimmed), converted to UTC.
-* `.ollama/history`: the `ollama run` REPL's readline history, one entry
-  per line, with no timestamp, session, working directory or model. Only
-  the last 100 entries are kept, and a pasted multi-line prompt is written
-  as several physical lines, so the file cannot tell one multi-line prompt
-  from several prompts; each non-empty line is one row.
+* `Library/Application Support/Ollama/db.sqlite` and `AppData/Local/Ollama/db.sqlite`, the
+  desktop app's database (schema versions 16 to 19): `messages` (`id`, `chat_id`, `role`,
+  `content`, `thinking`, `model_name`, `created_at`, `tool_result`), `tool_calls` (`id`,
+  `message_id`, `function_name`, `function_arguments`) and `attachments` (`message_id`,
+  `filename`, and the byte length of `data`, computed in SQL so the contents are never read).
+  `created_at` is go-sqlite3's text form of a Go `time.Time`, local time with an offset.
+  The `users` and `settings` tables are never read.
+* `.ollama/history`, the `ollama run` REPL's readline history, one entry per line with no
+  time, session or model; a line that is not UTF-8 is a bad line.
+* `.ollama/config.json` (`integrations.<name>.automode`) and Claude Desktop's third-party
+  profile `Claude-3p/configLibrary/00000000-0000-4000-8000-000000000114.json` that Ollama's
+  launcher writes (`autoModeEnabled`), as `permission setting:` rows at the file's mtime.
 
-Rows from `db.sqlite`, ordered by `chat_id` then `messages.id` (the order
-the app reads them; ids are reassigned on every save but the order is
-kept): `user` rows, with `[attachment: <filename>, <n> bytes]` appended per
-attachment; for an `assistant` message a `thinking` row (only with
-`include_thinking`), an `assistant` row when `content` is non-empty, and
-one `tool_use` row per `tool_calls` row, whose text is the `url` or
-`query` argument when present, else the arguments; `tool` messages as
-`tool_result`; `system` and unknown roles as `system`. An assistant
-placeholder with no content, thinking or calls gives no row. There is no
-call id: the n-th `tool` message after an assistant message pairs with that
-message's n-th call, and `tool_use_id` is synthesised as
-`<chat_id>:<tool_calls.id>`; an extra `tool` message takes the last call's
-name and no id, as the app's reload does. `session_id` is the chat id,
-`model` is `model_name` on assistant, thinking and tool_use rows, and
-`project_path` and `git_branch` stay empty (the app has one global working
-directory and no file tools). `source_line` is `messages.id`, or
-`tool_calls.id` on `tool_use` rows. Messages whose chat row is gone are
-still read. Model rows (issue 96): a `system` row `model: <model_name>`
-before the rows of a chat's first assistant message that names a model,
-and `model: <old> -> <new>` before the rows of each later assistant
-message whose `model_name` differs (the model is chosen per message in the
-app), with that message's time and `source_line`; an assistant placeholder
-that yields no rows yields no model row either. The app asks before no
-tool call, so there are no per-call permission rows; the standing settings
-are below. The `users`
-table (account name and email), `settings` and the
-attachment bytes are never read.
+There is no call id: the n-th `tool` message after an assistant message pairs with that
+message's n-th call, and `tool_use_id` is `<chat_id>:<tool_calls.id>`; an extra `tool`
+message takes the last call's name and no id, as the app's reload does. `session_id` is the
+chat id; `model_name` gives the model rows. The app asks before no tool call, so there are no
+per-call permission rows.
 
-Rows from `.ollama/history`: `user`, or `system` prefixed `slash command:`
-for a line starting with `/`; `timestamp_utc` and `session_id` are empty,
-so the rows sort after every dated row, drop out of `--since`/`--until`
-unless `--keep-undated` is given, and are not in `sessions.jsonl`.
-`source_line` is the line number. A line that is not valid UTF-8 (the
-REPL writes the bytes typed at the prompt with `fmt.Fprintln` and checks
-no encoding) is not turned into a `user` row with replacement characters:
-it becomes its own `system` row
-`parser: unparseable line (<decode error>): <line>`, the line as read
-less its terminator (`error_rows`, issue 136), after the file's other
-rows, which are still yielded (issue 174).
-
-Standing permission rows (issue 188), source-derived from ollama/ollama at
-678722224b (`cmd/config/config.go`, `cmd/launch/claude_desktop.go`) and not
-observed on any real install, each a `system` row at the file's
-modification time (`file_mtime`) with empty `session_id`:
-
-* `.ollama/config.json`, the `ollama launch` configuration: for each
-  `integrations.<name>` object holding an `automode` key,
-  `permission setting: integrations.<name>.automode=<value> (from
-  .ollama/config.json, file mtime)`. The launcher reads only the
-  `claude-desktop` integration's key, as Claude Desktop's auto mode, and
-  treats an absent key as true; an absent key gives no row.
-* Claude Desktop's third-party profile that Ollama's launcher writes
-  (`ollama launch claude-desktop`, or the macOS app's Claude Desktop
-  settings, which also save the `automode` key above),
-  `configLibrary/00000000-0000-4000-8000-000000000114.json` under
-  `Library/Application Support/Claude-3p` (macOS; the launcher writes on
-  macOS only at that commit) or `AppData/Local/Claude-3p` (the Windows
-  base the launcher's restore edits). The catalog attributes it to
-  `claude-desktop`, so that agent is in `reads_agents`. Its
-  `autoModeEnabled` key gives `permission setting: autoModeEnabled=<value>
-  (set by Ollama's Claude Desktop launcher, from <path relative to the
-  home>, file mtime)`. `--restore` deletes the key, so a restored profile
-  gives no row.
-
-A config or profile that is not a JSON object is one `parser:` row.
+Validated against source, ollama/ollama at v0.35.1 (b0c1ca4) and, for the settings, at
+678722224b, with a synthetic fixture; no real `db.sqlite`. See `research/ollama.md`.
 """
 
 from __future__ import annotations
@@ -126,8 +58,7 @@ PROFILE_RX = re.compile(
 
 
 def call_text(arguments) -> str:
-    """The `url` or `query` argument of a desktop tool call, else the
-    arguments as stored."""
+    """Return the `url` or `query` argument of a desktop tool call, else the arguments as stored."""
     try:
         args = json.loads(arguments) if isinstance(arguments, str) else arguments
     except ValueError:
@@ -142,6 +73,7 @@ def call_text(arguments) -> str:
 
 
 def _result_fallback(value) -> str:
+    """Return a `tool` message's `tool_result` JSON as compact text, `""` when empty."""
     if value is None or value == "" or value == "null":
         return ""
     try:
@@ -151,16 +83,20 @@ def _result_fallback(value) -> str:
 
 
 class OllamaParser(Parser):
+    """Parse the Ollama desktop database, the REPL history and the launcher settings."""
+
     agent = "ollama"
     name = "ollama"
     # The Claude Desktop profile Ollama writes is under a claude-desktop base.
     reads_agents = ("claude-desktop",)
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the Ollama files this parser reads."""
         rel = artifact.rel
         return any(pattern.match(rel) for pattern in (DB_RX, HISTORY_RX, CONFIG_RX, PROFILE_RX))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Ollama file."""
         if DB_RX.match(artifact.rel):
             yield from self._parse_db(artifact, opts)
         elif CONFIG_RX.match(artifact.rel):
@@ -199,6 +135,7 @@ class OllamaParser(Parser):
     def _db_rows(
         self, connection: sqlite3.Connection, artifact: Artifact, opts: Options
     ) -> Iterator[Row]:
+        """Yield the rows of `db.sqlite`, ordered by `chat_id` then `messages.id`."""
         tables = table_names(connection)
         if "messages" not in tables:
             return
@@ -296,6 +233,7 @@ class OllamaParser(Parser):
 
     # -- .ollama/history ------------------------------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
+        """Yield one `user` or `slash command:` row per line of `.ollama/history`."""
         errors: list = []
         with open(artifact.disk_path, "rb") as handle:
             for line_number, raw in enumerate(handle, 1):
@@ -320,6 +258,7 @@ class OllamaParser(Parser):
 
     # -- standing permissions -------------------------------------------------------------
     def _read_object(self, artifact: Artifact) -> tuple[dict | None, str]:
+        """Return (JSON object, problem) of a settings file, the problem a `parser:` text."""
         try:
             document = json.loads(artifact.disk_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError) as error:

@@ -1,107 +1,31 @@
 """Kilo Code sessions.
 
-Validated against source, Kilo-Org/kilocode at 76bcfd4 (see
-`research/kilo-code.md`), with a synthetic fixture; no real install
-was used. Kilo Code's CLI, TUI and server are an OpenCode fork with the same
-SQLite and JSON storage, so this parser is `OpenCodeParser` (see
-`opencode.py` for the tables, fields and row mapping) pointed at Kilo's
-paths, plus the pre-migration task directories of the VS Code extension.
+Kilo Code's CLI, TUI and server are an OpenCode fork with the same SQLite and JSON storage, so
+this parser is `OpenCodeParser` (see `opencode.py` for the tables, fields and row mapping)
+pointed at Kilo's paths: `.local/share/kilo/kilo.db`, `kilo-<channel>.db` and
+`opencode-<channel>.db`, the `storage/` and `project/<slug>/storage/` JSON trees, and the
+terminal UI's `.local/state/kilo/prompt-history.jsonl` (secondary) and `prompt-stash.jsonl`.
+It also reads Kilo's own files:
 
-Files, relative to the home directory:
-
-* `.local/share/kilo/kilo.db`, `kilo-<channel>.db`, or a pre-existing
-  `opencode-<channel>.db` in the same directory, with WAL sidecars. Kilo
-  writes both the V1 `message`/`part` tables and V2 `session_message`;
-  V1 is read and V2 only for sessions with no V1 rows, as for OpenCode.
-  The `model:` and `permission mode: agent=<name>` rows therefore come
-  from each V1 message's model and `agent` (see `opencode.py`); the V2
-  `model-switched` and `agent-switched` records are read only for a
-  session that has no V1 rows. The OpenCode 2.0 reading (`session_v2`
-  headers, `session_message` as the transcript, the 1.x tables only for a
-  session it lacks; issue 165) and the full-record `parser: unparseable
-  record` and `unparseable part` rows (issue 139) apply here through the
-  subclass, though Kilo Code at 87cc35c has no `session_v2` table.
-* `.local/share/kilo/storage/{session,message,part,project}/...` and the
-  older `.local/share/kilo/project/<slug>/storage/session/...` JSON trees,
-  laid out exactly as OpenCode's.
 * `<VS Code user dir>/User/globalStorage/kilocode.kilo-code/tasks/<id>/
-  api_conversation_history.json`: Roo-style tasks from before the move to
-  the OpenCode core. Kilo's own importer reads this file
-  (`packages/kilo-vscode/src/legacy-migration/task-store.ts`), so it is the
-  one parsed here; `ui_messages.json` repeats the same turns for display.
-  It is a JSON array of Anthropic `MessageParam` records: `role`, `content`
-  (a string or blocks typed `text`, `image`, `tool_use` with `id`, `name`,
-  `input`, `tool_result` with `tool_use_id`, `content`, `is_error`, and
-  `thinking` or `reasoning`), plus Roo's `ts` (epoch ms), `isSummary`, and
-  top-level `type: "reasoning"` records with `summary` or
-  `reasoning_content`. The task's `workspace`, `task` and `ts` come from
-  `history_item.json` in the same directory, else the matching entry of
-  `tasks/_index.json` (`{entries: [HistoryItem]}`). The session id is the
-  directory name. The history item, when found, becomes one `system` row
-  with `source_line` 0. No model is recorded. Records without `ts` inherit the
-  task's `ts`. `source_line` is the record's 1-based position in the array
-  (Roo writes the array on one line). A file cut mid-write keeps every
-  complete record before the cut and adds one `system` row (`error_rows`,
-  issue 136): `parser: unparseable record <N> (<reason>): <raw>`, carrying
-  the cut record's text from its first character to the end of the file,
-  or `parser: array cut off after record N` when the cut falls between
-  records. Tool calls
-  written as XML inside text blocks, as older Roo prompts did, stay in the
-  text of the `assistant` row; text blocks that are only
-  `<environment_details>` are `system` rows.
-* `.local/share/kilo/storage/session_share/<sessionID>.json`: Kilo's cloud
-  session marker, `{id, ingestPath, url?}`, written when Kilo's session
-  ingest service registers the session (at creation, for a user signed in
-  to Kilo); `url`, the public link, is added by `/share` and removed by
-  `/unshare`, which keeps the file. One `system` row at the file's
-  modification time (issue 153), `session_id` from the file name,
-  `session synced: kilo session <id> ingest <ingestPath> share <url>
-  (from storage/session_share/<sessionID>.json, file mtime)`, `-` for an
-  absent value. A file that is not a JSON object is one `parser:` row.
-  The upstream `session_share` table, which Kilo leaves empty, and the
-  `session.updated.1` event rows are read by the OpenCode reader, so a
-  public URL recorded there gives the OpenCode sync rows too.
+  api_conversation_history.json`, the extension's tasks from before the OpenCode core: a JSON
+  array of Anthropic `MessageParam` records (`role`, `content` blocks `text`, `image`,
+  `tool_use`, `tool_result`, `thinking`, `reasoning`; Roo's `ts`, `isSummary`, top-level
+  `type: "reasoning"` with `summary` or `reasoning_content`), with the task's `workspace`,
+  `task`, `ts`, `mode`, `status` and `parentTaskId` from `history_item.json`, else
+  `tasks/_index.json` `entries`. The session id is the directory name.
+* `.local/share/kilo/storage/session_share/<sessionID>.json` (`id`, `ingestPath`, `url`): a
+  sync row.
+* `.config/kilo/{kilo.jsonc,kilo.json,opencode.jsonc,opencode.json,config.json}`: the
+  `permission` key, read as JSONC.
+* `.local/state/kilo-sandbox-policy/<hash>/<hash>.json` and
+  `.local/state/kilo-sandbox-preference/<hash>.json`: sandbox settings.
+* `.local/share/kilo/retention/state.json` (`at`, `deleted`, `scanned`, `skippedActive`, `failed`,
+  `durationMs`, `cancelled`, `reclaimedBytes`): the last automatic deletion pass.
+* `.local/share/kilo/log/<time>.log`: the four remote control lines (`REMOTE_RX`) and nothing else.
 
-Issues 192 and 221, source-derived; not observed on any real install
-(Kilo-Org/kilocode at 87cc35c). The OpenCode reader's refusal rows, archive,
-session rule, worktree and grant rows and the terminal UI's
-`.local/state/kilo/prompt-history.jsonl` (secondary, `{input, mode?,
-parts}`) and `prompt-stash.jsonl` (`{input, parts, timestamp}`) apply here
-(see `opencode.py`); Kilo keeps no pinned-session file. Kilo's own files,
-each row `system` with no `session_id` unless said:
-
-* `.config/kilo/{kilo.jsonc, kilo.json, opencode.jsonc, opencode.json,
-  config.json}`, read as JSONC: the `permission` key that an "always"
-  approval writes, `{<permission>: {<pattern>: <action>} or <action>}` or
-  one action (`ConfigPermissionV1.Info`, `null` the delete sentinel). One
-  row per rule at the file's modification time, `permission setting:
-  permission.<permission>.<pattern>=<action> (from <file>, file mtime)`,
-  `permission.<permission>=<action>` or `permission=<action>`. A file that
-  does not decode is one `parser:` row.
-* `.local/state/kilo-sandbox-policy/<sha256>/<sha256>.json`, `{enabled,
-  mode, allowedHosts, writablePaths, version}`: one `permission setting:
-  sandbox.<key>=<value> (from <file>, file mtime)` row per key; and
-  `.local/state/kilo-sandbox-preference/<sha256>.json`, `true` or `false`:
-  `permission setting: sandbox.enabled=<value> (from <file>, file mtime)`.
-  The names are hashes of the session id and directory, so no session.
-* `.local/share/kilo/retention/state.json`, `{at, scanned, deleted,
-  skippedActive, failed, durationMs, cancelled?, reclaimedBytes?}`: one row
-  at `at`, `sessions deleted by retention: deleted=<n> scanned=<n>
-  skippedActive=<n> failed=<n> durationMs=<n>[ cancelled=<v>][
-  reclaimedBytes=<n>] (from retention/state.json, at)`.
-* `.local/share/kilo/log/<time>.log`, lines `<LEVEL> <UTC time> +<n>ms
-  <key>=<value>... <message>`: the remote control lines only, `remote
-  control: connection enabled connected=<v>`, `remote control: connection
-  disabled` (line time), `remote control: session started model=<model>
-  directory=<directory>` (at `startedAt`, with `sessionID` and the
-  directory as `project_path`) and `remote control: session ended
-  reason=<reason> durationMs=<n> startedAt=<time>` (line time, with
-  `sessionID`), each ending `(from log/<file>, <time basis>)`. Remote
-  control lets Kilo Cloud drive and create sessions on this host over a
-  live channel; the transcript stays in `kilo.db` and the vendor's copy is
-  the ingest sync the cloud session marker records, so these rows are
-  neither sync nor relay rows. A line ending with one of the four messages
-  without its fields is a `parser: unparseable line` row.
+Validated against source, Kilo-Org/kilocode at 76bcfd4 and 87cc35c, with a synthetic fixture;
+no real install. Kilo at 87cc35c has no `session_v2` table. See `research/kilo-code.md`.
 """
 
 from __future__ import annotations
@@ -164,13 +88,13 @@ REMOTE_RX = {
 
 
 def iter_json_array(raw: str, errors: list) -> list[object]:
-    """Decode a JSON array element by element so a file truncated mid-write
-    still yields its complete leading elements. A record that does not
-    decode ends the walk and is appended to `errors` as (position,
-    `unparseable record <position> (<reason>)`, the text from the record's
-    first character to the end of `raw`); a file that is not an array, an
-    array cut off between records and data after the closing bracket are
-    (position, message, "")."""
+    """Decode a JSON array element by element, so a truncated file keeps its leading elements.
+
+    A record that does not decode ends the walk and is appended to `errors` as (position,
+    `unparseable record <position> (<reason>)`, the text from the record's first character to the
+    end of `raw`); a file that is not an array, an array cut off between records and data after the
+    closing bracket are (position, message, "").
+    """
     decoder = json.JSONDecoder()
     items: list[object] = []
     i = 0
@@ -210,6 +134,7 @@ def iter_json_array(raw: str, errors: list) -> list[object]:
 
 
 def _read_json(path: Path):
+    """Return the decoded JSON of a file, or None when it cannot be read or decoded."""
     try:
         with open(path, "rb") as handle:
             return json.loads(handle.read().decode("utf-8", errors="replace"))
@@ -218,6 +143,8 @@ def _read_json(path: Path):
 
 
 class KiloCodeParser(OpenCodeParser):
+    """Parse Kilo Code's OpenCode stores, legacy extension tasks and its own settings and logs."""
+
     agent = "kilo-code"
     name = "kilo-code"
     data_dir = ".local/share/kilo"
@@ -233,6 +160,7 @@ class KiloCodeParser(OpenCodeParser):
     pinned_sessions = False
 
     def __init__(self) -> None:
+        """Compile the patterns of Kilo's data-directory files."""
         super().__init__()
         data_dir = re.escape(self.data_dir)
         self.share_rx = re.compile(r"^%s/storage/session_share/([^/]+)\.json$" % data_dir)
@@ -240,6 +168,7 @@ class KiloCodeParser(OpenCodeParser):
         self.retention_rx = re.compile(r"^%s/retention/state\.json$" % data_dir)
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the Kilo Code files this parser reads."""
         rel = artifact.rel
         return bool(
             TASK_RX.search(rel)
@@ -252,6 +181,7 @@ class KiloCodeParser(OpenCodeParser):
         ) or super().wants(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Kilo Code file."""
         rel = artifact.rel
         match = self.share_rx.match(rel)
         if TASK_RX.search(rel):
@@ -272,6 +202,7 @@ class KiloCodeParser(OpenCodeParser):
     def _setting_row(
         self, artifact: Artifact, timestamp: str, text: str, session_id: str = ""
     ) -> Row:
+        """Return a `system` row at `timestamp` for a standing setting or a whole-file problem."""
         row = self.base_row(artifact)
         row.session_id, row.source_line, row.turn_type = session_id, 1, "system"
         row.timestamp_utc = timestamp
@@ -280,15 +211,13 @@ class KiloCodeParser(OpenCodeParser):
 
     # -- standing permission state ----------------------------------------------------
     def _parse_config(self, artifact: Artifact) -> Iterator[Row]:
-        """A global config file of `~/.config/kilo`: one `permission setting:
-        permission.<permission>.<pattern>=<action> (from <file>, file mtime)`
-        row per rule of its `permission` key, `permission.<permission>=<action>`
-        for a rule given as one action and `permission=<action>` for a
-        `permission` key that is one action, at the file's modification time.
-        An "always" approval writes `{<permission>: {<pattern>: "allow"}}`
-        here; `null` is Kilo's delete sentinel. A file that does not decode
-        as JSONC is one `parser:` row; a file with no `permission` key yields
-        nothing."""
+        """Yield one `permission setting:` row per rule of a global config file's `permission` key.
+
+        Rows read `permission.<permission>.<pattern>=<action>`, `permission.<permission>=<action>`
+        for a rule given as one action, or `permission=<action>`, at the file's modification time;
+        an "always" approval writes `{<permission>: {<pattern>: "allow"}}` and `null` is Kilo's
+        delete sentinel. A file that does not decode as JSONC is one `parser:` row.
+        """
         timestamp = file_mtime(artifact)
         try:
             document = gemini_cli.parse_jsonc(artifact.disk_path.read_bytes())
@@ -330,15 +259,13 @@ class KiloCodeParser(OpenCodeParser):
                 )
 
     def _parse_sandbox(self, artifact: Artifact) -> Iterator[Row]:
-        """A sandbox policy file (`kilo-sandbox-policy/<sha256 of session
-        id>/<sha256 of directory>.json`, `{enabled, mode, allowedHosts,
-        writablePaths, version}`) gives one `permission setting:
-        sandbox.<key>=<value> (from <file>, file mtime)` row per key; a
-        sandbox preference file (`kilo-sandbox-preference/<sha256 of
-        directory>.json`, `true` or `false`) one `permission setting:
-        sandbox.enabled=<value>` row. Both at the file's modification time,
-        with no `session_id`, since the file names are hashes. A file that
-        is not the expected JSON is one `parser:` row."""
+        """Yield the `permission setting: sandbox.<key>=<value>` rows of a sandbox file.
+
+        A policy file (`{enabled, mode, allowedHosts, writablePaths, version}`) gives a row per key,
+        a preference file (`true` or `false`) one `sandbox.enabled` row; both at the file's
+        modification time with no `session_id`, since the file names are hashes. A file that is not
+        the expected JSON is one `parser:` row.
+        """
         timestamp = file_mtime(artifact)
         source = "(from %s, file mtime)" % artifact.rel
         document = _read_json(artifact.disk_path)
@@ -368,13 +295,12 @@ class KiloCodeParser(OpenCodeParser):
 
     # -- deletion -------------------------------------------------------------------
     def _parse_retention(self, artifact: Artifact) -> Iterator[Row]:
-        """`retention/state.json`, the counts of the last automatic deletion
-        pass: one `system` row at its `at` (epoch ms), `sessions deleted by
-        retention: deleted=<n> scanned=<n> skippedActive=<n> failed=<n>
-        durationMs=<n>` with ` cancelled=true` and ` reclaimedBytes=<n>` when
-        present and `-` for an absent count, then `(from retention/state.json,
-        at)`, with no `session_id`, since the file names no session. A file
-        that is not a JSON object is one `parser:` row."""
+        """Yield the `sessions deleted by retention:` row of `retention/state.json`, at its `at`.
+
+        The counts of the last automatic deletion pass, `-` for an absent count, with ` cancelled=`
+        and ` reclaimedBytes=` when present and no `session_id`. A file that is not a JSON object is
+        one `parser:` row.
+        """
         document = _read_json(artifact.disk_path)
         if not isinstance(document, dict):
             yield self._setting_row(
@@ -398,18 +324,14 @@ class KiloCodeParser(OpenCodeParser):
 
     # -- remote control -------------------------------------------------------------
     def _parse_log(self, artifact: Artifact) -> Iterator[Row]:
-        """`log/<time>.log`: the remote control lines only, one `system` row
-        each, `remote control: ...` and `(from log/<file>, <time basis>)`:
-        `connection enabled connected=<true|false>` and `connection disabled`
-        at the line's time; `session started model=<model>
-        directory=<directory>` at its `startedAt`, with the session as
-        `session_id` and the directory as `project_path`; `session ended
-        reason=<reason> durationMs=<n> startedAt=<time>` at the line's time,
-        with the session. Remote control lets Kilo Cloud drive and create
-        sessions on this host; the transcript stays in `kilo.db`, so these
-        are not sync rows. A line that ends with one of the four messages
-        and lacks the fields it should carry is a `parser: unparseable line`
-        row with the line in full; every other line is not read."""
+        """Yield one `remote control:` row per remote control line of `log/<time>.log`.
+
+        Connection enabled and disabled at the line's time, session started at its `startedAt` with
+        the session and directory, session ended at the line's time with the session. Remote control
+        lets Kilo Cloud drive sessions on this host while the transcript stays in `kilo.db`, so
+        these are not sync rows. A line ending with one of the messages but lacking its fields is a
+        `parser: unparseable line` row; every other line is not read.
+        """
         name = artifact.rel.rsplit("/", 1)[-1]
         errors: list = []
         with open(artifact.disk_path, "rb") as handle:
@@ -431,6 +353,7 @@ class KiloCodeParser(OpenCodeParser):
         yield from error_rows(self, artifact, errors)
 
     def _remote_row(self, artifact: Artifact, name: str, line_number: int, line: str, message: str):
+        """Return the row of one remote control line, or None when the line lacks its fields."""
         head = LOG_HEAD_RX.match(line)
         fields = REMOTE_RX[message].search(line) if head else None
         if head is None or fields is None:
@@ -466,9 +389,10 @@ class KiloCodeParser(OpenCodeParser):
 
     # -- cloud session marker -------------------------------------------------------
     def _parse_share(self, artifact: Artifact, session_id: str) -> Iterator[Row]:
-        """`storage/session_share/<sessionID>.json`: one sync row at the
-        file's modification time, or one `parser:` row when the file is not
-        a JSON object."""
+        """Yield the `session synced:` row of a cloud session marker, at the file's mtime.
+
+        A file that is not a JSON object gives one `parser:` row instead.
+        """
         document = _read_json(artifact.disk_path)
         row = self.base_row(artifact)
         row.session_id, row.source_line, row.turn_type = session_id, 1, "system"
@@ -492,6 +416,7 @@ class KiloCodeParser(OpenCodeParser):
     # -- legacy Roo-style tasks -----------------------------------------------------
     @staticmethod
     def _history_item(task_dir: Path, task_id: str) -> dict:
+        """Return a legacy task's `HistoryItem`, from `history_item.json` or `tasks/_index.json`."""
         item = None
         item_path = task_dir / "history_item.json"
         if item_path.is_file() and not item_path.is_symlink():
@@ -511,6 +436,12 @@ class KiloCodeParser(OpenCodeParser):
         return item if isinstance(item, dict) else {}
 
     def _parse_task(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of a legacy `api_conversation_history.json` task.
+
+        The history item, when found, is a `task:` row at `source_line` 0; each record's rows follow
+        at its array position, timed by its `ts`, else the task's. A message's text blocks become
+        one row placed where the first of them was.
+        """
         task_dir = artifact.disk_path.parent
         task_id = task_dir.name
         item = self._history_item(task_dir, task_id)

@@ -1,78 +1,31 @@
 """little-coder's own files.
 
-Validated against source, itayinbarr/little-coder at 89d4fa0a (pinning pi
-0.83.x, October 2026), with a synthetic fixture; see
-`research/little-coder.md`. little-coder is a launcher and extension set for
-pi, so its transcripts are pi session files in pi's directory, parsed by
-`pi.py` under agent `pi` with a system row naming little-coder. This parser
-reads what little-coder writes itself:
+little-coder is a launcher and extension set for pi, so its transcripts are pi session files
+parsed by `pi.py`; this parser reads what little-coder writes itself:
 
-* `~/.pi/agent/little-coder-prompt-history.json`: a JSON array of up to
-  100 prompt strings, oldest first. No timestamps and no session ids, so
-  the `user` rows have neither; `source_line` is the 1-based array index.
-  A truncated array still yields the prompts before the cut.
-* `~/.little-coder/checkpoints/<session file name>/<path with
-  [^A-Za-z0-9._-] replaced by _>`: the pre-edit copy of each file a
-  session's first `write`/`edit` touched, or an empty `<name>.absent`
-  sentinel when the file did not exist yet. The directory name is the pi
-  session file's basename (`<time>_<session id>.jsonl`), or `default` when
-  there was no session file. One system row per directory, emitted on its
-  alphabetically first file, names the session and the files; its
-  timestamp is the earliest file mtime (the first checkpoint, kept by the
-  collector's `cp -p`). The session id is taken from the directory name,
-  and the project path from the pi session header when that file was
-  collected in the same home.
+* `.pi/agent/little-coder-prompt-history.json`: a JSON array of prompt strings, oldest first,
+  with no time or session; `source_line` is the array index.
+* `.little-coder/checkpoints/<session file name>/<sanitised path>`: the pre-edit copy of each
+  file a session first edited, or an empty `<name>.absent` sentinel. One `system` row per
+  directory, emitted on its first file, at the earliest file mtime; the session id comes from
+  the directory name and the project from the pi session header when it was collected.
 
-The retired v0.0.x Python releases (read at tag v0.0.5, 424f7a4b) kept
-their own state in `~/.little-coder`, which an install that never upgraded
-still has. Everything below is source-derived; no real install has shown
-it.
+The retired v0.0.x Python releases kept their own state in `.little-coder/`:
 
-* Saved sessions, one JSON object `{session_id (8 hex, made at save
-  time), saved_at ("YYYY-MM-DD HH:MM:SS", host local time, no zone),
-  messages, turn_count, total_input_tokens, total_output_tokens}`:
-  `sessions/daily/<YYYY-MM-DD>/session_<HHMMSS>_<id>.json` (written at
-  exit, pruned to the newest few per day) and `sessions/session_<time>_<id>.json`
-  or another name (`/save`), both primary; `sessions/mr_sessions/
-  session_latest.json` (the exit save again) and `sessions/history.json`
-  (`{total_turns, sessions: [...]}`, every exit save, the last 100 to 200
-  kept), both secondary, since they repeat the daily copy. `messages` are
-  the neutral format: `user` (`content`), `assistant` (`content`,
-  `tool_calls[{id, name, input}]`) and `tool` (`tool_call_id`, `name`,
-  `content`). No message has a time, a model or a working directory, so
-  every row carries the session's `saved_at`, emitted as if it were UTC
-  (the host's offset is not recorded), and an empty `project_path`. A
-  `session saved:` system row starts each session. A `tool` result whose
-  content is `Denied: user rejected this operation` is followed by
-  `permission decision: denied (Denied: user rejected this operation)`
-  with the call's `tool_name` and `tool_use_id`. In `history.json`
-  `source_line` is the session's position in the array; in a session
-  file it is the message's position (0 for the `session saved:` row). A
-  file cut mid-write still yields the messages before the cut.
-* `input_history.txt`: the REPL's readline history, one prompt per line
-  as Python's `readline.write_history_file` wrote it, with no time,
-  session or project; a secondary source of `user` rows, matched on text
-  alone.
-* `config.json` (a secret file: it holds `gist_token`, `telegram_token`
-  and provider keys, none of which is read): `cloudsave_last_gist_id`
-  gives `session synced: gist <id> (from .little-coder/config.json, file
-  mtime)`, `telegram_chat_id` gives `session relayed: telegram chat <id>
-  (from .little-coder/config.json, file mtime)` and `permission_mode`
-  gives `permission setting: permission_mode=<value> (from
-  .little-coder/config.json, file mtime)`, each at the file's
-  modification time with an empty `session_id`: the gist holds an upload
-  with a fresh session id of its own, and the bridge records no session,
-  so neither joins a saved session. `records_sync` and `records_relay` are
-  set all the same, since the parser writes both kinds of row; with no
-  session named, every little-coder session's `synced` and `relayed` read
-  `no`.
-* `checkpoints/<session id>/snapshots.json`: a JSON array of snapshots
-  `{id, session_id, created_at (naive local ISO), turn_count,
-  message_index, user_prompt_preview, token_snapshot, file_backups{<path>:
-  {backup_filename, version, backup_time}}}`; one system row per snapshot
-  at `created_at`, as if UTC. The session id is the REPL's runtime id,
-  which matches no saved session file. The copies under `backups/` are not
-  read.
+* Saved sessions `sessions/**/*.json` (`session_id`, `saved_at` in host local time, emitted as
+  if UTC, `messages` with `role`, `content`, `images`, `tool_calls[{id, name, input}]`,
+  `tool_call_id`, `name`; `turn_count`, `total_input_tokens`, `total_output_tokens`);
+  `sessions/history.json` (`sessions[]`) and `sessions/mr_sessions/session_latest.json` repeat
+  the daily copy and are secondary. A file cut mid-write keeps the messages before the cut.
+* `input_history.txt`, the readline history (secondary, `user` rows matched on text alone).
+* `config.json`: only `cloudsave_last_gist_id`, `telegram_chat_id` and `permission_mode` are
+  read, never a token or a key.
+* `checkpoints/<session id>/snapshots.json`: `id`, `session_id`, `created_at`, `turn_count`,
+  `user_prompt_preview`, `file_backups{<path>: {backup_filename}}`.
+
+Validated against source, itayinbarr/little-coder at 89d4fa0a (pinning pi 0.83.x) and the
+v0.0.5 tag at 424f7a4b, with a synthetic fixture; no real install. See
+`research/little-coder.md`.
 """
 
 from __future__ import annotations
@@ -109,6 +62,7 @@ SAVED_AT_RX = re.compile(r'"saved_at"\s*:\s*"([^"\\]*)"')
 
 
 def _regular_files(directory: Path) -> list[os.DirEntry]:
+    """Return the regular files of a directory sorted by name, `[]` when it cannot be listed."""
     try:
         return sorted(
             (entry for entry in os.scandir(directory) if entry.is_file(follow_symlinks=False)),
@@ -119,6 +73,7 @@ def _regular_files(directory: Path) -> list[os.DirEntry]:
 
 
 def _session_header(home: Path, name: str) -> dict | None:
+    """Return the header of the pi session file `name` in the same home, or None."""
     sessions = home / ".pi/agent/sessions"
     if sessions.is_symlink() or not sessions.is_dir():
         return None
@@ -135,10 +90,13 @@ def _session_header(home: Path, name: str) -> dict | None:
 
 
 def _dash(value) -> str:
+    """Return a value as row text, `-` when absent or empty."""
     return "-" if value in (None, "") else setting_value(value)
 
 
 class LittleCoderParser(Parser):
+    """Parse little-coder's prompt history, checkpoints and the v0.0.x Python layout."""
+
     agent = "little-coder"
     name = "little-coder"
     has_secondary = True
@@ -146,6 +104,7 @@ class LittleCoderParser(Parser):
     records_relay = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the little-coder files this parser reads."""
         rel = artifact.rel
         return (
             rel in (HISTORY_REL, LEGACY_INPUT_REL, LEGACY_CONFIG_REL)
@@ -154,9 +113,11 @@ class LittleCoderParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the v0.0.x files that repeat a saved session or a prompt."""
         return artifact.rel in (LEGACY_HISTORY_REL, LEGACY_LATEST_REL, LEGACY_INPUT_REL)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one little-coder file."""
         rel = artifact.rel
         if rel == HISTORY_REL:
             yield from self._parse_history(artifact, opts)
@@ -174,6 +135,7 @@ class LittleCoderParser(Parser):
             yield from self._parse_checkpoints(artifact, opts)
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield one `user` row per prompt of the prompt history."""
         errors: list = []
         for position, prompt in iter_json_array(artifact.disk_path, errors):
             if not isinstance(prompt, str) or not prompt:
@@ -186,6 +148,7 @@ class LittleCoderParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_checkpoints(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the `system` row of a checkpoint directory, on the directory's first file."""
         match = CHECKPOINT_RX.match(artifact.rel)
         assert match is not None  # wants() accepted only matching paths
         set_name = match.group(1)
@@ -225,7 +188,7 @@ class LittleCoderParser(Parser):
     # ---- the v0.0.x Python layout -------------------------------------------
 
     def _parse_input_history(self, artifact: Artifact) -> Iterator[Row]:
-        """`input_history.txt`: one readline entry per line, no time."""
+        """Yield one `user` row per line of `input_history.txt`, with no time."""
         with open(artifact.disk_path, "rb") as handle:
             for line_number, raw in enumerate(handle, 1):
                 text = line_text(raw)
@@ -236,8 +199,7 @@ class LittleCoderParser(Parser):
                 yield row
 
     def _parse_legacy_config(self, artifact: Artifact) -> Iterator[Row]:
-        """`config.json`: the gist id, the Telegram chat id and the permission
-        mode, never a token or a key."""
+        """Yield the gist, Telegram chat and permission mode rows of `config.json`."""
         try:
             document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
@@ -272,7 +234,7 @@ class LittleCoderParser(Parser):
             yield row
 
     def _parse_legacy_history(self, artifact: Artifact) -> Iterator[Row]:
-        """`sessions/history.json`: every session saved at exit."""
+        """Yield the rows of `sessions/history.json`, every session saved at exit."""
         errors: list = []
         text = read_text(artifact.disk_path)
         document = None
@@ -308,7 +270,7 @@ class LittleCoderParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_legacy_session(self, artifact: Artifact) -> Iterator[Row]:
-        """One saved session file (daily, `/save`, or `session_latest.json`)."""
+        """Yield the rows of one saved session file (daily, `/save`, or `session_latest.json`)."""
         errors: list = []
         text = read_text(artifact.disk_path)
         document = None
@@ -355,9 +317,10 @@ class LittleCoderParser(Parser):
         saved_at: str,
         session_position: int = 0,
     ) -> Iterator[Row]:
-        """Rows for one v0.0.x session: a `session saved:` row, then each
-        message at the session's `saved_at`. `pos` is the session's position
-        in `history.json`, 0 for a session file."""
+        """Yield a `session saved:` row, then each message's rows at the session's `saved_at`.
+
+        `session_position` is the session's position in `history.json`, 0 for a session file.
+        """
         timestamp = to_utc(saved_at)
 
         def make_row(
@@ -419,7 +382,7 @@ class LittleCoderParser(Parser):
                     )
 
     def _parse_legacy_snapshots(self, artifact: Artifact) -> Iterator[Row]:
-        """`checkpoints/<id>/snapshots.json`: one row per snapshot."""
+        """Yield one row per snapshot of `checkpoints/<id>/snapshots.json`."""
         session_id = artifact.rel.split("/")[2]
         errors: list = []
         for position, snapshot in iter_json_array(artifact.disk_path, errors):

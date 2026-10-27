@@ -2170,12 +2170,12 @@ function Get-OwnerName([string]$path) {
   try {
     $sections = [System.Security.AccessControl.AccessControlSections]::Owner
     $security = [System.IO.File]::GetAccessControl((ConvertTo-ExtendedPath $path), $sections)
-    $sid = $security.GetOwner([System.Security.Principal.SecurityIdentifier])
-    $key = $sid.Value
+    $ownerSid = $security.GetOwner([System.Security.Principal.SecurityIdentifier])
+    $key = $ownerSid.Value
   } catch { return '' }
   if (-not $script:OwnerNames.ContainsKey($key)) {
     $accountName = $key
-    try { $accountName = $sid.Translate([System.Security.Principal.NTAccount]).Value } catch { }
+    try { $accountName = $ownerSid.Translate([System.Security.Principal.NTAccount]).Value } catch { }
     $script:OwnerNames[$key] = $accountName
   }
   return $script:OwnerNames[$key]

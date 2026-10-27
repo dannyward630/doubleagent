@@ -3321,7 +3321,7 @@ EOF_USER_LIST
 # one agent line per user and agent found (with the user's project count
 # from PROJECT_LIST), and the agent lines of the Docker volumes (DOCKER_INV).
 # Reads USER_LIST, PROJECT_LIST, CATALOG, DOCKER_INV, DOCKER_FOUND, HOST,
-# VERSION, MODE, START_TS. Temporaries: _wi_.
+# VERSION, MODE, START_TIME. Temporaries: _wi_.
 write_inventory() {
   count_inventory_homes
   _wi_agent_lines=$(printf '%s\n' "$USER_LIST" | while IFS=: read -r _wi_user _wi_home; do
@@ -3333,7 +3333,7 @@ write_inventory() {
   done)
   printf '{"type":"host","host":"%s","collector":"%s","mode":"%s","at":"%s",'\
 '"users_scanned":%s,"users_unreadable":%s,"docker_volumes":%s}\n' \
-    "$(json_escape "$HOST")" "$VERSION" "$MODE" "$START_TS" \
+    "$(json_escape "$HOST")" "$VERSION" "$MODE" "$START_TIME" \
     "$USERS_SCANNED" "$USERS_UNREADABLE" "$DOCKER_FOUND"
   [ -z "$_wi_agent_lines" ] || printf '%s\n' "$_wi_agent_lines"
   printf '%s\n' "$DOCKER_INV" | aggregate_inventory | write_inventory_lines docker 0
@@ -3393,7 +3393,7 @@ json_bool() { if [ "$1" = 1 ]; then printf true; else printf false; fi; }
 # write_summary ARCHIVE_NAME ARCHIVER: writes collection.json (SUMMARY) and
 # stages a copy. Called again before each archive fallback, so the archived
 # and the on-disk summary name the archive and the archiver actually used.
-# Reads TOOL, VERSION, HOST, MODE, ROOT, START_TS, END_TS, the option
+# Reads TOOL, VERSION, HOST, MODE, ROOT, START_TIME, END_TIME, the option
 # variables, HASH_TOOL, STAT_MODE, WORKER_SH, USER_LIST, ACTIVE_USERS,
 # PROJECT_LIST, BYTES, the DOCKER_* counters, NOTES, STAGE. The long lines of
 # the here-document are continued with a backslash, which an unquoted
@@ -3409,8 +3409,8 @@ write_summary() {
   "root": "$(json_escape "${ROOT:-/}")",
   "platform": "$(json_escape "$_ws_platform")",
   "run_as_uid": "$(id -u 2>/dev/null)",
-  "started": "$START_TS",
-  "finished": "$END_TS",
+  "started": "$START_TIME",
+  "finished": "$END_TIME",
   "options": {"full": $(json_bool "$FULL"), "no_secrets": $(json_bool "$NO_SECRETS"), \
 "max_file_size_bytes": $MAX_SIZE, "users_filter": "$(json_escape "$USERS")", \
 "no_docker": $(json_bool "$NO_DOCKER"), "no_projects": $(json_bool "$NO_PROJECTS"), \
@@ -3439,14 +3439,14 @@ EOF_SUMMARY
 
 # tar_gzip: writes ARCHIVE with tar -cf - | gzip; succeeds only when both do.
 # POSIX sh has no pipefail, so tar's exit status goes through a file under -o
-# (TAR_RC), outside the staging directory, and is removed before returning.
+# (TAR_STATUS_FILE), outside the staging directory, and is removed before returning.
 # Temporaries: _tg_.
 tar_gzip() {
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
-  { tar -cf - -C "$STAGE" . 2>>"$LOG"; echo "$?" >"$TAR_RC"; } | gzip >"$ARCHIVE"
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
+  { tar -cf - -C "$STAGE" . 2>>"$LOG"; echo "$?" >"$TAR_STATUS_FILE"; } | gzip >"$ARCHIVE"
   _tg_gzip_status=$?
-  _tg_tar_status=$(cat "$TAR_RC" 2>/dev/null)
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
+  _tg_tar_status=$(cat "$TAR_STATUS_FILE" 2>/dev/null)
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
   [ "$_tg_gzip_status" = 0 ] && [ "$_tg_tar_status" = 0 ] && return 0
   [ "$_tg_tar_status" = 0 ] || log_line "tar | gzip: tar exited ${_tg_tar_status:-without a status}"
   return 1
@@ -3690,13 +3690,13 @@ detect_capabilities() {
   else WORKER_SH='sh'; fi
 }
 
-# set_output_names: sets START_TS, HOST and the output paths under OUTDIR:
+# set_output_names: sets START_TIME, HOST and the output paths under OUTDIR:
 # NAME (host_stamp_agent-artifacts), STAGE (the staging directory), ARCHIVE,
-# LOG, MANIFEST, SUMMARY and TAR_RC (tar_gzip's status file). With
-# --inventory nothing is written: no STAGE or TAR_RC, and LOG and MANIFEST
+# LOG, MANIFEST, SUMMARY and TAR_STATUS_FILE (tar_gzip's status file). With
+# --inventory nothing is written: no STAGE or TAR_STATUS_FILE, and LOG and MANIFEST
 # are /dev/null.
 set_output_names() {
-  START_TS=$(utc_timestamp)
+  START_TIME=$(utc_timestamp)
   STAMP=$(date -u +%Y%m%dT%H%M%SZ)
   HOST=$(hostname 2>/dev/null || uname -n 2>/dev/null || printf unknown)
   HOST_SAFE=$(printf '%s' "$HOST" | tr -c 'A-Za-z0-9._-' '-')
@@ -3706,20 +3706,20 @@ set_output_names() {
   LOG="$OUTDIR/$NAME.log"
   MANIFEST="$OUTDIR/$NAME.manifest.jsonl"
   SUMMARY="$OUTDIR/$NAME.collection.json"
-  TAR_RC="$OUTDIR/.tar-status-$NAME"
+  TAR_STATUS_FILE="$OUTDIR/.tar-status-$NAME"
   if [ "$INVENTORY" = 1 ]; then
-    STAGE=; LOG=/dev/null; MANIFEST=/dev/null; TAR_RC=
+    STAGE=; LOG=/dev/null; MANIFEST=/dev/null; TAR_STATUS_FILE=
   fi
 }
 
 # cleanup: removes the staging directory (unless -k) and tar_gzip's status
-# file. Reads KEEP, STAGE, TAR_RC.
+# file. Reads KEEP, STAGE, TAR_STATUS_FILE.
 # shellcheck disable=SC2317,SC2329 # invoked from the traps in the main program
 cleanup() {
   if [ "$KEEP" != 1 ] && [ -n "$STAGE" ] && [ -d "$STAGE" ]; then
     rm -rf "$STAGE"
   fi
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
 }
 
 # create_output_files: outside --inventory, creates the staging directory
@@ -3792,7 +3792,7 @@ if [ "$INVENTORY" = 1 ]; then
   exit 0
 fi
 
-END_TS=$(utc_timestamp)
+END_TIME=$(utc_timestamp)
 ACTIVE_USERS=$(list_active_users)
 BYTES=$(sum_collected_bytes)
 write_archive

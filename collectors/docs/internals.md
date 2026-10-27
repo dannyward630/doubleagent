@@ -302,7 +302,7 @@ that starts `PATH="/usr/bin:`, the other the text `command -v sha256sum `
 
 The sh archiver chain is fixed, in `write_archive`: `tar -czf`, then
 `tar_gzip` (`tar -cf - | gzip`, with `tar`'s exit status passed through
-the `TAR_RC` file since POSIX sh has no `pipefail`) when `gzip` is on the
+the `TAR_STATUS_FILE` file since POSIX sh has no `pipefail`) when `gzip` is on the
 `PATH`, then an uncompressed `tar`. `write_summary` runs before each try so
 `collection.json` names the archive and archiver used.
 

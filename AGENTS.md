@@ -1020,11 +1020,11 @@ another build is a new cell, never a confirmation of the old one.
      stop point: it is completed, with a throwaway account where one
      exists, not cancelled. A GUI agent is the person's to drive.
    - After each step the main session takes a listing of the agent's
-     directories (names, sizes and mtimes only, by a script in the VM's lab
-     directory) and diffs it against the previous one before the next step;
-     the diffs are the Observed bullet's evidence. A round that ran every
-     task before the first listing says so in its document and gives the
-     modification times.
+     directories (names, sizes, modes and mtimes only, by a script in the
+     VM's lab directory) and diffs it against the previous one before the
+     next step; the diffs are the Observed bullet's evidence. A round that
+     ran every task before the first listing says so in its document and
+     gives the modification times.
    - Listing names sort in the order taken: zero-padded step numbers, an
      unplanned event taking the next number, never a letter.
    - The survey's roots are fixed before the baseline and include every
@@ -1038,17 +1038,26 @@ another build is a new cell, never a confirmation of the old one.
    gets a test feeding it those four forms. Copy it to the VM alone and run
    it with `python3 -I`; write no ad-hoc script that prints values. Nothing
    from a real install goes into the repository, an issue or a report
-   beyond file names, key names, types, sizes, enum values and log lines
-   with ids redacted.
+   beyond file names, key names, types, sizes, file modes, modification
+   times, enum values, credential-store item names (the service, and the
+   account as its class, such as the OS user) and log lines with ids
+   redacted.
 3. **Exercise every surface separately.** Each item is its own step with
    its own listing diff, run for every kind of task the surface offers.
    - Before the baseline, check the brief's step table against this list and
      the previous cell's lessons, and fix it. Before the first prompt,
      record the REPL's `?` shortcut list and `/help`.
-   - A question without tools, a session with a tool call, a task that
-     writes files, a scheduled or automated task, a plugin or MCP server, a
-     resumed session, and a short and a long paste as prompts, each paste
-     its own step.
+   - The first prompt is a question the model answers without a tool
+     (`what is 17 + 25?`), so the round records a turn with no tool call;
+     if the agent calls one, the repeat comes before any other prompt.
+   - A prompt that needs a web search (a fact newer than the model can
+     know, such as the latest release of a named package), so the round
+     records how the agent stores a call of its own web search or fetch
+     tool and its results. A `curl` through the shell is a missed prompt,
+     kept and repeated as the missed-prompt rule below says.
+   - A session with a tool call, a task that writes files, a scheduled or
+     automated task, a plugin or MCP server, a resumed session, and a short
+     and a long paste as prompts, each paste its own step.
    - One tool call approved, one denied, an "allow always" or equivalent
      grant, and a model switch mid-session. Record the default permission
      mode at the first tool call; if it auto-approves, switching to the
@@ -1078,13 +1087,15 @@ another build is a new cell, never a confirmation of the old one.
      below, and run `gh auth logout` before the VM is released; the logout
      removes only the local token, and the grant itself is revoked under
      the account's authorized OAuth apps.
-   - An agent driven over SSH on macOS cannot reach the login keychain and
-     writes its credential fallback (Claude Code 2.1.310:
-     `~/.claude/.credentials.json`, mode 0600). Record it, then sign out and
-     have the person sign in from a Terminal in the VM's GUI, with a listing
-     before and after; the same holds for any tool preferring an OS
-     credential store. Once per tool and platform; later cells cite the
-     research document.
+   - An agent driven over SSH may fail to reach the OS credential store and
+     write a file fallback instead (Claude Code 2.1.310 on macOS:
+     `~/.claude/.credentials.json`, mode 0600). On every platform, record
+     where its credentials land over SSH, then sign out, as its own step
+     with a listing; then the person signs in from a terminal in the VM's
+     GUI, with a listing after, once the last step driven over SSH is
+     done. A source-host CLI the agent leans on follows the same order.
+     Once per tool and platform; later cells cite
+     the research document.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to
      remove the synced copy, take it and record whether a local file still
@@ -1098,9 +1109,10 @@ another build is a new cell, never a confirmation of the old one.
      lacks is recorded as not exercised, with the reason.
    - The brief carries the exact prompt per step; a step whose prompt
      misses is kept as a finding about the agent, and repeated with a
-     sharper prompt under the next name. An install command is copied from the vendor's page or script,
-     never retyped, and pipes to the shell its shebang names. The person
-     reports what the screen showed at each step.
+     sharper prompt under the next name. An install command is copied
+     from the vendor's page or script, never retyped, and pipes to the
+     shell its shebang names. The person reports what the screen showed
+     at each step.
 4. **Run the collector in the VM** as the user, before and after the
    delete steps; pull the manifests, summary, log and archive. Read the
    error rows, the `skipped_excluded` rows and the unflagged-key list of

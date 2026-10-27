@@ -465,7 +465,10 @@ The analyzer runs on the analyst's workstation, never on the host.
   pytest-style (plain functions and fixtures such as `tmp_path`), except a
   parser's tests, which join `tests/test_parsers.py` as a class
   ([Adding a parser](#adding-a-parser)). pytest is listed in
-  `analyzer/requirements-dev.txt`, never among the package's dependencies.
+  `analyzer/requirements-dev.txt`, never among the package's dependencies,
+  and no test module imports it, since the pyright gate runs without it: a
+  list of cases is a loop with the case in each assertion's message, never
+  `pytest.mark.parametrize`.
 - **Tests.** `analyzer/tests/run.sh`, which runs pytest, passes. Every
   parser has a fixture and a test class, every new input shape a detection
   test. A proximity join of two record kinds is bounded by the next record

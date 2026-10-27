@@ -22,6 +22,19 @@ from pathlib import Path
 
 CATALOG_FILE = Path(__file__).with_name("catalog.txt")
 
+# The headings `print_catalog` (collect-agent-artifacts.sh) and
+# `Write-CatalogList` (Collect-AgentArtifacts.ps1) print above each table of
+# `--list`, less the leading `# `. Only a comment equal to one, case and
+# spacing included, switches the table, so a vendor comment inside a table
+# that starts with the same words stays a comment.
+SECTION_HEADINGS = {
+    "home artifacts (agent|glob relative to home)": "home",
+    "project artifacts (relative to each discovered project)": "project",
+    "excluded unless --full": "exclude",
+    "credential files (flagged secret, skipped with --no-secrets)": "secret",
+    "docker volumes (agent|volume name glob)": "docker",
+}
+
 
 @dataclass
 class Entry:
@@ -223,17 +236,7 @@ def parse(text: str) -> Catalog:
         if not line.strip():
             continue
         if line.startswith("#"):
-            head = line[1:].strip().lower()
-            if head.startswith("home artifacts"):
-                section = "home"
-            elif head.startswith("project artifacts"):
-                section = "project"
-            elif head.startswith("excluded"):
-                section = "exclude"
-            elif head.startswith("credential files"):
-                section = "secret"
-            elif head.startswith("docker volumes"):
-                section = "docker"
+            section = SECTION_HEADINGS.get(line.removeprefix("# "), section)
             continue
         if section == "home":
             agent, _, glob = line.partition("|")

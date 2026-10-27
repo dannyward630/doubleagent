@@ -49,7 +49,7 @@ from .base import (
     track_change,
 )
 
-SESSION_RX = re.compile(
+SESSION_PATTERN = re.compile(
     r"^\.local/share/muse/sessions/\d{4}/\d{2}/\d{2}/[^/]+/(?:subagent/[^/]+/)*session\.jsonl$"
 )
 HISTORY_REL = ".local/share/muse/tui-history.jsonl"
@@ -215,7 +215,7 @@ class MuseCodeParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         """Return True for session logs, the prompt history and `trust.json`."""
-        return artifact.rel in (HISTORY_REL, TRUST_REL) or bool(SESSION_RX.match(artifact.rel))
+        return artifact.rel in (HISTORY_REL, TRUST_REL) or bool(SESSION_PATTERN.match(artifact.rel))
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the prompt history, which repeats the sessions' prompts."""

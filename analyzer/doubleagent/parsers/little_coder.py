@@ -44,21 +44,21 @@ from .cline_legacy import iter_array_at, iter_json_array, read_text
 from .pi import args_summary, read_session
 
 HISTORY_REL = ".pi/agent/little-coder-prompt-history.json"
-CHECKPOINT_RX = re.compile(r"^\.little-coder/checkpoints/([^/]+)/[^/]+$")
-SESSION_FILE_RX = re.compile(r"_([^_/]+)\.jsonl$")
+CHECKPOINT_PATTERN = re.compile(r"^\.little-coder/checkpoints/([^/]+)/[^/]+$")
+SESSION_FILE_PATTERN = re.compile(r"_([^_/]+)\.jsonl$")
 
 # The v0.0.x Python layout under ~/.little-coder.
-LEGACY_SESSION_RX = re.compile(r"^\.little-coder/sessions/(?:[^/]+/)*[^/]+\.json$")
+LEGACY_SESSION_PATTERN = re.compile(r"^\.little-coder/sessions/(?:[^/]+/)*[^/]+\.json$")
 LEGACY_HISTORY_REL = ".little-coder/sessions/history.json"
 LEGACY_LATEST_REL = ".little-coder/sessions/mr_sessions/session_latest.json"
 LEGACY_INPUT_REL = ".little-coder/input_history.txt"
 LEGACY_CONFIG_REL = ".little-coder/config.json"
-LEGACY_SNAPSHOTS_RX = re.compile(r"^\.little-coder/checkpoints/([^/]+)/snapshots\.json$")
+LEGACY_SNAPSHOTS_PATTERN = re.compile(r"^\.little-coder/checkpoints/([^/]+)/snapshots\.json$")
 LEGACY_DENIED = "Denied: user rejected this operation"
-SESSIONS_KEY_RX = re.compile(r'"sessions"\s*:\s*')
-MESSAGES_KEY_RX = re.compile(r'"messages"\s*:\s*')
-SESSION_ID_RX = re.compile(r'"session_id"\s*:\s*"([^"\\]*)"')
-SAVED_AT_RX = re.compile(r'"saved_at"\s*:\s*"([^"\\]*)"')
+SESSIONS_KEY_PATTERN = re.compile(r'"sessions"\s*:\s*')
+MESSAGES_KEY_PATTERN = re.compile(r'"messages"\s*:\s*')
+SESSION_ID_PATTERN = re.compile(r'"session_id"\s*:\s*"([^"\\]*)"')
+SAVED_AT_PATTERN = re.compile(r'"saved_at"\s*:\s*"([^"\\]*)"')
 
 
 def _regular_files(directory: Path) -> list[os.DirEntry]:
@@ -108,8 +108,8 @@ class LittleCoderParser(Parser):
         rel = artifact.rel
         return (
             rel in (HISTORY_REL, LEGACY_INPUT_REL, LEGACY_CONFIG_REL)
-            or bool(CHECKPOINT_RX.match(rel))
-            or bool(LEGACY_SESSION_RX.match(rel))
+            or bool(CHECKPOINT_PATTERN.match(rel))
+            or bool(LEGACY_SESSION_PATTERN.match(rel))
         )
 
     def secondary(self, artifact: Artifact) -> bool:
@@ -127,9 +127,11 @@ class LittleCoderParser(Parser):
             yield from self._parse_legacy_config(artifact)
         elif rel == LEGACY_HISTORY_REL:
             yield from self._parse_legacy_history(artifact)
-        elif LEGACY_SESSION_RX.match(rel):
+        elif LEGACY_SESSION_PATTERN.match(rel):
             yield from self._parse_legacy_session(artifact)
-        elif LEGACY_SNAPSHOTS_RX.match(rel) and not SESSION_FILE_RX.search(rel.split("/")[2]):
+        elif LEGACY_SNAPSHOTS_PATTERN.match(rel) and not SESSION_FILE_PATTERN.search(
+            rel.split("/")[2]
+        ):
             yield from self._parse_legacy_snapshots(artifact)
         else:
             yield from self._parse_checkpoints(artifact, opts)
@@ -149,7 +151,7 @@ class LittleCoderParser(Parser):
 
     def _parse_checkpoints(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the `system` row of a checkpoint directory, on the directory's first file."""
-        match = CHECKPOINT_RX.match(artifact.rel)
+        match = CHECKPOINT_PATTERN.match(artifact.rel)
         assert match is not None  # wants() accepted only matching paths
         set_name = match.group(1)
         files = _regular_files(artifact.disk_path.parent)
@@ -164,7 +166,7 @@ class LittleCoderParser(Parser):
                 pass
             absent = entry.name.endswith(".absent")
             names.append((entry.name[: -len(".absent")] if absent else entry.name, absent))
-        match = SESSION_FILE_RX.search(set_name)
+        match = SESSION_FILE_PATTERN.search(set_name)
         row = self.base_row(artifact)
         row.source_line = 0
         row.turn_type = "system"
@@ -250,7 +252,7 @@ class LittleCoderParser(Parser):
             sessions = iter(())
         else:
             # Cut mid-write: walk the sessions array as far as it parses.
-            match = SESSIONS_KEY_RX.search(text)
+            match = SESSIONS_KEY_PATTERN.search(text)
             if match:
                 sessions = iter_array_at(text, match.end(), errors)
             else:
@@ -292,11 +294,11 @@ class LittleCoderParser(Parser):
         else:
             # Cut mid-write: the keys before `messages` and the messages
             # array as far as it parses.
-            match = MESSAGES_KEY_RX.search(text)
+            match = MESSAGES_KEY_PATTERN.search(text)
             if match:
                 head = text[: match.start()]
-                session_id = SESSION_ID_RX.search(head)
-                saved = SAVED_AT_RX.search(head)
+                session_id = SESSION_ID_PATTERN.search(head)
+                saved = SAVED_AT_PATTERN.search(head)
                 yield from self._legacy_rows(
                     artifact,
                     {},

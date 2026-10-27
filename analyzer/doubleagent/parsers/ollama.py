@@ -47,11 +47,13 @@ from .base import (
     track_change,
 )
 
-DB_RX = re.compile(r"^(?:Library/Application Support/Ollama|AppData/Local/Ollama)/db\.sqlite$")
-HISTORY_RX = re.compile(r"^\.ollama/history$")
-CONFIG_RX = re.compile(r"^\.ollama/config\.json$")
+DATABASE_PATTERN = re.compile(
+    r"^(?:Library/Application Support/Ollama|AppData/Local/Ollama)/db\.sqlite$"
+)
+HISTORY_PATTERN = re.compile(r"^\.ollama/history$")
+CONFIG_PATTERN = re.compile(r"^\.ollama/config\.json$")
 # The profile id is Ollama's own (claudeDesktopProfileID).
-PROFILE_RX = re.compile(
+PROFILE_PATTERN = re.compile(
     r"^(?:Library/Application Support|AppData/Local)/Claude-3p/configLibrary/"
     r"00000000-0000-4000-8000-000000000114\.json$"
 )
@@ -93,15 +95,18 @@ class OllamaParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for the Ollama files this parser reads."""
         rel = artifact.rel
-        return any(pattern.match(rel) for pattern in (DB_RX, HISTORY_RX, CONFIG_RX, PROFILE_RX))
+        return any(
+            pattern.match(rel)
+            for pattern in (DATABASE_PATTERN, HISTORY_PATTERN, CONFIG_PATTERN, PROFILE_PATTERN)
+        )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Ollama file."""
-        if DB_RX.match(artifact.rel):
-            yield from self._parse_db(artifact, opts)
-        elif CONFIG_RX.match(artifact.rel):
+        if DATABASE_PATTERN.match(artifact.rel):
+            yield from self._parse_database(artifact, opts)
+        elif CONFIG_PATTERN.match(artifact.rel):
             yield from self._parse_config(artifact)
-        elif PROFILE_RX.match(artifact.rel):
+        elif PROFILE_PATTERN.match(artifact.rel):
             yield from self._parse_profile(artifact)
         else:
             yield from self._parse_history(artifact)
@@ -120,19 +125,19 @@ class OllamaParser(Parser):
         return row
 
     # -- db.sqlite ------------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield self._system(artifact, "parser: not a SQLite database")
             return
         try:
             with open_copy(artifact.disk_path) as connection:
-                rows = list(self._db_rows(connection, artifact, opts))
+                rows = list(self._database_rows(connection, artifact, opts))
         except sqlite3.DatabaseError as error:
             yield self._system(artifact, "parser: SQLite error: %s" % error)
             return
         yield from rows
 
-    def _db_rows(
+    def _database_rows(
         self, connection: sqlite3.Connection, artifact: Artifact, opts: Options
     ) -> Iterator[Row]:
         """Yield the rows of `db.sqlite`, ordered by `chat_id` then `messages.id`."""

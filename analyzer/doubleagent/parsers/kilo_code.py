@@ -22,7 +22,8 @@ It also reads Kilo's own files:
   `.local/state/kilo-sandbox-preference/<hash>.json`: sandbox settings.
 * `.local/share/kilo/retention/state.json` (`at`, `deleted`, `scanned`, `skippedActive`, `failed`,
   `durationMs`, `cancelled`, `reclaimedBytes`): the last automatic deletion pass.
-* `.local/share/kilo/log/<time>.log`: the four remote control lines (`REMOTE_RX`) and nothing else.
+* `.local/share/kilo/log/<time>.log`: the four remote control lines (`REMOTE_PATTERN`) and
+  nothing else.
 
 Validated against source, Kilo-Org/kilocode at 76bcfd4 and 87cc35c, with a synthetic fixture;
 no real install. Kilo at 87cc35c has no `session_v2` table. See `research/kilo-code.md`.
@@ -51,27 +52,31 @@ from .base import (
 )
 from .opencode import OpenCodeParser, tool_summary
 
-TASK_RX = re.compile(
+TASK_PATTERN = re.compile(
     r"(?:^|/)User/globalStorage/kilocode\.kilo-code/tasks/([^/]+)/api_conversation_history\.json$"
 )
 # The global config files an "always" approval writes the `permission` key of,
 # the first that exists in this order (packages/opencode/src/config/config.ts
 # globalConfigFile at 87cc35c).
-CONFIG_RX = re.compile(
+CONFIG_PATTERN = re.compile(
     r"^\.config/kilo/(?:kilo\.jsonc|kilo\.json|opencode\.jsonc|opencode\.json|config\.json)$"
 )
 # Beside the state directory, not inside it (`path.dirname(Global.Path.state)`).
-SANDBOX_POLICY_RX = re.compile(r"^\.local/state/kilo-sandbox-policy/[^/.][^/]*/[^/.][^/]*\.json$")
-SANDBOX_PREFERENCE_RX = re.compile(r"^\.local/state/kilo-sandbox-preference/[^/.][^/]*\.json$")
+SANDBOX_POLICY_PATTERN = re.compile(
+    r"^\.local/state/kilo-sandbox-policy/[^/.][^/]*/[^/.][^/]*\.json$"
+)
+SANDBOX_PREFERENCE_PATTERN = re.compile(r"^\.local/state/kilo-sandbox-preference/[^/.][^/]*\.json$")
 # A log line: `<LEVEL> <UTC time to the second> +<n>ms <key>=<value>... <message>`.
-LOG_HEAD_RX = re.compile(r"^(?:DEBUG|INFO|WARN|ERROR)\s+(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d) \+\d+ms ")
+LOG_HEAD_PATTERN = re.compile(
+    r"^(?:DEBUG|INFO|WARN|ERROR)\s+(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d) \+\d+ms "
+)
 REMOTE_MESSAGES = (
     "remote connection enabled",
     "remote connection disabled",
     "remote session started",
     "remote session ended",
 )
-REMOTE_RX = {
+REMOTE_PATTERN = {
     "remote connection enabled": re.compile(
         r" connected=(?P<connected>\S+) remote connection enabled$"
     ),
@@ -171,20 +176,20 @@ class KiloCodeParser(OpenCodeParser):
         """Return True for the Kilo Code files this parser reads."""
         rel = artifact.rel
         return bool(
-            TASK_RX.search(rel)
+            TASK_PATTERN.search(rel)
             or self.share_rx.match(rel)
             or self.log_rx.match(rel)
             or self.retention_rx.match(rel)
-            or CONFIG_RX.match(rel)
-            or SANDBOX_POLICY_RX.match(rel)
-            or SANDBOX_PREFERENCE_RX.match(rel)
+            or CONFIG_PATTERN.match(rel)
+            or SANDBOX_POLICY_PATTERN.match(rel)
+            or SANDBOX_PREFERENCE_PATTERN.match(rel)
         ) or super().wants(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Kilo Code file."""
         rel = artifact.rel
         match = self.share_rx.match(rel)
-        if TASK_RX.search(rel):
+        if TASK_PATTERN.search(rel):
             yield from self._parse_task(artifact, opts)
         elif match:
             yield from self._parse_share(artifact, match.group(1))
@@ -192,9 +197,9 @@ class KiloCodeParser(OpenCodeParser):
             yield from self._parse_log(artifact)
         elif self.retention_rx.match(rel):
             yield from self._parse_retention(artifact)
-        elif CONFIG_RX.match(rel):
+        elif CONFIG_PATTERN.match(rel):
             yield from self._parse_config(artifact)
-        elif SANDBOX_POLICY_RX.match(rel) or SANDBOX_PREFERENCE_RX.match(rel):
+        elif SANDBOX_POLICY_PATTERN.match(rel) or SANDBOX_PREFERENCE_PATTERN.match(rel):
             yield from self._parse_sandbox(artifact)
         else:
             yield from super().parse(artifact, opts)
@@ -269,7 +274,7 @@ class KiloCodeParser(OpenCodeParser):
         timestamp = file_mtime(artifact)
         source = "(from %s, file mtime)" % artifact.rel
         document = _read_json(artifact.disk_path)
-        if SANDBOX_PREFERENCE_RX.match(artifact.rel):
+        if SANDBOX_PREFERENCE_PATTERN.match(artifact.rel):
             if isinstance(document, bool):
                 yield self._setting_row(
                     artifact,
@@ -354,8 +359,8 @@ class KiloCodeParser(OpenCodeParser):
 
     def _remote_row(self, artifact: Artifact, name: str, line_number: int, line: str, message: str):
         """Return the row of one remote control line, or None when the line lacks its fields."""
-        head = LOG_HEAD_RX.match(line)
-        fields = REMOTE_RX[message].search(line) if head else None
+        head = LOG_HEAD_PATTERN.match(line)
+        fields = REMOTE_PATTERN[message].search(line) if head else None
         if head is None or fields is None:
             return None
         groups = fields.groupdict()

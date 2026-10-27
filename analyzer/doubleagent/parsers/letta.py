@@ -49,16 +49,16 @@ from .base import (
 )
 from .pi import SessionFile, args_summary, entry_rows, model_text, read_session
 
-TRANSCRIPT_RX = re.compile(r"^\.letta/transcripts/([^/]+)/([^/]+)/transcript\.jsonl$")
-LOCAL_RX = re.compile(r"^\.letta/lc-local-backend/conversations/([^/]+)/messages\.jsonl$")
+TRANSCRIPT_PATTERN = re.compile(r"^\.letta/transcripts/([^/]+)/([^/]+)/transcript\.jsonl$")
+LOCAL_PATTERN = re.compile(r"^\.letta/lc-local-backend/conversations/([^/]+)/messages\.jsonl$")
 SESSIONS_REL = ".letta/sessions.jsonl"
 SETTINGS_REL = ".letta/settings.json"
 LOCAL_SETTINGS_REL = ".letta/settings.local.json"
 LEGACY_SETTINGS_REL = ".config/letta/settings.json"
 CRONS_REL = ".letta/crons.json"
-ROUTING_RX = re.compile(r"^\.letta/channels/([^/]+)/routing\.(?:json|yaml)$")
-RUNS_RX = re.compile(r"^\.letta/runs/[^/]+\.jsonl$")
-LISTENER_RX = re.compile(r"^\.letta/listener-state/[0-9a-f]{24}/[^/]+\.json$")
+ROUTING_PATTERN = re.compile(r"^\.letta/channels/([^/]+)/routing\.(?:json|yaml)$")
+RUNS_PATTERN = re.compile(r"^\.letta/runs/[^/]+\.jsonl$")
+LISTENER_PATTERN = re.compile(r"^\.letta/listener-state/[0-9a-f]{24}/[^/]+\.json$")
 # The keys of a settings file's `permissions` object (PermissionRules).
 PERMISSION_KEYS = ("mode", "allow", "deny", "ask", "alwaysAsk", "additionalDirectories")
 LOCAL_AGENT_PREFIX = "agent-local-"
@@ -105,7 +105,7 @@ def read_settings(path) -> dict | None:
     return document if isinstance(document, dict) else None
 
 
-def _val(value) -> str:
+def _value(value) -> str:
     """Return a record value as row text, `-` when absent or empty."""
     if value is None or value == "":
         return "-"
@@ -176,16 +176,16 @@ class LettaParser(Parser):
         rel = artifact.rel
         return (
             rel in (SESSIONS_REL, SETTINGS_REL, LOCAL_SETTINGS_REL, LEGACY_SETTINGS_REL, CRONS_REL)
-            or bool(TRANSCRIPT_RX.match(rel))
-            or bool(LOCAL_RX.match(rel))
-            or bool(ROUTING_RX.match(rel))
-            or bool(RUNS_RX.match(rel))
-            or bool(LISTENER_RX.match(rel))
+            or bool(TRANSCRIPT_PATTERN.match(rel))
+            or bool(LOCAL_PATTERN.match(rel))
+            or bool(ROUTING_PATTERN.match(rel))
+            or bool(RUNS_PATTERN.match(rel))
+            or bool(LISTENER_PATTERN.match(rel))
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the transcripts, which repeat the local backend's messages."""
-        return bool(TRANSCRIPT_RX.match(artifact.rel))
+        return bool(TRANSCRIPT_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return the window a transcript line may lag its `messages.jsonl` twin."""
@@ -202,21 +202,21 @@ class LettaParser(Parser):
         if artifact.rel == CRONS_REL:
             yield from self._parse_crons(artifact)
             return
-        if RUNS_RX.match(artifact.rel):
+        if RUNS_PATTERN.match(artifact.rel):
             yield from self._parse_runs(artifact)
             return
-        if LISTENER_RX.match(artifact.rel):
+        if LISTENER_PATTERN.match(artifact.rel):
             yield from self._parse_interrupted(artifact)
             return
-        route = ROUTING_RX.match(artifact.rel)
+        route = ROUTING_PATTERN.match(artifact.rel)
         if route:
             yield from self._parse_routing(artifact, route.group(1))
             return
-        match = LOCAL_RX.match(artifact.rel)
+        match = LOCAL_PATTERN.match(artifact.rel)
         if match:
             yield from self._parse_local(artifact, match.group(1), opts)
             return
-        match = TRANSCRIPT_RX.match(artifact.rel)
+        match = TRANSCRIPT_PATTERN.match(artifact.rel)
         assert match is not None  # wants() accepted only matching paths
         yield from self._parse_transcript(artifact, match.group(1), match.group(2), opts)
 
@@ -436,15 +436,15 @@ class LettaParser(Parser):
                 "enabled=%s outbound=%s detached=%s updated=%s (from %s, %s)"
                 % (
                     channel,
-                    _val(route.get("chatId")),
-                    _val(route.get("chatType")),
-                    _val(route.get("threadId")),
-                    _val(route.get("accountId")),
-                    _val(route.get("agentId")),
-                    _val(route.get("enabled")),
-                    _val(route.get("outboundEnabled")),
-                    _val(route.get("detached")),
-                    _val(to_utc(route.get("updatedAt"))),
+                    _value(route.get("chatId")),
+                    _value(route.get("chatType")),
+                    _value(route.get("threadId")),
+                    _value(route.get("accountId")),
+                    _value(route.get("agentId")),
+                    _value(route.get("enabled")),
+                    _value(route.get("outboundEnabled")),
+                    _value(route.get("detached")),
+                    _value(to_utc(route.get("updatedAt"))),
                     artifact.rel,
                     "createdAt" if created else "file mtime",
                 )
@@ -479,26 +479,26 @@ class LettaParser(Parser):
                 "last_run=%s outcome=%s reason=%s error=%s cancel_reason=%s "
                 "(from %s, %s) description: %s prompt: %s"
                 % (
-                    _val(task.get("id")),
-                    _val(task.get("name")),
-                    _val(task.get("status")),
-                    _val(task.get("cron")),
-                    _val(task.get("timezone")),
-                    _val(task.get("recurring")),
-                    _val(to_utc(task.get("scheduled_for"))),
-                    _val(task.get("agent_id")),
-                    _val(conversation),
-                    _val(task.get("fire_count")),
-                    _val(to_utc(task.get("last_fired_at"))),
-                    _val(to_utc(task.get("last_run_at"))),
-                    _val(task.get("last_run_outcome")),
-                    _val(task.get("last_run_reason")),
-                    _val(task.get("last_run_error")),
-                    _val(task.get("cancel_reason")),
+                    _value(task.get("id")),
+                    _value(task.get("name")),
+                    _value(task.get("status")),
+                    _value(task.get("cron")),
+                    _value(task.get("timezone")),
+                    _value(task.get("recurring")),
+                    _value(to_utc(task.get("scheduled_for"))),
+                    _value(task.get("agent_id")),
+                    _value(conversation),
+                    _value(task.get("fire_count")),
+                    _value(to_utc(task.get("last_fired_at"))),
+                    _value(to_utc(task.get("last_run_at"))),
+                    _value(task.get("last_run_outcome")),
+                    _value(task.get("last_run_reason")),
+                    _value(task.get("last_run_error")),
+                    _value(task.get("cancel_reason")),
                     artifact.rel,
                     "created_at" if created else "file mtime",
-                    _val(task.get("description")),
-                    _val(task.get("prompt")),
+                    _value(task.get("description")),
+                    _value(task.get("prompt")),
                 )
             )
             yield row
@@ -516,19 +516,19 @@ class LettaParser(Parser):
                 "conversation=%s run=%s scheduled_for=%s fired=%s missed=%s summary=%s "
                 "error=%s (from %s, ts)"
                 % (
-                    _val(record.get("jobId")),
-                    _val(record.get("action")),
-                    _val(record.get("status")),
-                    _val(record.get("outcome")),
-                    _val(record.get("reason")),
-                    _val(record.get("agentId")),
-                    _val(record.get("conversationId")),
-                    _val(record.get("runId")),
-                    _val(to_utc(record.get("scheduledFor"))),
-                    _val(to_utc(record.get("firedAt"))),
-                    _val(record.get("missedCount")),
-                    _val(record.get("summary")),
-                    _val(record.get("error")),
+                    _value(record.get("jobId")),
+                    _value(record.get("action")),
+                    _value(record.get("status")),
+                    _value(record.get("outcome")),
+                    _value(record.get("reason")),
+                    _value(record.get("agentId")),
+                    _value(record.get("conversationId")),
+                    _value(record.get("runId")),
+                    _value(to_utc(record.get("scheduledFor"))),
+                    _value(to_utc(record.get("firedAt"))),
+                    _value(record.get("missedCount")),
+                    _value(record.get("summary")),
+                    _value(record.get("error")),
                     artifact.rel,
                 )
             )
@@ -577,14 +577,14 @@ class LettaParser(Parser):
             "interrupted turn: agent %s conversation %s run %s tool_calls=%s unstarted=%s "
             "results=%d working_directory=%s acting_user=%s (from %s, file mtime)"
             % (
-                _val(document.get("agentId")),
-                _val(session_id),
-                _val(document.get("runId")),
+                _value(document.get("agentId")),
+                _value(session_id),
+                _value(document.get("runId")),
                 ids("toolCallIds"),
                 ids("unstartedToolCallIds"),
                 len(results),
-                _val(cwd),
-                _val(document.get("actingUserId")),
+                _value(cwd),
+                _value(document.get("actingUserId")),
                 artifact.rel,
             )
         )
@@ -597,7 +597,7 @@ class LettaParser(Parser):
                     "permission decision: %s reason=%s (from %s, interrupted turn, file mtime)"
                     % (
                         "approve" if result.get("approve") is True else "deny",
-                        _val(result.get("reason")),
+                        _value(result.get("reason")),
                         artifact.rel,
                     )
                 )

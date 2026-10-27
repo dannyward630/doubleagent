@@ -60,11 +60,11 @@ from .base import (
 # `hermes|*hermes*` volume line), which holds the Hermes home itself; either
 # one optionally followed by `profiles/<name>/`.
 HOME = r"(?:(?:\.hermes(?:_[^/]+)?|AppData/Local/hermes(?:_[^/]+)?)/)?(?:profiles/[^/]+/)?"
-DB_RX = re.compile(r"^%sstate\.db$" % HOME)
-JSONL_RX = re.compile(r"^%ssessions/[^/]+\.jsonl$" % HOME)
-SNAP_RX = re.compile(r"^%sstate-snapshots/([^/]+)/state\.db$" % HOME)
-SNAP_TIME_RX = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-|$)")
-PASTES_RX = re.compile(r"^%spastes/pending\.json$" % HOME)
+DATABASE_PATTERN = re.compile(r"^%sstate\.db$" % HOME)
+JSONL_PATTERN = re.compile(r"^%ssessions/[^/]+\.jsonl$" % HOME)
+SNAPSHOT_PATTERN = re.compile(r"^%sstate-snapshots/([^/]+)/state\.db$" % HOME)
+SNAPSHOT_TIME_PATTERN = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-|$)")
+PASTES_PATTERN = re.compile(r"^%spastes/pending\.json$" % HOME)
 # A paste.rs upload's `expire_at` is its upload time plus this (hermes_cli/debug.py).
 PASTE_LIFETIME = 21600
 # Read from hermes-agent 86fa9e6: the standing permission files,
@@ -72,14 +72,14 @@ PASTE_LIFETIME = 21600
 # the trajectory files a run with --save-trajectories leaves in its working
 # directory (project files; the base is the project) and the desktop app's
 # connection registry in its Electron userData directory.
-CONFIG_RX = re.compile(r"^%sconfig\.yaml$" % HOME)
-PAIRING_RX = re.compile(r"^%s((?:platforms/)?pairing)/([^/]+)-approved\.json$" % HOME)
-HISTORY_RX = re.compile(r"^%s\.hermes_history$" % HOME)
-CRON_RX = re.compile(r"^%scron/output/([^/]+)/([^/]+)\.md$" % HOME)
-CRON_TIME_RX = re.compile(r"^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)$")
-RESPONSES_RX = re.compile(r"^%sresponse_store\.db$" % HOME)
-TRAJECTORY_RX = re.compile(r"^(?:trajectory_samples|failed_trajectories)\.jsonl$")
-CONNECTIONS_RX = re.compile(
+CONFIG_PATTERN = re.compile(r"^%sconfig\.yaml$" % HOME)
+PAIRING_PATTERN = re.compile(r"^%s((?:platforms/)?pairing)/([^/]+)-approved\.json$" % HOME)
+HISTORY_PATTERN = re.compile(r"^%s\.hermes_history$" % HOME)
+CRON_PATTERN = re.compile(r"^%scron/output/([^/]+)/([^/]+)\.md$" % HOME)
+CRON_TIME_PATTERN = re.compile(r"^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)$")
+RESPONSES_PATTERN = re.compile(r"^%sresponse_store\.db$" % HOME)
+TRAJECTORY_PATTERN = re.compile(r"^(?:trajectory_samples|failed_trajectories)\.jsonl$")
+CONNECTIONS_PATTERN = re.compile(
     r"^(?:\.config|Library/Application Support|AppData/Roaming)/Hermes/connections\.json$"
 )
 # The classic CLI's history entries and the cron run files carry host-local
@@ -116,11 +116,11 @@ MESSAGING = frozenset(
 )
 NOT_RELAYED = frozenset(("local", "api_server"))
 RETIRED_PREFIX = "gateway.retired_session.v1."
-WORKTREE_RX = re.compile(r"^(.*)[/\\]\.worktrees[/\\][^/\\]+[/\\]?$")
+WORKTREE_PATTERN = re.compile(r"^(.*)[/\\]\.worktrees[/\\][^/\\]+[/\\]?$")
 WORKTREE_BRANCHES = ("hermes/", "hermes-subagent/")
 # The cron run document's length frames (cron/scheduler_prompt.py).
-CRON_PROMPT_FRAME_RX = re.compile(r"(?m)^\*\*Prompt Characters:\*\* (\d+)\n## Prompt\n\n")
-CRON_RESPONSE_FRAME_RX = re.compile(r"\*\*Response Characters:\*\* (\d+)\n## Response\n\n")
+CRON_PROMPT_FRAME_PATTERN = re.compile(r"(?m)^\*\*Prompt Characters:\*\* (\d+)\n## Prompt\n\n")
+CRON_RESPONSE_FRAME_PATTERN = re.compile(r"\*\*Response Characters:\*\* (\d+)\n## Response\n\n")
 CRON_PROMPT_HEADING = "## Prompt\n\n"
 CRON_RESPONSE_HEADING = "## Response\n\n"
 # ShareGPT `from` values of a trajectory entry (agent/agent_runtime_helpers.py).
@@ -338,10 +338,10 @@ def split_cron_doc(document: str) -> tuple[str, str] | None:
     the writer stamped them, else the first `## Prompt` and the last `## Response` heading; a
     document with neither (a failed, blocked or script-gated run) gives None.
     """
-    frame = CRON_PROMPT_FRAME_RX.search(document)
+    frame = CRON_PROMPT_FRAME_PATTERN.search(document)
     if frame and document.find(CRON_PROMPT_HEADING) == frame.end() - len(CRON_PROMPT_HEADING):
         end = frame.end() + int(frame.group(1))
-        reply = CRON_RESPONSE_FRAME_RX.match(document, end + 2)
+        reply = CRON_RESPONSE_FRAME_PATTERN.match(document, end + 2)
         if reply:
             prompt = document[frame.end() : end]
             return prompt, document[reply.end() : reply.end() + int(reply.group(1))]
@@ -367,19 +367,26 @@ class HermesParser(Parser):
     records_relay = True
 
     WANTED = (
-        DB_RX,
-        SNAP_RX,
-        JSONL_RX,
-        PASTES_RX,
-        CONFIG_RX,
-        PAIRING_RX,
-        HISTORY_RX,
-        CRON_RX,
-        RESPONSES_RX,
-        TRAJECTORY_RX,
-        CONNECTIONS_RX,
+        DATABASE_PATTERN,
+        SNAPSHOT_PATTERN,
+        JSONL_PATTERN,
+        PASTES_PATTERN,
+        CONFIG_PATTERN,
+        PAIRING_PATTERN,
+        HISTORY_PATTERN,
+        CRON_PATTERN,
+        RESPONSES_PATTERN,
+        TRAJECTORY_PATTERN,
+        CONNECTIONS_PATTERN,
     )
-    SECONDARY = (SNAP_RX, JSONL_RX, HISTORY_RX, CRON_RX, RESPONSES_RX, TRAJECTORY_RX)
+    SECONDARY = (
+        SNAPSHOT_PATTERN,
+        JSONL_PATTERN,
+        HISTORY_PATTERN,
+        CRON_PATTERN,
+        RESPONSES_PATTERN,
+        TRAJECTORY_PATTERN,
+    )
 
     def wants(self, artifact: Artifact) -> bool:
         """Return True for the Hermes files this parser reads."""
@@ -391,34 +398,34 @@ class HermesParser(Parser):
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return `LOCAL_TOLERANCE` for the history and cron run files, else the default window."""
-        if HISTORY_RX.match(artifact.rel) or CRON_RX.match(artifact.rel):
+        if HISTORY_PATTERN.match(artifact.rel) or CRON_PATTERN.match(artifact.rel):
             return LOCAL_TOLERANCE
         return TOLERANCE_SECONDS
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Hermes file."""
         rel = artifact.rel
-        snapshot = SNAP_RX.match(rel)
+        snapshot = SNAPSHOT_PATTERN.match(rel)
         if snapshot:
             yield self._snapshot_row(artifact, snapshot.group(1))
-            yield from self._parse_db(artifact, opts)
-        elif DB_RX.match(rel):
-            yield from self._parse_db(artifact, opts)
-        elif PASTES_RX.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif DATABASE_PATTERN.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif PASTES_PATTERN.match(rel):
             yield from self._parse_pastes(artifact)
-        elif CONFIG_RX.match(rel):
+        elif CONFIG_PATTERN.match(rel):
             yield from self._parse_config(artifact)
-        elif pairing := PAIRING_RX.match(rel):
+        elif pairing := PAIRING_PATTERN.match(rel):
             yield from self._parse_pairing(artifact, pairing)
-        elif HISTORY_RX.match(rel):
+        elif HISTORY_PATTERN.match(rel):
             yield from self._parse_history(artifact)
-        elif cron := CRON_RX.match(rel):
+        elif cron := CRON_PATTERN.match(rel):
             yield from self._parse_cron(artifact, cron)
-        elif RESPONSES_RX.match(rel):
+        elif RESPONSES_PATTERN.match(rel):
             yield from self._parse_responses(artifact, opts)
-        elif TRAJECTORY_RX.match(rel):
+        elif TRAJECTORY_PATTERN.match(rel):
             yield from self._parse_trajectory(artifact)
-        elif CONNECTIONS_RX.match(rel):
+        elif CONNECTIONS_PATTERN.match(rel):
             yield from self._parse_connections(artifact)
         else:
             yield from self._parse_jsonl(artifact, opts)
@@ -429,7 +436,7 @@ class HermesParser(Parser):
         `backup.py` names a snapshot `%Y%m%d-%H%M%S[-label]`.
         """
         row = self._system(artifact, 0, {}, "state snapshot %s: older copy of state.db" % snap_id)
-        match = SNAP_TIME_RX.match(snap_id)
+        match = SNAPSHOT_TIME_PATTERN.match(snap_id)
         if match:
             row.timestamp_utc = to_utc("%s-%s-%sT%s:%s:%sZ" % match.groups())
         return row
@@ -590,7 +597,7 @@ class HermesParser(Parser):
         return row
 
     # -- state.db ------------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield self._system(artifact, 0, {}, "parser: not a SQLite database")
             return
@@ -745,7 +752,7 @@ class HermesParser(Parser):
                 start.model,
             )
         cwd = str(session.get("cwd") or "")
-        tree = WORKTREE_RX.match(cwd)
+        tree = WORKTREE_PATTERN.match(cwd)
         branch = str(session.get("git_branch") or "")
         if tree and branch.startswith(WORKTREE_BRANCHES):
             yield self._copy(
@@ -1046,7 +1053,7 @@ class HermesParser(Parser):
         output:` row when it has no prompt and response sections. The time is Hermes' configured
         zone or the host's, written as if UTC; there is no session id.
         """
-        clock = CRON_TIME_RX.match(match.group(2))
+        clock = CRON_TIME_PATTERN.match(match.group(2))
         timestamp = to_utc("%sT%s:%s:%s" % clock.groups()) if clock else ""
         errors: list = []
         try:

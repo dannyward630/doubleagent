@@ -55,20 +55,20 @@ from .base import (
 DATA = r"(?:\.local/share/goose|AppData/Roaming/Block/goose/data)"
 STATE = r"(?:\.local/state/goose|AppData/Roaming/Block/goose/data)"
 CONFIG = r"(?:\.config/goose|AppData/Roaming/Block/goose/config)"
-DB_RX = re.compile(r"^%s/sessions/sessions\.db$" % DATA)
-LEGACY_RX = re.compile(r"^%s/sessions/[^/]+\.jsonl$" % DATA)
-LLM_RX = re.compile(r"^%s/logs/llm_request\.[^/]+\.jsonl$" % STATE)
-HISTORY_RX = re.compile(r"^(?:%s|\.config/goose)/history\.txt$" % STATE)
-PERMISSION_RX = re.compile(r"^%s/permission\.yaml$" % CONFIG)
-TRUST_RX = re.compile(r"^%s/roaming_trust\.json$" % CONFIG)
-SCHEDULE_RX = re.compile(r"^%s/schedule\.json$" % DATA)
+DATABASE_PATTERN = re.compile(r"^%s/sessions/sessions\.db$" % DATA)
+LEGACY_PATTERN = re.compile(r"^%s/sessions/[^/]+\.jsonl$" % DATA)
+LLM_PATTERN = re.compile(r"^%s/logs/llm_request\.[^/]+\.jsonl$" % STATE)
+HISTORY_PATTERN = re.compile(r"^(?:%s|\.config/goose)/history\.txt$" % STATE)
+PERMISSION_PATTERN = re.compile(r"^%s/permission\.yaml$" % CONFIG)
+TRUST_PATTERN = re.compile(r"^%s/roaming_trust\.json$" % CONFIG)
+SCHEDULE_PATTERN = re.compile(r"^%s/schedule\.json$" % DATA)
 # The request log stamps each streamed chunk when it arrives, while
 # `sessions.db` stamps the assembled message with the later of its first
 # chunk's time and the session's newest stored message.
 LLM_TOLERANCE_SECONDS = 600.0
 TOOL_EXECUTABLE_KEY = "goose.executable"
 # A gateway session's working directory, `<config>/gateway/<platform>/<user_id>`.
-GATEWAY_DIR_RX = re.compile(r"[/\\]gateway[/\\]([^/\\]+)[/\\]([^/\\]+)[/\\]?$")
+GATEWAY_DIRECTORY_PATTERN = re.compile(r"[/\\]gateway[/\\]([^/\\]+)[/\\]([^/\\]+)[/\\]?$")
 
 
 def epoch(value) -> str:
@@ -119,7 +119,7 @@ def gateway_text(session: dict) -> str:
     """
     if session.get("session_type") != "gateway":
         return ""
-    match = GATEWAY_DIR_RX.search(str(session.get("working_dir") or ""))
+    match = GATEWAY_DIRECTORY_PATTERN.search(str(session.get("working_dir") or ""))
     platform, user_id = match.groups() if match else ("", "")
     name_platform, _, display = str(session.get("name") or "").partition("/")
     platform = platform or name_platform
@@ -298,40 +298,40 @@ class GooseParser(Parser):
         return any(
             pattern.match(rel)
             for pattern in (
-                DB_RX,
-                LEGACY_RX,
-                LLM_RX,
-                HISTORY_RX,
-                PERMISSION_RX,
-                TRUST_RX,
-                SCHEDULE_RX,
+                DATABASE_PATTERN,
+                LEGACY_PATTERN,
+                LLM_PATTERN,
+                HISTORY_PATTERN,
+                PERMISSION_PATTERN,
+                TRUST_PATTERN,
+                SCHEDULE_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the prompt histories and request logs, which repeat `sessions.db`."""
-        return bool(HISTORY_RX.match(artifact.rel) or LLM_RX.match(artifact.rel))
+        return bool(HISTORY_PATTERN.match(artifact.rel) or LLM_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return `LLM_TOLERANCE_SECONDS` for a request log, else the default window."""
-        if LLM_RX.match(artifact.rel):
+        if LLM_PATTERN.match(artifact.rel):
             return LLM_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Goose file."""
         rel = artifact.rel
-        if DB_RX.match(rel):
-            yield from self._parse_db(artifact, opts)
-        elif LEGACY_RX.match(rel):
+        if DATABASE_PATTERN.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif LEGACY_PATTERN.match(rel):
             yield from self._parse_legacy(artifact, opts)
-        elif LLM_RX.match(rel):
+        elif LLM_PATTERN.match(rel):
             yield from self._parse_llm_log(artifact, opts)
-        elif PERMISSION_RX.match(rel):
+        elif PERMISSION_PATTERN.match(rel):
             yield from self._parse_permission_yaml(artifact)
-        elif TRUST_RX.match(rel):
+        elif TRUST_PATTERN.match(rel):
             yield from self._parse_roaming_trust(artifact)
-        elif SCHEDULE_RX.match(rel):
+        elif SCHEDULE_PATTERN.match(rel):
             yield from self._parse_schedule(artifact)
         else:
             yield from self._parse_history(artifact, opts)
@@ -495,7 +495,7 @@ class GooseParser(Parser):
         return "action required: " + compact_json(data)
 
     # -- sessions.db ---------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             row = self._row(artifact, 0)
             row.turn_type = "system"

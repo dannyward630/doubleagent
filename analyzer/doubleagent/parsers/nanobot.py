@@ -57,28 +57,30 @@ from .base import (
 from .openclaw import tool_args_text
 
 STATE = r"\.nanobot(?:-[^/]+)?"
-SESSION_RX = re.compile(
+SESSION_PATTERN = re.compile(
     r"^"
     + STATE
     + r"/sessions/(?:(?P<ws>[0-9a-f]{32})/(?P<sub>\.migration-conflicts/|jsonl-backup/)?)?"
     r"(?P<stem>[^/]+)\.jsonl$"
 )
-DB_RX = re.compile(r"^" + STATE + r"/sessions/[0-9a-f]{32}/sessions\.sqlite3$")
-DB_NAME = "sessions.sqlite3"
-HISTORY_RX = re.compile(r"^" + STATE + r"/(?:.+/)?memory/history\.jsonl$")
-WEBUI_RX = re.compile(
+DATABASE_PATTERN = re.compile(r"^" + STATE + r"/sessions/[0-9a-f]{32}/sessions\.sqlite3$")
+DATABASE_NAME = "sessions.sqlite3"
+HISTORY_PATTERN = re.compile(r"^" + STATE + r"/(?:.+/)?memory/history\.jsonl$")
+WEBUI_PATTERN = re.compile(
     r"^" + STATE + r"/webui/(?:(?P<seg>[^/]+)\.segments/\d{6}|(?P<stem>[^/]+))\.jsonl$"
 )
-CLI_HISTORY_RX = re.compile(r"^" + STATE + r"/history/cli_history$")
-CONFIG_RX = re.compile(r"^" + STATE + r"/config\.json$")
-PAIRING_RX = re.compile(r"^" + STATE + r"/pairing\.json$")
-SIDEBAR_RX = re.compile(r"^" + STATE + r"/sessions/[0-9a-f]{32}/\.webui_session_index\.json$")
+CLI_HISTORY_PATTERN = re.compile(r"^" + STATE + r"/history/cli_history$")
+CONFIG_PATTERN = re.compile(r"^" + STATE + r"/config\.json$")
+PAIRING_PATTERN = re.compile(r"^" + STATE + r"/pairing\.json$")
+SIDEBAR_PATTERN = re.compile(r"^" + STATE + r"/sessions/[0-9a-f]{32}/\.webui_session_index\.json$")
 # A cron or trigger run record: under a workspace inside the state directory
 # (`.nanobot/workspace/cron/runs/`), under the state directory itself (the
 # legacy `cron/jobs.json` location), or at the root of a project workspace
 # the collector collected (the bare form, accepted only for a project base).
-RUN_RX = re.compile(r"^(?:" + STATE + r"/(?P<ws>.+/)?)?(?P<kind>cron|triggers)/runs/[^/]+\.json$")
-ORIGINAL_RUN_RX = re.compile(r"^(.*)[\\/](?:cron|triggers)[\\/]runs[\\/][^\\/]+$")
+RUN_PATTERN = re.compile(
+    r"^(?:" + STATE + r"/(?P<ws>.+/)?)?(?P<kind>cron|triggers)/runs/[^/]+\.json$"
+)
+ORIGINAL_RUN_PATTERN = re.compile(r"^(.*)[\\/](?:cron|triggers)[\\/]runs[\\/][^\\/]+$")
 WEBUI_PREFIX = "websocket:"
 # The host's UTC offset (at most 14 hours) plus an hour of turn: the WebUI
 # transcript and the run records carry true UTC, the session files local time.
@@ -134,12 +136,12 @@ CONFIG_EXEC_KEYS = (
     ("allowedEnvKeys", "allowed_env_keys"),
 )
 # The `/model <preset>` command and its reply (nanobot/command/builtin.py).
-MODEL_COMMAND_RX = re.compile(r"^/model\s+(\S.*?)\s*$", re.S)
-SWITCH_RX = re.compile(r"^Switched model preset to `([^`]*)`")
-RESOLVED_RX = re.compile(r"^- Model: `([^`]*)`", re.M)
+MODEL_COMMAND_PATTERN = re.compile(r"^/model\s+(\S.*?)\s*$", re.S)
+SWITCH_PATTERN = re.compile(r"^Switched model preset to `([^`]*)`")
+RESOLVED_PATTERN = re.compile(r"^- Model: `([^`]*)`", re.M)
 # Stream chunks (folded into their end records) and the turn boundary.
 WEBUI_SILENT = frozenset({"delta", "reasoning_delta", "turn_end"})
-ORIGINAL_MEMORY_RX = re.compile(r"^(.*)[\\/]memory[\\/]history\.jsonl$")
+ORIGINAL_MEMORY_PATTERN = re.compile(r"^(.*)[\\/]memory[\\/]history\.jsonl$")
 
 
 def decode_stem(stem: str) -> str:
@@ -216,7 +218,7 @@ def _has_switch(records: list[tuple[int, dict]]) -> bool:
     return any(
         record.get("role") == "assistant"
         and record.get("_command")
-        and SWITCH_RX.match(text_of(record.get("content")))
+        and SWITCH_PATTERN.match(text_of(record.get("content")))
         for _, record in records
     )
 
@@ -232,14 +234,14 @@ class NanobotParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for the nanobot files this parser reads."""
         return bool(
-            SESSION_RX.match(artifact.rel)
-            or HISTORY_RX.match(artifact.rel)
-            or WEBUI_RX.match(artifact.rel)
-            or DB_RX.match(artifact.rel)
-            or CLI_HISTORY_RX.match(artifact.rel)
-            or CONFIG_RX.match(artifact.rel)
-            or PAIRING_RX.match(artifact.rel)
-            or SIDEBAR_RX.match(artifact.rel)
+            SESSION_PATTERN.match(artifact.rel)
+            or HISTORY_PATTERN.match(artifact.rel)
+            or WEBUI_PATTERN.match(artifact.rel)
+            or DATABASE_PATTERN.match(artifact.rel)
+            or CLI_HISTORY_PATTERN.match(artifact.rel)
+            or CONFIG_PATTERN.match(artifact.rel)
+            or PAIRING_PATTERN.match(artifact.rel)
+            or SIDEBAR_PATTERN.match(artifact.rel)
             or self._is_run(artifact)
         )
 
@@ -250,7 +252,7 @@ class NanobotParser(Parser):
         The bare `cron/runs/` form counts only at the root of a project base, where the project
         catalog put it.
         """
-        match = RUN_RX.match(artifact.rel)
+        match = RUN_PATTERN.match(artifact.rel)
         if match is None:
             return False
         return artifact.rel.startswith(".nanobot") or artifact.home.project
@@ -259,9 +261,9 @@ class NanobotParser(Parser):
         """Return True for the files that repeat the session store's events."""
         return (
             bool(
-                WEBUI_RX.match(artifact.rel)
-                or CLI_HISTORY_RX.match(artifact.rel)
-                or SIDEBAR_RX.match(artifact.rel)
+                WEBUI_PATTERN.match(artifact.rel)
+                or CLI_HISTORY_PATTERN.match(artifact.rel)
+                or SIDEBAR_PATTERN.match(artifact.rel)
             )
             or self._is_run(artifact)
             or self._frozen(artifact)
@@ -274,7 +276,7 @@ class NanobotParser(Parser):
         The file's own directory, or its parent for a `.migration-conflicts/` or `jsonl-backup/`
         copy; None for a legacy global file or any other path.
         """
-        match = SESSION_RX.match(artifact.rel)
+        match = SESSION_PATTERN.match(artifact.rel)
         if not match or not match.group("ws"):
             return None
         return artifact.disk_path.parent.parent if match.group("sub") else artifact.disk_path.parent
@@ -286,42 +288,42 @@ class NanobotParser(Parser):
         A `<stem>.jsonl` of the namespace or a `jsonl-backup/` copy, when the database is beside it;
         a `.migration-conflicts/` copy and a legacy global file were never imported.
         """
-        match = SESSION_RX.match(artifact.rel)
+        match = SESSION_PATTERN.match(artifact.rel)
         namespace = cls._namespace(artifact)
         if match is None or namespace is None or match.group("sub") == ".migration-conflicts/":
             return False
-        database = namespace / DB_NAME
+        database = namespace / DATABASE_NAME
         return not database.is_symlink() and database.is_file()
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return `WEBUI_TOLERANCE_SECONDS` for the true-UTC sources, else the default window."""
-        if WEBUI_RX.match(artifact.rel) or self._is_run(artifact):
+        if WEBUI_PATTERN.match(artifact.rel) or self._is_run(artifact):
             return WEBUI_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one nanobot file."""
-        if SESSION_RX.match(artifact.rel):
+        if SESSION_PATTERN.match(artifact.rel):
             yield from self._parse_session(artifact, opts)
-        elif DB_RX.match(artifact.rel):
-            yield from self._parse_db(artifact, opts)
-        elif WEBUI_RX.match(artifact.rel):
+        elif DATABASE_PATTERN.match(artifact.rel):
+            yield from self._parse_database(artifact, opts)
+        elif WEBUI_PATTERN.match(artifact.rel):
             yield from self._parse_webui(artifact, opts)
-        elif CLI_HISTORY_RX.match(artifact.rel):
+        elif CLI_HISTORY_PATTERN.match(artifact.rel):
             yield from self._parse_cli_history(artifact)
-        elif CONFIG_RX.match(artifact.rel):
+        elif CONFIG_PATTERN.match(artifact.rel):
             yield from self._parse_config(artifact)
-        elif PAIRING_RX.match(artifact.rel):
+        elif PAIRING_PATTERN.match(artifact.rel):
             yield from self._parse_pairing(artifact)
-        elif SIDEBAR_RX.match(artifact.rel):
+        elif SIDEBAR_PATTERN.match(artifact.rel):
             yield from self._parse_sidebar(artifact)
-        elif RUN_RX.match(artifact.rel):
+        elif RUN_PATTERN.match(artifact.rel):
             yield from self._parse_run(artifact)
         else:
             yield from self._parse_history(artifact, opts)
 
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        match = SESSION_RX.match(artifact.rel)
+        match = SESSION_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         namespace = self._namespace(artifact)
         project = _read_marker(namespace / ".workspace") if namespace else ""
@@ -346,8 +348,8 @@ class NanobotParser(Parser):
         """Yield the rows of one session from its (source_line, record) pairs.
 
         The metadata record comes first, then the messages, as a session JSONL holds them and as
-        `_parse_db` rebuilds them from `sessions.sqlite3`. Returns the session id, the metadata
-        `key` when there is one.
+        `_parse_database` rebuilds them from `sessions.sqlite3`. Returns the session id, the
+        metadata `key` when there is one.
         """
         model = ""
         last_timestamp = ""
@@ -432,7 +434,7 @@ class NanobotParser(Parser):
                     yield make_row(line_number, "system", "summarised history: " + text)
                 else:
                     if record.get("_command"):
-                        match = MODEL_COMMAND_RX.match(text)
+                        match = MODEL_COMMAND_PATTERN.match(text)
                         requested = match.group(1) if match else requested
                     yield make_row(line_number, "user", text)
             elif role == "assistant":
@@ -441,9 +443,9 @@ class NanobotParser(Parser):
                     yield make_row(line_number, "thinking", reasoning)
                 if text:
                     yield make_row(line_number, "assistant", text)
-                match = SWITCH_RX.match(text) if record.get("_command") else None
+                match = SWITCH_PATTERN.match(text) if record.get("_command") else None
                 if match:
-                    resolved = RESOLVED_RX.search(text)
+                    resolved = RESOLVED_PATTERN.search(text)
                     switch = "model: %s%s (preset)%s%s" % (
                         preset + " -> " if preset else "",
                         match.group(1),
@@ -478,7 +480,7 @@ class NanobotParser(Parser):
                 yield make_row(line_number, "system", "%s: %s" % (role or "message", text))
         return session_id
 
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of every session of a `sessions.sqlite3`, orphaned messages included."""
         project = _read_marker(artifact.disk_path.parent / ".workspace")
         if not is_sqlite(artifact.disk_path):
@@ -509,19 +511,19 @@ class NanobotParser(Parser):
         except sqlite3.DatabaseError as error:
             yield self._file_row(artifact, project, "parser: SQLite error: %s" % error)
             return
-        known = {str(sess[1]) for sess in sessions}
+        known = {str(session[1]) for session in sessions}
         # Messages whose session row is gone (nanobot enforces the foreign
         # key only on its own connections) still yield their rows.
-        heads: list[tuple[str, tuple | None]] = [(str(sess[1]), sess) for sess in sessions]
+        heads: list[tuple[str, tuple | None]] = [(str(session[1]), session) for session in sessions]
         heads += [(k, None) for k in sorted(messages) if k not in known]
         for key, head in heads:
             errors: list = []
-            records = self._db_records(head, messages.get(key, []), errors)
+            records = self._database_records(head, messages.get(key, []), errors)
             session_id = yield from self._session_rows(artifact, opts, key, project, records)
             yield from error_rows(self, artifact, errors, session_id, project)
 
     @staticmethod
-    def _db_records(
+    def _database_records(
         head: tuple | None, messages: list[tuple[int, object, object]], errors: list
     ) -> Iterator[tuple[int, dict]]:
         """Yield (rowid, record) pairs of one session of `sessions.sqlite3`.
@@ -558,7 +560,7 @@ class NanobotParser(Parser):
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield one `memory history` row per line of `memory/history.jsonl`."""
-        match = ORIGINAL_MEMORY_RX.match(artifact.original or "")
+        match = ORIGINAL_MEMORY_PATTERN.match(artifact.original or "")
         project = match.group(1) if match else ""
         errors: list = []
         for line_number, record in iter_jsonl(artifact.disk_path, errors):
@@ -577,7 +579,7 @@ class NanobotParser(Parser):
     @staticmethod
     def _webui_workspace(artifact: Artifact, session_id: str) -> str:
         """Return the `.workspace` of the session file for `session_id`, if exactly one has one."""
-        match = WEBUI_RX.match(artifact.rel)
+        match = WEBUI_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         state = artifact.disk_path.parents[2 if match.group("seg") else 1]
         stem = base64.urlsafe_b64encode(session_id.encode("utf-8")).decode("ascii").rstrip("=")
@@ -596,7 +598,7 @@ class NanobotParser(Parser):
 
     def _parse_webui(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of a WebUI transcript file, its session id `websocket:<chat_id>`."""
-        match = WEBUI_RX.match(artifact.rel)
+        match = WEBUI_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         stem = match.group("seg") or match.group("stem")
         fallback = stem
@@ -854,12 +856,12 @@ class NanobotParser(Parser):
         The prompt as the session stored it (`user`) at the run's start, the reply (`assistant`) and
         a `cron run:` or `trigger run:` row with the run's status at `updated_at_ms`.
         """
-        match = RUN_RX.match(artifact.rel)
+        match = RUN_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         kind = match.group("kind")
         project = ""
         if match.group("ws") or artifact.home.project:
-            original_match = ORIGINAL_RUN_RX.match(artifact.original or "")
+            original_match = ORIGINAL_RUN_PATTERN.match(artifact.original or "")
             project = original_match.group(1) if original_match else ""
         record, problem = self._load_object(artifact, "%s run record" % kind)
         if record is None:

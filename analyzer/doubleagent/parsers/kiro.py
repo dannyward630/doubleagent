@@ -51,30 +51,30 @@ from .base import (
     track_change,
 )
 
-DB_RX = re.compile(
+DATABASE_PATTERN = re.compile(
     r"^(?:\.local/share|Library/Application Support|AppData/Local)/(?:amazon-q|kiro-cli)/data\.sqlite3$"
 )
-SESSIONS_RX = re.compile(r"^\.kiro/sessions/")
+SESSIONS_PATTERN = re.compile(r"^\.kiro/sessions/")
 # The chat prompt's rustyline history (Q `paths.rs` `CLI_BASH_HISTORY`).
-HISTORY_RX = re.compile(r"^\.aws/amazonq/\.cli_bash_history$")
+HISTORY_PATTERN = re.compile(r"^\.aws/amazonq/\.cli_bash_history$")
 # Agent configurations, global and per project (Q `paths.rs` `AGENTS_DIR`).
-AGENT_RX = re.compile(r"^(?:\.aws/amazonq|\.amazonq)/cli-agents/[^/]+\.json$")
+AGENT_PATTERN = re.compile(r"^(?:\.aws/amazonq|\.amazonq)/cli-agents/[^/]+\.json$")
 # The delegate tool's per-agent task records (Q `paths.rs` `SUBAGENTS_DIR`).
-SUBAGENT_RX = re.compile(r"^\.amazonq/\.subagents/[^/]+\.json$")
+SUBAGENT_PATTERN = re.compile(r"^\.amazonq/\.subagents/[^/]+\.json$")
 # The header rustyline writes first in a multi-line-aware history file.
 HISTORY_V2 = "#V2"
 # The fixed prompts of a CancelledToolUses message (Q `cli/chat/mod.rs`).
 DENY_TEXT = "I deny this tool request. Ask a follow up question clarifying the expected action"
 INTERRUPT_TEXT = "The user interrupted the tool execution."
-DENY_RULE_RX = re.compile(
+DENY_RULE_PATTERN = re.compile(
     r"^Tool use with (.+) was rejected because the arguments supplied were forbidden$", re.S
 )
 # The agent the delegate tool runs with --trust-all-tools (Q `cli/agent/mod.rs`).
 DEFAULT_AGENT_NAME = "q_cli_default"
 SNIFF_BYTES = 4096
 
-_CONV_ID_RX = re.compile(r'"conversation_id"\s*:\s*"((?:[^"\\]|\\.)*)"')
-_HISTORY_RX = re.compile(r'"history"\s*:\s*\[')
+_CONVERSATION_ID_PATTERN = re.compile(r'"conversation_id"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_HISTORY_PATTERN = re.compile(r'"history"\s*:\s*\[')
 
 
 def _sniff_export(path) -> bool:
@@ -101,11 +101,11 @@ def salvage(text: str) -> tuple[dict | None, str]:
         return None, "not a JSON object"
     except ValueError as error:
         message = str(error)
-    match = _HISTORY_RX.search(text)
+    match = _HISTORY_PATTERN.search(text)
     if not match:
         return None, message
     state = {"history": []}
-    conversation_match = _CONV_ID_RX.search(text, 0, match.start())
+    conversation_match = _CONVERSATION_ID_PATTERN.search(text, 0, match.start())
     if conversation_match:
         try:
             state["conversation_id"] = json.loads('"%s"' % conversation_match.group(1))
@@ -193,7 +193,7 @@ def decision_text(prompt) -> str:
         return "permission decision: denied by=n"
     if prompt == INTERRUPT_TEXT:
         return "permission decision: cancelled by=interrupt"
-    match = DENY_RULE_RX.match(prompt)
+    match = DENY_RULE_PATTERN.match(prompt)
     if match:
         return "permission decision: denied by=deny-rule tool=%s" % match.group(1)
     return "permission decision: denied by=user-text"
@@ -220,28 +220,28 @@ class KiroParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for the database, history and agent files and for `/save` exports."""
         rel = artifact.rel
-        if DB_RX.match(rel) or HISTORY_RX.match(rel):
+        if DATABASE_PATTERN.match(rel) or HISTORY_PATTERN.match(rel):
             return True
-        if AGENT_RX.match(rel) or SUBAGENT_RX.match(rel):
+        if AGENT_PATTERN.match(rel) or SUBAGENT_PATTERN.match(rel):
             return True
-        if SESSIONS_RX.match(rel) or not rel.endswith(".json"):
+        if SESSIONS_PATTERN.match(rel) or not rel.endswith(".json"):
             return False
         return _sniff_export(artifact.disk_path)
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the prompt history, which repeats the conversations' prompts."""
-        return bool(HISTORY_RX.match(artifact.rel))
+        return bool(HISTORY_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Amazon Q Developer CLI file."""
         rel = artifact.rel
-        if DB_RX.match(rel):
-            yield from self._parse_db(artifact, opts)
-        elif HISTORY_RX.match(rel):
+        if DATABASE_PATTERN.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif HISTORY_PATTERN.match(rel):
             yield from self._parse_history(artifact)
-        elif AGENT_RX.match(rel):
+        elif AGENT_PATTERN.match(rel):
             yield from self._parse_agent_config(artifact)
-        elif SUBAGENT_RX.match(rel):
+        elif SUBAGENT_PATTERN.match(rel):
             yield from self._parse_delegate(artifact)
         else:
             yield from self._parse_export(artifact, opts)
@@ -376,7 +376,7 @@ class KiroParser(Parser):
         yield event(when(completed), text)
 
     # -- data.sqlite3 -------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
         with open_copy(artifact.disk_path) as connection:
@@ -631,7 +631,7 @@ class KiroParser(Parser):
             row.turn_type = "user"
             yield fill(row, prompt)
         if tag == "Prompt" and isinstance(prompt, str):
-            match = DENY_RULE_RX.match(prompt)
+            match = DENY_RULE_PATTERN.match(prompt)
             if match:
                 # the rejection reached the model as a plain prompt: it names
                 # the tool but not the call

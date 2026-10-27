@@ -191,6 +191,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   heading's first words (`excluded`, `credential files`) can no longer
   move the lines after it into another table and leave their agents
   undetected ([#285]).
+- The `crush` and `gemini-cli` parsers give a `parser:` row, with the
+  file's project, for an unreadable Crush `projects.json`, Gemini CLI
+  `logs.json` or legacy Gemini CLI session file, so the failure sits in
+  the timeline beside the file's other rows; before, the error left the
+  parser and the command reported it as a `problem:` line ([#282]).
 
 ## [0.20.1] - 2026-10-21
 
@@ -2091,6 +2096,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 [#285]: https://github.com/seanthegeek/doubleagent/issues/285
 [#283]: https://github.com/seanthegeek/doubleagent/issues/283
+[#282]: https://github.com/seanthegeek/doubleagent/issues/282
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256

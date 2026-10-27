@@ -740,6 +740,10 @@ class GeminiCliParser(Parser):
         try:
             with open(artifact.disk_path, "rb") as handle:
                 data = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except OSError as error:
+            text = "parser: unreadable logs.json: %s" % (error.strerror or error)
+            yield self._system(artifact, 0, "", "", project, text, opts)
+            return
         except ValueError as error:
             yield self._system(
                 artifact, 0, "", "", project, "parser: unparseable logs.json: %s" % error, opts
@@ -921,6 +925,8 @@ class GeminiCliParser(Parser):
         try:
             with open(artifact.disk_path, "rb") as handle:
                 record = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except OSError as error:
+            return [], [(1, "unreadable session file: %s" % (error.strerror or error), "")]
         except ValueError as error:
             return [], [(1, "unparseable session file: %s" % error, "")]
         if not isinstance(record, dict) or not isinstance(record.get("sessionId"), str):

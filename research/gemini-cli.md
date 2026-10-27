@@ -930,6 +930,8 @@ the defaults: retention on, 30 days.
 
 The parser covers the session file, `logs.json` and `trustedFolders.json`, the last including the
 trailing commas and byte-order mark Qwen Code allows ([Permission rows](#permission-rows)).
+A `logs.json` or legacy JSON session file that does not parse or cannot be read is one whole-file
+`parser:` row.
 In `shell_history` a line that is not valid UTF-8 is a row
 `parser: unparseable line (not valid UTF-8): <line>`, the line decoded with replacement
 characters, and the commands around it are kept. A `/chat save` checkpoint or `/bug` export cut

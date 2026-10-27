@@ -211,6 +211,10 @@ class CrushParser(Parser):
         try:
             with open(artifact.disk_path, "rb") as handle:
                 data = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except OSError as error:
+            reason = error.strerror or error
+            yield self._system(artifact, "parser: projects.json could not be read: %s" % reason)
+            return
         except ValueError as error:
             yield self._system(artifact, "parser: projects.json did not parse: %s" % error)
             return

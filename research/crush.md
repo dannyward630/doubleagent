@@ -695,9 +695,10 @@ is only a time the parent still existed before. The log, the stats page and the 
 A `crushrc` is read line by line for its `permissions` lines: such a line that does not split
 into shell words (an unclosed quote) is one row `parser: unparseable line (<reason>): <line>` with
 `source_line` its line number, and the file's other lines are still read; other lines are not
-records and are skipped. `projects.json` that does not parse is one whole-file `parser:` row, as is
-a `crush.json` that is not a JSON object (`parser: <file> is not a JSON object`); a `messages.parts`
-value that does not decode (not JSON, or JSON that is not an array) is one `system` row
+records and are skipped. `projects.json` that does not parse or cannot be read is one whole-file
+`parser:` row, as is a `crush.json` that is not a JSON object
+(`parser: <file> is not a JSON object`); a `messages.parts` value that does not decode (not JSON,
+or JSON that is not an array) is one `system` row
 `parser: unparseable record <rowid> (message <id> parts: <reason>): <parts>`, carrying the stored
 value in full, with the message's session and project, an empty timestamp and `source_line` set to
 the rowid; the session's other messages are still yielded

@@ -76,7 +76,8 @@
 # its result instead of printing it, to save a fork, sets _ret_<what>
 # (_ret_json, _ret_number) and its comment says so. A worker program is held
 # in <NAME>_WORKER and read from the here-document EOF_<NAME>_WORKER; its
-# variables need no prefix. No single-letter names except short loop indices.
+# variables need no prefix. A name is at least three characters after its
+# prefix, except a short loop index (i, j, k).
 #
 # Maintainer documentation, with the table of sh and PowerShell function
 # pairs: collectors/docs/internals.md.

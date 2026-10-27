@@ -463,8 +463,10 @@ PowerShell:
   `ShouldProcess` support (the `-WhatIf` and `-Confirm` plumbing) for
   those verbs.
 
-Both: no single-letter names except a loop index whose scope is a few
-lines, and variables that fill a manifest field are named like the field.
+Both: a name says what the value holds, in words, and is at least three
+characters after its temporaries prefix, except a loop index (`i`, `j`,
+`k`) whose scope is a few lines; variables that fill a manifest field are
+named like the field.
 
 ## Function pairs
 

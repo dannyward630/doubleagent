@@ -34,6 +34,12 @@ PAT = re.compile(
 
 
 def line_count_local(repos: pathlib.Path, repo: str, sha: str, path: str):
+    """Return the line count of `path` in a checkout under `repos` at `sha`.
+
+    Returns:
+        The count, -1 when the checkout lacks the file, or None when there is no checkout
+        of `repo` whose HEAD is `sha`.
+    """
     name = repo.split("/")[1]
     checkout = repos / name
     if not (checkout / ".git").exists():
@@ -53,6 +59,11 @@ def line_count_local(repos: pathlib.Path, repo: str, sha: str, path: str):
 
 
 def line_count_remote(repo: str, sha: str, path: str):
+    """Return the line count of `path` at `sha` from raw.githubusercontent.com.
+
+    Returns:
+        The count, -1 when the file does not exist there, or None when the fetch failed.
+    """
     url = "https://raw.githubusercontent.com/%s/%s/%s" % (repo, sha, path)
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
@@ -65,6 +76,7 @@ def line_count_remote(repo: str, sha: str, path: str):
 
 
 def main() -> int:
+    """Check the citations of the files given, or of every research document."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--repos", type=pathlib.Path, help="directory of local checkouts")
     parser.add_argument("files", nargs="*", type=lambda argument: pathlib.Path(argument).resolve())

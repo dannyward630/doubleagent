@@ -69,6 +69,7 @@ _excluded_src: dict[str, str] = {}
 
 
 def on_files(files: Any, config: Any) -> Any:
+    """Publish docs/index.md as the home page and each README.md under its own URL."""
     _published.clear()
     _excluded_src.clear()
     for file in files:
@@ -134,6 +135,7 @@ def _rewrite_spans(text: str) -> str:
 
 
 def on_page_markdown(markdown: str, page: Any, config: Any, files: Any) -> str:
+    """Write each code span whose end spaces matter, outside fences, as HTML."""
     out: list[str] = []
     chunk: list[str] = []
     fence = ""
@@ -206,6 +208,7 @@ def _source_link(match: re.Match[str], page_dir: str, docs_dir: str) -> str:
 
 
 def on_page_content(html: str, page: Any, config: Any, files: Any) -> str:
+    """Give the headings GitHub's ids and point links to files that are not pages at GitHub."""
     html = _set_heading_ids(html, page)
     page_dir = posixpath.dirname(page.file.url)
     docs_dir = config["docs_dir"]

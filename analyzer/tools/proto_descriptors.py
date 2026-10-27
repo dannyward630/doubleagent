@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Extract protobuf message definitions from a binary that embeds its file
-descriptors (Go binaries built with protobuf-go, among others), and query them.
+"""Extract and query the protobuf message definitions a binary embeds.
 
-Closed-source agents such as Antigravity CLI store transcripts as protobuf
-blobs with no published schema. The shipped binary still carries the
-serialized FileDescriptorProto for every message it links, which gives field
-names, numbers, types and enum values. This is the evidence source for
-`doubleagent/parsers/antigravity.py`; re-run it when a new release changes
-the format.
+Go binaries built with protobuf-go, among others, carry the serialized FileDescriptorProto of
+every message they link, which gives field names, numbers, types and enum values. Closed-source
+agents such as Antigravity CLI store transcripts as protobuf blobs with no published schema, so
+this is the evidence source for `doubleagent/parsers/antigravity.py`; re-run it when a new
+release changes the format.
 
     tools/proto_descriptors.py extract ~/.local/bin/agy descriptors.json
     tools/proto_descriptors.py show descriptors.json gemini_coder.Step exa.cortex_pb.CortexStepType
     tools/proto_descriptors.py find descriptors.json Summary
 
-Standard library only. Extraction scans for `<name>.proto` strings preceded
-by a field-1 length prefix and parses forward until the data stops looking
-like a FileDescriptorProto, so it needs no knowledge of the binary's layout.
+Standard library only. Extraction scans for `<name>.proto` strings preceded by a field-1 length
+prefix and parses forward until the data stops looking like a FileDescriptorProto, so it needs
+no knowledge of the binary's layout.
 """
 
 from __future__ import annotations
@@ -51,10 +49,12 @@ TYPES = {
 
 
 def _text(data: bytes) -> str:
+    """Decode a descriptor string, replacing bytes that are not UTF-8."""
     return data.decode("utf-8", "replace")
 
 
 def parse_enum(data: bytes) -> dict:
+    """Return the name and the number-to-name values of an EnumDescriptorProto."""
     enum = {"name": "", "values": {}}
     if not isinstance(data, bytes):
         raise ValueError("enum descriptor is not length-delimited")
@@ -73,6 +73,7 @@ def parse_enum(data: bytes) -> dict:
 
 
 def parse_message(data: bytes) -> dict:
+    """Return the name, fields, nested messages, enums and oneofs of a DescriptorProto."""
     message = {"name": "", "fields": [], "nested": [], "enums": [], "oneofs": []}
     if not isinstance(data, bytes):
         raise ValueError("message descriptor is not length-delimited")
@@ -107,8 +108,11 @@ def parse_message(data: bytes) -> dict:
 
 
 def parse_file_fields(data: bytes, start: int):
-    """Parse FileDescriptorProto fields from `start` until the stream stops
-    looking like one (a field outside 1..13 or a second `name`)."""
+    """Parse FileDescriptorProto fields from `start` until the stream stops looking like one.
+
+    It stops at a field outside 1..13, a wire type other than varint or length-delimited, or a
+    second `name`.
+    """
     i, end = start, len(data)
     seen_name = False
     fields = []
@@ -144,6 +148,7 @@ def parse_file_fields(data: bytes, start: int):
 
 
 def extract(binary: Path) -> dict:
+    """Return the file descriptors embedded in `binary`, keyed by `.proto` file name."""
     data = binary.read_bytes()
     results: dict = {}
     for match in re.finditer(rb"\.proto", data):
@@ -187,6 +192,7 @@ def extract(binary: Path) -> dict:
 
 
 def build_index(desc: dict) -> dict:
+    """Map every message and enum's full name to (kind, descriptor, file name)."""
     index = {}
 
     def walk(prefix, message, fname):
@@ -207,6 +213,7 @@ def build_index(desc: dict) -> dict:
 
 
 def show(index: dict, name: str) -> None:
+    """Print the fields of a message or the values of an enum."""
     kind, obj, fname = index[name]
     if kind == "enum":
         print("enum %s  [%s]" % (name, fname))
@@ -227,6 +234,7 @@ def show(index: dict, name: str) -> None:
 
 
 def main(argv) -> int:
+    """Run the `extract`, `show` or `find` command and return the exit status."""
     if len(argv) < 3:
         print(__doc__)
         return 1

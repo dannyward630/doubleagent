@@ -1,52 +1,29 @@
 #!/usr/bin/env python3
 """Check that every research document follows the structure AGENTS.md fixes.
 
-Every agent's document under `research/` (not `research/README.md` and not
-`research/frameworks.md`) has one H1 equal to the agent's catalog name, one
-unheaded intro paragraph, then the outline of the "Research document
-structure" subsection of AGENTS.md: `## Source and evidence` with
-`### Observed` and `### Source reviews`; `## Collection` holding
-`### Per-user storage` (with `#### Scratch directories`),
-`### Credentials`, `### Exclusions`, `### Project-local files` and
-`### Where the project path is recorded`; `## Parsing` holding
-`### Transcript stores` (with `#### What survives a delete`),
-`### Record schema`, `### Joins and timestamps`, `### Other
-stores`, `### Format versions`, `### Secrets` and `### Parser
-plan` (with the eight fixed `####` row subsections, in order, before any
-other), or for an agent with nothing to parse one paragraph and no `###`;
-then `## Confidence`. This checks, for each such file:
+Every agent's document under `research/` (not README.md or frameworks.md) follows the outline
+of "Research document structure" in AGENTS.md. For each, this checks that:
 
-- the H1 is `# <agent>` where `<agent>` is the file's stem;
-- the H2 headings are exactly `Source and evidence`, `Collection`,
-  `Parsing`, `Confidence`, in order;
-- the `###` headings under Collection and Parsing are exactly the numbered
-  sections above, in order (Parsing may instead hold prose and no `###`);
-- the fixed `###` and `####` subsections sit under the right heading;
-- no bold label stands in for a heading: a paragraph may not open with
-  `**Label**`, `**Label.**` or `**Label:**` followed by prose (a list item
-  or table row may);
-- no line assumes the two documents each agent had before the merge of
-  October 2026 ("the collector document", "the analyzer review", "the two
-  X documents", "collector concern");
-- no confidence paragraph or bullet (`Confidence.`, `**Confidence:**`)
-  stands outside `## Confidence`;
-- no prose line is longer than `--width` characters (default 100) unless
-  it carries a URL or is a single code span (delimited by a backtick run
-  of any length, and optionally followed by closing parentheses and `.`,
-  `,`, `;` or `:`), since neither can be wrapped.
+- the H1 is `# <agent>`, the file's stem, and an unheaded intro paragraph follows it;
+- the H2 headings are `SECTIONS`, in order, and the `###` headings under Collection and
+  Parsing are `COLLECTION_H3` and `PARSING_H3` (Parsing may hold prose and no `###`);
+- the subsections of `FIXED` sit under their heading, in order, and the eight of Parser
+  plan come before any other;
+- no paragraph opens with a bold label (`**Label**`, `**Label.**`, `**Label:**`) in place of
+  a heading;
+- no line assumes the two documents each agent had before they were merged ("the collector
+  document", "the analyzer review", "the two X documents", "collector concern");
+- no confidence paragraph or bullet stands outside `## Confidence`;
+- no prose line is longer than `--width` characters (default 100) unless it holds a URL or is
+  a single code span.
 
-With `--before DIR`, where DIR holds the `collectors/` and `analyzer/`
-trees of the two documents each agent had before the merge, it also
-reports every citation URL, code span, fenced-block line, number and bold
-label that the old documents hold and the new one lacks, as `path: lost
-<kind>: <text>`. A merge that collapses a repeated statement loses nothing;
-one that drops a file name, a key, a size or a citation shows up here. A
-code span wrapped across lines or moved into a fence still counts as kept.
+With `--before DIR`, where DIR holds the `collectors/` and `analyzer/` copies of the documents
+from before the merge, it also prints each citation URL, code span, fenced line, number and
+bold label an old copy holds and the new document lacks, as `path: lost <kind>: <text>`.
 
 Usage: tools/check_research_structure.py [--before DIR] [--width N] [FILE...]
 
-Every failure is printed as `path[:line]: message`; the exit status is 1
-when any check failed.
+Every failure is printed as `path[:line]: message`; the exit status is 1 when any check failed.
 """
 
 from __future__ import annotations
@@ -125,10 +102,12 @@ def load_link_check():
 
 
 def research_files() -> list[pathlib.Path]:
+    """Return the agents' research documents, sorted."""
     return [path for path in sorted(RESEARCH.glob("*.md")) if path.name not in SKIP]
 
 
 def is_agent_document(path: pathlib.Path) -> bool:
+    """Return whether `path` is an agent's document directly under `research/`."""
     return path.resolve().parent == RESEARCH.resolve() and path.name not in SKIP
 
 
@@ -156,6 +135,7 @@ def parents(heads: list[tuple[int, int, str]]) -> dict[str, list[str]]:
 
 
 def check_outline(rel, owner: dict[str, list[str]], sections: list[str]) -> list[str]:
+    """Return the problems of the H2 headings `sections` and the `###` headings under them."""
     problems = []
     if sections != list(SECTIONS):
         problems.append(
@@ -179,6 +159,7 @@ def check_outline(rel, owner: dict[str, list[str]], sections: list[str]) -> list
 
 
 def check_fixed(rel, owner: dict[str, list[str]], present: set[str]) -> list[str]:
+    """Return the problems of the fixed subsections under the `present` headings."""
     problems = []
     for section, fixed in FIXED.items():
         if section not in present:
@@ -203,6 +184,7 @@ def check_fixed(rel, owner: dict[str, list[str]], present: set[str]) -> list[str
 
 
 def check_structure(path: pathlib.Path, text: str, width: int, link_check) -> list[str]:
+    """Return every structure problem of the research document `path` holding `text`."""
     if not is_agent_document(path):
         return []
     rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
@@ -257,7 +239,8 @@ def tokens(text: str, link_check) -> dict[str, set[str]]:
 
     A code span is compared with its whitespace collapsed, so one wrapped
     across lines matches; a span also counts as kept when its text is a
-    fenced line."""
+    fenced line.
+    """
     fenced: set[str] = set()
     in_fence = False
     for line in text.split("\n"):
@@ -278,6 +261,7 @@ def tokens(text: str, link_check) -> dict[str, set[str]]:
 
 
 def check_invariants(path: pathlib.Path, text: str, before: pathlib.Path, link_check) -> list[str]:
+    """Return a `lost` line per fact the copies under `before` hold and `text` lacks."""
     if not is_agent_document(path):
         return []
     rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
@@ -298,6 +282,7 @@ def check_invariants(path: pathlib.Path, text: str, before: pathlib.Path, link_c
 
 
 def main() -> int:
+    """Check the files given, or every research document, and return the exit status."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument(
         "--before", type=pathlib.Path, help="pre-merge copies, <DIR>/{collectors,analyzer}/"

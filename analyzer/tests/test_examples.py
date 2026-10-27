@@ -15,7 +15,7 @@ examples = importlib.util.module_from_spec(_spec)
 sys.modules["regenerate_examples"] = examples
 _spec.loader.exec_module(examples)
 
-RUN = "run python3 analyzer/tools/regenerate_examples.py from the repository root"
+RUN = "run python3 analyzer/tools/regenerate_examples.py"
 
 
 def run_main(*argv: str) -> tuple[int, str, str]:

@@ -151,9 +151,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   class, `doubleagent.errors.DoubleAgentError`: a bad `--since`,
   `--until` or `--match`, an input that is neither a file, a directory
   nor an extractable archive, and a VS Code mutation-log record that
-  cannot be applied raise it or a subclass. Only the mutation-log error is
-  still also a `ValueError`. The messages and exit codes are unchanged
-  ([#277]).
+  cannot be applied raise it or a subclass, and none of them is a
+  `ValueError`. The messages and exit codes are unchanged ([#277]).
 - The package builds with the `hatchling` backend instead of
   `setuptools`; the wheel holds the same `doubleagent` package and
   `catalog.txt`. The test suite runs under pytest, which

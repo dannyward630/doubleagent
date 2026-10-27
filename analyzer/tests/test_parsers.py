@@ -8989,7 +8989,7 @@ from types import SimpleNamespace
 
 import zstandard
 
-from doubleagent.parsers.vscode import VsCodeParser, apply_mutation
+from doubleagent.parsers.vscode import MutationError, VsCodeParser, apply_mutation
 from doubleagent.parsers.vscode import confirmed_text as vscode_confirmed_text
 from doubleagent.parsers.zed import ZedParser
 from fixtures import (
@@ -9817,7 +9817,7 @@ class VsCodeTests(ParserBase):
         state = apply_mutation(state, {"kind": 3, "k": ["b"]})
         state = apply_mutation(state, {"kind": 2, "k": ["new"], "v": [1]})
         self.assertEqual(state, {"a": [1, 9], "new": [1]})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(MutationError):
             apply_mutation(state, {"kind": 1, "k": ["missing", "x"], "v": 1})
 
     def _reopen_with_agents_window(self):

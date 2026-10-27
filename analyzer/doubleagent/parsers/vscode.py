@@ -108,7 +108,7 @@ DEFAULT_MODEL_KEY = "chat.defaultModel"
 EDIT_STATES = ("Modified", "Accepted", "Rejected")
 
 
-class MutationError(DoubleAgentError, ValueError):
+class MutationError(DoubleAgentError):
     """A mutation-log record that cannot be applied to the session state."""
 
 

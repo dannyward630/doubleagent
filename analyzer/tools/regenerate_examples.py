@@ -17,7 +17,8 @@ every run, platform and Python version. "Regenerating the output examples" in
 analyzer/docs/development.md documents the collection and the options.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
-stale block, 2 when a marker is missing, duplicated or out of order or a run fails.
+stale block, 2 when a marker is missing or duplicated, an end marker precedes its begin
+marker, two blocks overlap, or a run fails.
 """
 
 from __future__ import annotations

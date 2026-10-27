@@ -84,13 +84,14 @@ python3 analyzer/tools/regenerate_examples.py           # rewrite the blocks in 
 python3 analyzer/tools/regenerate_examples.py --check   # print a diff per stale block
 ```
 
-`--check` writes nothing and exits 1 when a block differs from a fresh
-run, 0 when every block matches; in either mode a missing, repeated or
-out-of-order comment, or a `detect` or `timeline` run that fails, exits 2
+A rewrite exits 0. `--check` writes nothing and exits 1 when a block
+differs from a fresh run, 0 when every block matches. In either mode a
+missing or repeated comment, an end comment before its begin comment,
+overlapping blocks, or a `detect` or `timeline` run that fails exits 2
 and leaves the document unchanged. `tests/test_examples.py` fails the same
 way, so after a change to what `detect --json` prints or `inventory.json`
 holds, and after every `VERSION` bump, since `inventory.json` names the
-analyzer version, the suite fails until the script is run. The prose after
+analyzer version, the suite fails until the script is run. The prose around
 each example explains its numbers, and is written by hand.
 
 ## Reading a real install

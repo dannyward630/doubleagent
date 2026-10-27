@@ -26,8 +26,8 @@ jobs:
   # needs markdownlint and the document link check, nothing else: the
   # released scripts and package are unchanged (AGENTS.md, "Validation and
   # testing"). This job classifies the push or pull request, and every
-  # other job except the Markdown steps of lint is skipped when it is
-  # documentation only. A push whose "before" commit is unknown (a new
+  # other job except the Markdown and code style steps of lint is skipped
+  # when it is documentation only. A push whose "before" commit is unknown (a new
   # branch, a force push) counts as a code change.
   changes:
     name: Classify the change
@@ -217,6 +217,8 @@ jobs:
         run: python3 tools/check_doc_links.py
       - name: research document structure
         run: python3 tools/check_research_structure.py
+      - name: code style
+        run: python3 tools/check_code_style.py
       - name: Install sh linters
         if: needs.changes.outputs.docs-only != 'true'
         run: |

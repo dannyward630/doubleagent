@@ -1924,9 +1924,7 @@ nanobot|*nanobot*
 # ===========================================================================
 # Shared helpers
 # ===========================================================================
-# Constants and small functions every later section uses: the table reader,
-# logging and notes, JSON string escaping, the glob-to-regex converter,
-# extended-length paths, and file-system probes that never throw.
+# Constants and small functions every later section uses.
 
 # UTF-8 without a byte order mark, for every file the collector writes
 # (Add-Content on 5.1 defaults to ASCII and mangles non-ASCII paths).
@@ -1961,14 +1959,9 @@ function Add-Note([string]$message) {
 }
 
 # Takes a string; returns its JSON string body (no surrounding quotes) the
-# way PowerShell 7's ConvertTo-Json writes it: " and \ escaped, every control
-# character below 0x20 escaped (\b \t \n \f \r short, the rest \u00xx), and
-# \u0085, \u2028 and \u2029 as \u escapes; everything else, non-ASCII
-# included, is kept as is and encoded as UTF-8 by the writer, which turns a
-# lone surrogate into U+FFFD as ConvertTo-Json's output does. Windows
-# PowerShell 5.1's ConvertTo-Json also escaped < > ' & as \u003c and so on;
-# the parsed rows are the same. Write-ManifestRow calls it only for a row
-# that holds one of the rare characters ($script:JsonRareRx).
+# way PowerShell 7's ConvertTo-Json writes it (" and \, control characters,
+# \u0085, \u2028 and \u2029 escaped). Write-ManifestRow calls it only for a row
+# holding one of those rare characters ($script:JsonRareRx).
 $script:JsonRareRx = New-Object System.Text.RegularExpressions.Regex(
   '[\x00-\x1f\u0085\u2028\u2029]')
 $script:JsonInv = [System.Globalization.CultureInfo]::InvariantCulture
@@ -1991,11 +1984,9 @@ function ConvertTo-JsonEscaped([string]$text) {
   return $builder.ToString()
 }
 
-# Takes a glob and whether * and ? may cross /; returns an anchored regex
-# (^...$). Catalog globs are matched one path segment at a time, so their *
-# stops at /; exclusion and secret globs are matched against a whole
-# relative path, so theirs crosses it. [...] classes are kept, and the sh
-# negated class [!...] becomes the regex [^...].
+# Takes a glob and whether * and ? may cross /; returns an anchored regex.
+# Catalog globs match one path segment at a time; exclusion and secret globs a
+# whole relative path.
 function Convert-GlobToRegex([string]$glob, [bool]$starCrossesSeparator) {
   $builder = New-Object System.Text.StringBuilder
   [void]$builder.Append('^')
@@ -2024,15 +2015,9 @@ function Convert-GlobToRegex([string]$glob, [bool]$starCrossesSeparator) {
   $builder.ToString()
 }
 
-# Takes the globs of one table; returns one Regex that matches a relative
-# path when any glob does. Each table is one alternation of its per-glob
-# regexes, tested with one IsMatch per path instead of a PowerShell loop of
-# -match. Every per-glob regex is ^body$, so the anchors are hoisted out
-# (^(?:b1|b2|...)$) and the engine tries only the start of the path. The
-# options give -match's semantics: IgnoreCase with the current culture (no
-# CultureInvariant). RegexOptions.Compiled is left off: it is slower here on
-# Windows PowerShell 5.1. An empty table (-Full for exclusions) matches
-# nothing.
+# Takes the globs of one table; returns one case-insensitive Regex matching a
+# relative path when any glob does, so each path costs one IsMatch. An empty
+# table matches nothing; RegexOptions.Compiled is off, being slower on 5.1.
 function ConvertTo-TableRegex([string[]]$globs) {
   $bodies = @(foreach ($glob in $globs) {
       $globRegex = Convert-GlobToRegex $glob $true
@@ -2044,25 +2029,17 @@ function ConvertTo-TableRegex([string[]]$globs) {
   return (New-Object System.Text.RegularExpressions.Regex($pattern, $options))
 }
 
-# Paths longer than 260 characters. Windows PowerShell 5.1 runs on
-# .NET Framework, where a plain path past MAX_PATH fails unless the host has
-# LongPathsEnabled set; the extended-length form (\\?\C:\... or
-# \\?\UNC\server\share\...) works without it, under 5.1 and 7. Every file
-# system call (.NET and -LiteralPath alike) gets the extended form on
-# Windows; everything the collector writes out (manifest path, archive_path,
-# target, collection.json, the log, stdout) keeps the plain form, and tar.exe
-# is given plain paths. Elsewhere (PowerShell 7 on Linux or macOS) and for a
-# relative path both helpers return their argument unchanged.
+# On Windows every file system call takes the extended-length form (\\?\C:\...),
+# which passes 260 characters without LongPathsEnabled; everything written out
+# keeps the plain form. See "Locked files and long paths" in windows.md.
 $script:UseExtendedPaths = ($env:OS -eq 'Windows_NT')
 # A . or .. segment or a doubled separator, which the prefix stops Win32 from
 # resolving, so ConvertTo-ExtendedPath resolves it first.
 $script:ExtendedNormRx = New-Object System.Text.RegularExpressions.Regex(
   '\\\.{1,2}(?:\\|$)|\\\\')
 
-# Takes a path; returns its extended-length form on Windows (\\?\C:\... for
-# a drive path, \\?\UNC\server\share\... for a UNC path) with . and ..
-# segments and doubled separators resolved, or the path unchanged elsewhere,
-# for a relative path, or when it is already extended.
+# Takes a path; returns its extended-length form on Windows, with . and ..
+# segments resolved, or the path unchanged elsewhere or when relative.
 function ConvertTo-ExtendedPath([string]$path) {
   $ordinal = [System.StringComparison]::Ordinal
   if (-not $script:UseExtendedPaths -or -not $path -or $path.StartsWith('\\?\', $ordinal)) {
@@ -2107,9 +2084,8 @@ function ConvertFrom-ExtendedPath([string]$path) {
   return $path
 }
 
-# Takes an exception message; returns it with every extended path in it
-# turned back into the plain form. An exception names the path it was given,
-# so one about an extended path is cleaned before it reaches a row or the log.
+# Takes an exception message; returns it with every extended path turned back
+# into the plain form, for rows and the log.
 function ConvertFrom-ExtendedText([string]$text) {
   if (-not $text -or $text.IndexOf('\\?\', [System.StringComparison]::Ordinal) -lt 0) {
     return $text
@@ -2118,9 +2094,8 @@ function ConvertFrom-ExtendedText([string]$text) {
 }
 
 # Takes a path and a kind (Leaf, Container, or anything else for either);
-# returns whether it exists as that kind. Test-Path throws a real
-# UnauthorizedAccessException on protected profiles even with -ErrorAction,
-# so this probes through .NET, which never throws.
+# returns whether it exists as that kind. Test-Path throws on protected
+# profiles even with -ErrorAction, so this probes through .NET.
 function Test-PathQuiet([string]$path, [string]$kind) {
   if (-not $path) { return $false }
   $path = ConvertTo-ExtendedPath $path
@@ -2131,19 +2106,16 @@ function Test-PathQuiet([string]$path, [string]$kind) {
   } catch { return $false }
 }
 
-# Takes a parent path and a child that may use / or \; returns them joined
-# with the platform separator. Join-Path is not used: its three-argument form
-# is PowerShell 7 only, and it resolves PowerShell drives.
+# Takes a parent path and a child that may use / or \; returns them joined with
+# the platform separator. Join-Path resolves PowerShell drives.
 function Join-PathSafe([string]$parent, [string]$child) {
   $child = $child.Replace('\', $script:Sep).Replace('/', $script:Sep)
   if ($parent.EndsWith('\') -or $parent.EndsWith('/')) { return $parent + $child }
   return $parent + $script:Sep + $child
 }
 
-# Takes a base directory and a full path; returns the path relative to the
-# base with / separators (the form exclusion and secret globs are matched
-# against), or the whole path with / separators when it is not under the
-# base. The prefix test ignores case.
+# Takes a base directory and a full path; returns the path relative to the base
+# (or whole) with / separators, the form the globs match. Ignores case.
 function Get-RelPath([string]$base, [string]$full) {
   $trimmedBase = $base.TrimEnd('\', '/')
   $ignoreCase = [System.StringComparison]::OrdinalIgnoreCase
@@ -2175,7 +2147,9 @@ function Get-OwnerName([string]$path) {
   } catch { return '' }
   if (-not $script:OwnerNames.ContainsKey($key)) {
     $accountName = $key
-    try { $accountName = $ownerSid.Translate([System.Security.Principal.NTAccount]).Value } catch { }
+    try {
+      $accountName = $ownerSid.Translate([System.Security.Principal.NTAccount]).Value
+    } catch { }
     $script:OwnerNames[$key] = $accountName
   }
   return $script:OwnerNames[$key]
@@ -2198,9 +2172,8 @@ function Get-FileSha256([string]$path) {
   finally { if ($stream) { $stream.Dispose() } }
 }
 
-# Takes a directory; returns the total size in bytes of the files under it,
-# or 0 when it cannot be listed. Used for skipped_excluded and
-# skipped_unmatched_volume rows.
+# Takes a directory; returns the total size of the files under it, or 0 when it
+# cannot be listed.
 function Get-DirSize([string]$dir) {
   try {
     $listing = @{ LiteralPath = (ConvertTo-ExtendedPath $dir); Recurse = $true; Force = $true }
@@ -2231,14 +2204,9 @@ function Test-IsLink([string]$path) {
   } catch { return $false }
 }
 
-# Takes a FileSystemInfo; returns its manifest type: 'symlink' for a symbolic
-# link or junction, 'file' for a regular file, or for a special file, which
-# is never copied, 'socket', 'fifo', 'device' or 'other'. On Windows, a
-# reparse point whose LinkType is neither SymbolicLink nor Junction (an
-# AF_UNIX socket) is 'other': PowerShell 5.1 exposes no reparse tag to
-# name it by. A reparse point whose LinkType cannot be read stays 'symlink'.
-# Elsewhere the first character of UnixMode (PowerShell 7.1 and later) names
-# the kind; without UnixMode every non-link is 'file'.
+# Takes a FileSystemInfo; returns its manifest type (symlink, file, socket, fifo,
+# device or other). PowerShell 5.1 exposes no reparse tag, so a reparse point
+# that is neither a symbolic link nor a junction is 'other'.
 function Get-ManifestType($item) {
   if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
     $linkType = $null
@@ -2288,13 +2256,10 @@ $script:RowHomes = @{}
 # The manifest.jsonl writer, opened by Open-RunFiles unless -Inventory.
 $script:ManifestWriter = $null
 
-# Takes the manifest fields in manifest order (uid and gid are always 0 and
-# mode always '' on this side, so they are not parameters); writes one JSON
-# line through $script:ManifestWriter, counts the row in $script:Counts and
-# marks its home in $script:RowHomes. Rows are written by hand rather than
-# through ConvertTo-Json, which is far slower per row and differs between
-# 5.1 and 7: the same keys in the same order with the same JSON types, and
-# PowerShell 7's ConvertTo-Json string bytes (see ConvertTo-JsonEscaped).
+# Takes the manifest fields in order, without uid, gid and mode; writes one JSON
+# line, counts it in $script:Counts and marks its home in $script:RowHomes. Rows
+# are written by hand: ConvertTo-Json is slower per row and differs between 5.1
+# and 7.
 function Write-ManifestRow {
   param([string]$user, [string]$homeDir, [string]$agent, [string]$path, [string]$archivePath,
     [string]$type, [int64]$size, [int64]$mtime, [int64]$atime, [int64]$ctime, [int64]$btime,
@@ -2329,10 +2294,9 @@ function Write-ManifestRow {
   if ($status -eq 'collected') { $script:Counts['bytes'] += $size }
 }
 
-# Takes a directory; returns why it cannot be walked (the exception
-# message), or '' when it can be listed. On Linux and macOS Get-ChildItem
-# also fails on a directory that can be listed but not entered, so this
-# matches the sh collector's -r and -x tests.
+# Takes a directory; returns why it cannot be walked, or '' when it can. Off
+# Windows a directory that can be listed but not entered also fails, matching
+# the sh collector's -r and -x tests.
 function Get-DirReadError([string]$dir) {
   try {
     [void]@(Get-ChildItem -LiteralPath (ConvertTo-ExtendedPath $dir) -Force -ErrorAction Stop)
@@ -2342,9 +2306,7 @@ function Get-DirReadError([string]$dir) {
 }
 
 # Takes the user, home, agent, a directory that could not be walked and the
-# reason; logs "read failed" and, unless -Inventory, writes one error_read
-# row (type dir, size 0) with whatever metadata of the directory itself can
-# still be read.
+# reason; logs it and, unless -Inventory, writes its error_read row.
 function Write-ReadErrorRow {
   param([string]$user, [string]$homeDir, [string]$agent, [string]$dir, [string]$errorText)
   Write-CollectorLog "read failed: ${dir}: $errorText"
@@ -2366,15 +2328,10 @@ function Write-ReadErrorRow {
 # ===========================================================================
 # Staging files
 # ===========================================================================
-# PowerShell has no worker programs: Add-CollectedTree calls
-# Add-CollectedFile in this process for every file. Each file is read with
-# Get-Item (which does not follow a reparse point) before it is copied, and
-# the staged copy, not the source, is hashed, so the hash matches the
-# archived bytes even when a running agent appends to the source.
+# PowerShell has no worker programs: Add-CollectedTree calls Add-CollectedFile
+# in this process for every file.
 
-# Takes a full source path; returns its archive path: fs/ plus the path
-# relative to -Root in image mode, fs/<drive letter>/... for a drive path,
-# or fs/ plus the path with its leading separators removed otherwise.
+# Takes a full source path; returns its fs/... archive path.
 function Get-ArchivePath([string]$full) {
   if ($script:Mode -eq 'image') { return 'fs/' + (Get-RelPath $Root $full) }
   if ($full.Length -ge 3 -and $full[1] -eq ':') {
@@ -2387,15 +2344,11 @@ function Get-ArchivePath([string]$full) {
 # its parent again.
 $script:StagedDirs = New-Object 'System.Collections.Generic.HashSet[string]'
 
-# Takes the source path, the staging path and the source's pre-copy
-# Get-Item; creates the staging directory when $script:StagedDirs lacks it,
-# copies the file with FileShare.ReadWrite|Delete (so a file a running editor
-# holds open can be read) and returns @(SHA-256 of the staged copy or '',
-# bytes copied). The byte count is the row's size, since NTFS can report a
-# stale length for a file still open for writing. The hash reads the copy
-# through the handle that wrote it, as reopening waits for the antivirus
-# scan. Throws when the directory or the copy fails. See "Locked files and
-# long paths" in collectors/docs/windows.md.
+# Takes the source path, the staging path and the source's pre-copy Get-Item;
+# copies the file with shared access and returns @(sha256 of the copy or '',
+# bytes copied). The hash reads the copy through the handle that wrote it,
+# because reopening waits for the antivirus scan; "Locked files and long
+# paths" in collectors/docs/windows.md has the rest. Throws on failure.
 function Copy-FileShared([string]$source, [string]$destination, $item) {
   $inStream = $null; $outStream = $null; $sha256 = ''; $copied = [int64]0
   $source = ConvertTo-ExtendedPath $source; $destination = ConvertTo-ExtendedPath $destination
@@ -2432,12 +2385,9 @@ function Copy-FileShared([string]$source, [string]$destination, $item) {
 }
 
 # ---------------------------------------------------------------------------
-# Symlinks are recreated in the staging tree with their target string as
-# stored, as the sh collector does with ln -s, through CreateSymbolicLink
-# (PowerShell 7) or cmd.exe's mklink (5.1), never New-Item, which on 5.1
-# resolves a relative target and refuses a missing one. A zip holds no
-# links, so none are staged for one. collectors/docs/windows.md, "Symlinks
-# and reparse points", has the details.
+# Links are recreated with their target string as stored, never with New-Item,
+# which on 5.1 resolves a relative target and refuses a missing one; windows.md,
+# "Symlinks and reparse points", has the details.
 # ---------------------------------------------------------------------------
 $script:LinkApi = $null
 $script:LinkApiError = ''
@@ -2449,11 +2399,8 @@ $script:StagedLinks = New-Object System.Collections.ArrayList
 # Links left out because the archive is a zip, and links that failed.
 $script:LinkCounts = @{ zip = 0; failed = 0 }
 
-# Returns the link API this PowerShell has, detected once and cached in
-# $script:LinkApi: 'dotnet' (CreateSymbolicLink, PowerShell 7), 'mklink'
-# (cmd.exe, Windows PowerShell 5.1), or '' with the reason in
-# $script:LinkApiError. The .NET methods are looked up by reflection: they
-# do not exist in .NET Framework.
+# Returns the link API, detected once: 'dotnet' (PowerShell 7), 'mklink'
+# (Windows PowerShell 5.1), or '' with the reason in $script:LinkApiError.
 function Get-LinkApi {
   if ($null -ne $script:LinkApi) { return $script:LinkApi }
   $script:LinkApi = ''
@@ -2475,9 +2422,8 @@ function Get-LinkApi {
 }
 
 # Takes the link path, its target and whether it is a directory link; runs
-# cmd.exe /d /v:off /c mklink [/D] "link" "target" with an argument string
-# built here, so PowerShell's native-argument quoting is not involved.
-# Returns '' on success, otherwise mklink's message and exit code.
+# mklink with an argument string built here, so PowerShell's native-argument
+# quoting is not involved. Returns '' or mklink's message and exit code.
 function Invoke-Mklink([string]$linkPath, [string]$target, [bool]$isDir) {
   # cmd expands %NAME% even inside quotes, and a quote would end the argument.
   if ($linkPath.Contains('%') -or $linkPath.Contains('"') -or $target.Contains('%') -or
@@ -2509,10 +2455,8 @@ function Invoke-Mklink([string]$linkPath, [string]$target, [bool]$isDir) {
 }
 
 # Takes the plain staging path of a link, its target and whether it is a
-# directory link; makes the link and returns '' on success, otherwise the
-# reason. The link is made at the extended form of the path (mklink accepts
-# it too) and recorded in $script:StagedLinks under the plain one, which the
-# tar writer compares with the stage.
+# directory link; makes the link and records it in $script:StagedLinks. Returns
+# '' or the reason.
 function Invoke-CreateSymlink([string]$linkPath, [string]$target, [bool]$isDir) {
   $api = Get-LinkApi
   $extendedLinkPath = ConvertTo-ExtendedPath $linkPath
@@ -2538,8 +2482,7 @@ function Invoke-CreateSymlink([string]$linkPath, [string]$target, [bool]$isDir) 
 }
 
 # Takes a reparse point's Get-Item and its plain staging path; recreates the
-# link there and returns '' or the row's error. Counts zip and failed links
-# in $script:LinkCounts and logs a failure.
+# link and returns '' or the row's error, counting it in $script:LinkCounts.
 function Add-StagedLink($item, [string]$stagePath) {
   if (-not $script:LinksInArchive) {
     $script:LinkCounts.zip++
@@ -2573,15 +2516,10 @@ function Add-StagedLink($item, [string]$stagePath) {
   return "not recreated in the archive: $why"
 }
 
-# Takes the user, home, agent and the file's Get-Item (from an extended path
-# on Windows); stages it and writes its manifest row. A link is recreated
-# (symlink); a socket, FIFO, device or other reparse point (skipped_special)
-# is never opened; a secret under -NoSecrets (skipped_secret) and a file over
-# -MaxFileSizeMB (skipped_size) get a row and no copy; anything else is
-# copied and hashed (collected, or error_copy with the exception message),
-# its size the byte count Copy-FileShared copied. Under -Inventory it only
-# feeds Add-InventoryFile. Runs once per file, so Join-PathSafe and Get-Epoch
-# are inlined and nothing here starts a pipeline or another process.
+# Takes the user, home, agent and the file's Get-Item; stages it and writes its
+# manifest row, or under -Inventory feeds Add-InventoryFile. Runs once per
+# file, so Join-PathSafe and Get-Epoch are inlined and nothing here starts a
+# pipeline or another process.
 function Add-CollectedFile([string]$user, [string]$homeDir, [string]$agent, $item) {
   if ($Inventory) {
     # Regular files only: links and special files are neither followed nor counted.
@@ -2643,9 +2581,8 @@ function Add-CollectedFile([string]$user, [string]$homeDir, [string]$agent, $ite
   Write-ManifestRow @row
 }
 
-# Takes the user, home, agent and the Get-Item of a path that matched
-# EXCLUDES; unless -Inventory, writes its skipped_excluded row: a directory
-# with the total size of the files under it, a file with its own size.
+# Takes the user, home, agent and an excluded path's Get-Item; unless
+# -Inventory, writes its skipped_excluded row.
 function Add-ExcludedPath([string]$user, [string]$homeDir, [string]$agent, $item) {
   if ($Inventory) { return }
   $path = ConvertFrom-ExtendedPath $item.FullName
@@ -2662,19 +2599,12 @@ function Add-ExcludedPath([string]$user, [string]$homeDir, [string]$agent, $item
 # ===========================================================================
 # Catalog walk
 # ===========================================================================
-# A table (CATALOG for a home or a Docker volume, PROJECT_CATALOG for a
-# project) is expanded against a base directory all at once, so a nested
-# entry (.gemini/antigravity-cli inside .gemini) claims its subtree before
-# the enclosing entry is walked; then each match is collected, a directory
-# by walking it without following reparse points, testing every path
-# against EXCLUDES on the way down.
+# A table is expanded in full before anything is walked, so a nested entry
+# (.gemini/antigravity-cli in .gemini) claims its subtree from the outer walk.
 
-# Matched paths of the table being collected, which the walk of an
-# enclosing match skips. Keys are compared ordinally (the Dictionary
-# default) except on Windows, so pwsh on Linux keeps .config/Cursor/User and
-# .config/cursor/User apart; Expand-Glob gives on-disk spellings, so the
-# case-sensitive compare still meets the names Get-ChildItem returns on
-# macOS.
+# Returns a new table for $script:ClaimedPaths: case-insensitive on Windows,
+# ordinal elsewhere, so pwsh on Linux keeps .config/Cursor and .config/cursor
+# apart.
 function Get-ClaimTable {
   if ($env:OS -eq 'Windows_NT') { return @{} }
   return (New-Object 'System.Collections.Generic.Dictionary[string,bool]')
@@ -2687,14 +2617,9 @@ $script:WalkErrors = 0
 # Expand-Glob and read by Expand-Catalog.
 $script:GlobReadErrors = [ordered]@{}
 
-# Takes a directory and a literal catalog segment; returns the name the
-# segment has on disk. On a case-insensitive filesystem (Windows, macOS)
-# .config/Goose finds .config/goose; the search pattern returns the stored
-# spelling, so two catalog entries that differ only by case expand to one
-# path and Expand-Catalog keeps the first. When the pattern does not give
-# exactly one entry (two names that differ by case on a case-sensitive
-# filesystem, or an error), the segment is kept as written, so distinct
-# directories stay distinct.
+# Takes a directory and a literal catalog segment; returns the segment's on-disk
+# spelling, so two entries that differ only by case expand to one path on a
+# case-insensitive filesystem; the segment as written when that is ambiguous.
 function Get-OnDiskName([string]$dir, [string]$segment) {
   try {
     $extendedDir = ConvertTo-ExtendedPath $dir
@@ -2708,12 +2633,9 @@ function Get-OnDiskName([string]$dir, [string]$segment) {
   return $segment
 }
 
-# Takes a base directory and a catalog glob (segments split on /, * does
-# not cross a separator); returns the full paths of the existing items it
-# matches, in on-disk spelling, or nothing when it matches only the base. A
-# directory that cannot be listed for a wildcard segment is recorded in
-# $script:GlobReadErrors (path -> message), which Expand-Catalog turns into
-# error_read rows.
+# Takes a base directory and a catalog glob; returns the full paths it matches,
+# in on-disk spelling. A directory a wildcard segment cannot list is recorded in
+# $script:GlobReadErrors.
 function Expand-Glob([string]$base, [string]$pattern) {
   $current = @($base)
   foreach ($segment in ($pattern -split '/')) {
@@ -2750,14 +2672,9 @@ function Expand-Glob([string]$base, [string]$pattern) {
   return $current
 }
 
-# Takes a base directory and a table; expands every line first and returns
-# @{ Entries; GlobErrors }. Entries lists each match in table order as
-# @(agent, path, glob); a path an earlier line already matched (two lines
-# that differ only by case meeting one directory on a case-insensitive
-# filesystem) is listed as @('', path, 'agent|glob') so the caller logs and
-# skips it. Every kept match is claimed in $script:ClaimedPaths, which is
-# reset first. GlobErrors maps each directory a wildcard segment could not
-# list to @(first agent whose line needed it, message).
+# Takes a base directory and a table; returns @{ Entries; GlobErrors }, every
+# match as @(agent, path, glob), claimed in $script:ClaimedPaths. A path an
+# earlier line matched is listed with an empty agent, so the caller skips it.
 function Expand-Catalog([string]$base, [string]$table) {
   $entries = New-Object System.Collections.ArrayList
   $script:ClaimedPaths = Get-ClaimTable
@@ -2784,11 +2701,9 @@ function Expand-Catalog([string]$base, [string]$table) {
   return @{ Entries = $entries; GlobErrors = $globErrors }
 }
 
-# Takes the user, base and the GlobErrors of Expand-Catalog; writes one
-# error_read row for each directory, so a catalog match below it is never
-# lost silently. The base itself was already checked by Get-DirReadError,
-# and a directory at or under a matched path gets its row from
-# Add-CollectedTree, so both are skipped. Counts $script:WalkErrors.
+# Takes the user, base and the GlobErrors of Expand-Catalog; writes an
+# error_read row for each directory not already covered by the base or a match.
+# Counts $script:WalkErrors.
 function Write-GlobErrorRows([string]$user, [string]$base, $globErrors) {
   $ignoreCase = [System.StringComparison]::OrdinalIgnoreCase
   foreach ($errorDir in @($globErrors.Keys)) {
@@ -2805,12 +2720,8 @@ function Write-GlobErrorRows([string]$user, [string]$base, $globErrors) {
 }
 
 # Takes the user, a base directory, a table and an optional progress header;
-# collects every match of the table under the base: Expand-Catalog, the
-# error_read rows for unlistable directories, then Add-CollectedPath for
-# each match with a "  [agent] path" log line. The header, when given, is
-# logged once before the first match, so a home with no matches leaves no
-# progress line. Under -Inventory, shared entries still claim their paths
-# but are not walked, and every other match is recorded as evidence.
+# collects every match of the table under the base, logging the header before
+# the first one.
 function Add-CatalogMatches([string]$user, [string]$base, [string]$table, [string]$header = '') {
   $expansion = Expand-Catalog $base $table
   Write-GlobErrorRows $user $base $expansion.GlobErrors
@@ -2835,11 +2746,8 @@ function Add-CatalogMatches([string]$user, [string]$base, [string]$table, [strin
   $script:ClaimedPaths = Get-ClaimTable
 }
 
-# Takes the user, home, agent and a matched path; collects it: an excluded
-# path gets its skipped_excluded row, a directory that is not a reparse
-# point is walked by Add-CollectedTree, anything else is staged by
-# Add-CollectedFile. A path that cannot be read is logged ("stat failed")
-# and counted in $script:WalkErrors.
+# Takes the user, home, agent and a matched path; collects it, counting a path
+# that cannot be read in $script:WalkErrors.
 function Add-CollectedPath([string]$user, [string]$homeDir, [string]$agent, [string]$path) {
   $item = $null
   try { $item = Get-Item -LiteralPath (ConvertTo-ExtendedPath $path) -Force -ErrorAction Stop }
@@ -2857,14 +2765,9 @@ function Add-CollectedPath([string]$user, [string]$homeDir, [string]$agent, [str
   else { Add-CollectedFile $user $homeDir $agent $item }
 }
 
-# Takes the user, home, agent and a directory; walks it depth first: a
-# child another catalog entry claimed is left to that entry, an excluded
-# child gets its skipped_excluded row and is not descended, a directory
-# that is not a reparse point is walked, and everything else is staged. The
-# directory is listed through its extended form, so a tree deeper than 260
-# characters is walked on 5.1 without LongPathsEnabled; a directory
-# that cannot be listed gets an error_read row, never silence, and counts in
-# $script:WalkErrors.
+# Takes the user, home, agent and a directory; walks it depth first, skipping
+# claimed children and pruning excluded ones. It lists the extended form, so a
+# tree past 260 characters is walked without LongPathsEnabled.
 function Add-CollectedTree([string]$user, [string]$homeDir, [string]$agent, [string]$dir) {
   $children = @()
   $extendedDir = ConvertTo-ExtendedPath $dir
@@ -2907,10 +2810,8 @@ $script:InaccessibleHomes = @()
 $script:DeniedHomes = @()
 $script:UserList = @()
 
-# Returns every candidate home as @{ user; home }, duplicates included. A
-# live run reads the registry's ProfileList and then lists Users/* and
-# home/* on the system drive; image mode lists the usual Windows and Unix
-# home roots under -Root.
+# Returns every candidate home as @{ user; home }, duplicates included, from
+# the registry's ProfileList and the usual home roots.
 function Get-CandidateHomes {
   $candidates = @()
   if ($script:Mode -eq 'live') {
@@ -2940,11 +2841,8 @@ function Get-CandidateHomes {
   return $candidates
 }
 
-# Returns the homes to collect as @{ user; home }, in enumeration order:
-# trailing separators trimmed, skip-listed and transient profiles left out,
-# files left out, -Users applied, and each home kept once (compared without
-# case). A home that is not a directory .NET can see is appended to
-# $script:InaccessibleHomes instead.
+# Returns the homes to collect as @{ user; home }, in enumeration order, each
+# once; a home .NET cannot see is added to $script:InaccessibleHomes.
 function Get-UserHomes {
   $wanted = @(); if ($Users -ne '') { $wanted = @($Users -split ',' | Where-Object { $_ -ne '' }) }
   $seen = @{}; $selected = @()
@@ -2969,9 +2867,8 @@ function Get-UserHomes {
   return $selected
 }
 
-# Returns the inaccessible homes that are denied rather than gone: .NET
-# reports the home missing although its parent directory lists it (access
-# denied; a ProfileList entry for a deleted profile is not counted).
+# Returns the inaccessible homes that are denied rather than gone: their parent
+# directory lists them.
 function Get-DeniedHomes {
   foreach ($homePath in $script:InaccessibleHomes) {
     $leaf = Split-Path -Leaf $homePath; $parent = Split-Path -Parent $homePath
@@ -2982,11 +2879,9 @@ function Get-DeniedHomes {
   }
 }
 
-# Main step: collects CATALOG under every home in $script:UserList. Sets
-# $script:DeniedHomes; unless -Inventory, writes one error_read row for each
-# denied home and for each listed home that cannot be walked. Under
-# -Inventory, each user's accumulator is kept in $script:InventoryUsers as
-# @(home, accumulator) for Write-Inventory.
+# Main step: collects CATALOG under every home in $script:UserList, with an
+# error_read row for each home that cannot be walked. Sets $script:DeniedHomes
+# and, under -Inventory, $script:InventoryUsers.
 function Add-UserHomes {
   $script:DeniedHomes = @(Get-DeniedHomes)
   if (-not $Inventory) {
@@ -3013,10 +2908,8 @@ function Add-UserHomes {
 # ===========================================================================
 # Docker and Podman volumes
 # ===========================================================================
-# Volumes are found on disk as in the sh collector: <volumes dir>/<name>/_data,
-# including Linux data roots in an image and Windows-container volumes under
-# ProgramData\Docker. Docker Desktop's WSL virtual disk is only noted.
-# collectors/docs/internals.md, "Docker and Podman volumes", has the flow.
+# Volumes are found on disk, as in the sh collector; internals.md, "Docker and
+# Podman volumes", has the flow.
 
 # What the volume step saw, for collection.json and the stdout docker line.
 $script:Docker = @{ seen = $false; found = 0; collected = 0; unreadable = 0; desktop = $false }
@@ -3030,21 +2923,16 @@ foreach ($line in (Get-TableLines $DOCKER_VOLUMES)) {
 # The -Inventory accumulator for matched volumes, reported as user docker.
 $script:InventoryDocker = [ordered]@{}
 
-# Takes a volume name; returns the first DOCKER_VOLUMES rule (agent, regex,
-# glob) whose glob matches it, or $null. Volume names are case-sensitive,
-# as in the sh collector's case(1) match, so -cmatch.
+# Takes a volume name; returns the first DOCKER_VOLUMES rule (agent, regex, glob)
+# matching it case-sensitively, as the sh case(1) does, or $null.
 function Get-DockerVolumeRule([string]$name) {
   foreach ($rule in $script:DockerVolumeRules) { if ($name -cmatch $rule[1]) { return , $rule } }
   return $null
 }
 
-# Takes a base directory and a relative volumes path (docker/volumes);
-# returns the full volumes directory when it can be listed, otherwise ''.
-# Each component is checked on the way down, so a data root the responder
-# cannot enter, or a symlinked one, is noted (and counted in
-# $script:Docker) rather than skipped silently. A directory that cannot be
-# listed may still be searchable; the walk goes on when the next component
-# is visible, as the sh collector's -x test would.
+# Takes a base directory and a relative volumes path; returns the volumes
+# directory when it can be listed, else '', noting a symlinked or unreadable
+# component in $script:Docker.
 function Test-VolumeRoot([string]$base, [string]$rel) {
   $volumesDir = $base
   $segments = @($rel -split '/')
@@ -3068,9 +2956,8 @@ function Test-VolumeRoot([string]$base, [string]$rel) {
   return $volumesDir
 }
 
-# Takes a base directory and a relative volumes path; collects or records
-# every volume directory in it (Add-Volume), skipping files and reparse
-# points, and counts each in $script:Docker.found.
+# Takes a base directory and a relative volumes path; gives every volume
+# directory in it to Add-Volume, counting each in $script:Docker.found.
 function Add-VolumeDir([string]$base, [string]$rel) {
   $volumesDir = Test-VolumeRoot $base $rel
   if (-not $volumesDir) { return }
@@ -3086,9 +2973,8 @@ function Add-VolumeDir([string]$base, [string]$rel) {
   }
 }
 
-# Takes the _data directory of a volume no DOCKER_VOLUMES rule matches;
-# writes its skipped_unmatched_volume row: user docker, type dir, the total
-# size of the files under it, its attributes, no times.
+# Takes the _data directory of an unmatched volume; writes its
+# skipped_unmatched_volume row.
 function Write-UnmatchedVolumeRow([string]$data) {
   $attributes = ''
   try {
@@ -3100,12 +2986,8 @@ function Write-UnmatchedVolumeRow([string]$data) {
   Write-ManifestRow @row
 }
 
-# Takes one volume directory's Get-ChildItem entry. An unreadable volume is
-# noted, one with no _data directory is logged and skipped, an unmatched one
-# gets its skipped_unmatched_volume row (none under -Inventory), and a
-# matched one has its _data collected under the rule's agent (under
-# -Inventory, into the $script:InventoryDocker accumulator). A matched volume
-# whose walk met unreadable paths ($script:WalkErrors) is noted as well.
+# Takes one volume directory's entry; collects a matched volume's _data, or
+# records an unmatched or unreadable one.
 function Add-Volume($volume) {
   $name = $volume.Name
   $volumePath = ConvertFrom-ExtendedPath $volume.FullName
@@ -3147,9 +3029,8 @@ function Add-Volume($volume) {
   }
 }
 
-# Takes the Docker Desktop data directories to look for; notes each that
-# exists and is not a link, and sets $script:Docker.desktop. Docker Desktop
-# keeps Linux volumes inside a VM disk that no file walk reaches.
+# Takes the Docker Desktop data directories; notes each that exists, since its
+# volumes are inside a VM disk, and sets $script:Docker.desktop.
 function Find-DockerDesktop([string[]]$desktopDirs) {
   foreach ($desktopDir in $desktopDirs) {
     if ((Test-PathQuiet $desktopDir 'Container') -and -not (Test-IsLink $desktopDir)) {
@@ -3160,10 +3041,8 @@ function Find-DockerDesktop([string[]]$desktopDirs) {
   }
 }
 
-# Main step: the root Docker, root Podman and Windows-container Docker data
-# roots (under -Root in image mode, the system drive or / live), then the
-# rootless Docker and Podman roots of each selected user, then the Docker
-# Desktop data directories.
+# Main step: collects the volumes of the system and per-user Docker and Podman
+# data roots, then notes Docker Desktop data.
 function Add-DockerVolumes {
   if ($script:Mode -eq 'image') { $dockerBase = $Root }
   elseif ($script:Sep -eq '/') { $dockerBase = '/' }
@@ -3191,23 +3070,17 @@ function Add-DockerVolumes {
 # ===========================================================================
 # Project discovery
 # ===========================================================================
-# Project directories are read from the agents' own plain-text state (the
-# same sources as the sh collector, in the same order) with a regex per
-# format, never a parser: JSON and JSONL values and keys, YAML, JSON5 and
-# TOML lines, and whole files that hold one path. Each discovered directory
-# is a base for PROJECT_CATALOG. Agents whose project paths live only in
-# SQLite are left to the analyzer.
+# Project paths are read from the agents' plain-text state with a regex per
+# format, in the sh collector's order; internals.md, "Project discovery", lists
+# the groups.
 
 $script:ProjectList = @()
 # The home whose sources are being read, for Test-InventorySecret.
 $script:DiscoveryHome = ''
 
-# Takes a value read from a discovery source; returns it as a local
-# directory path, or $null when it is not an absolute path this host or
-# image can hold. file:// URIs are unescaped (file:///c:/x is a drive path;
-# file:///home/x keeps its leading slash), JSON-escaped separators are
-# undone, and in image mode the path is placed under -Root (a drive path
-# without its drive letter).
+# Takes a value read from a discovery source; returns it as a local directory
+# path (file:// URIs unescaped, under -Root in image mode), or $null when it is
+# not an absolute path this host or image can hold.
 function ConvertTo-LocalPath([string]$value) {
   $value = $value.Trim()
   if ($value -eq '') { return $null }
@@ -3230,21 +3103,16 @@ function ConvertTo-LocalPath([string]$value) {
   return $null
 }
 
-# Takes a discovery source path; returns whether -Inventory must skip it.
-# -Inventory never opens a credential file: a source whose path relative to
-# the home being scanned ($script:DiscoveryHome) matches SECRET_GLOBS
-# (.claude.json, the OpenClaw and nanobot configs, Tabby's config.toml) is
-# skipped in that mode.
+# Takes a discovery source path; returns whether -Inventory must skip it as a
+# credential file.
 function Test-InventorySecret([string]$file) {
   if (-not $Inventory -or -not $script:DiscoveryHome) { return $false }
   return $script:SecretRegex.IsMatch((Get-RelPath $script:DiscoveryHome $file))
 }
 
-# Takes a discovery source path; returns its text, or $null when it is not a
-# file, is a credential file under -Inventory, or cannot be read, logging
-# "discovery source unreadable" in the last case. The file is opened with the
-# share mode Copy-FileShared uses, because File.ReadAllText refuses a rollout
-# that a running Codex or ChatGPT desktop app holds open for writing.
+# Takes a discovery source path; returns its text, or $null. It opens the file
+# with shared access, since File.ReadAllText refuses a file a running agent
+# holds open for writing.
 function Read-DiscoverySource([string]$file) {
   if (-not $file -or -not (Test-PathQuiet $file 'Leaf')) { return $null }
   if (Test-InventorySecret $file) { return $null }
@@ -3263,9 +3131,8 @@ function Read-DiscoverySource([string]$file) {
   }
 }
 
-# Takes a regex and source files; returns capture group 1 of every match in
-# every readable file, in file order. The readers below build the regex for
-# one format each.
+# Takes a regex and source files; returns capture group 1 of every match, in
+# file order.
 function Get-RegexCaptures([string]$regex, [string[]]$files) {
   foreach ($file in $files) {
     $text = Read-DiscoverySource $file
@@ -3299,8 +3166,7 @@ function Get-YamlValues([string]$key, [string[]]$files) {
 }
 
 # Takes a key and source files; returns every string value of that key in
-# JSON5, which allows unquoted keys and single-quoted strings (OpenClaw
-# config).
+# JSON5, whose keys may be unquoted and strings single-quoted.
 function Get-Json5Values([string]$key, [string[]]$files) {
   $regex = '(?<![\w$])["'']?' + [regex]::Escape($key) +
     '["'']?\s*:\s*(?:"((?:[^"\\]|\\.)*)"|''([^'']*)'')'
@@ -3320,18 +3186,16 @@ function Get-TomlFileUrls([string]$key, [string[]]$files) {
   Get-RegexCaptures $regex $files
 }
 
-# Takes source files that each hold one path (Gemini CLI's .project_root,
-# nanobot's .workspace); returns the text of each readable one. Unlike the
-# readers above, these are read under -Inventory too.
+# Takes source files that each hold one path; returns the text of each readable
+# one, under -Inventory too.
 function Get-FileTexts([string[]]$files) {
   foreach ($file in $files) {
     try { [System.IO.File]::ReadAllText((ConvertTo-ExtendedPath $file)) } catch { }
   }
 }
 
-# Takes absolute file paths; returns the deepest directory they share, in
-# the raw form for ConvertTo-LocalPath, or $null when they share less than
-# two segments (Twinny records indexed files, not the workspace root).
+# Takes absolute file paths; returns the deepest directory they share, or $null
+# for fewer than two shared segments.
 function Get-CommonDir([string[]]$paths) {
   $common = $null
   foreach ($value in $paths) {
@@ -3370,13 +3234,10 @@ function Find-ClaudeCodeProjects([string]$homeDir) {
   Get-JsonKeys '\{' @(Expand-Glob $homeDir '.claude-*/.claude.json')
 }
 
-# Codex, Qwen Code, Cline CLI, Cursor CLI chats, Continue, Goose sessions,
-# OpenCode, Crush, and Agent Zero editor (ACP) sessions, whose workspace and
-# extra folders are a string and a JSON array in chat.json.
+# Group 2 of the internals.md discovery table: the CLI agents' session files.
 function Find-CliSessionProjects([string]$homeDir) {
-  # A Codex cwd in this home's Documents/Codex (the ChatGPT desktop app's projectless output
-  # directories, which the catalog collects whole) or .codex/worktrees (thread worktrees,
-  # excluded) is not a project. An archived thread's rollout is in archived_sessions.
+  # The ChatGPT desktop app's projectless directories (Documents/Codex, collected whole) and
+  # Codex thread worktrees (excluded) are not projects.
   $codexOutputDir = Join-PathSafe $homeDir 'Documents/Codex'
   $codexWorktrees = (Join-PathSafe $homeDir '.codex/worktrees') + $script:Sep
   $ignoreCase = [System.StringComparison]::OrdinalIgnoreCase
@@ -3426,9 +3287,8 @@ function Find-GeminiProjects([string]$homeDir) {
   )
 }
 
-# Amp, Factory, Kiro, Cursor ACP sessions, Goose recent directories,
-# Copilot CLI, Hermes, Letta, pi, muse, Open Interpreter, OpenHands and
-# PearAI.
+# Group 4 of the internals.md discovery table: the other agents' session and
+# state files.
 function Find-AgentSessionProjects([string]$homeDir) {
   Get-JsonValues 'cwd' @(
     Join-PathSafe $homeDir '.local/share/amp/history.jsonl'
@@ -3444,9 +3304,8 @@ function Find-AgentSessionProjects([string]$homeDir) {
     Join-PathSafe $homeDir 'Library/Application Support/Goose/recent-dirs.json'
     Join-PathSafe $homeDir 'AppData/Roaming/Goose/recent-dirs.json'
   )
-  # A cwd under this home's .copilot (Copilot Desktop chats and worktrees) is not a project,
-  # nor is the cwd of a session with no events.jsonl: a pool or probe session Copilot Desktop
-  # pre-created and never prompted (on Windows its cwd is the app's install directory).
+  # A cwd under .copilot (Copilot Desktop chats and worktrees) is not a project, nor is that
+  # of a session without events.jsonl, which Copilot Desktop pre-created and never prompted.
   $copilotDir = (Join-PathSafe $homeDir '.copilot') + $script:Sep
   $ignoreCase = [System.StringComparison]::OrdinalIgnoreCase
   $promptedSessions = @(Expand-Glob $homeDir '.copilot/session-state/*/events.jsonl' |
@@ -3471,8 +3330,7 @@ function Find-AgentSessionProjects([string]$homeDir) {
   Get-JsonKeys '\{' @((Join-PathSafe $homeDir '.config/muse/trust.json'))
   $museSessions = '.local/share/muse/sessions/*/*/*/*/session.jsonl'
   Get-JsonValues 'workspace_root' @(Expand-Glob $homeDir $museSessions)
-  # A cwd under this home's .openinterpreter/worktrees (thread worktrees, excluded) is not a
-  # project.
+  # Open Interpreter thread worktrees (excluded) are not projects.
   $oiWorktrees = (Join-PathSafe $homeDir '.openinterpreter/worktrees') + $script:Sep
   Get-JsonValues 'cwd' @(
     Expand-Glob $homeDir '.openinterpreter/sessions/*/*/*/rollout-*.jsonl'
@@ -3508,9 +3366,7 @@ function Find-ConfigFileProjects([string]$homeDir) {
   }
 }
 
-# VS Code-family editors: every User directory (Code, Cursor, Windsurf and
-# the other forks, and remote-server data directories) with its workspace
-# storage and the Cline, Roo Code and Kilo Code task indexes.
+# VS Code-family workspaces and the Cline, Roo Code and Kilo Code task indexes.
 function Find-EditorProjects([string]$homeDir) {
   $userDirs = @(
     Expand-Glob $homeDir 'AppData/Roaming/*/User'
@@ -3531,10 +3387,8 @@ function Find-EditorProjects([string]$homeDir) {
   }
 }
 
-# Takes the discovered @{ user; path } entries in discovery order; returns
-# each existing directory once (compared without case), dropping the homes
-# themselves. A path seen first without a user (a -Project outside every
-# home) takes the user of a later entry for it.
+# Takes the discovered @{ user; path } entries; returns each existing directory
+# that is not a home once, without regard to case, with the first user found.
 function Select-UniqueProjects($found) {
   $seen = @{}; $unique = @()
   $homeKeys = @{}
@@ -3552,9 +3406,7 @@ function Select-UniqueProjects($found) {
   return $unique
 }
 
-# Returns every project directory to collect as @{ user; path }: the values
-# of the six source groups for each home, then each -Project, through
-# Select-UniqueProjects.
+# Returns every project directory to collect as @{ user; path }.
 function Find-Projects {
   $found = @()
   foreach ($userHome in $script:UserList) {
@@ -3581,9 +3433,8 @@ function Find-Projects {
 }
 
 # Main step: collects PROJECT_CATALOG under every directory in
-# $script:ProjectList. A -Project value that is not a directory was left out
-# of the list; it gets a log line and, unless -Inventory, one error_read
-# row, so it is never dropped silently. Under -Inventory nothing is walked.
+# $script:ProjectList, with an error_read row for a -Project that is not a
+# directory.
 function Add-Projects {
   foreach ($projectArg in $Project) {
     if (Test-PathQuiet $projectArg 'Container') { continue }
@@ -3616,16 +3467,12 @@ function Add-Projects {
 # ===========================================================================
 # Inventory output
 # ===========================================================================
-# -Inventory runs the same walk with no writes: Add-CollectedFile feeds
-# these accumulators instead of copying, and Write-Inventory prints JSON
-# lines on stdout (the host line, one line per user and agent, then the
-# Docker volume agents as user docker). Nothing is written to disk.
+# Under -Inventory Add-CollectedFile feeds these accumulators instead of
+# copying, and Write-Inventory prints them as JSON lines.
 
-# The accumulator being filled: agent -> files, bytes, first and last mtime
-# (epoch seconds, 0 when unknown) and the matched catalog globs in order of
-# first match. Add-UserHomes starts one per user and keeps it in
-# $script:InventoryUsers as @(home, accumulator); matched Docker volumes fill
-# $script:InventoryDocker (declared with the Docker state).
+# The accumulator being filled: agent -> files, bytes, first and last mtime and
+# the matched globs; one per user in $script:InventoryUsers, and
+# $script:InventoryDocker for the volumes.
 $script:InventoryAgents = [ordered]@{}
 $script:InventoryUsers = @()
 
@@ -3668,10 +3515,8 @@ function Format-InventoryTime([int64]$epoch) {
   return $utc.ToString('yyyy-MM-ddTHH:mm:ssZ', $culture)
 }
 
-# Takes a user, one accumulator and the user's project count; returns the
-# agent lines of the accumulator as compressed JSON in the documented key
-# order. A match with no files of its own after exclusions and nested
-# claims gives no line.
+# Takes a user, one accumulator and the user's project count; returns its agent
+# lines as compressed JSON.
 function Write-InventoryLines([string]$user, $accumulator, [int]$projects) {
   foreach ($agent in @($accumulator.Keys)) {
     $entry = $accumulator[$agent]
@@ -3686,11 +3531,8 @@ function Write-InventoryLines([string]$user, $accumulator, [int]$projects) {
   }
 }
 
-# Main step under -Inventory: logs each home that cannot be listed, then
-# returns the host line, the agent lines of each user (with that user's
-# discovered project count) and the Docker volume agents. A home is
-# unreadable when it was denied (see Get-DeniedHomes) or its entries cannot
-# be listed.
+# Main step under -Inventory: returns the host line, each user's agent lines and
+# the Docker volume agents.
 function Write-Inventory {
   $denied = $script:DeniedHomes
   $unreadable = $denied.Count
@@ -3717,11 +3559,9 @@ function Write-Inventory {
 # ===========================================================================
 # Summary and archive
 # ===========================================================================
-# collection.json (rewritten before each fallback archiver), the archive,
-# its .sha256 file, the staging cleanup and the stdout summary. tar.exe is
-# tried first; it crashes on a name outside the ANSI code page, so the
-# PowerShell tar writer follows it, and a zip is the last resort.
-# CAC_ARCHIVER, a test hook, sets the chain (default tar,writer,zip).
+# Windows tar.exe crashes on a name outside the ANSI code page, so the PowerShell
+# tar writer follows it and a zip is the last resort; CAC_ARCHIVER, a test
+# hook, sets the chain.
 $script:ArchiverLabels = @{ tar = 'tar.exe'; writer = 'PowerShell tar writer'; zip = 'ZipFile' }
 
 # Takes a line; appends it to the run log with no timestamp. Used once the
@@ -3730,14 +3570,9 @@ function Add-LogLine([string]$text) {
   [System.IO.File]::AppendAllText($script:XLogPath, "$text`n", $script:Utf8NoBom)
 }
 
-# Takes the staging directory; returns its entries without following
-# links, as Add-CollectedTree walks the source: a reparse point (a staged
-# link) is an entry of its own and never descended. Each entry is
-# @(name, FileSystemInfo, kind) with kind d, f or l; names are relative to
-# the stage with / separators, and a directory's name ends in /. A directory
-# comes before its contents. The tree is listed through the extended form
-# of the stage, so every FileSystemInfo.FullName is extended and opens past
-# 260 characters.
+# Takes the staging directory; returns its entries as @(name, FileSystemInfo,
+# kind), a directory before its contents, a staged link an entry of its own and
+# never descended.
 function Get-StageEntries([string]$stageDir) {
   $entries = New-Object System.Collections.ArrayList
   $stack = New-Object System.Collections.Stack
@@ -3787,13 +3622,9 @@ for ($offset = 148; $offset -lt 156; $offset++) { $script:TarTemplate[$offset] =
 $script:TarTemplateSum = 0
 foreach ($templateByte in $script:TarTemplate) { $script:TarTemplateSum += $templateByte }
 
-# Takes a member's name, ustar prefix, type flag, mode (seven octal
-# digits), size, mtime and link target; returns its 512-byte ustar header:
-# mode, uid and gid 0, empty uname and gname. The name and prefix are ASCII
-# and fit their fields; the caller decides that. The fixed fields come from
-# a template, and the checksum (the byte sum with its own field read as
-# eight spaces) is the template's sum plus the bytes of the fields written
-# here, which is faster under 5.1 than summing all 512.
+# Takes a member's name, ustar prefix, type flag, mode, size, mtime and link
+# target; returns its 512-byte ustar header. The checksum is the template's sum
+# plus the bytes written here, which is faster under 5.1 than summing all 512.
 function Get-TarHeader {
   param([string]$name, [string]$prefix, [char]$type, [string]$tarMode, [int64]$size,
     [int64]$mtime, [string]$link)
@@ -3829,19 +3660,16 @@ function Get-PaxRecord([string]$key, [string]$value) {
   return ([string]$length) + $body
 }
 
-# Takes a name and a field size; returns an ASCII stand-in for a name that
-# goes in a pax record, for readers that ignore pax headers: other
-# characters become _, and only the end is kept.
+# Takes a name and a field size; returns an ASCII stand-in for readers that
+# ignore pax headers.
 function Get-TarAsciiName([string]$name, [int]$max) {
   $asciiName = $script:TarNonAscii.Replace($name, '_')
   if ($asciiName.Length -gt $max) { $asciiName = $asciiName.Substring($asciiName.Length - $max) }
   return $asciiName
 }
 
-# Takes the output stream and a member's path, type flag, mode, size, mtime
-# and link target; writes its header, preceded by a pax extended header
-# (typeflag x) when the path or the link target is not ASCII or does not fit
-# the ustar fields, or the size does not fit eleven octal digits.
+# Takes the output stream and a member's fields; writes its header, preceded by
+# a pax header when a field does not fit ustar.
 function Write-TarMember {
   param($out, [string]$path, [char]$type, [string]$tarMode, [int64]$size, [int64]$mtime,
     [string]$link)
@@ -3878,9 +3706,8 @@ function Write-TarMember {
   $out.Write($header, 0, 512)
 }
 
-# Takes the staging directory; returns a Dictionary from each staged link's
-# member name (relative, / separators) to the target string it was staged
-# with. Names compare without case on Windows only.
+# Takes the staging directory; returns each staged link's member name mapped to
+# its staged target.
 function Get-StagedLinkTargets([string]$stageDir) {
   $comparer = [StringComparer]::Ordinal
   if ($script:IsWindowsHost) { $comparer = [StringComparer]::OrdinalIgnoreCase }
@@ -3894,9 +3721,8 @@ function Get-StagedLinkTargets([string]$stageDir) {
   return , $targets
 }
 
-# Takes a stage entry of kind l and the staged-link targets; returns the
-# target the link was staged with or, for a link this run did not stage,
-# its own target read without following it. Throws when it has none.
+# Takes a link entry and the staged-link targets; returns its target. Throws
+# when it has none.
 function Get-StagedLinkTarget($entry, $linkTargets) {
   $info = $entry[1]; $link = ''
   if ($linkTargets.ContainsKey($entry[0])) { $link = $linkTargets[$entry[0]] }
@@ -3914,10 +3740,8 @@ function Get-StagedLinkTarget($entry, $linkTargets) {
   return $link
 }
 
-# Takes the output stream, the stage entries and the staged-link targets;
-# writes each member: directories (mode 0755), regular files (0644, data
-# read with shared access in 1 MiB chunks and padded to 512 bytes) and
-# symlinks (0777). Throws when a staged file shrinks while it is read.
+# Takes the output stream, the stage entries and the staged-link targets; writes
+# each member. Throws when a staged file shrinks while it is read.
 function Write-TarEntries($out, $entries, $linkTargets) {
   $buffer = New-Object byte[] 1048576
   $fileMode = [System.IO.FileMode]::Open; $readAccess = [System.IO.FileAccess]::Read
@@ -3963,12 +3787,9 @@ function Write-TarEntries($out, $entries, $linkTargets) {
   }
 }
 
-# Takes the staging directory and the archive path; writes the archive as a
-# gzip-compressed POSIX tar of the stage with the member names
-# tar -czf <archive> -C <stage> . gives (./, ./fs/, ./manifest.jsonl), uid
-# and gid 0, links never followed and each staged link with the target
-# string it was staged with. Throws on failure; the caller removes the
-# partial archive.
+# Takes the staging directory and the archive path; writes a gzip-compressed
+# POSIX tar of the stage with the member names tar -czf gives. Throws on
+# failure.
 function Write-TarGz([string]$stageDir, [string]$archivePath) {
   $entries = Get-StageEntries $stageDir
   $linkTargets = Get-StagedLinkTargets $stageDir
@@ -3990,11 +3811,9 @@ function Write-TarGz([string]$stageDir, [string]$archivePath) {
   }
 }
 
-# Takes the staging directory and the archive path; writes the archive as a
-# zip of the stage, entry by entry with / separators (the .NET Framework
-# ZipFile.CreateFromDirectory writes \), names without a ./ prefix, and an
-# entry for each empty directory. Called only after the staged links are
-# removed; a reparse point found anyway is logged and left out.
+# Takes the staging directory and the archive path; writes a zip of the stage
+# with / separators, which ZipFile.CreateFromDirectory on .NET Framework does
+# not.
 function Write-StageZip([string]$stageDir, [string]$archivePath) {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $entries = Get-StageEntries $stageDir
@@ -4028,11 +3847,8 @@ function Write-StageZip([string]$stageDir, [string]$archivePath) {
   } finally { if ($null -ne $zip) { $zip.Dispose() } }
 }
 
-# Deletes the staged links themselves, never what they point to, so the
-# cleanup does not depend on how each PowerShell version's Remove-Item
-# -Recurse treats a directory link. Called after the log writer is closed,
-# so it appends to the log directly. Empties $script:StagedLinks and returns
-# how many links could not be removed.
+# Deletes the staged links themselves, never their targets; returns how many
+# could not be removed.
 function Clear-StagedLinks {
   $left = 0
   foreach ($stagedLink in @($script:StagedLinks)) {
@@ -4051,9 +3867,8 @@ function Clear-StagedLinks {
   return $left
 }
 
-# Takes the reason; after a late fall back to zip the staged links are gone,
-# so their manifest rows lose archive_path and say why in error. The
-# manifest file is rewritten in place before it is restaged.
+# Takes the reason; rewrites the symlink rows of the manifest without
+# archive_path, after a fall back to zip.
 function Clear-LinkArchivePaths([string]$reason) {
   $lines = [System.IO.File]::ReadAllLines($script:XManifestPath, $script:Utf8NoBom)
   $writer = New-Object System.IO.StreamWriter($script:XManifestPath, $false, $script:Utf8NoBom)
@@ -4081,9 +3896,7 @@ function Format-HumanSize([int64]$bytes) {
   return $value.ToString('0.0', [Globalization.CultureInfo]::InvariantCulture) + ' ' + $units[$i]
 }
 
-# Adds a note for the symlinks that are in the manifest only: those a zip
-# could not hold and those that could not be recreated
-# ($script:LinkCounts).
+# Notes the symlinks that are in the manifest only.
 function Add-LinkNotes {
   if ($script:LinkCounts.zip -gt 0) {
     Add-Note ("$($script:LinkCounts.zip) symlinks are in the manifest only: " +
@@ -4095,11 +3908,8 @@ function Add-LinkNotes {
   }
 }
 
-# Main step after the walk: sets $script:EndTs and $script:ActiveUsers (the
-# users whose home gave at least one manifest row, in enumeration order),
-# notes symlinks the archive will not hold (Add-LinkNotes), and builds
-# $script:Summary, the content of collection.json, in its documented key
-# order. The body is long because the summary is one literal.
+# Main step after the walk: sets $script:EndTs and $script:ActiveUsers and builds
+# $script:Summary, the content of collection.json. The body is one literal.
 function Initialize-Summary {
   $script:EndTs = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
   $script:ActiveUsers = @($script:UserList | Where-Object { $script:RowHomes.ContainsKey($_.home) })
@@ -4146,9 +3956,8 @@ function Initialize-Summary {
   }
 }
 
-# Writes $script:Summary as collection.json beside the archive and stages a
-# copy. Called again before each fallback archiver, so the archived and the
-# on-disk summary name the archive and the archiver actually used.
+# Writes collection.json beside the archive and stages a copy; called again
+# before each fallback archiver.
 function Write-Summary {
   $json = $script:Summary | ConvertTo-Json -Depth 4
   [System.IO.File]::WriteAllText($script:XSummaryPath, $json, $script:Utf8NoBom)
@@ -4156,9 +3965,8 @@ function Write-Summary {
   Copy-Item -LiteralPath $script:XSummaryPath -Destination $stagedSummary -Force
 }
 
-# Main step: logs "Archiving", closes the manifest and log writers, and
-# stages copies of both. Nothing after this writes through
-# Write-CollectorLog; later log lines go through Add-LogLine.
+# Main step: closes the manifest and log writers and stages copies of both;
+# later log lines go through Add-LogLine.
 function Close-RunFiles {
   Write-CollectorLog 'Archiving'
   $script:ManifestWriter.Close()
@@ -4190,10 +3998,8 @@ function Clear-PartialArchive {
   }
 }
 
-# Before a fall back to zip: removes the staged links, which a zip cannot
-# store, rewrites their manifest rows to say so, notes it and restages the
-# manifest. Throws when a link cannot be removed, so nothing is zipped
-# through one.
+# Before a fall back to zip: removes the staged links and rewrites their rows.
+# Throws when a link cannot be removed, so nothing is zipped through one.
 function Clear-StagedLinksForZip {
   $linkCount = $script:StagedLinks.Count
   if ((Clear-StagedLinks) -gt 0) {
@@ -4207,11 +4013,8 @@ function Clear-StagedLinksForZip {
   Copy-Item -LiteralPath $script:XManifestPath -Destination $stagedManifest -Force
 }
 
-# Takes the next archiver and why the previous one failed; notes the fall
-# back, switches to a .zip name when the next archiver is the zip, and
-# rewrites and restages collection.json (notes, archive name, archiver) and
-# the log, so the next archive holds what is written beside it. Sets
-# $script:Archive.
+# Takes the next archiver and why the previous one failed; notes the fall back
+# and rewrites and restages collection.json and the log. Sets $script:Archive.
 function Switch-Archiver([string]$kind, [string]$failedWhy) {
   $label = $script:ArchiverLabels[$kind]
   if ($kind -eq 'zip' -and $script:StagedLinks.Count -gt 0) { Clear-StagedLinksForZip }
@@ -4229,14 +4032,10 @@ function Switch-Archiver([string]$kind, [string]$failedWhy) {
   Copy-Item -LiteralPath $script:XLogPath -Destination $stagedLog -Force
 }
 
-# Takes an archiver (tar, writer or zip); runs it on the stage. Sets
-# $script:ArchiveFailure to '' when the archive was written, otherwise to
-# the reason, which is also logged. tar's own output is not captured: its
-# stderr goes to the log and anything on stdout to the script's output. The
-# tar line reads $TarExe, $Archive, $Stage and $LogPath from script scope
-# without the $script: prefix and keeps its indentation, because Windows
-# PowerShell 5.1 writes a native command's first stderr line to the log
-# with the source line and column it came from.
+# Takes an archiver (tar, writer or zip); runs it and sets
+# $script:ArchiveFailure. The tar line reads script variables without $script:
+# and keeps its indentation, because 5.1 logs a native command's first stderr
+# line with its source line and column.
 function Invoke-Archiver([string]$kind) {
   $label = $script:ArchiverLabels[$kind]
   $script:ArchiveFailure = ''
@@ -4266,10 +4065,8 @@ function Invoke-Archiver([string]$kind) {
   }
 }
 
-# Main step: tries each archiver in $script:Archivers in turn. A failure is
-# logged with its reason, its partial archive removed, and the next
-# archiver prepared by Switch-Archiver; a failure while preparing it is
-# logged as FATAL and ends the chain. Sets $script:ArchiveWritten.
+# Main step: tries each archiver in $script:Archivers in turn. Sets
+# $script:ArchiveWritten.
 function Write-Archive {
   Clear-PartialArchive
   $script:ArchiveWritten = $false
@@ -4286,9 +4083,7 @@ function Write-Archive {
   }
 }
 
-# Main step: hashes the archive, writes <archive>.sha256 beside it, logs
-# "done" with the size and hash, and writes "done" to stderr unless -Quiet
-# (the size and hash follow on stdout). Sets $script:ArchiveSha and
+# Main step: writes <archive>.sha256 and logs "done". Sets $script:ArchiveSha and
 # $script:ArchiveSize.
 function Write-ArchiveHash {
   $script:ArchiveSha = Get-FileSha256 $script:Archive
@@ -4303,8 +4098,7 @@ function Write-ArchiveHash {
 }
 
 # Main step unless -KeepStaging: removes the staged links, then the staging
-# directory. A link that could not be deleted keeps the staging directory,
-# which the log names.
+# directory; a link that could not be deleted keeps the directory.
 function Clear-Staging {
   if ((Clear-StagedLinks) -eq 0) {
     try { Remove-Item -LiteralPath $script:XStage -Recurse -Force -ErrorAction Stop } catch { }
@@ -4348,10 +4142,8 @@ function Write-Result {
 # ===========================================================================
 # Main program
 # ===========================================================================
-# The options come from param() at the top of the file. The setup functions
-# below check and resolve them, name the output files and open the log and
-# manifest; the run list at the end of the file calls one step per section,
-# in run order.
+# The options come from param() at the top of the file; the run list at the end
+# calls one step per section, in run order.
 
 # Takes a table here-string; returns all its non-empty lines, comments
 # included (the form -List prints).
@@ -4383,11 +4175,9 @@ function Initialize-TableRegexes {
   $script:SecretRegex = ConvertTo-TableRegex @(Get-NonEmptyLines $SECRET_GLOBS)
 }
 
-# Takes the -Project values; returns each resolved against the current
-# location, without a trailing separator, once. A relative -Project is
-# resolved this way in image mode too: -Project is a path on the machine
-# running the collector and is never prefixed with -Root, as in the sh
-# collector.
+# Takes the -Project values; returns each once, resolved against the current
+# location and never prefixed with -Root, since -Project names a path on the
+# machine running the collector.
 function Resolve-ProjectArgs([string[]]$projectArgs) {
   $resolved = @()
   foreach ($projectArg in @($projectArgs)) {
@@ -4400,9 +4190,7 @@ function Resolve-ProjectArgs([string[]]$projectArgs) {
   return $resolved
 }
 
-# Sets $script:Mode to live, or to image when -Root is given; in image mode
-# -Root is resolved to its full plain form without a trailing separator.
-# Returns '' or the error for a -Root that is not a directory.
+# Sets $script:Mode and resolves -Root in image mode. Returns '' or the error.
 function Resolve-RootArg {
   $script:Mode = 'live'
   if ($Root -eq '') { return '' }
@@ -4414,12 +4202,9 @@ function Resolve-RootArg {
   return ''
 }
 
-# Creates -OutputDir when it is not a directory and resolves it to its full
-# plain form. Then the same startup check as the sh collector's [ -w ]:
-# create and remove a probe file, so a read-only directory fails here
-# rather than after the walk. Returns '' or the error. New-Item -Force
-# neither throws nor returns an item when the path is a file or lies under
-# one, so the missing item, not only an exception, is the creation error.
+# Creates and resolves -OutputDir and checks it is writable with a probe file.
+# Returns '' or the error. New-Item -Force neither throws nor returns an item
+# under a file, so the missing item is the error too.
 function Initialize-OutputDir {
   if (-not (Test-PathQuiet $OutputDir 'Container')) {
     $directory = @{ ItemType = 'Directory'; Path = (ConvertTo-ExtendedPath $OutputDir) }
@@ -4443,10 +4228,8 @@ function Initialize-OutputDir {
   return ''
 }
 
-# Sets the run's names: $script:StartTs, $script:HostName, the base name
-# $script:RunName (<host>_<UTC stamp>_agent-artifacts), the staging
-# directory, log, manifest and summary paths, and the extended forms of
-# those for .NET calls (the plain ones are what is printed).
+# Sets $script:StartTs, $script:HostName, $script:RunName and the output paths,
+# plain and extended.
 function Initialize-RunNames {
   $script:StartTs = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
   $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
@@ -4464,14 +4247,9 @@ function Initialize-RunNames {
   $script:XSummaryPath = ConvertTo-ExtendedPath $script:SummaryPath
 }
 
-# Chooses the archivers (see "Archivers" under Summary and archive). Sets
-# $script:TarExe (tar.exe on Windows, tar elsewhere, none under
-# -Inventory), $script:Archivers in the order to try them,
-# $script:ArchiverWhy (the CAC_ARCHIVER value, or why tar was left out),
-# $script:LinksInArchive (links are staged unless the zip comes first) and
-# $script:Archive (.zip when the zip comes first, else .tar.gz). A tar that
-# is not on the PATH is left out. Returns '' or the error for a
-# CAC_ARCHIVER that names an unknown archiver or leaves none.
+# Sets $script:TarExe, $script:Archivers, $script:ArchiverWhy,
+# $script:LinksInArchive and $script:Archive; internals.md, "Capability
+# detection", has the chain. Returns '' or the CAC_ARCHIVER error.
 function Initialize-Archivers {
   $script:TarExe = $null
   $tarCommand = $null
@@ -4507,10 +4285,8 @@ function Initialize-Archivers {
   return ''
 }
 
-# Unless -Inventory, creates the staging tree and opens the log (flushed
-# after every line) and manifest writers, $script:LogWriter and
-# $script:ManifestWriter; under -Inventory both stay $null, so nothing is
-# written.
+# Unless -Inventory, creates the staging tree and opens $script:LogWriter and
+# $script:ManifestWriter.
 function Open-RunFiles {
   $script:LogWriter = $null
   $script:ManifestWriter = $null
@@ -4532,10 +4308,7 @@ function Test-Administrator {
   } catch { return $false }
 }
 
-# Logs the start lines: version, host, PowerShell, mode and root; the
-# archiver and options; then the note about -OutputDir under -Inventory,
-# the warnings about a live run without Administrator rights and about no
-# profiles found, and each profile that could not be entered.
+# Logs the start lines: version, host, mode, archiver, options and warnings.
 function Write-StartLog {
   $osVersion = [Environment]::OSVersion.VersionString
   $rootText = '\'; if ($Root) { $rootText = $Root }

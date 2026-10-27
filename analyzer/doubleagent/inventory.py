@@ -88,17 +88,13 @@ class _RecordType(TypedDict):
     type: str
 
 
-# The functional form, because the collectors' key `at` is shorter than the
-# code style allows a field name to be.
-_RecordTime = TypedDict("_RecordTime", {"at": str}, total=False)  # noqa: UP013 (see above)
-
-
-class InventoryRecord(_RecordType, _RecordTime, total=False):
+class InventoryRecord(_RecordType, total=False):
     """One host or agent line of a collector's inventory output."""
 
     host: str
     collector: str
     mode: str
+    at: str
     users_scanned: int
     users_unreadable: int
     docker_volumes: int

@@ -118,8 +118,8 @@ runs the analyzer on (see
 [Regenerating the output examples](development.md#regenerating-the-output-examples));
 the `files` key appears only with `--files`. Alice has Amp settings and
 Claude Code's prompt history and two transcripts, Bob Gemini CLI settings
-and an Ollama prompt history, and the projects `/srv/proj` and
-`/srv/shared` hold Aider, Cursor and shared files. One manifest line is
+and an Ollama prompt history; the project `/srv/proj` holds Aider,
+Cursor and shared files and `/srv/shared` one shared file. One manifest line is
 cut short, which gives the note, and Bob's
 `.gemini/tmp/chats/gone.json` has a collected manifest row but no file
 under `fs/`, which gives the problem:
@@ -273,7 +273,7 @@ under `fs/`, which gives the problem:
 so no single run shows both. The collection holds no `.git/` files, so
 each project's `remotes` is `[]` and its `head` `""`. Bob's `gemini-cli`
 counts 1 file, because the missing `gone.json` is left out of the counts
-and named under `problems`; it is left out of `files` too. `homes` holds
+and named under `problems`. `homes` holds
 the counts of the first table of `detect`, which prints one line per
 user, home and agent in the order each one's first file was met, while
 `homes` groups them by home and sorts each home's agents: here alice's
@@ -673,12 +673,14 @@ that records the state: the `claude-code` parser records sync state, so
 `synced` is `no`; it records origin, so `origin` is `local`; it reads a
 secondary source, the history file, so `recovered` is `no`; and no
 parser here records relay, so `relayed` is `""`. At `/srv/proj` the
-`cursor` parser also records all three and the `aider` parser reads a
-secondary source, which gives the same marks. `/srv/gone` and
+`cursor` parser also records sync state and origin and reads a secondary
+source, and the `aider` parser reads a secondary source, which gives the
+same marks. `/srv/gone` and
 `/srv/shared` have no session, so all four of their marks are `""`.
-`scratch_directories` is `{}` because none of the example's paths lies
-under a home or project catalog entry for a scratch directory and no row
-names one. Every `remotes`, `head` and `recorded_remotes` is empty
+`scratch_directories` is `{}` because neither project path the rows
+record, `/srv/proj` or `/srv/gone`, lies in or under a directory a home
+or project catalog entry names, and no row names a scratch directory.
+Every `remotes`, `head` and `recorded_remotes` is empty
 because the collection holds no `.git/` files and no parser here writes a
 `git remote:` row. `doubleagent_version` is the analyzer that made the
 run, since the script regenerates the example with the

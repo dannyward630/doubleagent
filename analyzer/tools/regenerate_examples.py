@@ -17,7 +17,7 @@ every run, platform and Python version. "Regenerating the output examples" in
 analyzer/docs/development.md documents the collection and the options.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
-stale block, 2 when a marker is missing, duplicated or out of order.
+stale block, 2 when a marker is missing, duplicated or out of order or a run fails.
 """
 
 from __future__ import annotations
@@ -55,6 +55,10 @@ CLAUDE_LOOSE_SESSION = "99999999-8888-4777-8666-555555555555"
 
 class MarkerError(DoubleAgentError):
     """A block's marker comments are missing, duplicated or out of order."""
+
+
+class RunError(DoubleAgentError):
+    """An analyzer command exited with a failure, so its output is no example."""
 
 
 def _jsonl(records: list[dict]) -> str:
@@ -222,9 +226,11 @@ def build_collection(root: Path) -> Path:
 
 
 def _run(argv: list[str]) -> str:
-    stdout = io.StringIO()
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
-        cli.main(argv)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        status = cli.main(argv)
+    if status != 0:
+        raise RunError("%s exited %s: %s" % (argv[0], status, stderr.getvalue().strip()))
     return stdout.getvalue()
 
 
@@ -240,6 +246,9 @@ def generate() -> dict[str, str]:
 
     Returns:
         Each block name mapped to its fenced `json` block, ending with a line feed.
+
+    Raises:
+        RunError: The `detect` or `timeline` run failed.
     """
     with tempfile.TemporaryDirectory(prefix="doubleagent-examples-") as work:
         collection = build_collection(Path(work))
@@ -285,6 +294,7 @@ def check(document: Path = DOCUMENT) -> list[str]:
 
     Raises:
         MarkerError: A block's markers are missing, duplicated or out of order.
+        RunError: The `detect` or `timeline` run failed.
     """
     text = document.read_text(encoding="utf-8")
     blocks = generate()
@@ -307,6 +317,7 @@ def regenerate(document: Path = DOCUMENT) -> None:
 
     Raises:
         MarkerError: A block's markers are missing, duplicated or out of order.
+        RunError: The `detect` or `timeline` run failed.
     """
     text = render(document.read_text(encoding="utf-8"), generate())
     with open(document, "w", encoding="utf-8", newline="\n") as handle:
@@ -324,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
             regenerate(args.document)
             return 0
         diffs = check(args.document)
-    except MarkerError as error:
+    except (MarkerError, RunError) as error:
         print("error: %s" % error, file=sys.stderr)
         return 2
     for diff in diffs:

@@ -53,7 +53,8 @@ analyzer/
   CHANGELOG.md                 analyzer release history, one entry per VERSION
   tests/                       pytest suite with synthetic fixtures; tests/run.sh
   tools/                       development tools: shape.py (shapes of a real install),
-                               proto_descriptors.py, regenerate_examples.py (the real-run
+                               proto_descriptors.py (protobuf schemas of a binary),
+                               regenerate_examples.py (the real-run
                                examples of docs/output.md)
   pyproject.toml               installable as the doubleagent command
   requirements.txt             third-party dependencies (python-dateutil;
@@ -1405,7 +1406,9 @@ documentation-only change needs only the last two rows and markdownlint.
   running the command (the collector over the smoke test's fake image, the
   analyzer over the test fixtures, and the analyzer's
   [`analyzer/docs/output.md`](analyzer/docs/output.md) examples by
-  `analyzer/tools/regenerate_examples.py`), never edited by hand. A behaviour
+  `analyzer/tools/regenerate_examples.py`, rerun at every analyzer
+  `VERSION` bump, since `analyzer/tests/test_examples.py` fails until
+  then), never edited by hand. A behaviour
   change without a README update is incomplete.
 - The [top-level README](README.md) and [`docs/index.md`](docs/index.md),
   the site's home page listing each part's pages, are overviews only. A new
@@ -1498,10 +1501,6 @@ documentation-only change needs only the last two rows and markdownlint.
   release tag, later work goes into that version's changelog entry, dated
   at tag time, and `VERSION` is not bumped again unless the user says so.
   A documentation-only change bumps nothing and needs no changelog line.
-  An analyzer bump, or a change to what `detect --json` prints or
-  `inventory.json` holds, is followed by a run of
-  `analyzer/tools/regenerate_examples.py`; `tests/test_examples.py` fails
-  until then.
 - Every `VERSION` bump has an entry in
   [`collectors/CHANGELOG.md`](collectors/CHANGELOG.md) or
   [`analyzer/CHANGELOG.md`](analyzer/CHANGELOG.md) in Keep a Changelog

@@ -181,6 +181,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (<reason>): <record>` row with the chat's session id, beside the rows
   of the chats it recovered; the record was dropped silently before
   ([#280]).
+- A relative `--since` or `--until` value past Python's integer
+  conversion digit limit (4300 by default) gives the usual out-of-range
+  error instead of Python's own conversion message, and every rejected
+  bound's message now ends with the accepted forms, the out-of-range
+  relative and epoch values included ([#283]).
 - Detection recognises the section headings of the bundled catalog by
   their full text, so a comment inside a table that starts with a
   heading's first words (`excluded`, `credential files`) can no longer
@@ -2085,6 +2090,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
 [#285]: https://github.com/seanthegeek/doubleagent/issues/285
+[#283]: https://github.com/seanthegeek/doubleagent/issues/283
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256

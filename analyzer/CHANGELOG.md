@@ -147,6 +147,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   of a `[Pasted text #<n> +<m> lines]` placeholder, from the line's
   `pastedContents` or `paste-cache/<contentHash>.txt` when either still
   holds it, as the transcript's prompt does ([#256]).
+- The errors the analyzer reports to the analyst share one exception
+  class, `doubleagent.errors.DoubleAgentError`: a bad `--since`,
+  `--until` or `--match`, an input that is neither a file, a directory
+  nor an extractable archive, and a VS Code mutation-log record that
+  cannot be applied raise it or a subclass. Only the mutation-log error is
+  still also a `ValueError`. The messages and exit codes are unchanged
+  ([#277]).
 
 ### Fixed
 
@@ -2061,6 +2068,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256
 [#253]: https://github.com/seanthegeek/doubleagent/issues/253
 [#237]: https://github.com/seanthegeek/doubleagent/issues/237

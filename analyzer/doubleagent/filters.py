@@ -24,6 +24,7 @@ from datetime import datetime, timedelta, timezone
 from dateutil.parser import isoparse
 from dateutil.relativedelta import relativedelta
 
+from .errors import DoubleAgentError
 from .model import Row
 from .timeutil import format_utc, to_utc
 
@@ -58,7 +59,7 @@ _UNIT = {
 }  # fmt: skip
 
 
-class BoundError(ValueError):
+class BoundError(DoubleAgentError):
     """A --since or --until value that is not one of the accepted forms."""
 
 

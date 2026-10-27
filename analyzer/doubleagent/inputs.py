@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from .catalog import Catalog
+from .errors import InputError
 
 PARSE_STATUSES = ("collected",)
 
@@ -140,7 +141,7 @@ def open_input(
 
     Raises:
         OSError: The input, an archive member or the manifest cannot be read.
-        ValueError: A file input is not an archive.
+        InputError: The input is not a file or directory, or not an archive it can extract.
     """
     path = Path(path)
     # stat, not exists(): exists() hides the reason, and from Python 3.14
@@ -155,7 +156,7 @@ def open_input(
     elif stat.S_ISREG(file_stat.st_mode):
         collection = _open_archive(path, work_dir)
     else:
-        raise ValueError("%s is neither a regular file nor a directory" % path)
+        raise InputError("%s is neither a regular file nor a directory" % path)
     if host:
         collection.host = host
     try:
@@ -193,10 +194,10 @@ def _open_archive(path: Path, work_dir: Path | None) -> Collection:
         elif tarfile.is_tarfile(path):
             _extract_tar(path, dest)
         else:
-            raise ValueError("%s is neither a tar nor a zip archive" % path)
+            raise InputError("%s is neither a tar nor a zip archive" % path)
     except (tarfile.TarError, zipfile.BadZipFile, EOFError) as error:
         collection.cleanup()
-        raise ValueError("%s: cannot extract: %s" % (path, error)) from None
+        raise InputError("%s: cannot extract: %s" % (path, error)) from None
     except BaseException:
         collection.cleanup()
         raise

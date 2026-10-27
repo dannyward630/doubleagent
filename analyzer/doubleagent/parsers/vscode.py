@@ -189,6 +189,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from .. import sqlite_util
+from ..errors import DoubleAgentError
 from ..inputs import Artifact
 from ..model import Row, compact
 from ..timeutil import to_utc
@@ -255,8 +256,8 @@ DEFAULT_MODEL_KEY = "chat.defaultModel"
 EDIT_STATES = ("Modified", "Accepted", "Rejected")
 
 
-class MutationError(ValueError):
-    pass
+class MutationError(DoubleAgentError, ValueError):
+    """A mutation-log record that cannot be applied to the session state."""
 
 
 def apply_mutation(state, rec: dict):

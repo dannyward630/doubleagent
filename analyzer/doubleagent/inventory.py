@@ -25,6 +25,7 @@ import stat
 from collections.abc import Iterable
 from pathlib import Path
 
+from .errors import InputError
 from .timeutil import to_utc
 
 DEFAULT_NAME = "fleet-inventory.csv"
@@ -57,7 +58,7 @@ def input_files(paths: Iterable[Path]) -> list[Path]:
 
     Raises:
         OSError: An input cannot be stat'ed or listed.
-        ValueError: An input is a symlink, or neither a file nor a directory.
+        InputError: An input is a symlink, or neither a file nor a directory.
     """
     out: list[Path] = []
     for path in paths:
@@ -65,7 +66,7 @@ def input_files(paths: Iterable[Path]) -> list[Path]:
         # 3.14 returns False for a permission error.
         mode = os.lstat(path).st_mode
         if stat.S_ISLNK(mode):
-            raise ValueError("%s is a symlink; give its target" % path)
+            raise InputError("%s is a symlink; give its target" % path)
         if stat.S_ISDIR(mode):
             with os.scandir(path) as entries:
                 out.extend(
@@ -78,7 +79,7 @@ def input_files(paths: Iterable[Path]) -> list[Path]:
         elif stat.S_ISREG(mode):
             out.append(path)
         else:
-            raise ValueError("%s is neither a regular file nor a directory" % path)
+            raise InputError("%s is neither a regular file nor a directory" % path)
     return out
 
 

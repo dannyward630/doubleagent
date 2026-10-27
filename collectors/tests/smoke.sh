@@ -11,7 +11,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 SCRIPT="$HERE/../collect-agent-artifacts.sh"
 # macOS sets TMPDIR with a trailing slash and under the /var -> /private/var
 # symlink; strip the slash and resolve the directory so the paths the checks
-# build match the manifest's (#78).
+# build match the manifest's.
 _tmpdir=${TMPDIR:-/tmp}
 WORK=$(mktemp -d "${_tmpdir%/}/cac-smoke.XXXXXX") && WORK=$(cd "$WORK" && pwd -P) || exit 1
 ROOT="$WORK/root"
@@ -124,10 +124,9 @@ printf 'wt\n' >"$ROOT/srv/kiloproj/.kilo/worktrees/w1/f"
 printf '{"cwd":"/srv/kiloproj"}\n' >"$ROOT/home/alice/.cline/data/sessions/s1/s2.json"
 printf 'db\n' >"$ROOT/Users/bob/Library/Application Support/Ollama/db.sqlite"
 
-# --- 1.4.0 catalog round (2026-10-04): sixteen agents from the October 2026 backlog.
-# One case per new exclusion, secret glob and attributed agent, as kind|agent|path
-# relative to alice's home: excl is a directory and exclf a file that must be
-# skipped_excluded, secret must be collected and flagged, agent must be collected
+# --- catalog cases: one per exclusion, secret glob and attributed agent, as
+# kind|agent|path relative to alice's home. excl (a directory) and exclf (a
+# file) must be skipped_excluded, secret collected and flagged, agent collected
 # under that agent. The same list is in smoke.ps1.
 CASES14='
 excl||.pearai/extensions
@@ -543,8 +542,8 @@ printf '# tabby\n' >"$ROOT/srv/tabbyproj/AGENTS.md"
 printf '{"files":{"/srv/twinproj/src/a.ts":{"hash":"h1"},"/srv/twinproj/b.ts":{"hash":"h2"}}}\n' >"$H/.twinny/embeddings/twinproj/manifest.json"
 printf '# twin\n' >"$ROOT/srv/twinproj/AGENTS.md"
 
-# --- 1.5.0 Docker volumes (2026-10-04): a root Docker volume matched to Agent
-# Zero, an unmatched volume, and a rootless volume in alice's home.
+# --- Docker volumes: a root volume matched to Agent Zero, an unmatched volume,
+# and a rootless volume in alice's home.
 DV="$ROOT/var/lib/docker/volumes"
 mkdir -p "$DV/a0_usr/_data/chats/ctx1" "$DV/a0_usr/_data/tmp/playwright" "$DV/pgdata/_data" \
   "$H/.local/share/docker/volumes/tabby_data/_data/events"
@@ -555,10 +554,7 @@ printf 'pg\n' >"$DV/pgdata/_data/x"
 printf '{"event":"completion"}\n' >"$H/.local/share/docker/volumes/tabby_data/_data/events/2026-10-01.json"
 printf 'metadata\n' >"$DV/metadata.db"
 
-# --- 2026-10-04 Muse Code: Meta's coding agent CLI. Cases in the CASES14 form,
-# relative to alice's home; the same list is in smoke.ps1. The Windows binary is
-# a file exclusion, the Linux launcher state is a dot-file glob inside
-# ~/.local/bin, and two discovery sources point at projects.
+# --- 2026-10-04 Muse Code
 CASES_MUSE='
 excl||.local/share/muse/plugins/cache/builtin
 excl||.local/share/muse/skills/bundled
@@ -595,10 +591,8 @@ printf '{}\n' >"$ROOT/srv/museproj/.muse/hooks.json"
 printf 'x\n' >"$ROOT/srv/museproj/.muse/worktrees/w1/f"
 printf '# trusted\n' >"$ROOT/srv/musetrust/AGENTS.md"
 
-# --- 2026-10-04 relocated Claude Code home: a config home moved with
-# CLAUDE_CONFIG_DIR to ~/.claude-work, which keeps .claude.json inside it, and
-# claude-code-router's ~/.claude-code-router, which the .claude-* catalog lines
-# must not claim. The same files are in smoke.ps1.
+# --- 2026-10-04 relocated Claude Code home
+# ~/.claude-code-router is another tool's; the .claude-* lines must not claim it.
 CCW="$H/.claude-work"
 CCW_S="$CCW/projects/-srv-ccwork/0a0b0c0d-0000-4000-8000-000000000001.jsonl"
 mkdir -p "$CCW/projects/-srv-ccwork" "$H/.claude-code-router" "$ROOT/srv/ccwork/.claude" "$ROOT/srv/cchist/.claude"
@@ -606,8 +600,7 @@ printf '{"type":"user","cwd":"/srv/ccwork","message":{"role":"user","content":"h
 printf '{"display":"hi","project":"/srv/cchist","timestamp":1790848800000}\n' >"$CCW/history.jsonl"
 printf '{"projects":{"/srv/ccwork":{"allowedTools":[]}}}\n' >"$CCW/.claude.json"
 printf '{"claudeAiOauth":{"accessToken":"sk-ant-oat-SECRET"}}\n' >"$CCW/.credentials.json"
-# 2026-10-23 (#256): the session key, the daemon files and the .claude.json
-# backup of a relocated home are collected by name and flagged secret.
+# 2026-10-23 (#256)
 CCW_K="$CCW/sessions/4343.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.key"
 mkdir -p "$CCW/sessions" "$CCW/daemon" "$CCW/backups"
 printf 'session key\n' >"$CCW_K"
@@ -618,12 +611,9 @@ printf '{"PORT":3456}\n' >"$H/.claude-code-router/config.json"
 printf '{}\n' >"$ROOT/srv/ccwork/.claude/settings.json"
 printf '{}\n' >"$ROOT/srv/cchist/.claude/settings.json"
 
-# 2026-10-04 bug round: #29. Catalog entries that differ only by case:
-# .config/PearAI/User before .config/pearai/User, and .config/Cursor/User
-# nested under .config/cursor. Distinct directories on a case-sensitive
-# filesystem (Linux $TMPDIR); one directory each on a case-insensitive one
-# (macOS), where the checks below expect one row per file. The same files
-# are in smoke.ps1.
+# 2026-10-04 bug round: #29
+# Catalog entries differing only by case are distinct directories on a
+# case-sensitive filesystem and one directory on a case-insensitive one.
 mkdir -p "$H/.config/PearAI/User" "$H/.config/pearai/User" "$H/.config/cursor" "$H/.config/Cursor/User"
 printf '{}\n' >"$H/.config/PearAI/User/case29-upper.json"
 printf '{}\n' >"$H/.config/pearai/User/case29-lower.json"
@@ -632,11 +622,8 @@ printf '{}\n' >"$H/.config/Cursor/User/case29-editor.json"
 CASE_INSENSITIVE=0
 [ -e "$H/.config/pearai/User/case29-upper.json" ] && CASE_INSENSITIVE=1
 
-# 2026-10-06 Ollama (#44): the model manifests under .ollama/models/manifests
-# are collected while the blobs beside them stay excluded, and the systemd
-# service account's home /usr/share/ollama, which none of the home globs
-# reaches, is found through etc/passwd. The same files are in smoke.ps1,
-# except the passwd home: the PowerShell collector does not read etc/passwd.
+# 2026-10-06 Ollama (#44)
+# The service account's home is found through etc/passwd, which smoke.ps1 lacks.
 OLM="$ROOT/home/ollama/.ollama/models/manifests/registry.ollama.ai/library/llama3.2/latest"
 mkdir -p "$(dirname "$OLM")" "$ROOT/usr/share/ollama/.ollama/models/blobs"
 printf '{"schemaVersion":2}\n' >"$OLM"
@@ -645,13 +632,9 @@ printf 'svc-ollama:x:998:998::/usr/share/ollama:/usr/sbin/nologin\n' >>"$ROOT/et
 printf 'hist\n' >"$ROOT/usr/share/ollama/.ollama/history"
 printf 'blob\n' >"$ROOT/usr/share/ollama/.ollama/models/blobs/sha256-def"
 
-# 2026-10-06 frameworks sweep (#64): agent frameworks, studios and self-hosted
-# platforms. Cases in the CASES14 form, relative to alice's home; the same list
-# is in smoke.ps1. CrewAI names its run directory after the project folder, so
-# its Linux and macOS lines are file-anchored below a mid-path wildcard
-# (.local/share/myproj); the Windows line is the class AppData/Local/[Cc]rew[Aa][Ii],
-# tested with CrewAI in alice's home and crewai in bob's. Apache Camel JBang
-# shares ~/.camel with CAMEL, so a JBang status file there must not be collected.
+# 2026-10-06 frameworks sweep (#64)
+# CrewAI's Windows line is a case class, tested as CrewAI for alice and crewai
+# for bob; a Camel JBang status file in ~/.camel must not be collected.
 CASES_FW='
 agent|autogen-studio|.autogenstudio/autogen04203.db
 secret||.autogenstudio/.env
@@ -740,13 +723,6 @@ printf 'x\n' >"$B/AppData/Local/crewai/myproj/latest_kickoff_task_outputs.db"
 printf 'x\n' >"$B/AppData/Local/crewai/credentials/tokens.enc"
 
 # 2026-10-11 Claude Desktop Linux deb and Claude Code 2.1.295 session keys (#73, #76)
-# The layout observed under ~/.config/Claude from the Linux .deb: logs inside
-# the data directory, the space-link signing key under
-# spaces-present/<acct 8 hex>/<org 8 hex>/, the CLI temp-root list in
-# git-shadow/, a Code-tab record, and the downloaded CLI under claude-code/,
-# which stays excluded. Beside them, Claude Code's per-process session key
-# next to its sessions/<pid>.json. Checks follow the default and --no-secrets
-# runs below; the same files are in smoke.ps1.
 C76="$H/.config/Claude"; O76="0a0a0a0a-0000-4000-8000-00000000000a/0b0b0b0b-0000-4000-8000-00000000000b"
 X76=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 K76="$H/.claude/sessions/4242.$X76.key"
@@ -763,11 +739,6 @@ printf '{"pid":4242,"sessionId":"76767676-0000-4000-8000-000000000076","entrypoi
 printf 'session key\n' >"$K76"
 
 # 2026-10-11 Claude Code CLI cache directory (#81)
-# The CLI's env-paths cache directory, observed on macOS under
-# ~/Library/Caches/claude-cli-nodejs: per-project MCP server logs,
-# <cwd slug>/mcp-logs-<server>/<timestamp>.jsonl, one {cwd, debug,
-# sessionId, timestamp} object per line. Collected as claude-code, not
-# secret. Checks follow the default run below; the same file is in smoke.ps1.
 F81="$H/Library/Caches/claude-cli-nodejs/-home-alice-proj/mcp-logs-terminal/2026-10-12T02-23-51-709Z.jsonl"
 mkdir -p "$(dirname "$F81")"
 printf '%s\n' '{"cwd":"/home/alice/proj","debug":"MCP server \"terminal\": connected","sessionId":"81818181-0000-4000-8000-000000000081","timestamp":"2026-10-12T02:23:51.709Z"}' >"$F81"
@@ -779,16 +750,8 @@ mkdir -p "$(dirname "$W81")"
 printf '%s\n' '{"cwd":"C:\\Users\\alice\\proj","debug":"MCP server \"ccd-host\": connected","sessionId":"81818181-0000-4000-8000-000000000081","timestamp":"2026-10-12T02:23:51.709Z"}' >"$W81"
 
 # 2026-10-13 Antigravity desktop app (#83, #84)
-# The layout observed on macOS from the desktop app 2.23.0: its data
-# directory ~/.gemini/antigravity with a conversation database, a crash log,
-# a plugin's OAuth token and binary under plugin_data/, the binaries in bin/,
-# and the plugin marketplace cache beside a cache file the app shares with
-# the CLI; then the Electron user-data directory with its Cache and Code
-# Cache, the macOS logs directory, and the Windows form of the user-data
-# directory. Cache under the Electron directory is excluded by its three
-# explicit bases, never by */Antigravity/Cache, which the PowerShell match
-# would also apply to .gemini/antigravity/cache. Checks follow the default
-# and --no-secrets runs below; the same files are in smoke.ps1.
+# The Electron Cache is excluded by explicit bases: */Antigravity/Cache, matched
+# without case in PowerShell, would also prune .gemini/antigravity/cache.
 G83="$H/.gemini/antigravity"; E83="$H/Library/Application Support/Antigravity"; W83="$H/AppData/Roaming/Antigravity"
 mkdir -p "$G83/conversations" "$G83/crashes" "$G83/plugin_data/gdocs/bin" "$G83/bin" "$G83/cache/marketplaces/official" \
   "$E83/Cache" "$E83/Code Cache/js" "$H/Library/Logs/Antigravity" "$W83/Cache"
@@ -807,19 +770,8 @@ printf '{"lastCreatedProjectId":"p1"}\n' >"$W83/app_storage.json"
 printf 'cache\n' >"$W83/Cache/data_0"
 
 # 2026-10-13 Antigravity Linux round (#83, #90, #91)
-# From the Ubuntu install of CLI 1.3.4 and the desktop app 2.23.1: the CLI's
-# file secret store plugin-secrets.json under the lower-case
-# ~/.config/antigravity (secret), the spell-check Dictionaries directory of
-# the Electron user-data directory and the sidecar SDK the app installs
-# twice, under .gemini/antigravity/lib/node_modules and
-# .gemini/config/node_modules (excluded), and two app project files: one
-# pretty-printed exactly as observed, with two spaces between the colon and
-# the file:/// folderUri, and one with a percent-encoded Windows drive
-# letter. Both projects must be discovered (#91). The Dictionaries fixture
-# sits in the macOS user-data directory: alice's .config/Antigravity would
-# be the same directory as .config/antigravity on a case-insensitive
-# filesystem. Checks follow the default and --no-secrets runs below; the
-# same files, in the Windows layout, are in smoke.ps1.
+# The Dictionaries fixture is in bob's macOS directory: alice's
+# .config/Antigravity is .config/antigravity on a case-insensitive filesystem.
 mkdir -p "$H/.config/antigravity" "$E83/Dictionaries" "$G83/lib/node_modules/sidecar_sdk" \
   "$H/.gemini/config/node_modules/sidecar_sdk" "$H/.gemini/config/projects" "$ROOT/srv/agyapp" "$ROOT/srv/agywin"
 printf '{"gdocs":"x"}\n' >"$H/.config/antigravity/plugin-secrets.json"
@@ -832,48 +784,27 @@ printf 'ignore\n' >"$ROOT/srv/agyapp/.antigravityignore"
 printf 'ignore\n' >"$ROOT/srv/agywin/.antigravityignore"
 
 # 2026-10-14 home patterns and the working directory (#105)
-# A directory outside the image with home and Users subdirectories, the
-# working directory of the cwd105 run below: the home patterns must be
-# expanded under the image root, not here, so bob (no passwd entry, found
-# only by the Users/* pattern) is still collected. The same in smoke.ps1.
+# The cwd105 run's working directory: home patterns expand under the image root.
 CWD105="$WORK/cwd105"
 mkdir -p "$CWD105/home/analyst" "$CWD105/Users/analyst"
 
 # 2026-10-14 catalog match that is an excluded file (#107)
-# Muse Code's staged updater as a file, matched by the catalog line
-# .local/bin/.muse-* and by the exclusion .local/bin/.muse-update.*: one
-# skipped_excluded row with its size, as for a file a walk prunes; collected
-# with --full; counted by the inventory only with --full. The same file is
-# in smoke.ps1.
 printf '1070\n' >"$H/.local/bin/.muse-update.107.exe"
 
 # 2026-10-14 output directory under a file (#108)
-# A plain file outside the image: the check after the read-only output
-# directory check below gives -o a path under it. The same in smoke.ps1.
 FILE108="$WORK/file108"
 printf 'x\n' >"$FILE108"
 
 # 2026-10-14 exclusion globs and the working directory (#109)
-# A plugin node_modules in alice's home, excluded by the wildcard glob
-# .claude/plugins/*/node_modules, and a directory outside the image holding
-# another tree that the glob matches, the working directory of the cwd109
-# run below: the glob must reach find unexpanded. The same in smoke.ps1.
+# The cwd109 run's working directory: the glob must reach find unexpanded.
 mkdir -p "$H/.claude/plugins/y/node_modules" "$WORK/cwd109/.claude/plugins/x/node_modules"
 printf 'module.exports = 1\n' >"$H/.claude/plugins/y/node_modules/f.js"
 
-# 2026-10-14 CDPATH in the environment (#110), sh only: PowerShell has no
-# CDPATH. A directory for CDPATH that holds a decoy root, named like the
-# image root, for the cdpath110 run below.
+# 2026-10-14 CDPATH in the environment (#110)
+# sh only, as PowerShell has no CDPATH: a decoy root for the cdpath110 run.
 mkdir -p "$WORK/cdp110/root/home"
 
 # 2026-10-14 Antigravity on Windows (#83)
-# From the Windows 11 install of the desktop app 2.23.1 and CLI 1.3.5: the
-# marketplace staging directory under AppData/Local/antigravity (the Windows
-# form of .cache/antigravity, empty on the install, given a file here so
-# it has a row), beside the installer's AppData/Local/antigravity-updater
-# and the app's program directory AppData/Local/Programs/antigravity, which
-# the catalog line must not match. Checks follow the default run below; the
-# same files are in smoke.ps1.
 L83="$H/AppData/Local"
 mkdir -p "$L83/antigravity/staging" "$L83/antigravity-updater" "$L83/Programs/antigravity"
 printf 'staged\n' >"$L83/antigravity/staging/s1"
@@ -881,13 +812,6 @@ printf 'exe\n' >"$L83/antigravity-updater/installer.exe"
 printf 'exe\n' >"$L83/Programs/antigravity/Antigravity.exe"
 
 # 2026-10-15 ChatGPT desktop as the OpenAI.Codex package (#113)
-# From the Windows 11 install of ChatGPT 26.1007.9446.0: the Chromium
-# profile under the package's web/Codex user-data directory, with a
-# storage partition, the app log and the MSIX settings hive. The component
-# cache beside the profile is not a catalog line and must get no row. The
-# bundled Codex's copied binaries and global state go in bob's .codex
-# (#115, #116). Checks follow the default and --no-secrets runs below; the
-# same files are in smoke.ps1 under alice.
 P113="$H/AppData/Local/Packages/OpenAI.Codex_2p2nqsd0c76g0"
 C113="$P113/LocalCache/Roaming/Codex/web/Codex"
 X113="$C113/Default/Partitions/codex-browser-app"
@@ -909,14 +833,6 @@ printf 'exe\n' >"$B/.codex/plugins/.plugin-appserver/codex.exe"
 printf '{}\n' >"$B/.codex/.codex-global-state.json"
 
 # 2026-10-15 ChatGPT desktop on macOS (#121)
-# From the macOS 26.6.2 install of ChatGPT 26.1007.71326 (bundle id
-# com.openai.codex): the Chromium profile under Application Support/Codex
-# (its cookie store directly in the profile), the bundled MCP server's
-# script beside its manifest, the app log, preferences, URL-session
-# cookies and the computer-use group container, and the computer-use app
-# bundle the app copies into .codex. The component cache beside the
-# profile gets no row. Checks follow the default run below; the same
-# files are in smoke.ps1 under alice.
 M121="$B/Library/Application Support/Codex"
 X121="$M121/Default/Partitions/codex-browser-app"
 G121="$B/Library/Group Containers/2DC432GLL2.com.openai.sky.CUAService"
@@ -942,14 +858,8 @@ printf 'plist\n' >"$U121/Codex Computer Use.app/Contents/Info.plist"
 printf '{}\n' >"$U121/config.json"
 
 # 2026-10-15 special files (#120)
-# Codex CLI 0.162.1 keeps Unix domain sockets under .codex
-# (app-server-daemon/daemon-updater.sock, ipc/ipc.sock). A socket and a FIFO
-# each get one skipped_special row naming their kind and are never opened.
-# The FIFO is sh only: PowerShell cannot create one. The socket is bound with
-# python3 from inside its directory, since a full path under a long TMPDIR
-# can pass the 104-byte (macOS) or 108-byte (Linux) socket path limit; when
-# python3 is absent or the bind fails, the socket checks are skipped. Checks
-# follow the default run below; the socket is in smoke.ps1 under alice.
+# The FIFO is sh only. python3 binds the socket from inside its directory, as a
+# full path under a long TMPDIR can pass the socket path length limit.
 S120="$ROOT/home/alice/.codex"
 mkdir -p "$S120/ipc" "$S120/app-server-daemon"
 mkfifo "$S120/ipc/ipc.fifo"
@@ -965,15 +875,6 @@ else
 fi
 
 # 2026-10-16 GitHub Copilot Desktop (#147)
-# From the Ubuntu 26.04 arm64 install of GitHub Copilot Desktop 1.1.29: the
-# app shares .copilot with the CLI. Its store, run files, chat and repository
-# directories and log are nested copilot-desktop entries; its sessions stay
-# copilot-cli. A session cwd under .copilot (a chat directory, a worktree) is
-# not a project. The data directory and Foundry Local's directory are its own
-# entries. A clone's .git is collected (its checkpoint refs), less objects and
-# index; the clones' working trees and the worktrees stay excluded with repos.
-# entries. Checks follow the default and --no-secrets runs below; the same
-# files are in smoke.ps1 under alice.
 D147="$ROOT/home/alice/.copilot"
 L147="$ROOT/home/alice/.local/share/com.github.githubapp"
 mkdir -p "$D147/run" "$D147/chats/2026-10-16/x-5d404e14" "$D147/repos/proj" \
@@ -1005,15 +906,6 @@ printf '# af\n' >"$L147/app-skills/af/SKILL.md"
 printf 'log\n' >"$ROOT/home/alice/.github-copilot-cli/logs/foundry.core20261016.log"
 
 # 2026-10-17 Copilot Desktop Windows round (#147)
-# From the Windows 11 arm64 install of GitHub Copilot Desktop 1.1.30: the
-# WebView2 user data folder (AppData/Local/com.github.githubapp) is a
-# copilot-desktop entry less its Chromium caches; a project the agent built in
-# a chat directory keeps its files but not its node_modules; the Copilot CLI's
-# marketplace clone is excluded (#131). A session directory with no
-# events.jsonl is a pool or probe session the app never prompted, and its cwd
-# (the install directory on Windows) is not a project; s1, s2 and s3 get an
-# events.jsonl so the discovery and .copilot rules above stay tested. Checks
-# follow the default run below; the same files are in smoke.ps1 under alice.
 W147="$ROOT/home/alice/AppData/Local/com.github.githubapp/EBWebView"
 P147="$D147/chats/2026-10-17/x-90825c78/proj"
 K147="$ROOT/home/alice/AppData/Local/copilot/marketplaces"
@@ -1035,15 +927,6 @@ printf 'cwd: /srv/coppool\nclient_name: github/autopilot\n' >"$D147/session-stat
 printf '# pool\n' >"$ROOT/srv/coppool/AGENTS.md"
 
 # 2026-10-17 session sync round (#153)
-# Credential files the session sync research found unflagged: nanobot's
-# remote WebUI pairing keys, Agent Zero's plugin configuration (home, native
-# and a0_usr volume forms), Cline's cached remote config and webhook config,
-# Gemini CLI's /bug-memory heap snapshot, little-coder's legacy config with
-# its gist token, and Qwen Code's channel credential files, whose routing
-# files (sessions.json, routes.json) stay unflagged. Cline's globalStorage
-# cache is collected (its sync queue is evidence), and so is Kilo's log
-# directory. Checks follow the default and --no-secrets runs below; the same
-# files are in smoke.ps1 under alice.
 N153="$H/.nanobot/webui/remote-pairing/11111111-1111-4111-8111-111111111111"
 G153="$H/.vscode-server/data/User/globalStorage/saoudrizwan.claude-dev/cache"
 T153=plugins/_telegram_integration/config.json
@@ -1070,24 +953,11 @@ printf '{}\n' >"$H/.qwen/channels/daemon/0123abcd/routes.json"
 printf 'INFO creating session\n' >"$H/.local/share/kilo/log/2026-10-17T120000.log"
 
 # 2026-10-18 Codex shell snapshots (#160)
-# Codex Desktop inside the ChatGPT app (build 26.1013.40934, macOS,
-# 2026-10-18) writes .codex/shell_snapshots/<thread uuid>.<unix ns>.sh, the
-# user's exported shell environment replayed for the sandbox, so any API key
-# the login shell exports lands there. Flagged secret since 1.15.0. Checks
-# follow the default and --no-secrets runs below; the same file is in
-# smoke.ps1 under alice.
 S160="$H/.codex/shell_snapshots/22222222-2222-4222-8222-222222222222.1792000000000000000.sh"
 mkdir -p "${S160%/*}"
 printf '# Snapshot file\nexport EXAMPLE_API_KEY=x\n' >"$S160"
 
 # 2026-10-19 Codex projectless output directories (#149)
-# The ChatGPT desktop app (Windows 2026-10-15, macOS 2026-10-15 and
-# 2026-10-18) runs a thread
-# with no project in Documents/Codex/<date>/<slug>, with work/ and outputs/
-# inside, and records that directory as the rollout cwd. Since 1.16.0 the
-# directory is a codex-cli catalog line and discovery drops it as a project;
-# bob's first rollout keeps its Documents/app project. Checks follow the
-# default run and --inventory below; the same files are in smoke.ps1 under bob.
 W149="$B/Documents/Codex/2026-10-18/w"
 mkdir -p "$W149/outputs" "$W149/work"
 printf '{"cwd":"/Users/bob/Documents/Codex/2026-10-18/w"}\n' \
@@ -1096,16 +966,6 @@ printf '# report\n' >"$W149/outputs/report.md"
 printf 'notes\n' >"$W149/work/notes.txt"
 
 # 2026-10-20 Cursor IDE round on macOS (#6)
-# Cursor 3.25.9 and 3.26.13 (macOS, 2026-10-19 and 2026-10-20) keep
-# per-account and per-conversation sync stores under AgentStores and one
-# directory per in-app update under update-supervisor (events.jsonl, the
-# build that ran when, beside the 484 KB supervisor binary). The IDE's
-# agent worker embeds a copy of the Agent CLI under agent-cli in
-# globalStorage, and ~/.cursor holds canvas type declarations under
-# node_modules and a feature-flag cache copied from the server: those are
-# excluded; the worker's own files and the agent transcripts stay collected.
-# Checks follow the default run below; the same files are in smoke.ps1
-# under alice.
 C6="$B/Library/Application Support/Cursor"
 W6="$C6/User/globalStorage/anysphere.cursor-agent-worker"
 mkdir -p "$C6/AgentStores/cursor_agent_stores/u1/.sync" \
@@ -1127,22 +987,12 @@ printf '{"type":"turn_ended","status":"success"}\n' \
 printf '{}\n' >"$B/.cursor/statsig-cache.json"
 
 # 2026-10-20 Cursor IDE round on Ubuntu (#236)
-# Cursor 3.25.9 (Ubuntu arm64 deb, 2026-10-20) keeps the same sync stores
-# under the XDG state directory, .local/state/cursor/agent-stores, not under
-# .config/Cursor. Checks follow the default run below; the same files are in
-# smoke.ps1 under bob.
 L236="$H/.local/state/cursor/agent-stores/cursor_agent_stores"
 mkdir -p "$L236/u1/.sync" "$L236/.control/u1/pins"
 printf 'sqlite\n' >"$L236/u1/.sync/index.sqlite"
 printf '{"purpose":"foreground"}\n' >"$L236/.control/u1/pins/1-x.json"
 
 # 2026-10-21 Cursor IDE round on Windows (#236)
-# Cursor 3.26.13 (Windows 11 arm64, per-user installer, 2026-10-21) keeps
-# the sync stores under %LOCALAPPDATA%\Cursor\AgentStores, not beside the
-# user-data directory in AppData/Roaming, and extracts the worker's Agent
-# CLI copy (262.7 MB) under agent-cli in AppData/Roaming/Cursor, which is
-# excluded while the worker's log beside it stays collected. Checks follow
-# the default run below; the same files are in smoke.ps1 under alice.
 S236="$B/AppData/Local/Cursor/AgentStores/cursor_agent_stores"
 W236="$B/AppData/Roaming/Cursor/User/globalStorage/anysphere.cursor-agent-worker"
 mkdir -p "$S236/u1/.sync" "$S236/.control/u1/pins" "$W236/agent-cli"
@@ -1150,28 +1000,19 @@ printf 'sqlite\n' >"$S236/u1/.sync/index.sqlite"
 printf '{"purpose":"foreground"}\n' >"$S236/.control/u1/pins/1-x.json"
 printf 'cli\n' >"$W236/agent-cli/x"
 printf 'worker log\n' >"$W236/cursor-agent-worker-1.log"
-# Cursor 3.26.13 (W21, 2026-10-21) put an installed plugin's marketplace copy
-# under .cursor/plugins/cache/<marketplace>/<plugin>/<sha>, excluded like the
-# Claude Code and Codex plugin caches; plugins/local beside it is collected.
+# An installed plugin's marketplace copy under .cursor/plugins/cache is
+# excluded; plugins/local beside it is collected.
 P236="$B/.cursor/plugins"
 mkdir -p "$P236/cache/cursor-public/x/0123abcd" "$P236/local"
 printf '{"mcpServers":{}}\n' >"$P236/cache/cursor-public/x/0123abcd/mcp.json"
 printf '{}\n' >"$P236/local/x.json"
-# Cursor 3.26.16 (W25, 2026-10-21): the update that brought it wrote
-# update-supervisor/win32/<installationId>/ with app-ready.json, state.json
-# and a copy of inno_updater.exe (3.4 MB), which is excluded.
+# The updater's copy of inno_updater.exe under update-supervisor is excluded.
 U236="$B/AppData/Roaming/Cursor/update-supervisor/win32/0000"
 mkdir -p "$U236"
 printf 'binary\n' >"$U236/inno_updater.exe"
 printf '{"currentVersion":"x"}\n' >"$U236/app-ready.json"
 printf '{"stage":"x"}\n' >"$U236/state.json"
 # 2026-10-21 OpenHands Agent Canvas credentials and workspaces (#218)
-# Agent Canvas (OpenHands/OpenHands 8d39305, scripts/mars-credentials.mjs)
-# keeps its DigitalOcean connections in mars-credentials.json in the Electron
-# user data directory, and Canvas-in-Docker unpacks automation runs under
-# ~/.openhands/workspaces (docker/entrypoint.sh), excluded like
-# agent-canvas/workspaces; workspaces.json beside it stays collected. Checks
-# follow the default run below; the same files are in smoke.ps1 under alice.
 M218A="$H/.config/OpenHands Agent Canvas/mars-credentials.json"
 M218B="$B/Library/Application Support/OpenHands Agent Canvas/mars-credentials.json"
 M218C="$B/AppData/Roaming/OpenHands Agent Canvas/mars-credentials.json"
@@ -1183,12 +1024,6 @@ mkdir -p "$H/.openhands/workspaces/run1"
 printf 'x\n' >"$H/.openhands/workspaces/run1/f"
 
 # 2026-10-21 Agent Zero source review (#217)
-# The WhatsApp bridge's Baileys login state under the install's tmp/ (home,
-# Desktop and volume-relative forms), an editor (ACP) chat whose workspace
-# and extra folder are discovered as projects, and a computer-use screen
-# capture of the A0 CLI connector in the Windows temp directory. Checks
-# follow the default and --no-secrets runs below; the same files are in
-# smoke.ps1 under alice.
 W217=tmp/whatsapp/session/creds.json
 C217="$H/agent-zero/main/usr/chats/acp1"
 T217="$B/AppData/Local/Temp/_a0_connector/computer_use/ctx1"
@@ -1204,13 +1039,6 @@ printf '# extra\n' >"$ROOT/srv/a0extra/AGENTS.md"
 printf 'png\n' >"$T217/0000.png"
 
 # 2026-10-21 framework catalog gaps (#223, #224, #225)
-# From source, no real install: CrewAI's project-local .crewai/last_run.json,
-# its mark of a run traced to AMP, in a discovered project; difyctl's pending
-# device login, login-pending.yml, in its three config directories; and the
-# CLAI 2.0 state directory .local/state/pydantic-clai2 with the web
-# orchestrator's conversation, a workspace record, its token and session.log,
-# and a clone of a remote repository, which is excluded. Checks follow the
-# default and --no-secrets runs below; the same files are in smoke.ps1.
 mkdir -p "$ROOT/srv/proj/.crewai"
 printf '{"execution_id":"x","tier":"ephemeral"}\n' >"$ROOT/srv/proj/.crewai/last_run.json"
 for _d224 in .config AppData/Roaming AppData/Local; do
@@ -1226,13 +1054,6 @@ printf 'log\n' >"$P225/workspaces/registry/ws1/session.log"
 printf 'ref: refs/heads/main\n' >"$P225/workspaces/clones/repo-0123456789/.git/HEAD"
 
 # 2026-10-21 Codex worktree cwds and archived threads (#222)
-# Codex (source at 4e7b9e2) runs a desktop thread in its own git worktree,
-# ~/.codex/worktrees/<4 hex>/<repo>, excluded by the catalog, and moves an
-# archived thread's rollout flat into ~/.codex/archived_sessions; Open
-# Interpreter keeps the same worktree layout under ~/.openinterpreter.
-# Discovery drops a worktree cwd and reads the archive. Checks follow the
-# default run below; the same files are in smoke.ps1 (Codex under bob, Open
-# Interpreter under alice).
 mkdir -p "$B/.codex/archived_sessions" "$ROOT/srv/codexarch" "$B/.codex/worktrees/a1b2/repo" \
   "$H/.openinterpreter/worktrees/c3d4/repo"
 printf '{"type":"session_meta","payload":{"cwd":"/srv/codexarch"}}\n' \
@@ -1246,13 +1067,6 @@ printf '{"type":"session_meta","payload":{"cwd":"/home/alice/.openinterpreter/wo
 printf '# agents\n' >"$H/.openinterpreter/worktrees/c3d4/repo/AGENTS.md"
 
 # 2026-10-21 Cody JetBrains plugin files (#214)
-# Source-derived (sourcegraph/cody-public-snapshot at 8e20ac6): the plugin's
-# application components in each IDE's options/ directory, ~/.sourcegraph and
-# a project's .idea/.sourcegraph settings, and the legacy project-level
-# .idea/cody_history.xml. cody_accounts.xml carries customRequestHeaders and
-# is flagged; cody_accounts_settings.xml holds only the active account id.
-# Checks follow the default and --no-secrets runs below; the same files are
-# in smoke.ps1 under alice.
 O214="$H/.config/JetBrains/IntelliJIdea2025.2/options"
 mkdir -p "$O214" "$H/.sourcegraph" "$ROOT/srv/proj/.idea/.sourcegraph"
 printf '<application />\n' >"$O214/cody.xml"
@@ -1264,14 +1078,6 @@ printf '<project version="4" />\n' >"$ROOT/srv/proj/.idea/cody_history.xml"
 printf '{}\n' >"$ROOT/srv/proj/.idea/.sourcegraph/cody_settings.json"
 
 # 2026-10-21 agent worktrees inside a project (#216)
-# Gemini CLI's --worktree creates <project>/.gemini/worktrees/<name>
-# (google-gemini/gemini-cli 3be3d44, worktreeService.ts) and Qwen Code's
-# enter_worktree <project>/.qwen/worktrees/<slug> (QwenLM/qwen-code 5dcf7c7,
-# worktreeSessionService.ts): full git checkouts that the project entries
-# collected whole. Both are excluded, as .claude/worktrees and
-# .kilo/worktrees are; the project's .gemini/settings.json beside them stays
-# collected. Checks follow the default run below; the same files are in
-# smoke.ps1 under gem.
 G216="$ROOT/srv/gem"
 mkdir -p "$G216/.gemini/worktrees/w1" "$G216/.qwen/worktrees/w1"
 printf 'wt\n' >"$G216/.gemini/worktrees/w1/f"
@@ -1279,13 +1085,6 @@ printf 'wt\n' >"$G216/.qwen/worktrees/w1/f"
 printf '{}\n' >"$G216/.gemini/settings.json"
 
 # 2026-10-21 Hermes quick snapshots and desktop connections (#123, #208)
-# hermes-agent 86fa9e6 (source only): a quick snapshot under state-snapshots
-# holds an older state.db, the only copy of a pruned or deleted session, so
-# it is collected, while the credential copies beside it (.env, auth.json,
-# the pairing stores) stay flagged by the home-relative secret globs. The
-# desktop app's connection.json and connections.json can hold a gateway
-# token in plain text and are flagged. Checks follow the default and
-# --no-secrets runs below; the same files are in smoke.ps1 under alice.
 Q123="$H/.hermes/state-snapshots/20261001-120004-pre-update"
 W123="$H/AppData/Local/hermes/state-snapshots/20261001-120004"
 mkdir -p "$Q123/pairing" "$W123" "$H/.config/Hermes"
@@ -1298,12 +1097,6 @@ printf 'sqlite\n' >"$W123/state.db"
 printf '{"connections":[]}\n' >"$H/.config/Hermes/connections.json"
 
 # 2026-10-21 nanobot workspace cron and triggers (#220)
-# nanobot (HKUDS/nanobot at 909b277, source only) keeps its cron jobs and
-# local triggers in the workspace, with one run record per run (session
-# key, prompt, reply) that outlives the session. The project catalog
-# collects the job and trigger files and the runs directories of a
-# discovered workspace; the trigger queue (inbox/) is left. Checks follow
-# the default run below; the same files are in smoke.ps1 under nanows.
 N220="$ROOT/srv/nanows"
 mkdir -p "$N220/cron/runs" "$N220/triggers/runs" "$N220/triggers/inbox"
 printf '{"jobs":[]}\n' >"$N220/cron/jobs.json"
@@ -1313,16 +1106,6 @@ printf '{"trigger_id":"t1","status":"ok"}\n' >"$N220/triggers/runs/d1.json"
 printf '{"id":"d2"}\n' >"$N220/triggers/inbox/d2.json"
 
 # 2026-10-21 OpenClaw source review (#219)
-# OpenClaw 2026.10.5 (source, openclaw/openclaw at 146284a) keeps the
-# approvals socket token in the legacy exec-approvals.json, and the Docker
-# install's ~/.openclaw-auth-profile-secrets holds gateway.env: both are
-# flagged, and so is a volume-relative exec-approvals.json. A Gateway clone
-# under projects/<16 hex>/<name> is excluded while another projects entry is
-# collected, and the volume-relative forms of the clone, plugin-skills and
-# agent tmp exclusions prune the same names in a volume (the a0_usr one
-# here), whose own projects/<name> stays collected. Checks follow the
-# default and --no-secrets runs below; the same files are in smoke.ps1
-# under alice.
 O219="$H/.openclaw"
 C219=0123456789abcdef
 V219="$DV/a0_usr/_data"
@@ -1341,15 +1124,6 @@ printf 'tmp\n' >"$V219/agents/main/agent/tmp/t"
 printf 'tmp\n' >"$V219/agents/main/agent/.tmp/t"
 
 # 2026-10-21 OpenCode and Kilo Code source review (#213, #221)
-# Source only, no real install: OpenCode 2.0 (anomalyco/opencode cb07c55)
-# writes its background server's password to service.json, or
-# service-<channel>.json, in the config and the state directory, keeps the
-# Electron desktop app's data in ai.opencode.desktop, .beta or .dev under
-# the platform's app data directory with a V8 compile-cache, and keeps a
-# temp root that is AppData/Local/Temp/opencode on Windows. Kilo Code
-# (Kilo-Org/kilocode 87cc35c) writes its sandbox policy and preference files
-# beside its state directory. Checks follow the default and --no-secrets
-# runs below; the same files are in smoke.ps1 under alice.
 D213="$B/Library/Application Support/ai.opencode.desktop"
 K221="$H/.local/state/kilo-sandbox-policy/aa"
 mkdir -p "$H/.config/opencode" "$H/.local/state/opencode" "$D213/compile-cache" \
@@ -1366,50 +1140,25 @@ printf '{"enabled":true,"mode":"deny","version":1}\n' >"$K221/bb.json"
 printf 'false\n' >"$H/.local/state/kilo-sandbox-preference/bb.json"
 
 # 2026-10-21 Qwen Code session registry (#230)
-# Qwen Code writes ~/.qwen/sessions/<pid>.json (or <pid>-<8 hex>.json) per
-# running session, with ipcToken, the token that admits a connection to the
-# session's socket, so the directory is a secret glob. Checks follow the
-# default and --no-secrets runs below; the same files are in smoke.ps1 under
-# alice.
 mkdir -p "$H/.qwen/sessions"
 printf '{"sessionId":"x","ipcToken":"x"}\n' >"$H/.qwen/sessions/4242.json"
 printf '{"sessionId":"x","ipcToken":"x"}\n' >"$H/.qwen/sessions/4243-0123abcd.json"
 
 # 2026-10-21 Roo Code CLI cloud credentials (#159)
-# The Roo Code CLI up to 3.53.0 saved its Roo Code Cloud token in
-# ~/.roo/cli-credentials.json (apps/cli/src/lib/storage/credentials.ts at
-# Roo-Code v3.53.0); the secret glob flags it. Checks follow the default run
-# below; the same file is in smoke.ps1 under alice.
 mkdir -p "$H/.roo"
 printf '{"token":"not-a-real-token"}\n' >"$H/.roo/cli-credentials.json"
 
 # 2026-10-21 Twinny workspace storage (#215)
-# Twinny 4.3.15 (source, twinnydotdev/twinny 0337b265) keeps one
-# agent-changes/<uuid>.json record per agent-mode reply that changed files
-# in its per-workspace extension storage, workspaceStorage/<id>/
-# rjmacarthy.twinny, beside the editor's own workspace.json and
-# state.vscdb. The nested twinny entries claim that directory from the
-# editor's walk; the files beside it stay vscode. Checks follow the default
-# run below; the same files are in smoke.ps1 under alice.
 T215="$H/.config/Code/User/workspaceStorage/ws215"
 mkdir -p "$T215/rjmacarthy.twinny/agent-changes"
 printf '{"id":"c1","root":"/srv/twinproj","createdAt":1,"files":[]}\n' \
   >"$T215/rjmacarthy.twinny/agent-changes/c1.json"
 printf '{"folder":"file:///srv/twinproj"}\n' >"$T215/workspace.json"
-# The twinny-server forge plugins (GitHub, GitLab, Gitea, Bitbucket) keep
-# their saved access tokens beside the watched repositories in
-# plugins/<id>/repos.json, flagged secret.
+# The twinny-server forge plugins keep access tokens in repos.json: flagged secret.
 mkdir -p "$H/.twinny/server/plugins/github"
 printf '{"version":1,"repos":[],"tokens":[]}\n' >"$H/.twinny/server/plugins/github/repos.json"
 
 # 2026-10-21 project git metadata (#253)
-# Every discovered project's .git/HEAD, config, FETCH_HEAD, packed-refs,
-# refs/, logs/ and worktrees/ are collected under agent project: the
-# remotes with their fetch and push URLs, the checked-out branch, the last
-# fetch, the branches and tags, the reflog and the linked worktrees. The
-# object store, the index, hooks, LFS objects and submodule repositories
-# match no PROJECT_CATALOG line and get no row. Checks follow the default
-# run below; the same files are in smoke.ps1 under the project proj.
 G253="$ROOT/srv/proj/.git"
 mkdir -p "$G253/refs/heads" "$G253/refs/remotes/origin" "$G253/logs/refs/remotes/origin" \
   "$G253/worktrees/wt1" "$G253/objects/ab" "$G253/hooks" "$G253/lfs/objects" "$G253/modules/sub"
@@ -1448,17 +1197,6 @@ printf 'lfs\n' >"$G253/lfs/objects/x"
 printf 'ref: refs/heads/main\n' >"$G253/modules/sub/HEAD"
 
 # 2026-10-23 claude-code Windows round (#256)
-# Claude Code 2.1.309 on Windows 11 (real install, 2026-10-23) keeps its
-# temp root under the home, AppData/Local/Temp/claude/<slug>/<session>/
-# with scratchpad/ and tasks/, and rewrites a project's
-# .git/info/exclude, collected as git metadata. Its session daemon keeps
-# raw IPC keys and auth values in .claude/daemon/, and .claude/backups/
-# holds full copies of .claude.json, as does the older home-level
-# .claude.json.backup, so all are secret globs. paste-cache/ holds pasted
-# prompt text that history.jsonl names only by hash and is collected;
-# plugin-directory-cache-v2.json is a downloaded copy and is excluded.
-# Checks follow the default and --no-secrets runs below; the same
-# files are in smoke.ps1 under alice and the project proj.
 T256="$H/AppData/Local/Temp/claude/C--srv-proj/25625625-6256-4256-8256-256256256256"
 mkdir -p "$T256/scratchpad" "$T256/tasks" "$H/.claude/daemon" \
   "$H/.claude/backups" "$H/.claude/paste-cache" "$H/.claude/plugins" "$G253/info"
@@ -1476,28 +1214,12 @@ printf '# git ls-files --others --exclude-from=.git/info/exclude\n.claude/schedu
   >"$G253/info/exclude"
 
 # 2026-10-26 claude-code Linux round (#256)
-# Claude Code 2.1.310 on Ubuntu 26.04 (real install, 2026-10-25/26) holds
-# .local/state/claude/locks/<version>.lock, a JSON lock with acquiredAt,
-# execPath, pid and version, while a session runs, and creates
-# .cache/claude/staging/ at install; both directories are home-relative on
-# Windows too and are collected as claude-code. Checks follow the default
-# run below; the same files are in smoke.ps1 under alice.
 mkdir -p "$H/.local/state/claude/locks" "$H/.cache/claude/staging"
 printf '{"acquiredAt":1792800000000,"execPath":"/x","pid":1,"version":"2.1.310"}\n' \
   >"$H/.local/state/claude/locks/2.1.310.lock"
 printf 'staged\n' >"$H/.cache/claude/staging/entry"
 
 # 2026-10-26 claude-code macOS round (#256)
-# Claude Code 2.1.310 on macOS 26.6 (real install, 2026-10-26) writes
-# ~/Applications/Claude Code URL Handler.app at the first exit: an
-# Info.plist registering the claude-cli: URL scheme and Contents/MacOS/claude,
-# a symlink to ~/.local/bin/claude, collected as claude-code with the link
-# recorded. While an IDE session runs, .claude/ide/<port>.lock holds an
-# authToken; while a Remote Control bridge runs,
-# .claude/bridge-spawn/<id>/mcp.json holds the session-bound headers of the
-# remote MCP endpoint. Both are secret globs, in a relocated config home
-# too. Checks follow the default and --no-secrets runs below; the same
-# files are in smoke.ps1 under alice.
 U256="$H/Applications/Claude Code URL Handler.app/Contents"
 S256="bridge-spawn/cse_0123456789abcdef0123"
 mkdir -p "$U256/MacOS" "$H/.claude/ide" "$H/.claude/$S256" "$CCW/ide" "$CCW/$S256"
@@ -1525,7 +1247,7 @@ run() { # run NAME ARGS...
   return "$_rc"
 }
 # On a case-insensitive filesystem a path is recorded in its first catalog
-# spelling (#29), so the lookup ignores case there.
+# spelling, so the lookup ignores case there.
 row() {
   if [ "$CASE_INSENSITIVE" = 1 ]; then grep -iF "\"path\":\"$1\"" "$M"; else grep -F "\"path\":\"$1\"" "$M"; fi | head -n1
 }
@@ -1607,7 +1329,7 @@ check "project-level kilo worktrees excluded" "[ \"\$(status_of \"$ROOT/srv/kilo
 check "ollama desktop app dir collected" "[ \"\$(status_of \"$ROOT/Users/bob/Library/Application Support/Ollama/db.sqlite\")\" = collected ]"
 check "cline taskHistory in globalStorage discovers project" "[ \"\$(status_of \"$ROOT/Users/bob/clineproj/.clinerules\")\" = collected ]"
 check "cline checkpoints in globalStorage excluded" "[ \"\$(status_of \"$ROOT/Users/bob/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/checkpoints\")\" = skipped_excluded ]"
-# 1.4.0 catalog round (2026-10-04)
+# catalog cases
 printf '%s\n' "$CASES14" >"$WORK/cases14"
 while IFS='|' read -r _k _a _r; do
   [ -n "$_r" ] || continue
@@ -1649,7 +1371,7 @@ check "nanobot .workspace marker discovers project" "[ \"\$(status_of \"$ROOT/sr
 check "nanobot instance config workspace discovers project" "[ \"\$(status_of \"$ROOT/srv/nanocfg/memory/MEMORY.md\")\" = collected ]"
 check "tabby config.toml file:// git_url discovers project" "[ \"\$(status_of \"$ROOT/srv/tabbyproj/AGENTS.md\")\" = collected ]"
 check "twinny manifest common prefix discovers project" "[ \"\$(status_of \"$ROOT/srv/twinproj/AGENTS.md\")\" = collected ]"
-# 1.5.0 Docker volumes (2026-10-04)
+# Docker volumes
 A0="$DV/a0_usr/_data"
 check "docker volume file collected as agent-zero, user docker" "row \"$A0/chats/ctx1/chat.json\" | grep -q '\"user\":\"docker\",\"home\":\"$A0\",\"agent\":\"agent-zero\".*\"status\":\"collected\"'"
 check "docker volume file archived under fs/<original path>" "tar -tzf \"\$A\" | grep -q '^./fs/var/lib/docker/volumes/a0_usr/_data/chats/ctx1/chat.json\$'"
@@ -2092,9 +1814,7 @@ S105=$(ls "$OUT/cwd105"/*.collection.json 2>/dev/null)
 check "#105 image homes found from a directory with home and Users subdirectories" "[ $_rc105 -eq 0 ] && grep -q '\"user\":\"bob\"' \"$M105\" && [ \"\$(grep '^  \"users\":' \"$S105\")\" = \"\$(grep '^  \"users\":' \"$OUT\"/default/*.collection.json)\" ]"
 
 # 2026-10-14 NESTED_CLAIMS from the environment (#106)
-# An inherited value naming a subtree of a matched volume must prune nothing:
-# the collector's own claims are internal state, not input. The same in
-# smoke.ps1.
+# An inherited value naming a subtree of a matched volume must prune nothing.
 NESTED_CLAIMS="$A0/chats"; export NESTED_CLAIMS
 run claims106 --no-projects; _rc106=$?
 unset NESTED_CLAIMS
@@ -2126,10 +1846,8 @@ check "docker desktop noted in stdout" "grep -q '^docker:     3 volumes found, 2
 check "docker desktop noted in collection.json" "grep -q '\"docker: Docker Desktop data at .*com.docker.docker; volumes inside its virtual machine disk are not collected\"' \"\$S\" && grep -q '\"docker_desktop\": true' \"\$S\""
 rm -rf "$B/Library/Containers"
 
-# 2026-10-06 frameworks sweep (#64): Dify, Langflow and n8n named volumes, in
-# a run of their own so the volume counts above stay as they are. The n8n
-# volume holds ~/.n8n, so its config (encryptionKey) is flagged through the
-# volume-relative config glob.
+# 2026-10-06 frameworks sweep (#64)
+# Dify, Langflow and n8n volumes, in a run of their own so the counts above hold.
 FV="$DV/n8n_data/_data"
 mkdir -p "$FV/nodes/node_modules/pkg" "$FV/node-definitions" "$FV/n8n-sdk-templates" "$FV/ssh" \
   "$DV/n8n_n8n-data/_data" "$DV/langflow_langflow-data/_data/profile_pictures" \
@@ -2146,9 +1864,8 @@ printf 'k\n' >"$DV/langflow_langflow-data/_data/cache_secret_key"
 printf 'x\n' >"$DV/langflow_langflow-data/_data/profile_pictures/p.svg"
 printf 'db\n' >"$DV/docker_dify_agent_local_sandbox_home/_data/.local/share/shellctl/shellctl.db"
 printf 'x\n' >"$DV/docker_dify_agent_local_sandbox_workspace/_data/out.txt"
-# 2026-10-21 Hermes quick snapshots and desktop connections (#123, #208): a
-# Hermes home in a named volume keeps its quick snapshots at the volume root,
-# so their credential copies need the volume-relative secret globs.
+# 2026-10-21 Hermes quick snapshots and desktop connections (#123, #208)
+# A Hermes home in a volume needs the volume-relative secret globs.
 V123="$DV/hermes_home/_data/state-snapshots/20261001-120004"
 mkdir -p "$V123/pairing"
 printf 'sqlite\n' >"$V123/state.db"
@@ -2172,7 +1889,7 @@ check "dify sandbox workspace volume collected as dify" "row \"$DV/docker_dify_a
 check "#123 Hermes volume quick snapshot collected, credentials flagged (volume-relative)" "row \"$V123/state.db\" | grep -q '\"user\":\"docker\".*\"agent\":\"hermes\".*\"secret\":false,\"status\":\"collected\"' && row \"$V123/.env\" | grep -q '\"secret\":true,\"status\":\"collected\"' && row \"$V123/auth.json\" | grep -q '\"secret\":true,\"status\":\"collected\"' && row \"$V123/pairing/telegram-approved.json\" | grep -q '\"secret\":true,\"status\":\"collected\"'"
 rm -rf "$DV/n8n_data" "$DV/n8n_n8n-data" "$DV/langflow_langflow-data" "$DV/docker_dify_agent_local_sandbox_home" "$DV/docker_dify_agent_local_sandbox_workspace" "$DV/hermes_home"
 
-# ---- --inventory (1.6.0, 2026-10-04) ---------------------------------------
+# ---- --inventory ----------------------------------------------------------
 # Stat-only fleet inventory: JSON Lines on stdout, nothing written anywhere.
 inv() { # inv NAME ARGS... -> $OUT/NAME.stdout and $OUT/NAME.stderr
   _n=$1; shift
@@ -2242,7 +1959,7 @@ else
   printf 'skip unreadable home inventory check (running as root)\n'
 fi
 
-# ---- live mode without the snapshot (1.6.0) --------------------------------
+# ---- live mode without the snapshot ---------------------------------------
 mkdir -p "$OUT/livehost"
 COLLECTOR_SH="$SHELL_UNDER_TEST" "$SHELL_UNDER_TEST" "$SCRIPT" -o "$OUT/livehost" -q -u no-such-user-cac --no-docker --no-projects >/dev/null 2>&1
 check "live mode exit 0" "[ $? -eq 0 ]"
@@ -2311,7 +2028,7 @@ fi
 # A tar that fails inside tar -cf - | gzip must not leave a truncated .tar.gz
 # behind: the collector falls through to the plain .tar. The shim rejects -z,
 # writes some bytes and exits 1 for -cf -, and runs the real tar otherwise;
-# gzip is the real one. The forced-failure checks reuse the #31 probe.
+# gzip is the real one. The forced-failure checks reuse the probe above.
 check "#40 tar | gzip success leaves no tar status file" "! ls -a \"$OUT/tgz31\" | grep -q 'tar-status'"
 if [ "$SHIMS31" = yes ]; then
   SHIM40="$WORK/shim40"; mkdir -p "$SHIM40"
@@ -2385,9 +2102,9 @@ check "#108 output dir under a file exits 2 with only the create error" "[ $? -e
 M109=$(ls "$OUT/cwd109"/*.manifest.jsonl 2>/dev/null)
 check "#109 wildcard exclusion holds from a directory with a matching tree" "[ $_rc109 -eq 0 ] && grep -F '\"path\":\"$H/.claude/plugins/y/node_modules\"' \"$M109\" | grep -q '\"status\":\"skipped_excluded\"' && ! grep -q 'node_modules/f.js' \"$M109\""
 
-# 2026-10-14 CDPATH in the environment (#110), sh only: a relative -r with
-# CDPATH naming the directory that holds the decoy root, run from the
-# directory that holds the image root.
+# 2026-10-14 CDPATH in the environment (#110)
+# sh only: a relative -r with CDPATH naming the directory that holds the decoy
+# root, run from the directory that holds the image root.
 (cd "$WORK" && CDPATH="$WORK/cdp110" COLLECTOR_SH="$SHELL_UNDER_TEST" "$SHELL_UNDER_TEST" "$SCRIPT" -r root -o "$OUT/cdpath110" -q --no-docker --no-projects >"$OUT/cdpath110.stdout" 2>"$OUT/cdpath110.stderr"); _rc110=$?
 check "#110 relative -r with CDPATH set collects the image in the working directory" "[ $_rc110 -eq 0 ] && grep -q '^  \"root\": \"$ROOT\",\$' \"$OUT\"/cdpath110/*.collection.json && grep -q '\"user\":\"alice\"' \"$OUT\"/cdpath110/*.manifest.jsonl"
 
@@ -2416,7 +2133,7 @@ fi
 # one 256-file chunk. CAC_NO_BATCH=1 takes the per-file path; the two
 # manifests must match apart from atime, which the first run's reads may move.
 # The shasum run uses a copy of the collector whose sha256sum probe looks for
-# a name that does not exist, the same sed-copy approach as the #31 shims; a
+# a name that does not exist, the same sed-copy approach as the tar shims; a
 # PATH shim cannot hide sha256sum, because the collector puts /usr/bin first.
 R71="$WORK/root71"; D71="$R71/home/carol/.claude/projects/-srv-p71"; nl71='
 '
@@ -2442,7 +2159,7 @@ noatime71() { sed 's/"atime":[0-9]*,//' "$1" | sort; }
 _root71=$ROOT; ROOT=$R71
 run batch71 --no-docker; _rc71=$?; M71=$M
 # bsdtar reads a backslash in a member name as an escape, so the backslash
-# file is hashed from a full extraction rather than with tar -O (#78).
+# file is hashed from a full extraction rather than with tar -O.
 X71="$WORK/x71"; mkdir -p "$X71"; tar -xzf "$A" -C "$X71" 2>/dev/null
 # shellcheck disable=SC2034 # read by the eval'd check expression below
 F71="$X71/fs/home/carol/.claude/projects/-srv-p71/back\\slash.jsonl"

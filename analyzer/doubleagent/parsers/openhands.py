@@ -1,136 +1,32 @@
-"""OpenHands conversations (Agent Canvas, Agent Server and the `openhands` CLI).
+"""Parse OpenHands conversations (Agent Canvas, Agent Server and the `openhands` CLI).
 
-Validated against source, OpenHands/software-agent-sdk at b347047 and
-OpenHands/OpenHands at 7fbb48c (0.62.0, legacy layout), with a synthetic
-fixture; no real install was used. The security-analyzer verdicts, the
-standing permission settings, the model rows from switches and per-response
-token usage, the CLI prompt history and the worktree scratch directory rows
-are source-derived (software-agent-sdk at 33d8aa2, OpenHands-CLI at
-0403f1a) and not observed on any real install. See `research/openhands.md`.
+Follows `research/openhands.md`. Validated against source, OpenHands/software-agent-sdk
+at b347047 and 33d8aa2 (security verdicts, standing settings, model switches and
+token usage, worktree scratch rows), OpenHands/OpenHands-CLI at 0403f1a (prompt
+history) and OpenHands/OpenHands at 7fbb48c (0.62.0, legacy layout), with a
+synthetic fixture; no real install. Files read, under `.openhands/`:
 
-Files, relative to the home directory (the same layout on every OS):
+- `[agent-canvas/[dev_]]conversations/<hex id>/events/event-<index>-<id>.json`,
+  one event object per file: `kind`, `id`, `timestamp`, `source` and the
+  per-kind fields `_event_rows` reads (`llm_message`, `action`,
+  `observation`, `tool_name`, `tool_call_id`, `security_risk`, `risks`,
+  `llm_response_id`, ...). The conversation's `meta.json` (`title`,
+  `created_at`, parent and fork ids, `workspace.working_dir`) and
+  `base_state.json` (`agent.llm.model`, `confirmation_policy`,
+  `security_analyzer`, `blocked_actions`, `stats...token_usages[]`) are read
+  once per conversation; their secret fields are never read.
+- `base_state.json` as its own file: the standing `permission setting:` rows
+  and a `model:` row for a switch made over REST, at the file's time.
+- `projects/<sha256 of cwd>/prompt_history.json`, the CLI's prompts, a
+  secondary source (a file repeating the conversations' prompts).
+- Legacy 0.x `sessions/<sid>/events/<n>.json`: one row per session, not parsed.
 
-* `.openhands/agent-canvas/dev_conversations/<hex>/`,
-  `.openhands/agent-canvas/conversations/<hex>/` and
-  `.openhands/conversations/<hex>/`, one directory per conversation named by
-  its UUID as 32 hex digits. Each artifact is one event file,
-  `events/event-<idx, 5+ digits>-<event id>.json`, holding one JSON object.
-  Fields read: `kind`, `id`, `timestamp`, `source`, and per kind:
-  - `MessageEvent`: `llm_message.{role, content[] ({type:"text", text} or
-    {type:"image"}), tool_calls[].{id, name or function.name, arguments},
-    tool_call_id, reasoning_content, thinking_blocks[].thinking}`.
-  - `ActionEvent`: `thought[]`, `reasoning_content`, `thinking_blocks[]`,
-    `action.{kind, command, path}`, `tool_name`, `tool_call_id`,
-    `tool_call.arguments`, `security_risk`.
-  - `ObservationEvent`: `tool_name`, `tool_call_id`, `observation.{content[],
-    is_error}`; `UserRejectObservation`: `rejection_reason`,
-    `rejection_source`; `AgentErrorEvent`: `error`.
-  - `ACPToolCallEvent`: `tool_call_id`, `title`, `status`, `tool_kind`,
-    `raw_input`, `raw_output`, `content`, `is_error`.
-  - `SecurityAnalysisEvent`: `analyzer`, `policy`, `risks` (ActionEvent id
-    to `UNKNOWN`, `LOW`, `MEDIUM` or `HIGH`), `details`.
-  - `ObservationEvent` whose `observation.kind` is `SwitchLLMObservation`
-    (`profile_name`, `active_model`, `is_error`) or
-    `ClassifyAndSwitchLLMObservation` (`model`, the profile, `chosen_class`,
-    `active_model`); `ActionEvent` and agent `MessageEvent`
-    `llm_response_id`.
-  - `SystemPromptEvent`: `system_prompt`, `tools`; `Condensation` and
-    `CondensationSummaryEvent`: `summary`, `forgotten_event_ids`;
-    `HookExecutionEvent`: `hook_event_type`, `hook_command`, `exit_code`,
-    `blocked`, `stderr`; `ConversationStateUpdateEvent`: `key`, `value`.
-  The sibling files of the conversation directory are read once per
-  conversation: `meta.json` (`id`, `title`, `created_at`,
-  `parent_conversation_id`, `forked_from_conversation_id`,
-  `workspace.working_dir`) and `base_state.json` (`agent.llm.model`,
-  `workspace.working_dir`, `confirmation_policy.{kind, threshold,
-  confirm_unknown}`, `security_analyzer.kind`, `blocked_actions`,
-  `stats.usage_to_metrics.*.token_usages[].{model, response_id}`). Every
-  event file of the conversation is read once with them, to join the
-  analyzer's verdicts and the blocked actions to their tool call and to
-  place the model rows. A `meta.json` or `base_state.json` that exists
-  but cannot be read, is not JSON (cut mid-write) or is not an object gives
-  one whole-file `system` row on the first event file, after the header and
-  model rows, `parser: <file name> could not be decoded (<reason>)`,
-  `could not be read (<reason>)` or `is not a JSON object`, with an empty
-  timestamp and the session id and `project_path` known from the other
-  file; the header then lacks what that file held (issue 176). Their
-  `secrets`, `api_key` and `secret_registry` fields are never read, and `settings.json`,
-  `secrets.json` and `profiles/*.json` are never opened.
-* `base_state.json` of each conversation is also an artifact of its own, at
-  whose modification time it yields the standing permission rows,
-  `permission setting: confirmation_policy=<kind>[ threshold=<threshold>]
-  [ confirm_unknown=<bool>] (from base_state.json, file mtime)`,
-  `permission setting: security_analyzer=<kind> (...)` (`none` when the key
-  is absent; the file is written with `exclude_none`) and
-  `permission setting: blocked_actions.<action id>=<reason> (...)` per
-  hook-blocked action, with the action's `tool_name` and `tool_use_id`;
-  and, when `agent.llm.model` differs from the last model the events show
-  (a switch through the Agent Server's REST endpoints writes no event),
-  `model: <old> -> <new> (from base_state.json agent.llm, file mtime)`. The
-  file holds the state at its last write, not its history.
-* `.openhands/projects/<sha256 of cwd>/prompt_history.json`, the CLI's last
-  100 prompts per working directory: a JSON array of `{text, timestamp}`,
-  oldest first, `timestamp` naive local time (emitted as if UTC, as the CLI
-  conversations are). A secondary source: one `user` row per entry with an
-  empty `session_id`, and `project_path` the `workspace.working_dir` of a
-  conversation under the same `.openhands` whose SHA-256 is the directory
-  name, else empty. A record that does not decode, or is not an object,
-  is its own `parser: unparseable record <N> (<reason>)` row.
-* Legacy 0.x `.openhands/sessions/<sid>/events/<n>.json` and
-  `.openhands/users/<uid>/conversations/<sid>/events/<n>.json`: detected and
-  reported as one `system` row per session (on the lowest-numbered event
-  file), not parsed. The 1.x `v1_conversations/` tree and `bash_events/`
-  are not read.
-
-Timestamps. Event `timestamp` is `datetime.now().isoformat()`, naive host
-local time. When `meta.json` has a UTC `created_at`, the host's offset is
-taken as the difference between the first event's naive time (the lowest
-index in `events/`) and `created_at`, floored to the quarter hour after
-allowing one minute of clock skew, so a first event written up to 14
-minutes after creation still gives the right offset; it is applied to every
-event of that conversation. Without `meta.json` (the CLI does not write one)
-the naive times are emitted as if they were UTC, as the Aider parser does.
-The conversation's header row says which was done. An event timestamp that
-does carry a zone is converted as is.
-
-Rows. The first event file of a conversation also yields one `system`
-header row (title, parent or fork, model, timestamp basis). `MessageEvent`
-rows take their type from `llm_message.role` (`tool` is `tool_result`),
-with any `tool_calls` as `tool_use` rows; `ActionEvent` and
-`ACPToolCallEvent` are `tool_use` (an ACP call that has output also yields a
-`tool_result`); `ObservationEvent`, `UserRejectObservation` and
-`AgentErrorEvent` are `tool_result` joined on `tool_call_id`; everything else
-is `system`. An `ActionEvent` with a `security_risk` (the security
-analyzer's rating, `UNKNOWN`, `LOW`, ...) ends its `tool_use` text with
-` security_risk=<value>`. A `UserRejectObservation` keeps its `tool_result`
-row, `[rejected by <rejection_source>] <rejection_reason>`, and is followed
-by a `system` row `permission decision: rejected rejection_source=<source>
-<rejection_reason>` (`-` for a missing source) with the call's `tool_name`
-and `tool_use_id`. The conversation's model, `agent.llm.model` from
-`base_state.json`, becomes a `system` row `model: <id>` after the header
-row, at the header's time. `base_state.json` holds only the
-conversation's current model, so the `model: <id>` row names the model of
-the first response (from `token_usages[]` joined on `llm_response_id`)
-when one is recorded before any switch, else `agent.llm.model`. A response
-whose model differs from the one in force is preceded by `model: <old> ->
-<new>`; a successful `SwitchLLMObservation` or
-`ClassifyAndSwitchLLMObservation` is followed by `model: <old> ->
-<active_model> profile=<profile>[ class=<chosen_class>]`. The `model`
-column of each event row is the model in force at its event. A
-`SecurityAnalysisEvent` becomes one `system` row per entry of `risks`,
-`permission decision: analyzed risk=<risk> analyzer=<analyzer>
-policy=<policy>[ details=<JSON>]`, with the analysed action's `tool_name`
-and `tool_use_id` (` action_id=<id>` instead when no ActionEvent has that
-id). A conversation whose `workspace.working_dir` is under the Agent
-Server's default worktree root, `/tmp/conversation-worktrees/` (or
-`/private/tmp/...` on macOS), gets `scratch directory: <working_dir>
-(conversation worktree under the Agent Server's default
-conversation_worktree_root /tmp/conversation-worktrees)` after the model
-row; a configured root is not recognised. Thoughts, `reasoning_content` and thinking blocks become
-`thinking` rows with `--include-thinking`. The session id is the directory
-name, `project_path` is `workspace.working_dir` from `meta.json`, else from
-`base_state.json` (a container path under Canvas in Docker). No git branch is recorded. `source_line` is 1, since
-every file holds one object.
+Event times are naive host local time. When `meta.json` has a UTC
+`created_at`, the host's offset is the first event's time less `created_at`,
+floored to the quarter hour after `SKEW`; without it (the CLI writes none)
+the times are emitted as if UTC, and the header row says which. The session
+id is the directory name; `project_path` is `workspace.working_dir`; no git
+branch is recorded; `source_line` is 1.
 """
 
 from __future__ import annotations
@@ -196,9 +92,11 @@ def _join(*parts: str) -> str:
 
 
 def _load_json(path: Path) -> tuple[object, str]:
-    """The decoded JSON of `path` and "", or None and the reason it could not
-    be read or decoded. A missing file, a symlink or a directory is None and
-    "", since the CLI writes no `meta.json` and that is not an error."""
+    """Return the decoded JSON of `path` and "", or None and why it could not be read.
+
+    A missing file, a symlink or a directory is None and "", since the CLI
+    writes no `meta.json` and that is not an error.
+    """
     try:
         if path.is_symlink() or not path.is_file():
             return None, ""
@@ -222,9 +120,11 @@ def _is_file(path: Path) -> bool:
 
 
 def _load_object(path: Path, problems: list[str]) -> dict:
-    """The JSON object in `path`, else {}; a file that exists but cannot be
-    read, decoded or is not an object appends `parser: <name> <reason>` to
-    `problems`."""
+    """Return the JSON object in `path`, else {}.
+
+    A file that exists but cannot be read or decoded, or is not an object,
+    appends `parser: <name> <reason>` to `problems`.
+    """
     value, reason = _load_json(path)
     if not reason and not isinstance(value, dict) and (value is not None or _is_file(path)):
         reason = "is not a JSON object"  # a list, a scalar or a literal null
@@ -234,7 +134,7 @@ def _load_object(path: Path, problems: list[str]) -> dict:
 
 
 def _aware(value) -> datetime | None:
-    """A UTC datetime from a string `to_utc` accepts, else None."""
+    """Return a UTC datetime from a string `to_utc` accepts, else None."""
     timestamp = to_utc(value) if isinstance(value, str) else ""
     if not timestamp:
         return None
@@ -242,7 +142,7 @@ def _aware(value) -> datetime | None:
 
 
 def _naive(value) -> datetime | None:
-    """A naive datetime when the timestamp has no zone, else None."""
+    """Return a naive datetime when the timestamp has no zone, else None."""
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -268,7 +168,7 @@ class _Conv:
     header: str = ""
     created: str = ""
     # Whole-file `parser:` rows for a meta.json or base_state.json that
-    # exists but did not decode (issue 176).
+    # exists but did not decode.
     problems: list[str] = field(default_factory=list)
     # The model in force at the conversation's start: the model of the first
     # response before any switch, else `base_state.json` `agent.llm.model`.
@@ -290,15 +190,19 @@ class _Conv:
 
 
 class OpenHandsParser(Parser):
+    """Parse OpenHands event files, conversation state, CLI prompt history and legacy sessions."""
+
     agent = "openhands"
     name = "openhands"
 
     has_secondary = True
 
     def __init__(self) -> None:
+        """Start with an empty cache of loaded conversations."""
         self._cache: dict[tuple, _Conv] = {}
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for an event file, `base_state.json`, prompt history or legacy event."""
         rel = artifact.rel
         return bool(
             EVENT_RX.match(rel)
@@ -308,9 +212,11 @@ class OpenHandsParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the CLI's prompt history."""
         return bool(HISTORY_RX.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one OpenHands file; a conversation's first event adds its header."""
         if LEGACY_RX.match(artifact.rel):
             yield from self._parse_legacy(artifact, opts)
             return
@@ -726,9 +632,12 @@ class OpenHandsParser(Parser):
 
 
 def _project_for_hash(root: Path, digest: str) -> str:
-    """The `workspace.working_dir` of a conversation under `root` (the
-    `.openhands` directory) whose SHA-256 is `digest`, the name the CLI gives
-    a project's directory under `projects/`; "" when none matches."""
+    """Return the working directory under `root` whose SHA-256 is `digest`, else "".
+
+    `root` is the `.openhands` directory; the directories are the
+    conversations' `workspace.working_dir`, and the digest is the name the
+    CLI gives a project's directory under `projects/`.
+    """
     for pattern in CONVERSATION_GLOBS:
         try:
             paths = sorted(root.glob(pattern))
@@ -748,8 +657,7 @@ def _sha256(text: str) -> str:
 
 
 def _scratch(working_dir: str) -> str:
-    """The `scratch directory:` row text for a working directory under the
-    Agent Server's default worktree root, else ""."""
+    """Return the `scratch directory:` text for a directory under the default worktree root."""
     for root in WORKTREE_ROOTS:
         if working_dir.startswith(root) and working_dir[len(root) :].strip("/"):
             return (
@@ -760,13 +668,14 @@ def _scratch(working_dir: str) -> str:
 
 
 def _track_models(conv: _Conv, state: dict, loaded: list[tuple[str, dict]]) -> None:
-    """Fill the conversation's model rows and its ActionEvent map from the
-    event files in index order: the model of each response from
-    `stats.usage_to_metrics.*.token_usages[]` joined on the event's
-    `llm_response_id`, the agent's own switches from `SwitchLLMObservation`
-    and `ClassifyAndSwitchLLMObservation` (`active_model`), and a final row
-    when `base_state.json` `agent.llm.model` differs from the last model the
-    events show, since a switch over REST leaves no event."""
+    """Fill the conversation's model rows and ActionEvent map from its events in index order.
+
+    Each response's model comes from `stats.usage_to_metrics.*.token_usages[]`
+    joined on the event's `llm_response_id`, the agent's own switches from
+    the `SWITCH_KINDS` observations' `active_model`, and a final row when
+    `agent.llm.model` differs from the last model the events show, since a
+    switch over REST leaves no event.
+    """
     by_response: dict[str, str] = {}
     for metrics in _dict_or_empty(
         _dict_or_empty(state.get("stats")).get("usage_to_metrics")
@@ -814,8 +723,7 @@ def _model_text(old: str, new: str) -> str:
 
 
 def _switch(event: dict) -> tuple[str, str]:
-    """(new model, ` profile=<name>[ class=<chosen_class>]`) for a successful
-    switch observation, else ("", "")."""
+    """Return (new model, ` profile=<name>[ class=<class>]`) of a model switch, else ("", "")."""
     obs = _dict_or_empty(event.get("observation"))
     if event.get("kind") != "ObservationEvent" or obs.get("kind") not in SWITCH_KINDS:
         return "", ""
@@ -830,11 +738,12 @@ def _switch(event: dict) -> tuple[str, str]:
 
 
 def _settings(state: dict, actions: dict[str, tuple[str, str]]) -> list[tuple[str, str, str]]:
-    """(text, tool_name, tool_use_id) of each `permission setting:` row of
-    base_state.json: the confirmation policy, the security analyzer (`none`
-    when the key is absent, since the file is written with `exclude_none`)
-    and one row per hook-blocked action, joined to its tool call when the
-    events name the action."""
+    """Return (text, tool_name, tool_use_id) of each `permission setting:` row of base_state.json.
+
+    The rows are the confirmation policy, the security analyzer (`none` when
+    the key is absent, since the file is written with `exclude_none`) and one
+    per hook-blocked action, joined to its tool call when the events name it.
+    """
     if not state:
         return []
     tail = " (from base_state.json, file mtime)"
@@ -875,8 +784,7 @@ def _thinking(rec: dict) -> str:
 
 
 def _action_text(event: dict) -> str:
-    """The command for a terminal action, `<command> <path>` for a file
-    editor action, else the call's JSON arguments."""
+    """Return a terminal action's command, a file edit's `<command> <path>`, else the arguments."""
     action = _dict_or_empty(event.get("action"))
     cmd, path = action.get("command"), action.get("path")
     if isinstance(path, str) and path:

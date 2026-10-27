@@ -1,132 +1,32 @@
-"""Tabby server chat threads and completion events.
+"""Parse Tabby server chat threads, pages, completion events, model config and edit histories.
 
-Tabby (TabbyML/tabby, checked at 21b2904) is a self-hosted completion and
-chat server, so its transcripts live under the server account's home, not
-the developer's: the `user` column is the account the server ran as, and the
-person who chatted is named in the thread's `system` row. See
-`research/tabby.md`.
+Follows `research/tabby.md`. Validated against source, TabbyML/tabby at 21b2904,
+with a synthetic fixture; no real install. Tabby is a self-hosted server, so
+its stores sit under the server account's home: the `user` column is that
+account, and the person who chatted is named in each thread's `system` row.
+Paths start at `.tabby/`, or at the server root itself when the collection
+base is a Docker or Podman volume's `_data` (`ROOT`). Files read:
 
-Files, relative to the home directory. A server root collected from a
-Docker or Podman named volume (the `tabby|*tabby*` volume line; the images
-set `TABBY_ROOT=/data`) has the volume's `_data` as its base, so the
-leading `.tabby/` is absent there and the paths start at `ee/`, `events/`
-or `config.toml` (issue 124; source-derived, not observed on any real
-install):
+- `ee/db.sqlite` or `ee/dev-db.sqlite`, through `sqlite_util.open_copy`, and
+  the `ee/*db.backup-<date>.sqlite` copies made before each migration, a
+  secondary source (a file repeating the live database's rows) that can hold
+  ephemeral threads since deleted. Only the `COLUMNS` are selected, each when
+  the table has it; the secret-bearing columns are never read. Pre-0.25
+  `thread_messages` hold separate `*_attachments` columns.
+- `events/<date>.json`, one `LogEntry` per line (`user`, `ts`, `event`), a
+  secondary source: the server writes each event both here and to
+  `user_events`.
+- `config.toml`: one `model configured:` row per `[model.<group>.<http|local>]`
+  table at the file's time; `api_key` is never read. Needs `tomllib` (3.11).
+- The IntelliJ plugin's `options/intellij-tabby-command-history.xml` and the
+  VS Code extension's `edit.recentlyCommand` in the editor's `state.vscdb`
+  (`reads_agents`), secondary sources with no times.
 
-* `.tabby/ee/db.sqlite` (production builds) or `.tabby/ee/dev-db.sqlite`
-  (source builds), with `-wal` and `-shm` sidecars (WAL mode). Read through
-  `sqlite_util.open_copy`; only these columns are selected, each only if the
-  table has it:
-  - `users`: `id`, `email`, `name` (owner of a thread or event).
-  - `threads`: `id`, `is_ephemeral`, `user_id`, `created_at`, `updated_at`,
-    `relevant_questions` (JSON array of strings).
-  - `thread_messages`: `id`, `thread_id`, `role` (`user`, `assistant`),
-    `content` (Markdown), `code_source_id`, `attachment` (JSON with `code[]`
-    {`git_url`, `commit`, `filepath`, `start_line`}, `client_code[]`
-    {`filepath`, `start_line`}, `doc[]` {`title`, `link`, `page_link`,
-    `sha`}, `code_file_list` {`file_list`}), `created_at`. Backups made before
-    0.25 have no `attachment` column; their `code_attachments`,
-    `client_code_attachments` and `doc_attachments` arrays are read instead.
-  - `user_events`: `id`, `user_id`, `kind`, `created_at`, `payload` (the
-    pretty-printed event, same shape as an event log line's `event`).
-  - `pages`: `id`, `author_id`, `title`, `content`, `code_source_id`,
-    `created_at`; `page_sections`: `id`, `page_id`, `title`, `content`,
-    `position`, `attachment` (the `thread_messages` attachment JSON),
-    `created_at`. AI-written pages, which outlive the thread they were made
-    from (issue 211; source-derived, not observed on any real install).
-  - `integrations`: `id`, `kind` (`github`, `gitlab`, `github_self_hosted`,
-    `gitlab_self_hosted`), `display_name`, `api_base`, `created_at`;
-    `provided_repositories`: `id`, `integration_id`, `name`, `git_url`,
-    `active`, `updated_at`. The source-host integrations and the repository
-    list cached from them (source-derived, not observed on any real install).
-* `.tabby/ee/db.backup-YYYYMMDD.sqlite` and `dev-db.backup-YYYYMMDD.sqlite`:
-  copies made before each schema migration. Parsed like the live database,
-  with a leading `system` row naming the backup file, because ephemeral
-  threads untouched for 7 days are deleted from the live database and may
-  survive only here. A secondary source (issue 122): its rows are copies of
-  the live database's, with the same thread ids, texts and times, so
-  `dedup.deduplicate` drops those the live database (or an earlier backup)
-  still holds and keeps the rest; the leading row names the file and so
-  never pairs.
-* `.tabby/events/YYYY-MM-DD.json`: JSON Lines, one `LogEntry` per line:
-  `user` (encoded server user id or null), `ts` (Unix milliseconds), `event`
-  (externally tagged): `completion` {`completion_id`, `language`, `prompt`,
-  `segments` {`git_url`, `filepath`}, `choices[]` {`index`, `text`},
-  `user_agent`}; `view`, `select`, `dismiss` {`completion_id`,
-  `choice_index`, `view_id`, `elapsed`, `kind`}; `chat_completion` {}.
-  A secondary source (issue 122): the server hands every event to both
-  loggers (`ComposedLogger`), and the database logger writes it to
-  `user_events` when the event names a server user, with `ts` truncated to
-  whole seconds, so a `user_events` row is the same event as a log line.
-  The database is the primary store because it is the one Tabby reads
-  back (its user-event service queries `user_events`; nothing reads the log)
-  and because the parser can only mark whole files, and the database file
-  also holds the threads. Each log row carries its own millisecond time,
-  within a second of the database's, so the default 2-second window
-  applies. The log keeps what the database lacks: events with no user,
-  events of a server run without the database, and events older than the
-  three months `user_events` retains; those rows have no twin and are kept.
-  Only the `user` and `assistant` rows pair: the `system` rows name the
-  owner as the log's encoded id there and as the account's email in the
-  database, so their texts differ and both copies are kept. The evidence
-  is in the "What survives a delete" part of the research
-  document's Transcript stores.
-* `.tabby/config.toml`: `[model.<completion|chat|embedding>.http]` with
-  `kind`, `model_name`, `api_endpoint`, `supported_models`, or
-  `[model.<group>.local]` with `model_id`. One `system` row per configured
-  model at the file's modification time; `api_key` is never read into a row.
-  Read with `tomllib` (Python 3.11 or later); on 3.10 one `parser:` row says
-  the tables were not read (issue 211; source-derived, not observed on any
-  real install).
-* `<IDE config dir>/options/intellij-tabby-command-history.xml` under
-  `.config/JetBrains/<product>`, `Library/Application Support/JetBrains/
-  <product>` or `AppData/Roaming/JetBrains/<product>`: the IntelliJ plugin's
-  `CommandHistory` component, its `history` option a list of up to 30
-  inline-edit instructions, newest first, with no times. Every `value`
-  attribute under that option is read. Whether the IDE writes the file there
-  or to the project's `.idea/` is not determined from source. A secondary
-  source with empty timestamps (issue 211; source-derived, not observed on
-  any real install).
-* `<editor User dir>/globalStorage/state.vscdb` of `vscode` and its forks
-  (`reads_agents`): the `ItemTable` row `TabbyML.vscode-tabby`, its
-  `edit.recentlyCommand` list of `JSON.stringify({command, context[]})`
-  strings (`context[].uri`), newest first, with no times. Nothing else of
-  the row is read: it also holds the endpoint tokens. A secondary source
-  with empty timestamps (issue 211; source-derived, not observed on any
-  real install).
-
-The database also stores plaintext secrets (`users.auth_token`,
-`users.password_encrypted`, `registration_token`, `refresh_tokens`,
-`integrations.access_token`, `email_setting.smtp_password`,
-`oauth_credential.client_secret`, `ldap_credential.bind_password`). Those
-columns are never selected, and of those tables only `users` and
-`integrations` are read, through the whitelisted columns above.
-
-Rows: per thread one `system` row (owner email and name, ephemeral flag,
-relevant questions) then one `user` or `assistant` row per message, with an
-attachment summary appended to the text. `session_id` is the thread id;
-`project_path` is the first `code[].git_url` attached anywhere in the thread
-(a repository URL: Tabby records no local working directory). Per completion
-event one `system` row (server user, language, file, client), one `user` row
-with the full prompt and one `assistant` row per choice; `session_id` is the
-`completion_id` and `project_path` is `segments.git_url`. View, select,
-dismiss and chat-completion events are `system` rows. Database timestamps
-are UTC text with second precision; event log times are milliseconds;
-`user_events` rows carry the second-precision `created_at`. Per page one
-`system` row (`page start`, title, author, code source) and `assistant`
-rows for its content and sections, `session_id` `page:<id>`. Per
-integration `source host: <host> integration <display_name> kind=<kind>
-api_base=<api_base> (account not recorded; from integrations table,
-created_at)` and per cached repository `source host repository: <git_url>
-type=<kind> name=<name> active=<yes|no> (integration <display_name>; from
-provided_repositories table, updated_at)`, at their own times. Per
-configured model `model configured: <group> <model_name or model_id> via
-<http|local>[ kind=<kind>][ endpoint=<api_endpoint>][
-supported_models=<a,b>] (from config.toml [model.<group>.<http|local>],
-file mtime)`. Per command history `inline edit command history: <N>
-commands, newest first (from <source>, no times)` then one `user` row per
-command, `source_line` its 1-based position. No model per message, tool
-calls, thinking or git branch are recorded.
+`session_id` is the thread id, `page:<id>` or the `completion_id`;
+`project_path` is the first attached `code[].git_url` (Tabby records no local
+directory) or the event's `segments.git_url`. Integrations and their cached
+repositories give `source host:` rows. No per-message model, tool call,
+thinking or git branch is recorded.
 """
 
 from __future__ import annotations
@@ -149,7 +49,7 @@ from .codex import flat_toml, load_toml
 # The server root a path starts with: `.tabby/` under a user's home, or
 # nothing when the collection base is a Docker or Podman named volume's
 # `_data` (the `tabby|*tabby*` volume line), which holds the server root
-# itself, since the images set `TABBY_ROOT=/data` (issue 124).
+# itself, since the images set `TABBY_ROOT=/data`.
 ROOT = r"(?:\.tabby/)?"
 DB_RX = re.compile(r"^%see/(?:dev-)?db\.sqlite$" % ROOT)
 BACKUP_RX = re.compile(r"^%see/(?:dev-)?db\.backup-[^/]+\.sqlite$" % ROOT)
@@ -217,7 +117,7 @@ def _list(value) -> list:
 
 
 def _select(con: sqlite3.Connection, table: str, order: str) -> Iterator[dict]:
-    """Rows of `table` restricted to the whitelisted columns it has."""
+    """Yield the rows of `table`, restricted to the whitelisted columns it has."""
     have = {row[1] for row in con.execute("pragma table_info(%s)" % table)}
     cols = [column for column in COLUMNS[table] if column in have]
     if not cols:
@@ -240,7 +140,7 @@ def _loc(filepath, start_line) -> str:
 
 
 def attachment_parts(att: dict) -> list[str]:
-    """Short descriptions of what was attached to a message."""
+    """Return short descriptions of what was attached to a message."""
     parts: list[str] = []
     for code in _list(att.get("code")):
         if isinstance(code, dict):
@@ -269,6 +169,7 @@ def attachment_parts(att: dict) -> list[str]:
 
 
 def message_attachment(message: dict) -> dict:
+    """Return a thread message's attachment, from the pre-0.25 columns when it lacks one."""
     att = _json(message.get("attachment"), None)
     if isinstance(att, dict):
         return att
@@ -281,6 +182,7 @@ def message_attachment(message: dict) -> dict:
 
 
 def first_git_url(att: dict) -> str:
+    """Return the first `code[].git_url` of an attachment, else ""."""
     for code in _list(att.get("code")):
         if isinstance(code, dict) and code.get("git_url"):
             return str(code["git_url"])
@@ -288,9 +190,11 @@ def first_git_url(att: dict) -> str:
 
 
 def _model_text(group: str, kind: str, body: dict) -> str:
-    """`model configured:` text for one `[model.<group>.<kind>]` table: the
-    `http` form's `model_name`, `kind`, `api_endpoint` and `supported_models`,
-    or the `local` form's `model_id`. `api_key` is never read."""
+    """Return the `model configured:` text of one `[model.<group>.<kind>]` table.
+
+    The `http` form gives `model_name`, `kind`, `api_endpoint` and
+    `supported_models`, the `local` form `model_id`. `api_key` is never read.
+    """
     if kind == "http":
         supported = body.get("supported_models")
         detail = " ".join(
@@ -319,9 +223,11 @@ def _model_text(group: str, kind: str, body: dict) -> str:
 
 
 def _command_text(item) -> str:
-    """One `edit.recentlyCommand` entry: `JSON.stringify({command, context})`,
-    or a bare command string (quickPick.ts:322-351), as row text with the
-    context files' URIs appended."""
+    """Return one `edit.recentlyCommand` entry as row text, its context files' URIs appended.
+
+    An entry is `JSON.stringify({command, context})` or a bare command string
+    (quickPick.ts:322-351).
+    """
     cmd = _json(item, None) if isinstance(item, str) else item
     if isinstance(cmd, dict) and cmd.get("command"):
         text = str(cmd["command"])
@@ -337,6 +243,8 @@ def _command_text(item) -> str:
 
 
 class TabbyParser(Parser):
+    """Parse Tabby's databases, event logs, config and editor command histories."""
+
     agent = "tabby"
     name = "tabby"
     has_secondary = True
@@ -349,6 +257,7 @@ class TabbyParser(Parser):
         return getattr(artifact, "agent", self.agent) == self.agent
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a Tabby database, event log, config or history, or an editor's state."""
         rel = artifact.rel
         if not self._own(artifact):
             return bool(STATE_DB_RX.search(rel))
@@ -361,12 +270,14 @@ class TabbyParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for a backup database, an event log or a command history."""
         rel = artifact.rel
         if not self._own(artifact):
             return bool(STATE_DB_RX.search(rel))
         return bool(BACKUP_RX.match(rel) or EVENTS_RX.match(rel) or INTELLIJ_HISTORY_RX.search(rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Tabby file."""
         rel = artifact.rel
         if not self._own(artifact):
             yield from self._parse_vscode_state(artifact, opts)
@@ -537,8 +448,11 @@ class TabbyParser(Parser):
         users: dict[str, str],
         opts: Options,
     ) -> Iterator[Row]:
-        """AI-written pages (page.rs:92-150): one `system` row per page, then
-        its content and each section, in position order, as `assistant` rows."""
+        """Yield one `system` row per AI-written page, then its content and sections.
+
+        The content and each section, in position order, are `assistant`
+        rows (page.rs:92-150).
+        """
         sections: dict[str, list[dict]] = {}
         if "page_sections" in tables:
             for sec in _select(con, "page_sections", "page_id,position,id"):
@@ -607,8 +521,11 @@ class TabbyParser(Parser):
     def _integrations(
         self, artifact: Artifact, con: sqlite3.Connection, tables: set, opts: Options
     ) -> Iterator[Row]:
-        """Source-host integrations and the repositories cached from them
-        (schema.sql:142-165). The token column is never selected."""
+        """Yield the source-host integrations and the repositories cached from them.
+
+        The tables are those of schema.sql:142-165; the token column is never
+        selected.
+        """
         names: dict[str, tuple[str, str]] = {}
         for i in _select(con, "integrations", "created_at,id"):
             kind = str(i.get("kind") or "")
@@ -647,9 +564,11 @@ class TabbyParser(Parser):
 
     # -- config.toml ---------------------------------------------------------------------
     def _parse_config(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """One `system` row per configured model (config.rs:259-342), at the
-        file's modification time. Only the model tables' names, kinds and
-        endpoints are read; `api_key` never reaches a row."""
+        """Yield one `system` row per configured model (config.rs:259-342), at the file's mtime.
+
+        Only the model tables' names, kinds and endpoints are read; `api_key`
+        never reaches a row.
+        """
         timestamp = file_mtime(artifact)
         if load_toml is flat_toml:
             # flat_toml reads only the top-level keys; the model tables need tomllib.
@@ -695,8 +614,10 @@ class TabbyParser(Parser):
     def _history_rows(
         self, artifact: Artifact, source: str, commands: list[str], opts: Options
     ) -> Iterator[Row]:
-        """A leading `system` row, then one `user` row per command, newest
-        first, with no timestamp: the histories record none."""
+        """Yield a leading `system` row, then one `user` row per command, newest first.
+
+        The rows have no timestamp: the histories record none.
+        """
         yield self._row(
             artifact,
             0,

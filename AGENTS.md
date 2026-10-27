@@ -1045,10 +1045,16 @@ another build is a new cell, never a confirmation of the old one.
    - Before the baseline, check the brief's step table against this list and
      the previous cell's lessons, and fix it. Before the first prompt,
      record the REPL's `?` shortcut list and `/help`.
-   - A question without tools, a session with a tool call, a task that
-     writes files, a scheduled or automated task, a plugin or MCP server, a
-     resumed session, and a short and a long paste as prompts, each paste
-     its own step.
+   - The first prompt, before any step touches the sample project, is a
+     simple arithmetic question (`what is 17 + 25?`), so the round records
+     a turn with no tool call; a request to read a file is not one, since
+     the agent may run `cat`.
+   - A prompt that needs a web search (a fact newer than the model can
+     know, such as the latest release of a named package), so the round
+     records how the agent stores a search call and its results.
+   - A session with a tool call, a task that writes files, a scheduled or
+     automated task, a plugin or MCP server, a resumed session, and a short
+     and a long paste as prompts, each paste its own step.
    - One tool call approved, one denied, an "allow always" or equivalent
      grant, and a model switch mid-session. Record the default permission
      mode at the first tool call; if it auto-approves, switching to the
@@ -1078,13 +1084,16 @@ another build is a new cell, never a confirmation of the old one.
      below, and run `gh auth logout` before the VM is released; the logout
      removes only the local token, and the grant itself is revoked under
      the account's authorized OAuth apps.
-   - An agent driven over SSH on macOS cannot reach the login keychain and
-     writes its credential fallback (Claude Code 2.1.310:
-     `~/.claude/.credentials.json`, mode 0600). Record it, then sign out and
-     have the person sign in from a Terminal in the VM's GUI, with a listing
-     before and after; the same holds for any tool preferring an OS
-     credential store. Once per tool and platform; later cells cite the
-     research document.
+   - An agent's own credentials are recorded on every platform, signed in
+     over SSH and from the GUI, each with a listing before and after: the
+     location (the file and its mode, or the OS credential store with its
+     service and account names) and the shape (key names and types from
+     `analyzer/tools/shape.py`, never values). Over SSH an agent may not
+     reach the OS store and write a file fallback instead (Claude Code
+     2.1.310 on macOS: `~/.claude/.credentials.json`, mode 0600); record
+     it, then sign out and have the person sign in from a terminal in the
+     VM's GUI. Once per agent and platform; later cells cite the research
+     document.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to
      remove the synced copy, take it and record whether a local file still

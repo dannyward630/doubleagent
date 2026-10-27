@@ -1,255 +1,33 @@
-"""Codex CLI transcripts, and the rollout format shared with its forks.
+"""Parse Codex CLI rollouts, and the rollout format its forks share.
 
-Validated against a real install (Codex CLI, October 2026) and codex source
-at 3e23877 (see `research/codex-cli.md`). Files, under `~/.codex` for Codex
-(`RolloutParser.home_prefix` for a fork):
+Reads, under `~/.codex` (`RolloutParser.home_prefix` for a fork), the rollouts under
+`sessions/` and `archived_sessions/` (`rollout-*.jsonl`, or `.jsonl.zst` decoded with
+`zstandard`, a truncated frame keeping the lines before the cut), `history.jsonl` (secondary),
+`config.toml` and `rules/*.rules` (standing grants), `memories/rollout_summaries/*.md`, a
+fork's import ledger (`ledger_name`) and, for Codex only, `automations/*/automation.toml`.
+`codex_state.py` reads `state_5.sqlite` and its `db-backups/` copies, `thread_history_1.sqlite`,
+`logs_<N>.sqlite` and `.codex-global-state.json`. Yields user, assistant, thinking, tool_use,
+tool_result and the `system` rows of the research document's Parser plan.
 
-* `sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`, older releases
-  wrote `sessions/rollout-*.jsonl`; `archived_sessions/` holds archived
-  threads in the same layout (codex `rollout/src/lib.rs:87` at 3e23877).
-  A reverted thread is `rollout-<timestamp>-<thread id>_<rollout id>.jsonl`
-  (`rollout/src/rollout_file_name.rs:40-47`). Cold rollouts may be
-  zstd-compressed to `.jsonl.zst` (`rollout/src/compression.rs:29`),
-  decoded with the `zstandard` package. A truncated zstd frame yields the
-  lines decoded before the cut. Each line is `{timestamp, ordinal, type, payload}` with
-  `timestamp` ISO 8601 Z, and a `response_item` line may carry a sibling
-  `metadata` object. Types:
-  - `session_meta`: payload `id` (thread id), `session_id` (root thread),
-    `timestamp`, `cwd`, `originator`, `cli_version`, `model_provider`,
-    optional `git` (`branch`, `repository_url`), optional `creator_account_id` and
-    `creator_user_id` (the ChatGPT account and user that created the
-    thread, `protocol/src/protocol.rs:3117-3198`; seen filled in rollouts
-    of Codex Desktop 0.162.0-alpha.17.2; appended to the `session start:`
-    row as `account=<id> user=<id>`, each only when present), and for
-    spawned threads `parent_thread_id`,
-    `thread_source`, `source.subagent.thread_spawn.parent_thread_id`,
-    `agent_path`, `agent_role`, `agent_nickname`; `forked_from_id` on a fork.
-    Only the file's first `session_meta` sets the session id, project and
-    branch, and its `git.repository_url` (a remote URL of the repository,
-    `protocol/src/protocol.rs:3436-3452`, written only when `cwd` is in a
-    git repository) is a `system` row `git remote: <url>` at the
-    `session_meta` time, after the `session start:` row. A subagent (a parent in `parent_thread_id`, else in
-    `source.subagent.thread_spawn`, else a `session_id` other than `id` on
-    a thread that is not a fork) gets a `subagent <id> of <parent>` row, a
-    fork a `forked from <id>` row. A later `session_meta` with another id is
-    an ancestor's, copied into a fork, and becomes a `copied from ancestor:`
-    row; one with the same id is skipped.
-  - `turn_context`: payload `turn_id`, `cwd`, `model`, `approval_policy`,
-    `sandbox_policy`, `permission_profile`, `network`; updates the current
-    project path and model. The first `turn_context` that names a model
-    yields a `system` row `model: <id>` and each later one with another
-    model `model: <old> -> <new>`. The policy fields `approval_policy`,
-    `sandbox_policy`, `permission_profile`, `network`, `approvals_reviewer`
-    (`user`, or `auto_review` for the desktop app's "Approve for me" mode)
-    and `active_permission_profile.id` (`:workspace`,
-    `:danger-full-access`) are one composite `permission mode:
-    approval=<p> sandbox=<s> profile=<pp> network=<n> reviewer=<r>
-    profile_id=<id>` row (a missing field is `-`, an object compact JSON;
-    `reviewer` and `profile_id` since analyzer 0.16.0) at the first
-    record that has any of them and `permission mode: <old> -> <new>` on
-    every change. Both rows take the line's timestamp; a `turn_context`'s
-    precede the turn's rows. Codex writes no per-call approval to the
-    rollout (approval requests are transient events,
-    `rollout/src/policy.rs:160-223`); the desktop app's are read from
-    `logs_<N>.sqlite` (below) and from guardian review threads.
-    Drift at codex 4e7b9e2 (source only): `TurnContextItem` no longer
-    has `network` (`protocol/src/protocol.rs:3428-3468`); the network
-    policy is the `network` of a `managed` or `external`
-    `permission_profile` (`protocol/src/models.rs:424-440`), which the
-    composite already shows inside `profile=`, so `network=` reads `-`
-    on rollouts of such builds.
-  - `response_item`: payload `type` is `message` (`role` user, assistant or
-    developer; `content` blocks with `text`;
-    `internal_chat_message_metadata_passthrough.content_item_kinds`, one
-    kind per block), `function_call` or `custom_tool_call` (`name`,
-    `call_id`, `arguments` or `input`), `function_call_output` or
-    `custom_tool_call_output` (`call_id`, `output`), `local_shell_call`
-    (`action.command`), `web_search_call` (`action.query`),
-    `tool_search_call` (`call_id`, `arguments`), `tool_search_output`
-    (`call_id`, `tools[].name`), `agent_message` (`author`, `recipient`,
-    `content`), `image_generation_call` (`revised_prompt`, `status`; the
-    image in `result` is not copied), `reasoning` (`summary`, `content`).
-    A user-role block whose kind starts `user.` (or is `unknown` or empty,
-    which Codex itself treats as possibly the user's) is a `user` row; any
-    other kind (`environments.environment_context`, AGENTS.md and skill
-    instructions, subagent notifications, `shell.user_command`,
-    `generic.turn_aborted`) is a `system` row `context: <kind>: <text>`.
-    Without a kinds list as long as `content` (older rollouts) a block
-    that is wholly one of the harness's own wrappers (`CONTEXT_MARKERS`:
-    open marker at its start, close marker at its end, as Codex's
-    `matches_marked_text` checks) is `context: <marker name>: <text>`, and
-    any other block a `user` row, so a tag typed mid-message stays `user`.
-    A line whose `metadata` has `inherited_user_message` was copied from
-    the parent thread, which records it itself, and is skipped. In a
-    subagent's file the first prompt, a user message or an agent message,
-    is the parent's task: `system` `subagent task: <text>`. Later user
-    messages in a subagent's file stay `user`: the parent's v1
-    `send_input` tool writes plain user input into the child
-    (`core/src/agent/control.rs:134-143`), but a person can also type into
-    a subagent thread, since the TUI's `/subagents` picker makes it the
-    active thread and composer input goes to the active thread
-    (`tui/src/multi_agents.rs:1-5`, `tui/src/app/thread_routing.rs:475-497`),
-    and the two are recorded alike. Other agent messages are `system`
-    `agent message <author> -> <recipients>: <text>`. Reasoning with no
-    text is skipped.
-  - `event_msg`: payload `type` task_started and task_complete
-    (`turn_id`, `duration_ms`), turn_aborted (`reason`, `error.message`),
-    thread_rolled_back (`num_turns`) become system rows.
-    thread_goal_updated (camelCase: `turnId`, `goal.objective`,
-    `goal.status` `active`, `paused`, `blocked`, `usageLimited`,
-    `budgetLimited` or `complete`; codex `protocol/src/protocol.rs:4206-4257`
-    at 4e7b9e2, source-derived) is `thread goal: status=<status>
-    turn=<turnId> objective: <objective>`. A task_started
-    with `turn_attribution.turn_trigger` (Codex Desktop
-    0.163.0-alpha.10.2: `composer`, `remote_ios`, `remote_android`,
-    `guardian_review`, `scheduled_task_setup`,
-    `automation_heartbeat_run_now`, `automation_heartbeat_scheduled`) is
-    followed by `turn trigger: <trigger> turn=<id>`; the `task_started`
-    text stays as it was, so the `thread_history_1.sqlite` copy still
-    pairs with it. thread_settings_applied (`thread_settings`: `model`,
-    else `collaboration_mode.settings.model`, and the policy fields but
-    not `sandbox_policy`) is written when the user changes a setting,
-    with no turn, and before each turn; it feeds the `model:` and
-    `permission mode:` rows above with its three thread-level fields
-    (`approval_policy`, `approvals_reviewer`, `active_permission_profile`;
-    a resume writes it with fewer keys), the two turn-level fields
-    (`sandbox_policy`, which it never carries, and `permission_profile`,
-    whose event form lacks the turn's extra roots) staying as the last
-    `turn_context` had them, or `-` once the access level changed until
-    the next `turn_context`; an event before the thread's first
-    `turn_context` is folded into that turn's row. In a
-    guardian review thread (`thread_source` `guardian_review` or
-    `source.subagent.other` `guardian`, with `parent_thread_id`), the
-    desktop app's automatic reviewer of a call, the task_complete's
-    `last_agent_message` is a JSON verdict (`outcome`, `risk_level`,
-    `user_authorization`, `rationale`) and becomes `permission decision:
-    <outcome> (auto_review risk_level=<r> user_authorization=<u>) exec
-    <id> reviewer <thread>: <rationale>` with the parent's `session_id`
-    and an empty `model` (the reviewer's model is not the parent's);
-    `<id>` and `tool_use_id` are the governed item's id when the
-    `guardian_review{...}` spans of the `logs_<N>.sqlite` beside the home
-    name exactly one `tool_call_id` of the parent between the review's
-    start and its verdict (2 seconds either side), else `-` and empty.
-    A verdict that is not a JSON object with `outcome` adds no row.
-    item_completed
-    (`item`, `started_at_ms`, `completed_at_ms`) carries a turn item; a
-    `UserMessage`, `AgentMessage`, `Reasoning`, `HookPrompt` or
-    `ContextCompaction` item only repeats a response_item or `compacted`
-    line under an id of its own and is skipped, and any other item whose
-    `id` equals a response_item's `id` or `call_id` in the same file is
-    skipped too: the response_item wins. A `CommandExecution` item's
-    non-zero `exit_code` is still added to its call's `tool_result` as
-    `[exit N]`. The rest become rows: `CommandExecution` (`command`,
-    `aggregated_output`), `McpToolCall` (`server`, `tool`, `arguments`,
-    `result.content`, `error`), `DynamicToolCall` (`tool`, `arguments`,
-    `content_items`), `FileChange` (`changes`, `stdout`, `stderr`) and web
-    search (`WebSearch`, or `Extension` kind `web.search`: `query`,
-    `results`) as a tool_use at `started_at_ms` and a tool_result at
-    `completed_at_ms` joined on the item `id`; `FunctionCallOutput` as a
-    tool_result; `Plan` (`text`), `SubAgentActivity`, image generation
-    (`revised_prompt` or `revisedPrompt`) and `clock.sleep` (`durationMs`)
-    as system rows; anything else as `item <type>: <JSON>`. Legacy events
-    that repeat response items (`user_message`, `agent_message`,
-    `agent_reasoning`) and the rest are skipped.
-  - `compacted`: `message` becomes `compaction summary: <text>`, or
-    `compaction: replacement history of N items` when empty.
-  - `inter_agent_communication` (`author`, `recipient`,
-    `other_recipients`, `content`, `encrypted_content`, `id`): as an agent
-    message, skipped when an `agent_message` response_item has its id.
-  - `realtime_item`: `type` `transcript_segment` with `role` user or
-    assistant becomes that row type with `text`; other types a
-    `realtime: <type> <JSON>` system row.
-  - `world_state`, `token_usage_record`, `inter_agent_communication_metadata`,
-    `retained_context`, `security_risk_score`: skipped.
-  Until `session_meta` is read, the session id is the thread id in the file
-  name, so a rollout cut before its first line is still attributed.
-  Copied forks re-append the parent's records with no marker other than the
-  ancestor's `session_meta` and the per-message `inherited_user_message`,
-  so the rest of a copied prefix is not separated out; it carries the
-  fork's session id. Referenced forks keep the prefix in the parent's file.
-* `history.jsonl`: `{session_id, text, ts}` per prompt, `ts` epoch seconds.
-  A secondary source: the timeline drops a line whose event a rollout also
-  records (`dedup.py`).
-* `state_5.sqlite` (`threads`: a thread record and the first prompt) and
-  `thread_history_1.sqlite` (`thread_turns` and `thread_items`, the
-  projection of the rollout's turn events and turn items): secondary
-  sources, read by `codex_state.py`, whose docstring lists the fields.
-* `logs_<N>.sqlite` (`logs_2.sqlite` today), Codex's tracing log: one
-  `session synced: feedback report uploaded to Sentry, attachments <n>
-  failed <bool> (from logs_<N>.sqlite logs, ts)` row per `/feedback`
-  report sent with the thread as its `session_id`, and one `permission
-  decision:` row per approval the desktop app's user gave, read by
-  `codex_state.py`, whose docstring lists the fields. The feedback row is
-  the only local record that a thread's rollout left the host, so
-  `records_sync` is set and a thread without the row is `synced` `no`.
-* Codex only: `.codex-global-state.json`, the ChatGPT desktop app's own
-  state, a secondary source read by `codex_state.py`: the app's prompt
-  history as `user` rows with no timestamp, and the deleted-thread
-  markers, thread descriptions, standing permissions and remote control
-  flags as `system` rows at the file's modification time.
-* `config.toml` (the home's, or a project's own `.codex/config.toml`)
-  and every `rules/*.rules` file, the standing grants (source-derived at
-  codex 4e7b9e2; research/codex-cli.md, Standing grants and approval
-  records): one `system` row `permission setting: <key>=<value> (from
-  <file>, file mtime)` per `approval_policy`, `approvals_reviewer`,
-  `sandbox_mode`, `default_permissions`, `projects.<path>.trust_level`
-  (with `project_path` the path) and `approval_mode` under
-  `mcp_servers.<server>.tools.<tool>`,
-  `plugins.<plugin>.mcp_servers.<server>.tools.<tool>` or
-  `apps.<connector>.tools.<tool>`, and one `permission setting:
-  <statement> (from <file>, file mtime)` per Starlark statement of a rules
-  file (`prefix_rule(...)`, `network_rule(...)`), joined onto one line,
-  comments dropped; a statement still open at the end of the file is a
-  bad-line row. Rows are at the file's modification time with an empty
-  `session_id`; no other key of `config.toml` (which can hold an MCP
-  server's token) is printed. Read with `tomllib` on Python 3.11 and
-  later and with `scan_toml` (single-line values under every table) on
-  3.10; a file `tomllib` cannot read is one `parser: unreadable
-  config.toml` row.
-* `memories/rollout_summaries/<stem>.md`, a thread's summary written when
-  the `memories` feature is on (source-derived at codex 4e7b9e2): header
-  lines `thread_id:`, `updated_at:`, `rollout_path:`, `cwd:`,
-  `git_branch:`, a blank line, the summary. One `system` row `memory
-  summary: thread <id> rollout=<path> (from <file>, updated_at):
-  <summary>` at `updated_at`, with the thread as `session_id`. It
-  repeats no event of the rollout and outlives a thread delete until the
-  next consolidation, so it is read as a source of its own, not a
-  secondary one. A file with no `thread_id:` header is one `parser:` row.
-* `db-backups/sqlite-<time>-<n>/state_5.sqlite`, a database Codex found
-  corrupt and set aside: read as `state_5.sqlite` is, a secondary source
-  (source-derived at codex 4e7b9e2).
-* Forks only, when `ledger_name` is set: an import ledger
-  `{"records": [{source_path, content_sha256, imported_thread_id,
-  imported_at, source_modified_at?}]}` (times epoch seconds), one `system`
-  row per record. See `open_interpreter.py`.
+Fields the parser depends on:
 
-* Codex only: `automations/<slug>/automation.toml`, one scheduled
-  automation of the ChatGPT desktop app (observed on Windows, ChatGPT
-  26.1007.9446.0, 2026-10-15; the directory name is a slug of the name the
-  user typed). Flat TOML: `version`, `id` (the slug), `kind` (`heartbeat`),
-  `name`, `prompt`, `status` (`ACTIVE`), `rrule` (an iCalendar recurrence
-  rule, `RRULE:FREQ=WEEKLY;...`), `target_thread_id` (the thread the
-  automation runs in), `created_at` and `updated_at` (epoch ms). One
-  `system` row `scheduled task: <id> name=<name> kind=<kind>
-  status=<status> rrule=<rrule> target_thread=<id> created=<UTC>
-  updated=<UTC> (from <file>, file mtime) prompt: <prompt>`, at the
-  file's modification time, with `session_id` the target thread. Read
-  with `tomllib` on Python 3.11 and later; on 3.10 a reader of top-level
-  `key = value` lines (basic, literal and multi-line strings, integers,
-  booleans) stands in, and a file neither can read is one
-  `parser: unreadable automation.toml` row.
+- every rollout line: `timestamp`, `type`, `payload`, `metadata.inherited_user_message`;
+- `session_meta`: `id`, `session_id`, `timestamp`, `cwd`, `originator`, `cli_version`,
+  `model_provider`, `git.branch`, `git.repository_url`, `creator_account_id`,
+  `creator_user_id`, `parent_thread_id`, `thread_source`, `source.subagent`, `agent_path`,
+  `agent_role`, `agent_nickname`, `forked_from_id`;
+- `turn_context`: `cwd`, `model` and the `POLICY_FIELDS` keys;
+- `response_item`: `type`, `role`, `content`, `name`, `call_id`, `arguments`, `input`,
+  `output`, `action`, `tools`, `author`, `recipient`, `other_recipients`, `revised_prompt`,
+  `status`, `summary`, `internal_chat_message_metadata_passthrough.content_item_kinds`;
+- `event_msg`: `turn_id`, `duration_ms`, `turn_attribution`, `last_agent_message`,
+  `thread_settings`, `turnId`, `goal`, `reason`, `error`, `num_turns`, and `item_completed`'s
+  `item`, `started_at_ms`, `completed_at_ms`; `compacted`: `message`, `replacement_history`;
+  `inter_agent_communication`: `id`, `content`, `encrypted_content`; `realtime_item`: `type`,
+  `role`, `text`; `history.jsonl`: `session_id`, `text`, `ts` (epoch seconds).
 
-Not read: `session_index.jsonl` (thread names),
-`sqlite/codex-dev.db` (the desktop app's thread catalog and automation
-store; the `automations` table repeats `automation.toml`, and the
-`chatgpt` rows of `local_thread_catalog` are read by the
-`chatgpt-desktop` parser),
-`.codex-global-state.json.bak`, `thread-writer-locks/<id>.lock` (a lock
-can exist for a prewarmed guardian thread that never wrote a rollout, so
-it is no evidence of a session), `memories/raw_memories.md`,
-`memories/MEMORY.md`, `memories_1.sqlite`, `goals_1.sqlite` and the
-other databases under `db-backups/`. Rollout file names
-carry the host's local time; every timestamp is taken from the records.
+Validated against real installs and codex source at 3e23877. At 4e7b9e2 `turn_context` has no
+`network`, so `network=` reads `-` on rollouts of such builds. See `research/codex-cli.md`.
 """
 
 from __future__ import annotations
@@ -262,6 +40,7 @@ from typing import cast
 
 import zstandard
 
+from ..errors import DoubleAgentError
 from ..inputs import Artifact, error_reason
 from ..model import GIT_REMOTE_PREFIX, Row, compact
 from ..timeutil import to_utc
@@ -284,113 +63,127 @@ LOGS_TMPL = r"^%s/logs_[0-9]+\.sqlite$"
 RULES_TMPL = r"^%s/rules/[^/]+\.rules$"
 MEMORY_SUMMARY_TMPL = r"^%s/memories/rollout_summaries/[^/]+\.md$"
 BACKUP_STATE_TMPL = r"^%s/db-backups/[^/]+/state_5\.sqlite$"
-ROLLOUT_RX = re.compile(ROLLOUT_TMPL % re.escape(".codex"))
+ROLLOUT_PATTERN = re.compile(ROLLOUT_TMPL % re.escape(".codex"))
 HISTORY_REL = ".codex/history.jsonl"
 GLOBAL_STATE_NAME = ".codex-global-state.json"
 UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 # `rollout-<time>-<thread id>.jsonl`, or `...-<thread id>_<rollout id>.jsonl`
 # for a reverted thread; group 1 is the thread id either way.
-UUID_TAIL_RX = re.compile(r"(%s)(?:_%s)?\.jsonl(?:\.zst)?$" % (UUID, UUID))
+UUID_TAIL_PATTERN = re.compile(r"(%s)(?:_%s)?\.jsonl(?:\.zst)?$" % (UUID, UUID))
 
 CALL_TYPES = ("function_call", "custom_tool_call", "local_shell_call", "web_search_call")
 OUTPUT_TYPES = ("function_call_output", "custom_tool_call_output", "local_shell_call_output")
 
 
 def call_summary(payload: dict) -> str:
-    ptype = payload.get("type")
-    if ptype == "local_shell_call":
+    """Return the text of a tool call: its command, query or arguments."""
+    payload_type = payload.get("type")
+    if payload_type == "local_shell_call":
         action = payload.get("action") or {}
-        cmd = action.get("command")
-        if isinstance(cmd, list):
-            return " ".join(str(c) for c in cmd)
-        return str(cmd or compact_json(action))
-    if ptype == "web_search_call":
+        command = action.get("command")
+        if isinstance(command, list):
+            return " ".join(str(part) for part in command)
+        return str(command or compact_json(action))
+    if payload_type == "web_search_call":
         action = payload.get("action") or {}
         return str(action.get("query") or compact_json(action))
     for key in ("arguments", "input"):
-        v = payload.get(key)
-        if v not in (None, ""):
-            return v if isinstance(v, str) else compact_json(v)
+        value = payload.get(key)
+        if value not in (None, ""):
+            return value if isinstance(value, str) else compact_json(value)
     return compact_json(
-        {k: v for k, v in payload.items() if k not in ("type", "id", "call_id", "name", "status")}
+        {
+            field: value
+            for field, value in payload.items()
+            if field not in ("type", "id", "call_id", "name", "status")
+        }
     )
 
 
 def call_name(payload: dict) -> str:
-    ptype = payload.get("type")
-    if ptype == "local_shell_call":
+    """Return the tool name of a call: `shell`, `web_search` or the call's `name`."""
+    payload_type = payload.get("type")
+    if payload_type == "local_shell_call":
         return "shell"
-    if ptype == "web_search_call":
+    if payload_type == "web_search_call":
         return "web_search"
-    return str(payload.get("name") or ptype or "")
+    return str(payload.get("name") or payload_type or "")
 
 
-def _decode_line(n: int, raw: bytes, errors: list) -> dict | None:
+def _decode_line(line_number: int, raw: bytes, errors: list) -> dict | None:
     stripped = raw.strip()
     if not stripped:
         return None
     try:
-        rec = json.loads(stripped.decode("utf-8", errors="replace"))
-    except ValueError as e:
-        errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+        record = json.loads(stripped.decode("utf-8", errors="replace"))
+    except ValueError as error:
+        errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
         return None
-    return rec if isinstance(rec, dict) else None
+    return record if isinstance(record, dict) else None
 
 
-class TruncatedFrame(Exception):
+class TruncatedFrame(DoubleAgentError):
+    """The zstd stream ends inside a frame."""
+
     pass
 
 
-def iter_zst_chunks(fh) -> Iterator[bytes]:
-    """Decompressed bytes of every zstd frame in `fh`, streamed. Raises
-    `zstandard.ZstdError` on corrupt input and `TruncatedFrame` when the file ends
-    inside a frame (the stream reader would end silently instead)."""
-    dctx = zstandard.ZstdDecompressor()
-    dobj = dctx.decompressobj()
+def iter_zst_chunks(handle) -> Iterator[bytes]:
+    """Yield the decompressed bytes of every zstd frame in `handle`, streamed.
+
+    Raises:
+        zstandard.ZstdError: the input is corrupt.
+        TruncatedFrame: the file ends inside a frame, where the stream reader would end
+            silently.
+    """
+    decompressor = zstandard.ZstdDecompressor()
+    frame_decoder = decompressor.decompressobj()
     open_frame = False
     while True:
-        data = fh.read(1 << 16)
+        data = handle.read(1 << 16)
         if not data:
             break
         while data:
-            out = dobj.decompress(data)
+            out = frame_decoder.decompress(data)
             open_frame = True
             if out:
                 yield out
-            if getattr(dobj, "eof", False):
-                data = dobj.unused_data
-                dobj = dctx.decompressobj()
+            if getattr(frame_decoder, "eof", False):
+                data = frame_decoder.unused_data
+                frame_decoder = decompressor.decompressobj()
                 open_frame = False
             else:
                 data = b""
-    if open_frame and hasattr(dobj, "eof"):
+    if open_frame and hasattr(frame_decoder, "eof"):
         raise TruncatedFrame("file ends inside a zstd frame")
 
 
 def iter_zst_jsonl(path, errors: list) -> Iterator[tuple[int, dict]]:
-    """`iter_jsonl` over a zstd-compressed file, streamed. A corrupt or
-    truncated frame becomes one entry in `errors`; the lines decoded before
-    it are still yielded, and a line cut by the damage is a bad line."""
-    n = 0
-    buf = b""
-    with open(path, "rb") as fh:
+    """Yield (line number, record) of a zstd-compressed JSONL file, streamed, like `iter_jsonl`.
+
+    A corrupt or truncated frame becomes one entry in `errors`; the lines decoded before it are
+    still yielded, and a line cut by the damage is a bad line.
+    """
+    line_number = 0
+    buffer = b""
+    with open(path, "rb") as handle:
         try:
-            for chunk in iter_zst_chunks(fh):
-                buf += chunk
-                lines = buf.split(b"\n")
-                buf = lines.pop()
+            for chunk in iter_zst_chunks(handle):
+                buffer += chunk
+                lines = buffer.split(b"\n")
+                buffer = lines.pop()
                 for raw in lines:
-                    n += 1
-                    rec = _decode_line(n, raw, errors)
-                    if rec is not None:
-                        yield n, rec
-        except (zstandard.ZstdError, TruncatedFrame) as e:
-            errors.append((n + 1, "zstd: %s" % e, ""))
-    if buf.strip():
-        n += 1
-        rec = _decode_line(n, buf, errors)
-        if rec is not None:
-            yield n, rec
+                    line_number += 1
+                    record = _decode_line(line_number, raw, errors)
+                    if record is not None:
+                        yield line_number, record
+        except (zstandard.ZstdError, TruncatedFrame) as error:
+            errors.append((line_number + 1, "zstd: %s" % error, ""))
+    if buffer.strip():
+        line_number += 1
+        record = _decode_line(line_number, buffer, errors)
+        if record is not None:
+            yield line_number, record
 
 
 # Turn items that only repeat a response_item message, reasoning or the
@@ -426,10 +219,12 @@ CONTEXT_MARKERS = (
 
 
 def context_marker(text: str) -> str:
-    """The name of the harness wrapper `text` is, or "". Like Codex's own
-    `matches_marked_text`, the block must start with the open marker after
-    leading whitespace and end with the close marker before trailing
-    whitespace, ignoring ASCII case; a tag typed mid-message does not count."""
+    """Return the name of the harness wrapper `text` is, or "".
+
+    Like Codex's own `matches_marked_text`, the block must start with the open marker after
+    leading whitespace and end with the close marker before trailing whitespace, ignoring ASCII
+    case, so a tag typed mid-message does not count.
+    """
     body = text.strip().lower()
     for name, start, end in CONTEXT_MARKERS:
         if body.startswith(start.lower()) and body.endswith(end.lower()):
@@ -438,19 +233,21 @@ def context_marker(text: str) -> str:
 
 
 def user_parts(payload: dict) -> list[tuple[str, str]]:
-    """(kind, text) runs of a `role: "user"` message. kind is "" for input the
-    person supplied (`user.*`, or `unknown`, which Codex itself treats as
-    possibly the user's) and the content kind for harness context. Without a
-    `content_item_kinds` list as long as `content`, each block is classified
-    by `context_marker` instead, and kind is the marker name."""
+    """Return the (kind, text) runs of a `role: "user"` message.
+
+    The kind is "" for input the person supplied (`user.*`, or `unknown`, which Codex itself
+    treats as possibly the user's) and the content kind for harness context. Without a
+    `content_item_kinds` list as long as `content`, each block is classified by
+    `context_marker`, and the kind is the marker name.
+    """
     content = payload.get("content")
     if isinstance(content, str):
         content = [{"type": "input_text", "text": content}]
     if not isinstance(content, list):
         text = text_of(content)
         return [("", text)] if text else []
-    meta = payload.get("internal_chat_message_metadata_passthrough")
-    kinds = meta.get("content_item_kinds") if isinstance(meta, dict) else None
+    metadata = payload.get("internal_chat_message_metadata_passthrough")
+    kinds = metadata.get("content_item_kinds") if isinstance(metadata, dict) else None
     use_kinds = isinstance(kinds, list) and len(kinds) == len(content)
     parts: list[tuple[str, str]] = []
     for i, block in enumerate(content):
@@ -469,45 +266,55 @@ def user_parts(payload: dict) -> list[tuple[str, str]]:
     return parts
 
 
-def _parent_of(meta: dict) -> str:
-    """The parent thread of a subagent's `session_meta`: `parent_thread_id`,
-    else `source.subagent.thread_spawn.parent_thread_id`, else a root
-    `session_id` that differs from `id` when the thread is not a fork."""
-    parent = meta.get("parent_thread_id")
+def _parent_of(metadata: dict) -> str:
+    """Return the parent thread of a subagent's `session_meta`, or "".
+
+    It is `parent_thread_id`, else `source.subagent.thread_spawn.parent_thread_id`, else a root
+    `session_id` that differs from `id` when the thread is not a fork.
+    """
+    parent = metadata.get("parent_thread_id")
     if parent:
         return str(parent)
-    source = meta.get("source")
-    sub = source.get("subagent") if isinstance(source, dict) else None
-    spawn = sub.get("thread_spawn") if isinstance(sub, dict) else None
+    source = metadata.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
     if isinstance(spawn, dict) and spawn.get("parent_thread_id"):
         return str(spawn["parent_thread_id"])
-    root = meta.get("session_id")
-    if root and meta.get("id") and root != meta.get("id") and not meta.get("forked_from_id"):
+    root = metadata.get("session_id")
+    if (
+        root
+        and metadata.get("id")
+        and root != metadata.get("id")
+        and not metadata.get("forked_from_id")
+    ):
         return str(root)
     return ""
 
 
-def _is_subagent(meta: dict) -> bool:
-    source = meta.get("source")
-    return meta.get("thread_source") == "subagent" or (
+def _is_subagent(metadata: dict) -> bool:
+    source = metadata.get("source")
+    return metadata.get("thread_source") == "subagent" or (
         isinstance(source, dict) and "subagent" in source
     )
 
 
 def _prescan(records: list) -> tuple[set, dict]:
-    """Ids and call ids every response_item carries, and the exit code of each
-    `CommandExecution` turn item by its id (which is the call's `call_id`)."""
+    """Return the ids every response_item carries and the exit code of each command item.
+
+    The exit codes are keyed by the `CommandExecution` turn item's id, which is the call's
+    `call_id`.
+    """
     carried: set = set()
     exit_codes: dict = {}
-    for _n, rec in records:
-        payload = rec.get("payload")
+    for _line_number, record in records:
+        payload = record.get("payload")
         if not isinstance(payload, dict):
             continue
-        if rec.get("type") == "response_item":
+        if record.get("type") == "response_item":
             for key in ("id", "call_id"):
                 if payload.get(key):
                     carried.add(str(payload[key]))
-        elif rec.get("type") == "event_msg" and payload.get("type") == "item_completed":
+        elif record.get("type") == "event_msg" and payload.get("type") == "item_completed":
             item = payload.get("item")
             if (
                 isinstance(item, dict)
@@ -521,8 +328,7 @@ def _prescan(records: list) -> tuple[set, dict]:
 
 # `turn_context` and `thread_settings_applied` policy fields, in the order of
 # the `permission mode:` row, as (label, payload key); research/codex-cli.md,
-# Record schema. `reviewer` and `profile_id` (Codex Desktop 0.163.0-alpha.10.2)
-# were added at the end in analyzer 0.16.0.
+# Record schema. New fields go at the end, since the row text is an interface.
 POLICY_FIELDS = (
     ("approval", "approval_policy"),
     ("sandbox", "sandbox_policy"),
@@ -540,29 +346,35 @@ SETTINGS_POLICY_KEYS = ("approval_policy", "approvals_reviewer", "active_permiss
 
 
 def _policy_value(key: str, value) -> object:
-    """A policy field as the composite shows it: the `id` of an
-    `active_permission_profile` object, any other value as it is."""
+    """Return a policy field as the composite shows it.
+
+    An `active_permission_profile` object shows as its `id`, any other value as it is.
+    """
     if key == "active_permission_profile" and isinstance(value, dict):
         return value.get("id")
     return value
 
 
 def policy_text(payload: dict) -> str:
-    """The composite permission mode of a `turn_context` payload (or of the
-    merged policy state), `approval=<p> sandbox=<s> profile=<pp> network=<n>
-    reviewer=<r> profile_id=<id>` with `-` for a missing field, or "" when
-    it has none of them."""
+    """Return the composite permission mode of a policy payload, or "" when it has no field.
+
+    The text is `approval=<p> sandbox=<s> profile=<pp> network=<n> reviewer=<r> profile_id=<id>`,
+    with `-` for a missing field.
+    """
     pairs = [(label, _policy_value(key, payload.get(key))) for label, key in POLICY_FIELDS]
-    if all(v in (None, "") for _label, v in pairs):
+    if all(value in (None, "") for _label, value in pairs):
         return ""
     return " ".join(
-        "%s=%s" % (label, "-" if v in (None, "") else setting_value(v)) for label, v in pairs
+        "%s=%s" % (label, "-" if value in (None, "") else setting_value(value))
+        for label, value in pairs
     )
 
 
 def settings_model(settings: dict) -> str:
-    """The model a `thread_settings_applied` event's `thread_settings` names:
-    `model`, else `collaboration_mode.settings.model`."""
+    """Return the model a `thread_settings` object names, or "".
+
+    It is `model`, else `collaboration_mode.settings.model`.
+    """
     if settings.get("model"):
         return str(settings["model"])
     mode = settings.get("collaboration_mode")
@@ -573,9 +385,11 @@ def settings_model(settings: dict) -> str:
 
 
 def guardian_verdict(message) -> dict | None:
-    """The verdict a guardian review thread's `task_complete`
-    `last_agent_message` holds: a JSON object string with `outcome` (and
-    `risk_level`, `user_authorization`, `rationale`), else None."""
+    """Return the verdict a guardian review's `last_agent_message` holds, else None.
+
+    The verdict is a JSON object string with `outcome` (and `risk_level`, `user_authorization`,
+    `rationale`).
+    """
     if not isinstance(message, str):
         return None
     try:
@@ -603,14 +417,17 @@ def guardian_text(verdict: dict, call: str, reviewer: str) -> str:
     )
 
 
-def _is_guardian(meta: dict) -> bool:
-    """A guardian review thread: `thread_source` `guardian_review`, or a
-    `source.subagent.other` of `guardian`."""
-    if meta.get("thread_source") == "guardian_review":
+def _is_guardian(metadata: dict) -> bool:
+    """Return whether a `session_meta` is a guardian review thread's.
+
+    A guardian review thread has `thread_source` `guardian_review`, or a `source.subagent.other`
+    of `guardian`.
+    """
+    if metadata.get("thread_source") == "guardian_review":
         return True
-    source = meta.get("source")
-    sub = source.get("subagent") if isinstance(source, dict) else None
-    return isinstance(sub, dict) and sub.get("other") == "guardian"
+    source = metadata.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    return isinstance(subagent, dict) and subagent.get("other") == "guardian"
 
 
 def _with_exit(text: str, code) -> str:
@@ -623,25 +440,25 @@ def _tool_names(tools) -> str:
     if not isinstance(tools, list):
         return compact_json(tools)
     names = [
-        str(t.get("name")) if isinstance(t, dict) and t.get("name") else compact_json(t)
-        for t in tools
+        str(tool.get("name")) if isinstance(tool, dict) and tool.get("name") else compact_json(tool)
+        for tool in tools
     ]
     return ", ".join(names)
 
 
 def _agent_label(payload: dict) -> str:
-    to = [str(payload.get("recipient") or "")]
+    recipients = [str(payload.get("recipient") or "")]
     others = payload.get("other_recipients")
     if isinstance(others, list):
-        to += [str(o) for o in others]
-    return "agent message %s -> %s: " % (payload.get("author") or "", ", ".join(to))
+        recipients += [str(recipient) for recipient in others]
+    return "agent message %s -> %s: " % (payload.get("author") or "", ", ".join(recipients))
 
 
 def _agent_text(payload: dict) -> str:
     content = payload.get("content")
     text = text_of(content)
     if isinstance(content, list) and any(
-        isinstance(b, dict) and b.get("type") == "encrypted_content" for b in content
+        isinstance(block, dict) and block.get("type") == "encrypted_content" for block in content
     ):
         text = (text + " [encrypted]").strip()
     return text
@@ -657,67 +474,76 @@ def _result_text(value) -> str:
 
 
 def item_rows(item: dict, payload: dict) -> list[tuple[str, object, dict, str]]:
-    """Rows for an `item_completed` turn item that no response_item carries,
-    as (turn_type, timestamp, {tool_name, tool_use_id}, text). A tool item
-    becomes a tool_use at `started_at_ms` and a tool_result at
-    `completed_at_ms`; anything else one system row."""
-    itype = str(item.get("type") or "")
-    iid = str(item.get("id") or "")
-    t0 = payload.get("started_at_ms")
-    t1 = payload.get("completed_at_ms")
+    """Return the rows for an `item_completed` turn item that no response_item carries.
+
+    Each row is (turn_type, timestamp, {tool_name, tool_use_id}, text). A tool item becomes a
+    tool_use at `started_at_ms` and a tool_result at `completed_at_ms`; anything else one system
+    row.
+    """
+    item_type = str(item.get("type") or "")
+    item_id = str(item.get("id") or "")
+    started = payload.get("started_at_ms")
+    completed = payload.get("completed_at_ms")
 
     def pair(name: str, call: str, result: str) -> list:
-        ids = {"tool_name": name, "tool_use_id": iid}
-        return [("tool_use", t0, ids, call), ("tool_result", t1, {"tool_use_id": iid}, result)]
+        ids = {"tool_name": name, "tool_use_id": item_id}
+        return [
+            ("tool_use", started, ids, call),
+            ("tool_result", completed, {"tool_use_id": item_id}, result),
+        ]
 
     def failure() -> str:
-        err = item.get("error")
-        if isinstance(err, dict):
-            return "[error] %s" % (err.get("message") or compact_json(err))
-        return "[error] %s" % err if err else ""
+        error = item.get("error")
+        if isinstance(error, dict):
+            return "[error] %s" % (error.get("message") or compact_json(error))
+        return "[error] %s" % error if error else ""
 
-    if itype == "CommandExecution":
-        cmd = item.get("command")
-        call = " ".join(str(c) for c in cmd) if isinstance(cmd, list) else str(cmd or "")
+    if item_type == "CommandExecution":
+        command = item.get("command")
+        call = (
+            " ".join(str(part) for part in command)
+            if isinstance(command, list)
+            else str(command or "")
+        )
         out = _with_exit(str(item.get("aggregated_output") or ""), item.get("exit_code"))
         return pair("shell", call, out)
-    if itype == "McpToolCall":
+    if item_type == "McpToolCall":
         name = "%s.%s" % (item.get("server") or "", item.get("tool") or "")
         result = _result_text(item.get("result")) if item.get("result") else failure()
         return pair(name, compact_json(item.get("arguments")), result)
-    if itype == "DynamicToolCall":
+    if item_type == "DynamicToolCall":
         result = _result_text(item.get("content_items")) or failure()
         return pair(str(item.get("tool") or ""), compact_json(item.get("arguments")), result)
-    if itype == "FileChange":
+    if item_type == "FileChange":
         changes = item.get("changes")
         paths = ", ".join(sorted(changes)) if isinstance(changes, dict) else ""
-        out = "\n".join(str(item.get(k)) for k in ("stdout", "stderr") if item.get(k))
+        out = "\n".join(str(item.get(key)) for key in ("stdout", "stderr") if item.get(key))
         return pair("apply_patch", paths, out or str(item.get("status") or ""))
-    if itype == "FunctionCallOutput":
-        ids = {"tool_name": str(item.get("name") or ""), "tool_use_id": iid}
-        return [("tool_result", t1, ids, text_of(item.get("output")))]
-    if itype == "WebSearch" or (itype == "Extension" and item.get("kind") == "web.search"):
+    if item_type == "FunctionCallOutput":
+        ids = {"tool_name": str(item.get("name") or ""), "tool_use_id": item_id}
+        return [("tool_result", completed, ids, text_of(item.get("output")))]
+    if item_type == "WebSearch" or (item_type == "Extension" and item.get("kind") == "web.search"):
         results = item.get("results")
         return pair("web_search", str(item.get("query") or ""), compact_json(results or []))
-    if itype == "Extension" and item.get("kind") == "clock.sleep":
-        return [("system", t1, {}, "sleep: %s ms" % item.get("durationMs", ""))]
-    if itype in ("ImageGeneration", "Extension"):
+    if item_type == "Extension" and item.get("kind") == "clock.sleep":
+        return [("system", completed, {}, "sleep: %s ms" % item.get("durationMs", ""))]
+    if item_type in ("ImageGeneration", "Extension"):
         prompt = item.get("revised_prompt") or item.get("revisedPrompt") or ""
         saved = item.get("saved_path") or item.get("savedPath") or ""
         text = "image generation: %s status=%s" % (prompt, item.get("status") or "")
-        if itype == "Extension" and item.get("kind") != "image_gen.generation":
-            rest = {k: v for k, v in item.items() if k not in ("type", "id")}
+        if item_type == "Extension" and item.get("kind") != "image_gen.generation":
+            rest = {key: value for key, value in item.items() if key not in ("type", "id")}
             text = "item Extension: " + compact_json(rest)
         elif saved:
             text += " saved=%s" % saved
-        return [("system", t1, {}, text)]
-    if itype == "Plan":
-        return [("system", t1, {}, "plan: %s" % (item.get("text") or ""))]
-    if itype == "SubAgentActivity":
+        return [("system", completed, {}, text)]
+    if item_type == "Plan":
+        return [("system", completed, {}, "plan: %s" % (item.get("text") or ""))]
+    if item_type == "SubAgentActivity":
         return [
             (
                 "system",
-                t1,
+                completed,
                 {},
                 "subagent activity: %s %s %s"
                 % (
@@ -727,13 +553,13 @@ def item_rows(item: dict, payload: dict) -> list[tuple[str, object, dict, str]]:
                 ),
             )
         ]
-    rest = {k: v for k, v in item.items() if k not in ("type", "id", "result")}
-    return [("system", t1, {}, "item %s: %s" % (itype, compact_json(rest)))]
+    rest = {key: value for key, value in item.items() if key not in ("type", "id", "result")}
+    return [("system", completed, {}, "item %s: %s" % (item_type, compact_json(rest)))]
 
 
-TOML_KEY_RX = re.compile(r"([A-Za-z0-9_-]+)\s*=\s*(.*)")
-TOML_BASIC_RX = re.compile(r'"((?:[^"\\]|\\.)*)"')
-TOML_ESCAPE_RX = re.compile(r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", re.S)
+TOML_KEY_PATTERN = re.compile(r"([A-Za-z0-9_-]+)\s*=\s*(.*)")
+TOML_BASIC_PATTERN = re.compile(r'"((?:[^"\\]|\\.)*)"')
+TOML_ESCAPE_PATTERN = re.compile(r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", re.S)
 TOML_ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
 
 
@@ -741,26 +567,28 @@ def _toml_unescape(body: str) -> str:
     """The escapes of a TOML basic string; a line-ending backslash joins lines."""
     body = re.sub(r"\\[ \t]*\r?\n\s*", "", body)
 
-    def one(m: re.Match) -> str:
-        esc = m.group(1)
-        if esc[0] in "uU" and len(esc) > 1:
-            return chr(int(esc[1:], 16))
-        if esc not in TOML_ESCAPES:
-            raise ValueError("bad escape \\%s" % esc)
-        return TOML_ESCAPES[esc]
+    def one(match: re.Match) -> str:
+        escape = match.group(1)
+        if escape[0] in "uU" and len(escape) > 1:
+            return chr(int(escape[1:], 16))
+        if escape not in TOML_ESCAPES:
+            raise ValueError("bad escape \\%s" % escape)
+        return TOML_ESCAPES[escape]
 
-    return TOML_ESCAPE_RX.sub(one, body)
+    return TOML_ESCAPE_PATTERN.sub(one, body)
 
 
 def _toml_value(raw: str) -> object:
-    """One single-line TOML value of the kinds `automation.toml` holds: a
-    basic or literal string, an integer or a boolean. Raises ValueError
-    for anything else."""
+    """Return one single-line TOML value of the kinds `automation.toml` holds.
+
+    Raises:
+        ValueError: the value is not a basic or literal string, an integer or a boolean.
+    """
     if raw.startswith('"'):
-        m = TOML_BASIC_RX.match(raw)
-        if not m:
+        match = TOML_BASIC_PATTERN.match(raw)
+        if not match:
             raise ValueError("unterminated string")
-        return _toml_unescape(m.group(1))
+        return _toml_unescape(match.group(1))
     if raw.startswith("'"):
         end = raw.find("'", 1)
         if end < 0:
@@ -773,10 +601,13 @@ def _toml_value(raw: str) -> object:
 
 
 def flat_toml(text: str) -> dict:
-    """Read the top-level `key = value` lines of a TOML document: the
-    stand-in for `tomllib` on Python 3.10. Multi-line basic and literal
-    strings are joined; the first table header ends the top level. Raises
-    ValueError on a line it cannot read."""
+    """Read the top-level `key = value` lines of a TOML document, for Python 3.10.
+
+    Multi-line basic and literal strings are joined; the first table header ends the top level.
+
+    Raises:
+        ValueError: a line cannot be read.
+    """
     out: dict = {}
     lines = iter(text.splitlines())
     for line in lines:
@@ -785,10 +616,10 @@ def flat_toml(text: str) -> dict:
             continue
         if stripped.startswith("["):
             break
-        m = TOML_KEY_RX.fullmatch(stripped)
-        if not m:
+        match = TOML_KEY_PATTERN.fullmatch(stripped)
+        if not match:
             raise ValueError("not a key = value line")
-        key, raw = m.group(1), m.group(2).strip()
+        key, raw = match.group(1), match.group(2).strip()
         quote = raw[:3]
         if quote not in ('"""', "'''"):
             out[key] = _toml_value(raw)
@@ -805,39 +636,41 @@ def flat_toml(text: str) -> dict:
     return out
 
 
-TOML_PART_RX = re.compile(r"""\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*""")
+TOML_PART_PATTERN = re.compile(r"""\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*""")
 
 
 def _toml_dotted(text: str) -> list[str] | None:
-    """The parts of a TOML dotted key (`projects."/srv/proj"`, `a.b`), quotes
-    removed and basic-string escapes applied, or None when it is not one."""
+    """Return the parts of a TOML dotted key, or None when the text is not one.
+
+    Quotes are removed and basic-string escapes applied: `projects."/srv/proj"` is
+    `["projects", "/srv/proj"]`.
+    """
     parts: list[str] = []
-    pos = 0
+    position = 0
     while True:
-        m = TOML_PART_RX.match(text, pos)
-        if not m:
+        match = TOML_PART_PATTERN.match(text, position)
+        if not match:
             return None
-        part = m.group(1)
+        part = match.group(1)
         if part.startswith('"'):
             part = _toml_unescape(part[1:-1])
         elif part.startswith("'"):
             part = part[1:-1]
         parts.append(part)
-        pos = m.end()
-        if pos == len(text):
+        position = match.end()
+        if position == len(text):
             return parts
-        if text[pos] != ".":
+        if text[position] != ".":
             return None
-        pos += 1
+        position += 1
 
 
 def scan_toml(text: str) -> dict:
-    """The single-line `key = value` entries of a TOML document under every
-    `[table]` header, as nested dicts: the stand-in for `tomllib` on Python
-    3.10 where a file has tables (`config.toml`). A value `_toml_value`
-    cannot read (an array, an inline table, a date) and an `[[array]]`
-    table are left out, and a multi-line string is skipped whole, so the
-    scan never raises."""
+    """Return the single-line `key = value` entries of every table of a TOML document, for 3.10.
+
+    The entries are nested dicts. A value `_toml_value` cannot read (an array, an inline table, a
+    date), an `[[array]]` table and a multi-line string are left out, so the scan never raises.
+    """
     out: dict = {}
     table = out
     lines = iter(text.splitlines())
@@ -856,7 +689,7 @@ def scan_toml(text: str) -> dict:
                     node = child if isinstance(child, dict) else {}
                 table = node
             continue
-        key, sep, raw = stripped.partition("=")
+        key, separator, raw = stripped.partition("=")
         raw = raw.strip()
         quote = raw[:3]
         if quote in ('"""', "'''"):
@@ -867,7 +700,7 @@ def scan_toml(text: str) -> dict:
                     break
                 body += "\n" + more
             continue
-        parts = _toml_dotted(key.strip()) if sep else None
+        parts = _toml_dotted(key.strip()) if separator else None
         if not parts:
             continue
         try:
@@ -886,9 +719,11 @@ if sys.version_info >= (3, 11):
     import tomllib
 
     def load_toml(text: str) -> dict:
+        """Read a TOML document with `tomllib`."""
         return tomllib.loads(text)
 
     def load_config_toml(text: str) -> dict:
+        """Read a `config.toml` document with `tomllib`."""
         return tomllib.loads(text)
 
 else:
@@ -897,8 +732,10 @@ else:
 
 
 def goal_text(payload: dict) -> str:
-    """The `thread goal:` text of a `thread_goal_updated` event, whose keys
-    are camelCase (`turnId`, `goal.objective`, `goal.status`)."""
+    """Return the `thread goal:` text of a `thread_goal_updated` event.
+
+    The event's keys are camelCase (`turnId`, `goal.objective`, `goal.status`).
+    """
     goal = payload.get("goal")
     goal = goal if isinstance(goal, dict) else {}
     return "thread goal: status=%s turn=%s objective: %s" % (
@@ -909,47 +746,47 @@ def goal_text(payload: dict) -> str:
 
 
 def rule_statements(text: str, errors: list) -> list[tuple[int, str]]:
-    """(first line, text) of each top-level statement of a Starlark exec
-    policy file (`rules/*.rules`): `prefix_rule(...)`, `network_rule(...)`
-    or any other call, joined onto one line when it spans several, with
-    comments dropped. A statement still open at the end of the file (an
-    unclosed bracket or string) goes to `errors` as (line, message, the
-    statement's lines as written)."""
+    """Return (first line, text) of each top-level statement of a Starlark exec policy file.
+
+    A statement (`prefix_rule(...)`, `network_rule(...)` or any other call) is joined onto one
+    line, comments dropped. One still open at the end of the file (an unclosed bracket or string)
+    goes to `errors` as (line, message, the statement's lines as written).
+    """
     out: list[tuple[int, str]] = []
     depth = 0
     quote = ""
     start = 0
     parts: list[str] = []
     raw: list[str] = []
-    for n, line in enumerate(text.splitlines(), 1):
+    for line_number, line in enumerate(text.splitlines(), 1):
         kept = ""
         i = 0
         while i < len(line):
-            ch = line[i]
+            character = line[i]
             if quote:
-                if ch == "\\":
+                if character == "\\":
                     kept += line[i : i + 2]
                     i += 2
                     continue
-                if ch == quote:
+                if character == quote:
                     quote = ""
-            elif ch == "#":
+            elif character == "#":
                 break
-            elif ch in "\"'":
-                quote = ch
-            elif ch in "([{":
+            elif character in "\"'":
+                quote = character
+            elif character in "([{":
                 depth += 1
-            elif ch in ")]}":
+            elif character in ")]}":
                 depth -= 1
-            kept += ch
+            kept += character
             i += 1
         if kept.strip() or parts:
             if not parts:
-                start = n
+                start = line_number
             parts.append(kept.strip())
             raw.append(line)
         if parts and depth <= 0 and not quote:
-            out.append((start, " ".join(p for p in parts if p)))
+            out.append((start, " ".join(part for part in parts if part)))
             parts, raw, depth = [], [], 0
     if parts:
         errors.append((start, "unterminated rule", "\n".join(raw)))
@@ -972,9 +809,11 @@ CONFIG_PERMISSION_PATHS = (
 )
 
 
-def config_settings(doc: dict) -> list[tuple[list[str], object]]:
-    """(key parts, value) of every `CONFIG_PERMISSION_PATHS` entry `doc`
-    holds, path by path in that order, tables in file order."""
+def config_settings(document: dict) -> list[tuple[list[str], object]]:
+    """Return (key parts, value) of every `CONFIG_PERMISSION_PATHS` entry `document` holds.
+
+    The entries come path by path in that order, tables in file order.
+    """
     found: list[tuple[list[str], object]] = []
 
     def walk(node: object, path: tuple[str, ...], parts: list[str]) -> None:
@@ -991,21 +830,23 @@ def config_settings(doc: dict) -> list[tuple[list[str], object]]:
             walk(node[path[0]], path[1:], [*parts, path[0]])
 
     for path in CONFIG_PERMISSION_PATHS:
-        walk(doc, path, [])
+        walk(document, path, [])
     return found
 
 
 def memory_summary(text: str) -> tuple[dict[str, str], str]:
-    """The header lines (`thread_id:`, `updated_at:`, `rollout_path:`,
-    `cwd:`, `git_branch:`) of a `memories/rollout_summaries/<stem>.md` file,
-    up to the first blank line, and the summary after it."""
+    """Return the header lines and the summary of a `memories/rollout_summaries/<stem>.md` file.
+
+    The header (`thread_id:`, `updated_at:`, `rollout_path:`, `cwd:`, `git_branch:`) runs up to
+    the first blank line.
+    """
     header: dict[str, str] = {}
     lines = text.splitlines()
     for i, line in enumerate(lines):
         if not line.strip():
             return header, "\n".join(lines[i + 1 :])
-        key, sep, value = line.partition(":")
-        if not sep or key.strip() not in MEMORY_HEADER_KEYS:
+        key, separator, value = line.partition(":")
+        if not separator or key.strip() not in MEMORY_HEADER_KEYS:
             return header, "\n".join(lines[i:])
         header[key.strip()] = value.strip()
     return header, ""
@@ -1015,8 +856,10 @@ MEMORY_HEADER_KEYS = ("thread_id", "updated_at", "rollout_path", "cwd", "git_bra
 
 
 class RolloutParser(Parser):
-    """Codex rollouts and prompt history under `home_prefix`. Codex forks
-    that keep the format subclass this with their own agent and home."""
+    """Parse Codex rollouts and prompt history under `home_prefix`.
+
+    Codex forks that keep the format subclass this with their own agent and home.
+    """
 
     has_secondary = True
     home_prefix = ".codex"
@@ -1027,6 +870,7 @@ class RolloutParser(Parser):
     records_sync = True
 
     def __init__(self) -> None:
+        """Compile the path patterns for `home_prefix`."""
         self.rollout_rx = re.compile(ROLLOUT_TMPL % re.escape(self.home_prefix))
         self.automation_rx = re.compile(AUTOMATION_TMPL % re.escape(self.home_prefix))
         self.logs_rx = re.compile(LOGS_TMPL % re.escape(self.home_prefix))
@@ -1043,6 +887,7 @@ class RolloutParser(Parser):
         )
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return whether the artifact is one of the files this parser reads."""
         rel = artifact.rel
         return (
             rel in (self.history_rel, self.state_rel, self.thread_history_rel)
@@ -1058,6 +903,7 @@ class RolloutParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return whether the artifact repeats events the rollouts record."""
         rel = artifact.rel
         return (
             rel in (self.history_rel, self.state_rel, self.thread_history_rel)
@@ -1067,6 +913,7 @@ class RolloutParser(Parser):
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         # codex_state imports item_rows from this module, so it is imported here.
+        """Yield the rows of one artifact, by the file it is."""
         from .codex_state import parse_global_state, parse_logs, parse_state, parse_thread_history
 
         if artifact.rel == self.history_rel:
@@ -1102,26 +949,28 @@ class RolloutParser(Parser):
 
     def _parse_ledger(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                data = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            yield self._system(artifact, "parser: unreadable import ledger: %s" % error_reason(e))
+            with open(artifact.disk_path, "rb") as handle:
+                data = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
+            yield self._system(
+                artifact, "parser: unreadable import ledger: %s" % error_reason(error)
+            )
             return
         records = data.get("records") if isinstance(data, dict) else None
         if not isinstance(records, list):
             yield self._system(artifact, "parser: import ledger has no records list")
             return
-        for i, rec in enumerate(records, 1):
-            if not isinstance(rec, dict):
+        for i, record in enumerate(records, 1):
+            if not isinstance(record, dict):
                 continue
             # source_line is the record's position in `records`, not a file line.
-            row = self._system(artifact, "", str(rec.get("imported_thread_id") or ""), i)
-            row.timestamp_utc = to_utc(rec.get("imported_at"))
+            row = self._system(artifact, "", str(record.get("imported_thread_id") or ""), i)
+            row.timestamp_utc = to_utc(record.get("imported_at"))
             text = "imported session from %s sha256=%s" % (
-                rec.get("source_path") or "",
-                rec.get("content_sha256") or "",
+                record.get("source_path") or "",
+                record.get("content_sha256") or "",
             )
-            modified = to_utc(rec.get("source_modified_at"))
+            modified = to_utc(record.get("source_modified_at"))
             if modified:
                 text += " source_modified=%s" % modified
             row.text = compact(text)
@@ -1129,14 +978,16 @@ class RolloutParser(Parser):
 
     def _parse_automation(self, artifact: Artifact) -> Iterator[Row]:
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                doc = load_toml(fh.read().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            yield self._system(artifact, "parser: unreadable automation.toml: %s" % error_reason(e))
+            with open(artifact.disk_path, "rb") as handle:
+                document = load_toml(handle.read().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
+            yield self._system(
+                artifact, "parser: unreadable automation.toml: %s" % error_reason(error)
+            )
             return
 
         def field(key: str) -> str:
-            value = doc.get(key)
+            value = document.get(key)
             return "" if value is None else str(value)
 
         row = self._system(artifact, "", field("target_thread_id"), 1)
@@ -1151,8 +1002,8 @@ class RolloutParser(Parser):
                 field("status"),
                 field("rrule"),
                 field("target_thread_id"),
-                to_utc(doc.get("created_at")),
-                to_utc(doc.get("updated_at")),
+                to_utc(document.get("created_at")),
+                to_utc(document.get("updated_at")),
                 artifact.rel,
                 field("prompt"),
             )
@@ -1168,29 +1019,30 @@ class RolloutParser(Parser):
         return row
 
     def _parse_config(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting:` row per standing permission key of
-        `config.toml`; a project's trust level carries the project as
-        `project_path`, and a project's own `.codex/config.toml` the project."""
+        """Yield one `permission setting:` row per standing permission key of `config.toml`.
+
+        A project's trust level carries the project as `project_path`, and a project's own
+        `.codex/config.toml` the project.
+        """
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                doc = load_config_toml(fh.read().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            yield self._system(artifact, "parser: unreadable config.toml: %s" % error_reason(e))
+            with open(artifact.disk_path, "rb") as handle:
+                document = load_config_toml(handle.read().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
+            yield self._system(artifact, "parser: unreadable config.toml: %s" % error_reason(error))
             return
         base = artifact.home.original if artifact.home.project else ""
-        for parts, value in config_settings(doc):
+        for parts, value in config_settings(document):
             project = parts[1] if parts[0] == "projects" else base
             text = "%s=%s" % (".".join(parts), setting_value(value))
             yield self._setting(artifact, text, 0, project)
 
     def _parse_rules(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting:` row per statement of an exec policy
-        file under `rules/`, the statement as written."""
+        """Yield one `permission setting:` row per statement of a `rules/` exec policy file."""
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                text = fh.read().decode("utf-8", errors="replace")
-        except OSError as e:
-            yield self._system(artifact, "parser: unreadable rules file: %s" % error_reason(e))
+            with open(artifact.disk_path, "rb") as handle:
+                text = handle.read().decode("utf-8", errors="replace")
+        except OSError as error:
+            yield self._system(artifact, "parser: unreadable rules file: %s" % error_reason(error))
             return
         base = artifact.home.original if artifact.home.project else ""
         errors: list = []
@@ -1199,13 +1051,14 @@ class RolloutParser(Parser):
         yield from error_rows(self, artifact, errors, "", base)
 
     def _parse_memory_summary(self, artifact: Artifact) -> Iterator[Row]:
-        """One `memory summary:` row for a thread's summary file, at its
-        `updated_at` (the thread's last update the summary covers)."""
+        """Yield one `memory summary:` row for a thread's summary file, at its `updated_at`."""
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                text = fh.read().decode("utf-8", errors="replace")
-        except OSError as e:
-            yield self._system(artifact, "parser: unreadable memory summary: %s" % error_reason(e))
+            with open(artifact.disk_path, "rb") as handle:
+                text = handle.read().decode("utf-8", errors="replace")
+        except OSError as error:
+            yield self._system(
+                artifact, "parser: unreadable memory summary: %s" % error_reason(error)
+            )
             return
         header, body = memory_summary(text)
         if not header.get("thread_id"):
@@ -1223,20 +1076,20 @@ class RolloutParser(Parser):
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("ts"))
-            row.session_id = str(rec.get("session_id") or "")
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("ts"))
+            row.session_id = str(record.get("session_id") or "")
             row.turn_type = "user"
-            row.text = compact(rec.get("text"))
+            row.text = compact(record.get("text"))
             yield row
         yield from error_rows(self, artifact, errors)
 
     def _parse_rollout(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        m = UUID_TAIL_RX.search(artifact.rel)
-        session_id = m.group(1) if m else ""  # until session_meta says otherwise
+        match = UUID_TAIL_PATTERN.search(artifact.rel)
+        session_id = match.group(1) if match else ""  # until session_meta says otherwise
         if artifact.rel.endswith(".zst"):
             records = list(iter_zst_jsonl(artifact.disk_path, errors))
         else:
@@ -1252,16 +1105,16 @@ class RolloutParser(Parser):
         task_pending = False  # a subagent file whose first prompt is still to come
         guardian_parent = ""  # the parent thread of a guardian review thread
         started = ""  # the guardian thread's session_meta time
-        for n, rec in records:
-            rtype = rec.get("type")
-            payload = rec.get("payload")
+        for line_number, record in records:
+            record_type = record.get("type")
+            payload = record.get("payload")
             if not isinstance(payload, dict):
                 payload = {}
 
-            def base(turn_type: str = "system", ts=None) -> Row:
+            def base(turn_type: str = "system", timestamp=None) -> Row:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = to_utc(ts) or to_utc(rec.get("timestamp"))
+                row.source_line = line_number
+                row.timestamp_utc = to_utc(timestamp) or to_utc(record.get("timestamp"))
                 row.session_id = session_id
                 row.project_path = cwd
                 row.git_branch = branch
@@ -1277,24 +1130,24 @@ class RolloutParser(Parser):
                     return self._fill(base(), "subagent task: " + text, opts)
                 return self._fill(base("user"), text, opts)
 
-            if rtype == "session_meta":
-                sid = str(payload.get("id") or payload.get("session_id") or "")
+            if record_type == "session_meta":
+                thread_id = str(payload.get("id") or payload.get("session_id") or "")
                 if meta_seen:
-                    if sid and sid != session_id:
+                    if thread_id and thread_id != session_id:
                         yield self._fill(
-                            base(ts=payload.get("timestamp")),
+                            base(timestamp=payload.get("timestamp")),
                             "copied from ancestor: session start %s %s id=%s cwd=%s"
                             % (
                                 payload.get("originator") or "codex",
                                 payload.get("cli_version") or "",
-                                sid,
+                                thread_id,
                                 payload.get("cwd") or "",
                             ),
                             opts,
                         )
                     continue
                 meta_seen = True
-                session_id = sid or session_id
+                session_id = thread_id or session_id
                 cwd = str(payload.get("cwd") or cwd)
                 git = payload.get("git") or {}
                 if not isinstance(git, dict):
@@ -1309,36 +1162,36 @@ class RolloutParser(Parser):
                 for key, label in (("creator_account_id", "account"), ("creator_user_id", "user")):
                     if payload.get(key):
                         start += " %s=%s" % (label, payload.get(key))
-                yield self._fill(base(ts=payload.get("timestamp")), start, opts)
+                yield self._fill(base(timestamp=payload.get("timestamp")), start, opts)
                 if isinstance(git.get("repository_url"), str) and git["repository_url"].strip():
                     yield self._fill(
-                        base(ts=payload.get("timestamp")),
+                        base(timestamp=payload.get("timestamp")),
                         GIT_REMOTE_PREFIX + git["repository_url"],
                         opts,
                     )
                 parent = _parent_of(payload)
                 if parent:
                     extra = " ".join(
-                        "%s=%s" % (k, payload.get(k))
-                        for k in ("agent_path", "agent_role", "agent_nickname")
-                        if payload.get(k)
+                        "%s=%s" % (field, payload.get(field))
+                        for field in ("agent_path", "agent_role", "agent_nickname")
+                        if payload.get(field)
                     )
                     yield self._fill(
-                        base(ts=payload.get("timestamp")),
+                        base(timestamp=payload.get("timestamp")),
                         ("subagent %s of %s %s" % (session_id, parent, extra)).strip(),
                         opts,
                     )
                 if payload.get("forked_from_id"):
                     yield self._fill(
-                        base(ts=payload.get("timestamp")),
+                        base(timestamp=payload.get("timestamp")),
                         "forked from %s" % payload.get("forked_from_id"),
                         opts,
                     )
                 task_pending = bool(parent) or _is_subagent(payload)
                 if _is_guardian(payload) and parent:
                     guardian_parent = parent
-                    started = str(payload.get("timestamp") or rec.get("timestamp") or "")
-            elif rtype == "turn_context":
+                    started = str(payload.get("timestamp") or record.get("timestamp") or "")
+            elif record_type == "turn_context":
                 cwd = str(payload.get("cwd") or cwd)
                 model = str(payload.get("model") or model)
                 policy[session_id] = {key: payload.get(key) for key in POLICY_KEYS}
@@ -1350,12 +1203,12 @@ class RolloutParser(Parser):
                 ):
                     if text:
                         yield self._fill(base(), text, opts)
-            elif rtype == "response_item":
-                meta = rec.get("metadata")
-                if isinstance(meta, dict) and meta.get("inherited_user_message"):
+            elif record_type == "response_item":
+                metadata = record.get("metadata")
+                if isinstance(metadata, dict) and metadata.get("inherited_user_message"):
                     continue  # copied from the parent thread, which records it itself
-                ptype = payload.get("type")
-                if ptype == "message":
+                payload_type = payload.get("type")
+                if payload_type == "message":
                     role = payload.get("role")
                     if role == "user":
                         for kind, text in user_parts(payload):
@@ -1371,45 +1224,45 @@ class RolloutParser(Parser):
                         yield self._fill(base("assistant"), text, opts)
                     else:
                         yield self._fill(base(), "%s: %s" % (role, text), opts)
-                elif ptype in CALL_TYPES:
+                elif payload_type in CALL_TYPES:
                     row = base("tool_use")
                     row.tool_name = call_name(payload)
                     row.tool_use_id = str(payload.get("call_id") or payload.get("id") or "")
                     yield self._fill(row, call_summary(payload), opts)
-                elif ptype in OUTPUT_TYPES:
+                elif payload_type in OUTPUT_TYPES:
                     row = base("tool_result")
                     row.tool_use_id = str(payload.get("call_id") or "")
                     text = text_of(payload.get("output"))
                     yield self._fill(row, _with_exit(text, exit_codes.get(row.tool_use_id)), opts)
-                elif ptype == "tool_search_call":
+                elif payload_type == "tool_search_call":
                     row = base("tool_use")
                     row.tool_name = "tool_search"
                     row.tool_use_id = str(payload.get("call_id") or payload.get("id") or "")
                     yield self._fill(row, compact_json(payload.get("arguments")), opts)
-                elif ptype == "tool_search_output":
+                elif payload_type == "tool_search_output":
                     row = base("tool_result")
                     row.tool_use_id = str(payload.get("call_id") or "")
                     yield self._fill(row, _tool_names(payload.get("tools")), opts)
-                elif ptype == "agent_message":
+                elif payload_type == "agent_message":
                     text = _agent_text(payload)
                     if task_pending:
                         yield prompt(text)
                     else:
                         yield self._fill(base(), _agent_label(payload) + text, opts)
-                elif ptype == "image_generation_call":
+                elif payload_type == "image_generation_call":
                     yield self._fill(
                         base(),
                         "image generation: %s status=%s"
                         % (payload.get("revised_prompt") or "", payload.get("status") or ""),
                         opts,
                     )
-                elif ptype == "reasoning" and opts.include_thinking:
+                elif payload_type == "reasoning" and opts.include_thinking:
                     text = text_of(payload.get("summary")) or text_of(payload.get("content"))
                     if text:
                         yield self._fill(base("thinking"), text, opts)
-            elif rtype == "event_msg":
-                ptype = payload.get("type")
-                if ptype == "task_started":
+            elif record_type == "event_msg":
+                payload_type = payload.get("type")
+                if payload_type == "task_started":
                     yield self._fill(
                         base(), "task_started turn=%s" % (payload.get("turn_id") or ""), opts
                     )
@@ -1418,7 +1271,7 @@ class RolloutParser(Parser):
                         turn = payload.get("turn_id") or attribution.get("turn_id") or ""
                         text = "turn trigger: %s turn=%s" % (attribution["turn_trigger"], turn)
                         yield self._fill(base(), text, opts)
-                elif ptype == "task_complete":
+                elif payload_type == "task_complete":
                     yield self._fill(
                         base(),
                         "task_complete turn=%s duration_ms=%s"
@@ -1433,15 +1286,15 @@ class RolloutParser(Parser):
                         call = self._guardian_call(artifact, guardian_parent, started, row)
                         row.tool_use_id = call
                         yield self._fill(row, guardian_text(verdict, call or "-", session_id), opts)
-                elif ptype == "thread_settings_applied":
+                elif payload_type == "thread_settings_applied":
                     settings = payload.get("thread_settings")
                     if not isinstance(settings, dict):
                         continue
                     new_model = settings_model(settings)
                     model = new_model or model
                     texts = [track_change("model", seen_model, session_id, new_model)]
-                    prev = policy.get(session_id)
-                    if prev is not None:
+                    previous = policy.get(session_id)
+                    if previous is not None:
                         # Before the thread's first turn_context the event's policy is
                         # folded into that turn's row. The event is the thread's
                         # settings, not a turn's: it carries no sandbox_policy, and
@@ -1449,12 +1302,12 @@ class RolloutParser(Parser):
                         # turn_context adds, so only the three thread-level fields
                         # come from it; the two turn-level fields are carried over,
                         # or unknown (`-`) once the access level changed.
-                        state = dict(prev)
+                        state = dict(previous)
                         for key in SETTINGS_POLICY_KEYS:
                             if key in settings:
                                 state[key] = settings[key]
                         old_id = _policy_value(
-                            "active_permission_profile", prev.get("active_permission_profile")
+                            "active_permission_profile", previous.get("active_permission_profile")
                         )
                         new_id = _policy_value(
                             "active_permission_profile", state.get("active_permission_profile")
@@ -1471,18 +1324,18 @@ class RolloutParser(Parser):
                     for text in texts:
                         if text:
                             yield self._fill(base(), text, opts)
-                elif ptype == "thread_goal_updated":
+                elif payload_type == "thread_goal_updated":
                     yield self._fill(base(), goal_text(payload), opts)
-                elif ptype == "turn_aborted":
-                    err = payload.get("error")
-                    detail = err.get("message") if isinstance(err, dict) else ""
+                elif payload_type == "turn_aborted":
+                    error = payload.get("error")
+                    detail = error.get("message") if isinstance(error, dict) else ""
                     text = "turn aborted: %s" % (payload.get("reason") or "")
                     yield self._fill(base(), ("%s %s" % (text, detail or "")).strip(), opts)
-                elif ptype == "thread_rolled_back":
+                elif payload_type == "thread_rolled_back":
                     yield self._fill(
                         base(), "rolled back %s turns" % payload.get("num_turns", ""), opts
                     )
-                elif ptype == "item_completed":
+                elif payload_type == "item_completed":
                     item = payload.get("item")
                     if not isinstance(item, dict):
                         continue
@@ -1490,22 +1343,22 @@ class RolloutParser(Parser):
                         continue
                     if str(item.get("id") or "") in carried:
                         continue
-                    for turn_type, ts, fields, text in item_rows(item, payload):
-                        row = base(turn_type, ts)
+                    for turn_type, timestamp, fields, text in item_rows(item, payload):
+                        row = base(turn_type, timestamp)
                         row.tool_name = fields.get("tool_name", "")
                         row.tool_use_id = fields.get("tool_use_id", "")
                         yield self._fill(row, text, opts)
-            elif rtype == "compacted":
-                msg = payload.get("message")
-                if isinstance(msg, str) and msg:
-                    yield self._fill(base(), "compaction summary: " + msg, opts)
+            elif record_type == "compacted":
+                message = payload.get("message")
+                if isinstance(message, str) and message:
+                    yield self._fill(base(), "compaction summary: " + message, opts)
                 else:
-                    hist = payload.get("replacement_history")
-                    n_items = len(hist) if isinstance(hist, list) else 0
+                    history = payload.get("replacement_history")
+                    item_count = len(history) if isinstance(history, list) else 0
                     yield self._fill(
-                        base(), "compaction: replacement history of %d items" % n_items, opts
+                        base(), "compaction: replacement history of %d items" % item_count, opts
                     )
-            elif rtype == "inter_agent_communication":
+            elif record_type == "inter_agent_communication":
                 if str(payload.get("id") or "") in carried:
                     continue  # the agent_message response_item with this id wins
                 text = payload.get("content")
@@ -1515,14 +1368,18 @@ class RolloutParser(Parser):
                     yield prompt(text)
                 else:
                     yield self._fill(base(), _agent_label(payload) + text, opts)
-            elif rtype == "realtime_item":
+            elif record_type == "realtime_item":
                 kind = payload.get("type")
                 if kind == "transcript_segment" and payload.get("role") in ("user", "assistant"):
                     yield self._fill(
                         base(str(payload["role"])), str(payload.get("text") or ""), opts
                     )
                 else:
-                    rest = {k: v for k, v in payload.items() if k not in ("type", "id", "text")}
+                    rest = {
+                        field: value
+                        for field, value in payload.items()
+                        if field not in ("type", "id", "text")
+                    }
                     text = "realtime: %s %s" % (kind or "", compact_json(rest))
                     if payload.get("text"):
                         text += " " + str(payload["text"])
@@ -1530,10 +1387,12 @@ class RolloutParser(Parser):
         yield from error_rows(self, artifact, errors, session_id)
 
     def _guardian_call(self, artifact: Artifact, parent: str, started: str, row: Row) -> str:
-        """The governed call's item id for a guardian verdict at `row`'s time,
-        from the `guardian_review{...}` spans of the `logs_<N>.sqlite` files in
-        the Codex home; "" unless exactly one call of `parent` was reviewed
-        between the review thread's start and its verdict."""
+        """Return the item id of the call a guardian verdict at `row`'s time governs, or "".
+
+        The id comes from the `guardian_review{...}` spans of the `logs_<N>.sqlite` files in the
+        Codex home, and only when exactly one call of `parent` was reviewed between the review
+        thread's start and its verdict.
+        """
         from .codex_state import guardian_calls
 
         home = artifact.disk_path
@@ -1549,6 +1408,8 @@ class RolloutParser(Parser):
 
 
 class CodexParser(RolloutParser):
+    """Parse the Codex CLI and the Codex Desktop app under `~/.codex`."""
+
     agent = "codex-cli"
     name = "codex-cli"
     home_prefix = ".codex"

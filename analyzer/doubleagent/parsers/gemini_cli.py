@@ -1,130 +1,32 @@
-"""Gemini CLI transcripts.
+"""Parse Gemini CLI sessions, prompt logs, history copies and standing permission files.
 
-Validated against source, google-gemini/gemini-cli at fb972b2 (0.64.0-nightly,
-2026-10-02), with a synthetic fixture; see `research/gemini-cli.md`. Files,
-under `~/.gemini` or the macOS sandbox base `~/.cache/.gemini`:
+Reads, under `~/.gemini` or the macOS sandbox base `~/.cache/.gemini`: the session files
+`tmp/<slug>/chats/**/*.jsonl` and the legacy single-object `.json` (both are parsed when a
+resume migrated one, so their turns appear twice); and as secondary sources with no time of
+their own except `logs.json`, `tmp/<slug>/logs.json`, `shell_history`, `checkpoint-<tag>.json`
+and `bug-report-history-<ms>.json`. Standing grants: `trustedFolders.json`, `settings.json`
+(`SETTING_LISTS`, `SETTING_SCALARS`, `general.sessionRetention`), `policies/*.toml` (Python 3.11
+or later), `trusted_hooks.json` and `acknowledgments/agents.json`.
 
-* `tmp/<slug>/chats/session-<YYYY-MM-DDTHH-MM>-<id8>.jsonl`, and subagent
-  sessions at `tmp/<slug>/chats/<parentSessionId>/<sessionId>.jsonl`. One
-  JSON object per line, discriminated as the reader in
-  `chatRecordingService.ts` does:
-  - metadata (line 1): `sessionId`, `projectHash`, `startTime`,
-    `lastUpdated`, `summary`, `directories`, `kind`.
-  - message: `id`, `timestamp`, `type` (user, gemini, info, error, warning),
-    `content` (string, Part or Part[]; parts carry `text`, `thought`,
-    `functionCall` {`id`, `name`, `args`}, `functionResponse` {`id`, `name`,
-    `response`}, `inlineData`, `fileData`). Gemini messages also carry
-    `model`, `thoughts` [{`subject`, `description`, `timestamp`}] and
-    `toolCalls` [{`id`, `name`, `args`, `result`, `status`, `timestamp`,
-    `displayName`}]. A message is re-appended whole whenever its tool calls
-    change; the last record per `id` wins and keeps its first position.
-  - `{"$set": {...}}`: metadata update; `sessionId` (rewritten on resume),
-    `summary`, and the deprecated `messages` full-history checkpoint, which
-    replaces every message.
-  - `{"$patch": {id, content, toolCalls: [{id, result}], updates, removeIds,
-    orderIds}}`: edits, removes or reorders earlier messages.
-  - `{"$rewindTo": "<message id>"}`: drops that message and every later one;
-    an unknown id drops all of them.
-  The operations are replayed as the reader does and the surviving messages
-  are emitted, each with the source line of its last full record. Each
-  message keeps the `sessionId` in force when it was first written, so a
-  resumed session's earlier turns stay under the earlier id. A `$rewindTo`
-  or `removeIds` is reported as a `system` row with the count dropped; the
-  dropped content is still in the source file at the cited lines. Rewind,
-  summary and removal rows carry no timestamp of their own and inherit the
-  latest one seen before them.
-* The legacy single-object form, the same name with `.json`: a
-  `ConversationRecord` with the metadata fields and `messages`. It is left
-  in place when a resume migrates it to a sibling `.jsonl`, so both may be
-  parsed and the turns appear twice; filter on `source_file`.
-* `tmp/<slug>/logs.json`: a JSON array of `{sessionId, messageId,
-  timestamp, type, message}`, user prompts only. A secondary source: the
-  timeline drops an entry whose event the session file also records
-  (`dedup.py`) and keeps the rest, among them prompts that a rewind
-  removed from the session.
-* `trustedFolders.json` in the `.gemini` directory (`TrustedFoldersFile`
-  in `packages/core/src/utils/trust.ts`): a JSON object, read with
-  comments stripped, and also with a leading byte-order mark dropped and
-  trailing commas allowed, as Qwen Code's `parseJsoncObject` reads its
-  copy since QwenLM/qwen-code 5dcf7c7 (`jsonc-parser` with
-  `allowTrailingComma`), whose keys are folder paths and whose values are a
-  `TrustLevel` string (`TRUST_FOLDER`, `TRUST_PARENT`, `DO_NOT_TRUST`).
-  One `system` row per key,
-  `permission setting: trustedFolders.<path>=<value> (from <file>, file mtime)`,
-  with `project_path` the folder, `timestamp_utc` the file's modification
-  time and no session id. A file that is not a JSON object is one
-  `system` row.
+Fields the parser depends on:
 
-Source-derived, not observed on any real install (google-gemini/gemini-cli
-at 3be3d44, 0.66.0-nightly, issues 155 and 186):
+- session metadata: `sessionId`, `projectHash`, `startTime`, `lastUpdated`, `summary`,
+  `directories`, `kind`; the `$set`, `$patch` (`id`, `content`, `toolCalls`, `updates`,
+  `removeIds`, `orderIds`) and `$rewindTo` operations, replayed as `chatRecordingService.ts`
+  does, the last record per message `id` winning at its first position;
+- message: `id`, `timestamp`, `type`, `content` (parts with `text`, `thought`, `functionCall`,
+  `functionResponse`, `inlineData`, `fileData`), `model`, `thoughts[]` (`subject`,
+  `description`, `timestamp`), `toolCalls[]` (`id`, `name`, `args`, `result`, `status`,
+  `timestamp`, `displayName`);
+- `logs.json`: `sessionId`, `timestamp`, `message`; a history copy's `Content[]` `role`, `parts`.
 
-* Standing permission files, one `system` row per entry at the file's
-  modification time, saying so, `session_id` empty, `project_path` the
-  project directory for a project's file (an artifact whose `home.project`
-  is set) or the entry's project key:
-  - `.gemini/settings.json` in the home or a project (read with comments
-    stripped): one `permission setting: <key>=<value> (from <file>, file
-    mtime)` row per entry of the lists `tools.sandboxAllowedPaths`,
-    `tools.core`, `tools.allowed`, `tools.confirmationRequired`,
-    `tools.exclude`, `mcp.allowed`, `mcp.excluded` and
-    `security.allowedExtensions`, and per scalar
-    `general.defaultApprovalMode`, `tools.sandbox`,
-    `tools.sandboxNetworkAccess`, `security.toolSandboxing`, `security.disableYoloMode`,
-    `security.disableAlwaysAllow`, `security.enablePermanentToolApproval`,
-    `security.autoAddToPolicyByDefault`, `security.blockGitExtensions`,
-    `security.folderTrust.enabled` and `security.enableConseca`; and one
-    `session retention: general.sessionRetention.<key>=<value> (from
-    <file>, file mtime)` row for each of `enabled`, `maxAge`, `maxCount`
-    and `minRetention` that is set. No other key is read: `mcpServers`
-    embeds credentials.
-  - `.gemini/policies/*.toml` (and `auto-saved.toml.bak`) in the home or a
-    project: TOML whose `rule` array holds `decision`, `toolName`,
-    `priority`, `mcpName`, `commandPrefix`, `argsPattern`,
-    `commandRegex`, `allowRedirection`, `modes` and others; one
-    `permission setting: policy <decision> <toolName> <key>=<value> ...
-    (from <file>, file mtime)` row per rule, the other keys in file order.
-    Read with `tomllib`, so on Python 3.10 each file is one `parser:` row
-    saying it was not read; an unreadable file is one `parser:` row.
-  - `.gemini/trusted_hooks.json` (`{"<project>": ["<name>:<command>"]}`):
-    `permission setting: trustedHooks=<entry> (from <file>, file mtime)`.
-  - `.gemini/acknowledgments/agents.json` (`{"<project>": {"<agent>":
-    "<hash>"}}`): `permission setting: acknowledgedAgents.<agent>=<hash>
-    (from <file>, file mtime)`.
-* Secondary sources in `tmp/<slug>/`, with no time of their own, so their
-  rows have an empty `timestamp_utc` and no session id and match the
-  session files on text (tool rows on `tool_use_id`):
-  - `shell_history`: the shell-mode commands, oldest first, one per line,
-    a line ending in an odd number of backslashes continued on the next;
-    one `user` row per command. A line that is not UTF-8 is a bad-line row.
-  - `checkpoint-<tag>.json` from `/chat save` (`{history, authType}`, or a
-    bare `Content[]` from older builds) and `bug-report-history-<ms>.json`
-    from `/bug` (a bare `Content[]`): each `Content` ({`role`, `parts`})
-    yields its text parts as one `user` or `assistant` row, a `thinking`
-    row per `thought` part when asked for, and a `tool_use` or
-    `tool_result` row per `functionCall` or `functionResponse` part
-    (`id`, `name`, `args`, `response`). `source_line` is the item's
-    1-based position. A first `system` row names the file: `chat
-    checkpoint: tag <tag> authType=<authType> (from <file>, file mtime)`
-    at the file's modification time, or `bug report history: exported
-    (from <file>, time in the file name)` at the time in its name. A file
-    cut mid-write keeps its complete leading items (`iter_json_array`).
-
-Model and permission rows. A gemini message's `model` yields a `system`
-row `model: <id>` before the first message of a session that names one
-and `model: <old> -> <new>` before each message whose model differs,
-tracked per `sessionId` in replay order. A tool call whose `status` is
-`cancelled` or `awaiting_approval` keeps the `[cancelled]` prefix on its
-result row (an `error` keeps `[error]`) and is followed by a `system` row
-`permission decision: <status>` with the call's `tool_name` and
-`tool_use_id`, after the result row or, when there is no result, after
-the `tool_use` row. The session file records no approval mode.
-
-No cwd and no git branch are stored per message. `project_path` is the
-content of `tmp/<slug>/.project_root`, else the key of `projects.json`
-(`{"projects": {"<path>": "<slug>"}}`) mapping to the slug, else the key
-whose sha256 equals the legacy hash directory name or the `projectHash`,
-else the `projectHash` itself. Tool checkpoints (`checkpoints/*.json`),
-the activity log under `logs/` and `memory/` are not parsed.
+Each message keeps the `sessionId` in force when it was first written. Rewind, summary and
+removal rows carry no timestamp of their own and inherit the latest one seen before them.
+`project_path` is `tmp/<slug>/.project_root`, else the `projects.json` key mapping to the slug,
+else the key whose sha256 is the legacy hash directory or `projectHash`, else `projectHash`.
+Validated against google-gemini/gemini-cli source at fb972b2 with a synthetic fixture; the
+standing files and history copies rest on source at 3be3d44 alone. See
+`research/gemini-cli.md`.
 """
 
 from __future__ import annotations
@@ -156,25 +58,25 @@ from .base import (
 )
 from .codex import load_toml
 
-SESSION_RX = re.compile(
+SESSION_PATTERN = re.compile(
     r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/chats/(?:.*/)?[^/]+\.jsonl?$"
 )
-LOGS_RX = re.compile(r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/logs\.json$")
-TRUSTED_RX = re.compile(r"^(?:\.cache/)?\.gemini/trustedFolders\.json$")
+LOGS_PATTERN = re.compile(r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/logs\.json$")
+TRUSTED_PATTERN = re.compile(r"^(?:\.cache/)?\.gemini/trustedFolders\.json$")
 # Past use beside the session files, in the per-project temp directory.
-TMP_BASE = r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/"
-SHELL_RX = re.compile(TMP_BASE + r"shell_history$")
-CHECKPOINT_RX = re.compile(TMP_BASE + r"checkpoint-(?P<tag>[^/]+)\.json$")
-BUG_RX = re.compile(TMP_BASE + r"bug-report-history-(?P<ms>[0-9]+)\.json$")
+TEMP_BASE = r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/"
+SHELL_PATTERN = re.compile(TEMP_BASE + r"shell_history$")
+CHECKPOINT_PATTERN = re.compile(TEMP_BASE + r"checkpoint-(?P<tag>[^/]+)\.json$")
+BUG_PATTERN = re.compile(TEMP_BASE + r"bug-report-history-(?P<ms>[0-9]+)\.json$")
 # Standing permission files. `settings.json` and the policy files are read in
 # the home's `.gemini` and in a project's; the other two exist only in the home.
-SETTINGS_RX = re.compile(r"^\.gemini/settings\.json$")
-POLICY_RX = re.compile(r"^\.gemini/policies/[^/]+\.toml(?:\.bak)?$")
-HOOKS_RX = re.compile(r"^\.gemini/trusted_hooks\.json$")
-AGENTS_ACK_RX = re.compile(r"^\.gemini/acknowledgments/agents\.json$")
+SETTINGS_PATTERN = re.compile(r"^\.gemini/settings\.json$")
+POLICY_PATTERN = re.compile(r"^\.gemini/policies/[^/]+\.toml(?:\.bak)?$")
+HOOKS_PATTERN = re.compile(r"^\.gemini/trusted_hooks\.json$")
+AGENTS_ACK_PATTERN = re.compile(r"^\.gemini/acknowledgments/agents\.json$")
 # The start of a `/chat save` checkpoint as `JSON.stringify({history, authType})`
 # writes it, for reading the history array of a file cut mid-write.
-HISTORY_OBJ_RX = re.compile(r'\s*\{\s*"history"\s*:\s*')
+HISTORY_OBJECT_PATTERN = re.compile(r'\s*\{\s*"history"\s*:\s*')
 
 # `settings.json` keys that hold standing permission or sandbox state
 # (`settingsSchema.ts`): one row per list entry, one row per scalar.
@@ -202,7 +104,7 @@ SETTING_SCALARS = (
     "security.enableConseca",
 )
 RETENTION_KEYS = ("enabled", "maxAge", "maxCount", "minRetention")
-HEX64_RX = re.compile(r"^[0-9a-f]{64}$")
+HEX64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 MESSAGE_TYPES = ("user", "gemini", "info", "error", "warning")
 FAILED_STATUSES = ("error", "cancelled")
@@ -221,68 +123,73 @@ def _parts(content) -> list:
 
 
 def part_text(content, thoughts: bool = False) -> str:
-    """Text of a PartListUnion. Thought parts are included only when
-    `thoughts` is set, and then only they are."""
+    """Return the text of a PartListUnion.
+
+    Thought parts are included only when `thoughts` is set, and then only they are.
+    """
     out = []
-    for p in _parts(content):
-        if isinstance(p, str):
+    for part in _parts(content):
+        if isinstance(part, str):
             if not thoughts:
-                out.append(p)
+                out.append(part)
             continue
-        if not isinstance(p, dict):
+        if not isinstance(part, dict):
             continue
-        if bool(p.get("thought")) != thoughts:
+        if bool(part.get("thought")) != thoughts:
             continue
-        if isinstance(p.get("text"), str):
-            out.append(p["text"])
+        if isinstance(part.get("text"), str):
+            out.append(part["text"])
         elif thoughts:
             continue
-        elif isinstance(p.get("functionResponse"), dict):
-            out.append(response_text(p["functionResponse"]))
-        elif isinstance(p.get("inlineData"), dict):
-            out.append("[inlineData %s]" % (p["inlineData"].get("mimeType") or ""))
-        elif isinstance(p.get("fileData"), dict):
-            out.append("[fileData %s]" % (p["fileData"].get("fileUri") or ""))
-    return "\n".join(s for s in out if s)
+        elif isinstance(part.get("functionResponse"), dict):
+            out.append(response_text(part["functionResponse"]))
+        elif isinstance(part.get("inlineData"), dict):
+            out.append("[inlineData %s]" % (part["inlineData"].get("mimeType") or ""))
+        elif isinstance(part.get("fileData"), dict):
+            out.append("[fileData %s]" % (part["fileData"].get("fileUri") or ""))
+    return "\n".join(chunk for chunk in out if chunk)
 
 
-def response_text(fr: dict) -> str:
-    resp = fr.get("response")
-    if isinstance(resp, dict):
+def response_text(function_response: dict) -> str:
+    """Return the text of a `functionResponse`: its `output`, `error` or `content`, else JSON."""
+    response = function_response.get("response")
+    if isinstance(response, dict):
         for key in ("output", "error", "content"):
-            v = resp.get(key)
-            if isinstance(v, str) and v:
-                return v
-    if isinstance(resp, str):
-        return resp
-    return compact_json(resp)
+            value = response.get(key)
+            if isinstance(value, str) and value:
+                return value
+    if isinstance(response, str):
+        return response
+    return compact_json(response)
 
 
 def result_text(result) -> str:
+    """Return the text of a tool call's `result`."""
     if result is None:
         return ""
     if isinstance(result, str):
         return result
     texts = []
-    for p in _parts(result):
-        if isinstance(p, dict) and isinstance(p.get("functionResponse"), dict):
-            texts.append(response_text(p["functionResponse"]))
-        elif isinstance(p, dict) and isinstance(p.get("text"), str):
-            texts.append(p["text"])
-        elif isinstance(p, str):
-            texts.append(p)
+    for part in _parts(result):
+        if isinstance(part, dict) and isinstance(part.get("functionResponse"), dict):
+            texts.append(response_text(part["functionResponse"]))
+        elif isinstance(part, dict) and isinstance(part.get("text"), str):
+            texts.append(part["text"])
+        elif isinstance(part, str):
+            texts.append(part)
         else:
-            texts.append(compact_json(p))
-    return "\n".join(t for t in texts if t)
+            texts.append(compact_json(part))
+    return "\n".join(chunk for chunk in texts if chunk)
 
 
 def tool_text(call: dict) -> str:
-    args = call.get("args")
-    s = compact_json(args) if args not in (None, "") else ""
+    """Return the `tool_use` text of a tool call, with any distinct display name."""
+    arguments = call.get("args")
+    arguments_text = compact_json(arguments) if arguments not in (None, "") else ""
     label = call.get("displayName")
     if label and label != call.get("name"):
-        return "%s: %s" % (label, s) if s else str(label)
-    return s
+        return "%s: %s" % (label, arguments_text) if arguments_text else str(label)
+    return arguments_text
 
 
 # ---- project path -------------------------------------------------------------
@@ -311,10 +218,12 @@ def resolve_project(base: Path, slug: str, project_hash: str = "") -> str:
                 projects = data["projects"]
         except ValueError:
             pass
-    for path, s in projects.items():
-        if s == slug:
+    for path, project_slug in projects.items():
+        if project_slug == slug:
             return str(path)
-    wanted = {h for h in (slug if HEX64_RX.match(slug) else "", project_hash) if h}
+    wanted = {
+        digest for digest in (slug if HEX64_PATTERN.match(slug) else "", project_hash) if digest
+    }
     if wanted:
         for path in projects:
             if hashlib.sha256(str(path).encode("utf-8")).hexdigest() in wanted:
@@ -326,77 +235,84 @@ def resolve_project(base: Path, slug: str, project_hash: str = "") -> str:
 
 
 def strip_json_comments(text: str) -> str:
-    """`text` with `//` and `/* */` comments outside strings removed, as the
-    `strip-json-comments` package that Gemini CLI and Qwen Code read
-    `trustedFolders.json` through does."""
+    """Return `text` with `//` and `/* */` comments outside strings removed.
+
+    This is what the `strip-json-comments` package does, through which Gemini CLI and Qwen Code
+    read `trustedFolders.json`.
+    """
     out = []
-    i, n = 0, len(text)
-    in_str = False
-    while i < n:
-        c = text[i]
-        if in_str:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
+    i, length = 0, len(text)
+    in_string = False
+    while i < length:
+        character = text[i]
+        if in_string:
+            out.append(character)
+            if character == "\\" and i + 1 < length:
                 out.append(text[i + 1])
                 i += 2
                 continue
-            if c == '"':
-                in_str = False
+            if character == '"':
+                in_string = False
             i += 1
-        elif c == '"':
-            in_str = True
-            out.append(c)
+        elif character == '"':
+            in_string = True
+            out.append(character)
             i += 1
         elif text.startswith("//", i):
             j = text.find("\n", i)
-            i = n if j < 0 else j
+            i = length if j < 0 else j
         elif text.startswith("/*", i):
             j = text.find("*/", i + 2)
-            i = n if j < 0 else j + 2
+            i = length if j < 0 else j + 2
         else:
-            out.append(c)
+            out.append(character)
             i += 1
     return "".join(out)
 
 
 def strip_trailing_commas(text: str) -> str:
-    """`text` with each comma outside strings that is followed, after
-    whitespace only, by `}` or `]` removed, as `jsonc-parser` with
-    `allowTrailingComma` accepts it. Run it after `strip_json_comments`."""
+    """Return `text` without the commas before a `}` or `]` outside strings.
+
+    Only whitespace may come between such a comma and the bracket. This is what
+    `jsonc-parser` with `allowTrailingComma` accepts. Run it after `strip_json_comments`.
+    """
     out = []
-    i, n = 0, len(text)
-    in_str = False
-    while i < n:
-        c = text[i]
-        if in_str:
-            out.append(c)
-            if c == "\\" and i + 1 < n:
+    i, length = 0, len(text)
+    in_string = False
+    while i < length:
+        character = text[i]
+        if in_string:
+            out.append(character)
+            if character == "\\" and i + 1 < length:
                 out.append(text[i + 1])
                 i += 2
                 continue
-            if c == '"':
-                in_str = False
-        elif c == '"':
-            in_str = True
-            out.append(c)
-        elif c == ",":
+            if character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+            out.append(character)
+        elif character == ",":
             j = i + 1
-            while j < n and text[j] in " \t\r\n":
+            while j < length and text[j] in " \t\r\n":
                 j += 1
-            if j >= n or text[j] not in "}]":
-                out.append(c)
+            if j >= length or text[j] not in "}]":
+                out.append(character)
         else:
-            out.append(c)
+            out.append(character)
         i += 1
     return "".join(out)
 
 
 def parse_jsonc(raw: bytes):
-    """The value of a JSONC document as Qwen Code's `parseJsoncObject` reads
-    it: a leading byte-order mark dropped, `//` and `/* */` comments
-    stripped and trailing commas allowed. Gemini CLI writes plain JSON and
-    strips comments only, so its files read the same. Raises ValueError
-    when the text still does not decode."""
+    """Return the value of a JSONC document as Qwen Code's `parseJsoncObject` reads it.
+
+    A leading byte-order mark is dropped, comments stripped and trailing commas allowed. Gemini CLI
+    writes plain JSON and strips comments only, so its files read the same.
+
+    Raises:
+        ValueError: the text still does not decode.
+    """
     text = raw.decode("utf-8", errors="replace")
     if text.startswith("\ufeff"):
         text = text[1:]
@@ -404,30 +320,31 @@ def parse_jsonc(raw: bytes):
 
 
 def trusted_folder_rows(parser: Parser, artifact: Artifact) -> Iterator[Row]:
-    """One `permission setting: trustedFolders.<path>=<value>` row per key of
-    a `trustedFolders.json` (Gemini CLI and Qwen Code), timestamped with the
-    file's modification time, or one row saying the file is not a JSON
-    object. The file is read with `parse_jsonc`, so a byte-order mark and
-    trailing commas, which Qwen Code accepts, decode (issue 173)."""
-    ts = file_mtime(artifact)
+    """Yield one `permission setting: trustedFolders.<path>=<value>` row per key of the file.
+
+    The file is a `trustedFolders.json` of Gemini CLI or Qwen Code; the rows are at its
+    modification time, and a file that is not a JSON object is one row saying so. It is read with
+    `parse_jsonc`, so a byte-order mark and trailing commas, which Qwen Code accepts, decode.
+    """
+    timestamp = file_mtime(artifact)
     try:
-        doc = parse_jsonc(artifact.disk_path.read_bytes())
+        document = parse_jsonc(artifact.disk_path.read_bytes())
     except (OSError, ValueError):
-        doc = None
+        document = None
 
     def row(text: str, project: str = "") -> Row:
-        r = parser.base_row(artifact)
-        r.source_line = 1
-        r.turn_type = "system"
-        r.timestamp_utc = ts
-        r.project_path = project
-        r.text = compact(text)
-        return r
+        new_row = parser.base_row(artifact)
+        new_row.source_line = 1
+        new_row.turn_type = "system"
+        new_row.timestamp_utc = timestamp
+        new_row.project_path = project
+        new_row.text = compact(text)
+        return new_row
 
-    if not isinstance(doc, dict):
+    if not isinstance(document, dict):
         yield row("parser: %s is not a JSON object" % artifact.rel)
         return
-    for path, value in doc.items():
+    for path, value in document.items():
         yield row(
             "permission setting: trustedFolders.%s=%s (from %s, file mtime)"
             % (path, setting_value(value), artifact.rel),
@@ -435,9 +352,9 @@ def trusted_folder_rows(parser: Parser, artifact: Artifact) -> Iterator[Row]:
         )
 
 
-def _dotted(doc: dict, key: str):
+def _dotted(document: dict, key: str):
     """The value at the dotted `key` of nested objects, or None."""
-    value: object = doc
+    value: object = document
     for part in key.split("."):
         if not isinstance(value, dict):
             return None
@@ -446,55 +363,57 @@ def _dotted(doc: dict, key: str):
 
 
 def shell_history_entries(raw: bytes, errors: list) -> list[tuple[int, str]]:
-    """(first line, command) for each command of a `shell_history` file, as
-    `readHistoryFile` in `useShellHistory.ts` reads it: lines split on
-    `\\n` or `\\r\\n`, blank lines skipped, and a line whose predecessor
-    ends in an odd number of backslashes joined to it with a space, the
-    last backslash dropped. A line that is not valid UTF-8 is appended to
-    `errors` and skipped."""
+    """Return (first line, command) for each command of a `shell_history` file.
+
+    The file is read as `readHistoryFile` in `useShellHistory.ts` reads it: lines split on LF or
+    CRLF, blank lines skipped, and a line whose predecessor ends in an odd number of backslashes
+    joined to it with a space, the last backslash dropped. A line that is not valid UTF-8 goes to
+    `errors` and is skipped.
+    """
     out: list[tuple[int, str]] = []
-    cur, first = "", 0
-    for n, line in enumerate(raw.split(b"\n"), 1):
+    current, first = "", 0
+    for line_number, line in enumerate(raw.split(b"\n"), 1):
         line = line[:-1] if line.endswith(b"\r") else line
         try:
             text = line.decode("utf-8")
         except UnicodeDecodeError:
-            errors.append((n, "unparseable line (not valid UTF-8)", line_text(line)))
+            errors.append((line_number, "unparseable line (not valid UTF-8)", line_text(line)))
             continue
         if not text.strip():
             continue
-        tail = len(cur) - len(cur.rstrip("\\"))
-        if cur and tail % 2:
-            cur = cur[:-1] + " " + text
+        tail = len(current) - len(current.rstrip("\\"))
+        if current and tail % 2:
+            current = current[:-1] + " " + text
         else:
-            if cur:
-                out.append((first, cur))
-            cur, first = text, n
-    if cur:
-        out.append((first, cur))
+            if current:
+                out.append((first, current))
+            current, first = text, line_number
+    if current:
+        out.append((first, current))
     return out
 
 
 def history_items(text: str, errors: list) -> tuple[list, dict]:
-    """The `Content[]` items of a `/chat save` checkpoint (`{history,
-    authType}`, or the legacy bare array) or a `/bug` history export (a
-    bare array), and the checkpoint object when there is one. A file cut
-    mid-write keeps its complete leading items (`iter_json_array`); a file
-    that is neither form is one error."""
+    """Return the `Content[]` items of a history copy and its checkpoint object, or {}.
+
+    A `/chat save` checkpoint is `{history, authType}` or a legacy bare array, a `/bug` history
+    export a bare array. A file cut mid-write keeps its complete leading items
+    (`iter_json_array`); a file that is neither form is one error.
+    """
     try:
-        doc = json.loads(text)
-    except ValueError as e:
+        document = json.loads(text)
+    except ValueError as error:
         if text.lstrip().startswith("["):
             return kilo_code.iter_json_array(text, errors), {}
-        m = HISTORY_OBJ_RX.match(text)
-        if m:
-            return kilo_code.iter_json_array(text[m.end() :], errors), {}
-        errors.append((1, "unparseable chat history (%s)" % e, ""))
+        match = HISTORY_OBJECT_PATTERN.match(text)
+        if match:
+            return kilo_code.iter_json_array(text[match.end() :], errors), {}
+        errors.append((1, "unparseable chat history (%s)" % error, ""))
         return [], {}
-    if isinstance(doc, list):
-        return doc, {}
-    if isinstance(doc, dict) and isinstance(doc.get("history"), list):
-        return doc["history"], doc
+    if isinstance(document, list):
+        return document, {}
+    if isinstance(document, dict) and isinstance(document.get("history"), list):
+        return document["history"], document
     errors.append((1, "not a chat history: neither a JSON array nor an object with history", ""))
     return [], {}
 
@@ -503,60 +422,65 @@ def history_items(text: str, errors: list) -> tuple[list, dict]:
 
 
 class GeminiCliParser(Parser):
+    """Parse Gemini CLI's sessions, prompt logs, history copies and standing permission files."""
+
     agent = "gemini-cli"
     name = "gemini-cli"
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return whether the artifact is one of the files this parser reads."""
         rel = artifact.rel
-        if HOOKS_RX.match(rel) or AGENTS_ACK_RX.match(rel):
+        if HOOKS_PATTERN.match(rel) or AGENTS_ACK_PATTERN.match(rel):
             return not artifact.home.project
         return bool(
-            SESSION_RX.match(rel)
-            or LOGS_RX.match(rel)
-            or TRUSTED_RX.match(rel)
-            or SHELL_RX.match(rel)
-            or CHECKPOINT_RX.match(rel)
-            or BUG_RX.match(rel)
-            or SETTINGS_RX.match(rel)
-            or POLICY_RX.match(rel)
+            SESSION_PATTERN.match(rel)
+            or LOGS_PATTERN.match(rel)
+            or TRUSTED_PATTERN.match(rel)
+            or SHELL_PATTERN.match(rel)
+            or CHECKPOINT_PATTERN.match(rel)
+            or BUG_PATTERN.match(rel)
+            or SETTINGS_PATTERN.match(rel)
+            or POLICY_PATTERN.match(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return whether the artifact repeats events of the session files."""
         rel = artifact.rel
         return bool(
-            LOGS_RX.match(rel)
-            or SHELL_RX.match(rel)
-            or CHECKPOINT_RX.match(rel)
-            or BUG_RX.match(rel)
+            LOGS_PATTERN.match(rel)
+            or SHELL_PATTERN.match(rel)
+            or CHECKPOINT_PATTERN.match(rel)
+            or BUG_PATTERN.match(rel)
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one artifact, by the file it is."""
         rel = artifact.rel
-        if TRUSTED_RX.match(rel):
+        if TRUSTED_PATTERN.match(rel):
             yield from trusted_folder_rows(self, artifact)
-        elif SETTINGS_RX.match(rel):
+        elif SETTINGS_PATTERN.match(rel):
             yield from self._parse_settings(artifact)
-        elif POLICY_RX.match(rel):
+        elif POLICY_PATTERN.match(rel):
             yield from self._parse_policy(artifact)
-        elif HOOKS_RX.match(rel) or AGENTS_ACK_RX.match(rel):
+        elif HOOKS_PATTERN.match(rel) or AGENTS_ACK_PATTERN.match(rel):
             yield from self._parse_project_grants(artifact)
-        elif m := LOGS_RX.match(rel):
-            yield from self._parse_logs(artifact, opts, m)
-        elif m := SHELL_RX.match(rel):
-            yield from self._parse_shell_history(artifact, m)
-        elif m := CHECKPOINT_RX.match(rel) or BUG_RX.match(rel):
-            yield from self._parse_history_copy(artifact, opts, m)
-        elif m := SESSION_RX.match(rel):
-            yield from self._parse_session(artifact, opts, m)
+        elif match := LOGS_PATTERN.match(rel):
+            yield from self._parse_logs(artifact, opts, match)
+        elif match := SHELL_PATTERN.match(rel):
+            yield from self._parse_shell_history(artifact, match)
+        elif match := CHECKPOINT_PATTERN.match(rel) or BUG_PATTERN.match(rel):
+            yield from self._parse_history_copy(artifact, opts, match)
+        elif match := SESSION_PATTERN.match(rel):
+            yield from self._parse_session(artifact, opts, match)
 
     # -- standing permission files --
 
-    def _standing(self, artifact: Artifact, ts: str, project: str, text: str) -> Row:
+    def _standing(self, artifact: Artifact, timestamp: str, project: str, text: str) -> Row:
         row = self.base_row(artifact)
         row.source_line = 1
         row.turn_type = "system"
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.project_path = project
         row.text = compact(text)
         return row
@@ -565,74 +489,76 @@ class GeminiCliParser(Parser):
         """The file's JSON object, or None and the row saying it is not one."""
         try:
             raw = artifact.disk_path.read_bytes()
-            doc = parse_jsonc(raw) if jsonc else json.loads(raw.decode("utf-8", errors="replace"))
+            document = (
+                parse_jsonc(raw) if jsonc else json.loads(raw.decode("utf-8", errors="replace"))
+            )
         except (OSError, ValueError):
-            doc = None
-        if isinstance(doc, dict):
-            return doc, None
+            document = None
+        if isinstance(document, dict):
+            return document, None
         text = "parser: %s is not a JSON object" % artifact.rel
         return None, self._standing(artifact, file_mtime(artifact), "", text)
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
         # settings.json is read through strip-json-comments (settings.ts).
-        doc, bad = self._json_object(artifact, jsonc=True)
-        if doc is None:
+        document, bad = self._json_object(artifact, jsonc=True)
+        if document is None:
             if bad is not None:
                 yield bad
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
-        src = "(from %s, file mtime)" % artifact.rel
+        source = "(from %s, file mtime)" % artifact.rel
 
         def setting(key: str, value: object) -> Row:
-            text = "permission setting: %s=%s %s" % (key, setting_value(value), src)
-            return self._standing(artifact, ts, project, text)
+            text = "permission setting: %s=%s %s" % (key, setting_value(value), source)
+            return self._standing(artifact, timestamp, project, text)
 
         for key in SETTING_LISTS:
-            value = _dotted(doc, key)
+            value = _dotted(document, key)
             if isinstance(value, list):
                 for entry in value:
                     yield setting(key, entry)
             elif value is not None:
                 yield setting(key, value)
         for key in SETTING_SCALARS:
-            value = _dotted(doc, key)
+            value = _dotted(document, key)
             if value is not None:
                 yield setting(key, value)
         for key in RETENTION_KEYS:
-            value = _dotted(doc, "general.sessionRetention." + key)
+            value = _dotted(document, "general.sessionRetention." + key)
             if value is not None:
                 text = "session retention: general.sessionRetention.%s=%s %s" % (
                     key,
                     setting_value(value),
-                    src,
+                    source,
                 )
-                yield self._standing(artifact, ts, project, text)
+                yield self._standing(artifact, timestamp, project, text)
 
     def _parse_policy(self, artifact: Artifact) -> Iterator[Row]:
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
         if sys.version_info < (3, 11):
             # flat_toml, the 3.10 stand-in, reads top-level keys only and a
             # policy file holds nothing but [[rule]] tables.
             text = "parser: %s not read: its [[rule]] tables need Python 3.11 or later (tomllib)"
-            yield self._standing(artifact, ts, project, text % artifact.rel)
+            yield self._standing(artifact, timestamp, project, text % artifact.rel)
             return
         try:
-            doc = load_toml(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            text = "parser: unreadable %s: %s" % (artifact.rel, e)
-            yield self._standing(artifact, ts, project, text)
+            document = load_toml(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
+            text = "parser: unreadable %s: %s" % (artifact.rel, error)
+            yield self._standing(artifact, timestamp, project, text)
             return
-        rules = doc.get("rule")
+        rules = document.get("rule")
         if rules is None:
             return
         if not isinstance(rules, list):
             yield self._standing(
-                artifact, ts, project, "parser: %s rule is not an array" % artifact.rel
+                artifact, timestamp, project, "parser: %s rule is not an array" % artifact.rel
             )
             return
-        src = "(from %s, file mtime)" % artifact.rel
+        source = "(from %s, file mtime)" % artifact.rel
         for rule in rules:
             if not isinstance(rule, dict):
                 continue
@@ -642,44 +568,47 @@ class GeminiCliParser(Parser):
                 setting_value(rule.get("toolName", "-")),
             ]
             fields += [
-                "%s=%s" % (k, setting_value(v))
-                for k, v in rule.items()
-                if k not in ("decision", "toolName")
+                "%s=%s" % (key, setting_value(value))
+                for key, value in rule.items()
+                if key not in ("decision", "toolName")
             ]
-            fields.append(src)
-            yield self._standing(artifact, ts, project, " ".join(fields))
+            fields.append(source)
+            yield self._standing(artifact, timestamp, project, " ".join(fields))
 
     def _parse_project_grants(self, artifact: Artifact) -> Iterator[Row]:
         # Both files are written with JSON.stringify and read with JSON.parse.
-        doc, bad = self._json_object(artifact, jsonc=False)
-        if doc is None:
+        document, bad = self._json_object(artifact, jsonc=False)
+        if document is None:
             if bad is not None:
                 yield bad
             return
-        ts = file_mtime(artifact)
-        src = "(from %s, file mtime)" % artifact.rel
-        hooks = bool(HOOKS_RX.match(artifact.rel))
-        for project, value in doc.items():
+        timestamp = file_mtime(artifact)
+        source = "(from %s, file mtime)" % artifact.rel
+        hooks = bool(HOOKS_PATTERN.match(artifact.rel))
+        for project, value in document.items():
             if hooks:
                 entries = value if isinstance(value, list) else [value]
-                pairs = [("trustedHooks", e) for e in entries]
+                pairs = [("trustedHooks", hook) for hook in entries]
             elif isinstance(value, dict):
-                pairs = [("acknowledgedAgents." + str(k), v) for k, v in value.items()]
+                pairs = [
+                    ("acknowledgedAgents." + str(agent_name), digest)
+                    for agent_name, digest in value.items()
+                ]
             else:
                 pairs = [("acknowledgedAgents", value)]
             for key, entry in pairs:
-                text = "permission setting: %s=%s %s" % (key, setting_value(entry), src)
-                yield self._standing(artifact, ts, str(project), text)
+                text = "permission setting: %s=%s %s" % (key, setting_value(entry), source)
+                yield self._standing(artifact, timestamp, str(project), text)
 
     # -- shell_history, /chat save checkpoints and /bug history exports --
 
-    def _parse_shell_history(self, artifact: Artifact, m) -> Iterator[Row]:
-        project = resolve_project(self._base_dir(artifact, m), m.group("slug"))
+    def _parse_shell_history(self, artifact: Artifact, match) -> Iterator[Row]:
+        project = resolve_project(self._base_dir(artifact, match), match.group("slug"))
         errors: list = []
         try:
             raw = artifact.disk_path.read_bytes()
-        except OSError as e:
-            errors.append((0, "unreadable shell_history (%s)" % e, ""))
+        except OSError as error:
+            errors.append((0, "unreadable shell_history (%s)" % error, ""))
             raw = b""
         for line, command in shell_history_entries(raw, errors):
             row = self.base_row(artifact)
@@ -690,27 +619,27 @@ class GeminiCliParser(Parser):
             yield row
         yield from error_rows(self, artifact, errors, "", project)
 
-    def _parse_history_copy(self, artifact: Artifact, opts: Options, m) -> Iterator[Row]:
-        project = resolve_project(self._base_dir(artifact, m), m.group("slug"))
+    def _parse_history_copy(self, artifact: Artifact, opts: Options, match) -> Iterator[Row]:
+        project = resolve_project(self._base_dir(artifact, match), match.group("slug"))
         errors: list = []
         try:
             text = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            errors.append((0, "unreadable chat history (%s)" % e, ""))
+        except OSError as error:
+            errors.append((0, "unreadable chat history (%s)" % error, ""))
             text = ""
-        items, doc = history_items(text, errors) if text else ([], {})
-        if "tag" in m.groupdict():
+        items, document = history_items(text, errors) if text else ([], {})
+        if "tag" in match.groupdict():
             header = self._standing(
                 artifact,
                 file_mtime(artifact),
                 project,
                 "chat checkpoint: tag %s authType=%s (from %s, file mtime)"
-                % (unquote(m.group("tag")), doc.get("authType") or "-", artifact.rel),
+                % (unquote(match.group("tag")), document.get("authType") or "-", artifact.rel),
             )
         else:
             header = self._standing(
                 artifact,
-                to_utc(int(m.group("ms"))),
+                to_utc(int(match.group("ms"))),
                 project,
                 "bug report history: exported (from %s, time in the file name)" % artifact.rel,
             )
@@ -728,67 +657,77 @@ class GeminiCliParser(Parser):
     def _content_rows(
         self, artifact: Artifact, opts: Options, item: dict, index: int, project: str
     ) -> Iterator[Row]:
-        """Rows of one `Content` ({role, parts}) of a history copy: the text
-        parts as one `user` or `assistant` row, thought parts as `thinking`
-        rows when asked for, and a `tool_use` or `tool_result` row per
-        `functionCall` or `functionResponse` part. No time of their own."""
+        """Yield the rows of one `Content` ({role, parts}) of a history copy, with no time.
+
+        The text parts are one `user` or `assistant` row, thought parts `thinking` rows when asked
+        for, and each `functionCall` or `functionResponse` part a `tool_use` or `tool_result` row.
+        """
 
         def row(turn: str, text: str) -> Row:
-            r = self.base_row(artifact)
-            r.source_line = index
-            r.project_path = project
-            r.turn_type = turn
-            r.text = compact(text)
-            return r
+            new_row = self.base_row(artifact)
+            new_row.source_line = index
+            new_row.project_path = project
+            new_row.turn_type = turn
+            new_row.text = compact(text)
+            return new_row
 
         parts = _parts(item.get("parts"))
         texts, thoughts, tools = [], [], []
-        for p in parts:
-            if isinstance(p, str):
-                texts.append(p)
-            elif not isinstance(p, dict):
+        for part in parts:
+            if isinstance(part, str):
+                texts.append(part)
+            elif not isinstance(part, dict):
                 continue
-            elif isinstance(p.get("functionCall"), dict):
-                fc = p["functionCall"]
-                r = row("tool_use", compact_json(fc.get("args")) if fc.get("args") else "")
-                r.tool_name, r.tool_use_id = str(fc.get("name") or ""), str(fc.get("id") or "")
-                tools.append(r)
-            elif isinstance(p.get("functionResponse"), dict):
-                fr = p["functionResponse"]
-                r = row("tool_result", response_text(fr))
-                r.tool_name, r.tool_use_id = str(fr.get("name") or ""), str(fr.get("id") or "")
-                tools.append(r)
-            elif isinstance(p.get("text"), str):
-                (thoughts if p.get("thought") else texts).append(p["text"])
-            elif isinstance(p.get("inlineData"), dict):
-                texts.append("[inlineData %s]" % (p["inlineData"].get("mimeType") or ""))
-            elif isinstance(p.get("fileData"), dict):
-                texts.append("[fileData %s]" % (p["fileData"].get("fileUri") or ""))
+            elif isinstance(part.get("functionCall"), dict):
+                function_call = part["functionCall"]
+                tool_row = row(
+                    "tool_use",
+                    compact_json(function_call.get("args")) if function_call.get("args") else "",
+                )
+                tool_row.tool_name, tool_row.tool_use_id = (
+                    str(function_call.get("name") or ""),
+                    str(function_call.get("id") or ""),
+                )
+                tools.append(tool_row)
+            elif isinstance(part.get("functionResponse"), dict):
+                function_response = part["functionResponse"]
+                tool_row = row("tool_result", response_text(function_response))
+                tool_row.tool_name, tool_row.tool_use_id = (
+                    str(function_response.get("name") or ""),
+                    str(function_response.get("id") or ""),
+                )
+                tools.append(tool_row)
+            elif isinstance(part.get("text"), str):
+                (thoughts if part.get("thought") else texts).append(part["text"])
+            elif isinstance(part.get("inlineData"), dict):
+                texts.append("[inlineData %s]" % (part["inlineData"].get("mimeType") or ""))
+            elif isinstance(part.get("fileData"), dict):
+                texts.append("[fileData %s]" % (part["fileData"].get("fileUri") or ""))
         if opts.include_thinking:
-            for t in thoughts:
-                yield row("thinking", t)
-        text = "\n".join(t for t in texts if t)
+            for thought in thoughts:
+                yield row("thinking", thought)
+        text = "\n".join(chunk for chunk in texts if chunk)
         if text:
             yield row("user" if item.get("role") == "user" else "assistant", text)
         yield from tools
 
-    def _base_dir(self, artifact: Artifact, m) -> Path:
-        return Path(artifact.home.disk_path) / m.group("base")
+    def _base_dir(self, artifact: Artifact, match) -> Path:
+        return Path(artifact.home.disk_path) / match.group("base")
 
     def _system(
         self,
         artifact: Artifact,
         line: int,
-        ts: str,
-        sid: str,
+        timestamp: str,
+        session_id: str,
         project: str,
         text: str,
         opts: Options,
     ) -> Row:
         row = self.base_row(artifact)
         row.source_line = line
-        row.timestamp_utc = ts
-        row.session_id = sid
+        row.timestamp_utc = timestamp
+        row.session_id = session_id
         row.project_path = project
         row.turn_type = "system"
         row.text = compact(text)
@@ -796,14 +735,14 @@ class GeminiCliParser(Parser):
 
     # -- logs.json --
 
-    def _parse_logs(self, artifact: Artifact, opts: Options, m) -> Iterator[Row]:
-        project = resolve_project(self._base_dir(artifact, m), m.group("slug"))
+    def _parse_logs(self, artifact: Artifact, opts: Options, match) -> Iterator[Row]:
+        project = resolve_project(self._base_dir(artifact, match), match.group("slug"))
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                data = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except ValueError as e:
+            with open(artifact.disk_path, "rb") as handle:
+                data = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except ValueError as error:
             yield self._system(
-                artifact, 0, "", "", project, "parser: unparseable logs.json: %s" % e, opts
+                artifact, 0, "", "", project, "parser: unparseable logs.json: %s" % error, opts
             )
             return
         if not isinstance(data, list):
@@ -811,131 +750,140 @@ class GeminiCliParser(Parser):
                 artifact, 0, "", "", project, "parser: logs.json is not a JSON array", opts
             )
             return
-        for i, rec in enumerate(data):
-            if not isinstance(rec, dict):
+        for i, record in enumerate(data):
+            if not isinstance(record, dict):
                 continue
             row = self.base_row(artifact)
             row.source_line = i + 1  # array index, 1-based
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.session_id = str(rec.get("sessionId") or "")
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.session_id = str(record.get("sessionId") or "")
             row.project_path = project
             row.turn_type = "user"
-            row.text = compact(rec.get("message"))
+            row.text = compact(record.get("message"))
             yield row
 
     # -- sessions --
 
-    def _parse_session(self, artifact: Artifact, opts: Options, m) -> Iterator[Row]:
-        base = self._base_dir(artifact, m)
-        slug = m.group("slug")
+    def _parse_session(self, artifact: Artifact, opts: Options, match) -> Iterator[Row]:
+        base = self._base_dir(artifact, match)
+        slug = match.group("slug")
         if artifact.rel.endswith(".json"):
             records, errors = self._legacy_records(artifact)
         else:
             records, errors = self._jsonl_records(artifact)
 
-        meta: dict = {}
+        metadata: dict = {}
         # id -> [record, line, session_id]
         messages: OrderedDict[str, list] = OrderedDict()
         starts: list[tuple[int, str, str, str]] = []  # (line, ts, session_id, text)
         events: list[tuple[int, str, str, str]] = []
         session_id = ""
-        latest_ts = ""
+        latest_timestamp = ""
 
-        def put(msg: dict, line: int) -> None:
-            mid = msg["id"]
-            if mid in messages:
-                messages[mid][0] = msg
-                messages[mid][1] = line
+        def put(message: dict, line: int) -> None:
+            message_id = message["id"]
+            if message_id in messages:
+                messages[message_id][0] = message
+                messages[message_id][1] = line
             else:
-                messages[mid] = [msg, line, session_id]
+                messages[message_id] = [message, line, session_id]
 
         def drop(ids: list) -> int:
-            n = 0
+            count = 0
             for i in ids:
                 if messages.pop(i, None) is not None:
-                    n += 1
-            return n
+                    count += 1
+            return count
 
-        for n, rec in records:
-            if isinstance(rec.get("$rewindTo"), str):
-                target = rec["$rewindTo"]
+        for line_number, record in records:
+            if isinstance(record.get("$rewindTo"), str):
+                target = record["$rewindTo"]
                 keys = list(messages)
                 cut = keys.index(target) if target in messages else 0
                 dropped = drop(keys[cut:])
                 events.append(
                     (
-                        n,
-                        latest_ts,
+                        line_number,
+                        latest_timestamp,
                         session_id,
                         "rewind to %s: %d message(s) dropped" % (target, dropped),
                     )
                 )
-            elif isinstance(rec.get("$patch"), dict):
-                p = rec["$patch"]
-                if isinstance(p.get("id"), str):
-                    self._apply_patch(messages, p)
-                for u in p.get("updates") or []:
-                    if isinstance(u, dict) and isinstance(u.get("id"), str):
-                        self._apply_patch(messages, u)
-                rem = [i for i in (p.get("removeIds") or []) if isinstance(i, str)]
-                if rem:
-                    dropped = drop(rem)
+            elif isinstance(record.get("$patch"), dict):
+                patch = record["$patch"]
+                if isinstance(patch.get("id"), str):
+                    self._apply_patch(messages, patch)
+                for patch_update in patch.get("updates") or []:
+                    if isinstance(patch_update, dict) and isinstance(patch_update.get("id"), str):
+                        self._apply_patch(messages, patch_update)
+                removed = [i for i in (patch.get("removeIds") or []) if isinstance(i, str)]
+                if removed:
+                    dropped = drop(removed)
                     events.append(
-                        (n, latest_ts, session_id, "patch removed %d message(s)" % dropped)
+                        (
+                            line_number,
+                            latest_timestamp,
+                            session_id,
+                            "patch removed %d message(s)" % dropped,
+                        )
                     )
                 order = [
-                    i for i in (p.get("orderIds") or []) if isinstance(i, str) and i in messages
+                    i for i in (patch.get("orderIds") or []) if isinstance(i, str) and i in messages
                 ]
                 if order:
                     for i in order:
                         messages.move_to_end(i)
-            elif isinstance(rec.get("id"), str):
-                ts = to_utc(rec.get("timestamp"))
-                latest_ts = max(latest_ts, ts)
-                put(rec, n)
-            elif isinstance(rec.get("$set"), dict):
-                s = rec["$set"]
-                if isinstance(s.get("sessionId"), str) and s["sessionId"]:
-                    session_id = s["sessionId"]
-                if isinstance(s.get("messages"), list):
+            elif isinstance(record.get("id"), str):
+                timestamp = to_utc(record.get("timestamp"))
+                latest_timestamp = max(latest_timestamp, timestamp)
+                put(record, line_number)
+            elif isinstance(record.get("$set"), dict):
+                changes = record["$set"]
+                if isinstance(changes.get("sessionId"), str) and changes["sessionId"]:
+                    session_id = changes["sessionId"]
+                if isinstance(changes.get("messages"), list):
                     messages.clear()
-                    for msg in s["messages"]:
-                        if isinstance(msg, dict) and isinstance(msg.get("id"), str):
-                            latest_ts = max(latest_ts, to_utc(msg.get("timestamp")))
-                            put(msg, n)
-                meta.update({k: v for k, v in s.items() if k != "messages"})
-                if s.get("summary"):
-                    ts = to_utc(s.get("lastUpdated")) or latest_ts
-                    events.append((n, ts, session_id, "summary: %s" % s["summary"]))
-            elif isinstance(rec.get("sessionId"), str):
-                meta.update({k: v for k, v in rec.items() if k != "messages"})
-                session_id = rec["sessionId"] or session_id
-                ts = to_utc(rec.get("startTime"))
-                latest_ts = max(latest_ts, ts)
+                    for message in changes["messages"]:
+                        if isinstance(message, dict) and isinstance(message.get("id"), str):
+                            latest_timestamp = max(
+                                latest_timestamp, to_utc(message.get("timestamp"))
+                            )
+                            put(message, line_number)
+                metadata.update({key: value for key, value in changes.items() if key != "messages"})
+                if changes.get("summary"):
+                    timestamp = to_utc(changes.get("lastUpdated")) or latest_timestamp
+                    events.append(
+                        (line_number, timestamp, session_id, "summary: %s" % changes["summary"])
+                    )
+            elif isinstance(record.get("sessionId"), str):
+                metadata.update({key: value for key, value in record.items() if key != "messages"})
+                session_id = record["sessionId"] or session_id
+                timestamp = to_utc(record.get("startTime"))
+                latest_timestamp = max(latest_timestamp, timestamp)
                 text = "session start: kind=%s projectHash=%s" % (
-                    rec.get("kind") or "main",
-                    rec.get("projectHash") or "",
+                    record.get("kind") or "main",
+                    record.get("projectHash") or "",
                 )
-                if rec.get("directories"):
-                    text += " directories=%s" % compact_json(rec["directories"])
-                starts.append((n, ts, session_id, text))
-                for msg in rec.get("messages") or []:  # legacy ConversationRecord
-                    if isinstance(msg, dict) and isinstance(msg.get("id"), str):
-                        latest_ts = max(latest_ts, to_utc(msg.get("timestamp")))
-                        put(msg, n)
+                if record.get("directories"):
+                    text += " directories=%s" % compact_json(record["directories"])
+                starts.append((line_number, timestamp, session_id, text))
+                for message in record.get("messages") or []:  # legacy ConversationRecord
+                    if isinstance(message, dict) and isinstance(message.get("id"), str):
+                        latest_timestamp = max(latest_timestamp, to_utc(message.get("timestamp")))
+                        put(message, line_number)
 
-        project = resolve_project(base, slug, str(meta.get("projectHash") or ""))
+        project = resolve_project(base, slug, str(metadata.get("projectHash") or ""))
         # Session start, then the surviving messages in replay order, then
         # summaries, rewinds and removals.
-        for line, ts, sid, text in starts:
-            yield self._system(artifact, line, ts, sid, project, text, opts)
+        for line, timestamp, record_session_id, text in starts:
+            yield self._system(artifact, line, timestamp, record_session_id, project, text, opts)
         models: dict = {}  # session id -> model in force, for the model rows
-        for msg, line, sid in messages.values():
+        for message, line, record_session_id in messages.values():
             yield from self._message_rows(
-                artifact, opts, msg, line, sid or session_id, project, models
+                artifact, opts, message, line, record_session_id or session_id, project, models
             )
-        for line, ts, sid, text in events:
-            yield self._system(artifact, line, ts, sid, project, text, opts)
+        for line, timestamp, record_session_id, text in events:
+            yield self._system(artifact, line, timestamp, record_session_id, project, text, opts)
         yield from error_rows(self, artifact, errors, session_id, project)
 
     @staticmethod
@@ -943,24 +891,26 @@ class GeminiCliParser(Parser):
         entry = messages.get(patch["id"])
         if entry is None:
             return
-        msg = dict(entry[0])
+        message = dict(entry[0])
         if "content" in patch and patch["content"] is not None:
-            msg["content"] = patch["content"]
+            message["content"] = patch["content"]
         if (
             isinstance(patch.get("toolCalls"), list)
-            and msg.get("type") == "gemini"
-            and isinstance(msg.get("toolCalls"), list)
+            and message.get("type") == "gemini"
+            and isinstance(message.get("toolCalls"), list)
         ):
-            calls = [dict(c) if isinstance(c, dict) else c for c in msg["toolCalls"]]
-            for tp in patch["toolCalls"]:
-                if not isinstance(tp, dict) or "result" not in tp:
+            calls = [
+                dict(call) if isinstance(call, dict) else call for call in message["toolCalls"]
+            ]
+            for tool_patch in patch["toolCalls"]:
+                if not isinstance(tool_patch, dict) or "result" not in tool_patch:
                     continue
-                for c in calls:
-                    if isinstance(c, dict) and c.get("id") == tp.get("id"):
-                        c["result"] = tp["result"]
+                for call in calls:
+                    if isinstance(call, dict) and call.get("id") == tool_patch.get("id"):
+                        call["result"] = tool_patch["result"]
                         break
-            msg["toolCalls"] = calls
-        entry[0] = msg
+            message["toolCalls"] = calls
+        entry[0] = message
 
     @staticmethod
     def _jsonl_records(artifact: Artifact):
@@ -969,62 +919,65 @@ class GeminiCliParser(Parser):
 
     def _legacy_records(self, artifact: Artifact):
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                rec = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except ValueError as e:
-            return [], [(1, "unparseable session file: %s" % e, "")]
-        if not isinstance(rec, dict) or not isinstance(rec.get("sessionId"), str):
+            with open(artifact.disk_path, "rb") as handle:
+                record = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except ValueError as error:
+            return [], [(1, "unparseable session file: %s" % error, "")]
+        if not isinstance(record, dict) or not isinstance(record.get("sessionId"), str):
             return [], [(1, "not a ConversationRecord", "")]
-        return [(1, rec)], []
+        return [(1, record)], []
 
     def _message_rows(
         self,
         artifact: Artifact,
         opts: Options,
-        msg: dict,
+        message: dict,
         line: int,
-        sid: str,
+        session_id: str,
         project: str,
         models: dict,
     ) -> list[Row]:
-        mtype = msg.get("type")
-        ts = to_utc(msg.get("timestamp"))
-        model = str(msg.get("model") or "") if mtype == "gemini" else ""
+        message_type = message.get("type")
+        timestamp = to_utc(message.get("timestamp"))
+        model = str(message.get("model") or "") if message_type == "gemini" else ""
 
         def row(turn: str, text: str, when: str = "") -> Row:
-            r = self.base_row(artifact)
-            r.source_line = line
-            r.timestamp_utc = when or ts
-            r.session_id = sid
-            r.project_path = project
-            r.turn_type = turn
-            r.model = model
-            r.text = compact(text)
-            return r
+            new_row = self.base_row(artifact)
+            new_row.source_line = line
+            new_row.timestamp_utc = when or timestamp
+            new_row.session_id = session_id
+            new_row.project_path = project
+            new_row.turn_type = turn
+            new_row.model = model
+            new_row.text = compact(text)
+            return new_row
 
         out: list[Row] = []
-        content = msg.get("content")
-        if mtype == "user":
+        content = message.get("content")
+        if message_type == "user":
             out.append(row("user", part_text(content)))
             return out
-        if mtype != "gemini":
-            out.append(row("system", "%s: %s" % (mtype or "message", part_text(content))))
+        if message_type != "gemini":
+            out.append(row("system", "%s: %s" % (message_type or "message", part_text(content))))
             return out
 
-        change = track_change("model", models, sid, model)
+        change = track_change("model", models, session_id, model)
         if change:
             out.append(row("system", change))
 
         if opts.include_thinking:
-            for t in msg.get("thoughts") or []:
-                if not isinstance(t, dict):
+            for thought_entry in message.get("thoughts") or []:
+                if not isinstance(thought_entry, dict):
                     continue
-                subj, desc = t.get("subject") or "", t.get("description") or ""
+                subject, description = (
+                    thought_entry.get("subject") or "",
+                    thought_entry.get("description") or "",
+                )
                 out.append(
                     row(
                         "thinking",
-                        "%s: %s" % (subj, desc) if subj else desc,
-                        to_utc(t.get("timestamp")),
+                        "%s: %s" % (subject, description) if subject else description,
+                        to_utc(thought_entry.get("timestamp")),
                     )
                 )
             thought = part_text(content, thoughts=True)
@@ -1034,32 +987,38 @@ class GeminiCliParser(Parser):
         if text:
             out.append(row("assistant", text))
 
-        calls = [c for c in (msg.get("toolCalls") or []) if isinstance(c, dict)]
-        seen = {str(c.get("id") or "") for c in calls}
+        calls = [call for call in (message.get("toolCalls") or []) if isinstance(call, dict)]
+        seen = {str(call.get("id") or "") for call in calls}
         # "Modern" sessions may carry functionCall parts in content instead.
-        for p in _parts(content):
-            fc = p.get("functionCall") if isinstance(p, dict) else None
-            if isinstance(fc, dict) and str(fc.get("id") or "") not in seen:
-                calls.append({"id": fc.get("id"), "name": fc.get("name"), "args": fc.get("args")})
-        for c in calls:
-            cid = str(c.get("id") or "")
-            name = str(c.get("name") or "")
-            when = to_utc(c.get("timestamp"))
-            use = row("tool_use", tool_text(c), when)
-            use.tool_name, use.tool_use_id = name, cid
+        for part in _parts(content):
+            function_call = part.get("functionCall") if isinstance(part, dict) else None
+            if isinstance(function_call, dict) and str(function_call.get("id") or "") not in seen:
+                calls.append(
+                    {
+                        "id": function_call.get("id"),
+                        "name": function_call.get("name"),
+                        "args": function_call.get("args"),
+                    }
+                )
+        for call in calls:
+            call_id = str(call.get("id") or "")
+            name = str(call.get("name") or "")
+            when = to_utc(call.get("timestamp"))
+            use = row("tool_use", tool_text(call), when)
+            use.tool_name, use.tool_use_id = name, call_id
             out.append(use)
-            status = c.get("status") or ""
-            if c.get("result") is not None or status in FAILED_STATUSES:
-                text = result_text(c.get("result"))
+            status = call.get("status") or ""
+            if call.get("result") is not None or status in FAILED_STATUSES:
+                text = result_text(call.get("result"))
                 if status in FAILED_STATUSES:
                     text = "[%s] %s" % (status, text) if text else "[%s]" % status
-                res = row("tool_result", text, when)
-                res.tool_name, res.tool_use_id = name, cid
-                out.append(res)
+                result_row = row("tool_result", text, when)
+                result_row.tool_name, result_row.tool_use_id = name, call_id
+                out.append(result_row)
             if status in DECISION_STATUSES:
-                dec = row("system", "permission decision: %s" % status, when)
-                dec.tool_name, dec.tool_use_id = name, cid
-                out.append(dec)
+                decision = row("system", "permission decision: %s" % status, when)
+                decision.tool_name, decision.tool_use_id = name, call_id
+                out.append(decision)
         if not out:
             # An empty gemini turn (no text, no tools) still marks a model call.
             out.append(row("assistant", ""))

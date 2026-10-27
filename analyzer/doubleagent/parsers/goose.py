@@ -1,182 +1,31 @@
 """Goose CLI and desktop sessions.
 
-Goose (block/goose, checked at 591edd4) resolves its directories with
-etcetera's app strategy: XDG paths on Linux and macOS, `AppData/Roaming/
-Block/goose/{config,data}` on Windows, where state falls back to data. See
-`research/goose.md`.
+Reads, relative to the home (`<data>` is `.local/share/goose` or
+`AppData/Roaming/Block/goose/data`, `<state>` is `.local/state/goose` or the Windows data
+directory, `<config>` is `.config/goose` or `AppData/Roaming/Block/goose/config`):
+`<data>/sessions/sessions.db`, the legacy `<data>/sessions/<YYYYMMDD_HHMMSS>.jsonl`, the
+request logs `<state>/logs/llm_request.<N>.jsonl` and the prompt histories
+`<state>/history.txt` and `.config/goose/history.txt` (both secondary), and the standing files
+`<config>/permission.yaml`, `<config>/roaming_trust.json` and `<data>/schedule.json`. Yields
+session start rows, one row per content block, model, permission, relay and scheduled-task
+`system` rows, and `parser:` rows for stored values that do not decode.
 
-Files, relative to the home directory (`<data>` is `.local/share/goose` or
-`AppData/Roaming/Block/goose/data`, `<state>` is `.local/state/goose` or the
-Windows data directory):
+Fields the parser depends on:
 
-* `<data>/sessions/sessions.db`, with `-wal` and `-shm` sidecars (WAL mode),
-  schema version 16. Older databases lack columns added by later
-  migrations, so every column is read with a default.
-  - `sessions`: `id`, `name`, `description`, `session_type`, `working_dir`,
-    `created_at` (SQLite `CURRENT_TIMESTAMP` text or RFC 3339),
-    `provider_name`, `model_config_json` (`model_name`),
-    `parent_session_id`, `schedule_id`, `accumulated_total_tokens`.
-  - `messages`: `id`, `session_id`, `role` (`user`, `assistant`),
-    `content_json`, `created_timestamp` (epoch seconds; values above 1e10
-    are milliseconds, as Goose itself normalises them),
-    `metadata_json` (`userVisible`, `inference.provider`,
-    `inference.requestedModel`, `inference.resolvedModel`).
-* `<data>/sessions/<YYYYMMDD_HHMMSS>.jsonl`: legacy sessions, imported into
-  the database once. Line 1 is metadata (`id`, `description`,
-  `working_dir`, `created_at`); each later line is a message with `id`,
-  `role`, `created` (epoch seconds) and `content`.
-* `<state>/logs/llm_request.<N>.jsonl`: one file per provider call, the
-  last 10 kept. A request line with `model_config.model_name` and
-  `input.messages`, then response lines with `data` (a message: `id`,
-  `role`, `created`, `content`) and `usage`. A streaming provider logs one
-  line per chunk; consecutive chunks with the same `data.id` are assembled
-  into one message as `Conversation::push` does
-  (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose
-  fb9e3c8), so the assembled text equals the `sessions.db` row's. A
-  secondary source (issue 126): `secondary()` is True for it, because the
-  response messages repeat the database's assistant messages, and it
-  outlives a session removed, cleared or rewound until 10 later calls rotate
-  it out. `secondary_tolerance()` is 600 seconds: the log stamps a message
-  with its first chunk's `created`, while `sessions.db` stores
-  `max(created, the session's newest created_timestamp)`
-  (session/session_manager.rs:2109-2118 at fb9e3c8), so the database row
-  can be later by as long as the tool calls before it ran, and a chunk
-  with no message id keeps its own, later, time. The request row has no
-  twin in the database and is always kept. Source-derived; not observed on
-  any real install.
-* `<config>/permission.yaml` (`<config>` is `.config/goose` or
-  `AppData/Roaming/Block/goose/config`): the standing tool lists, a map
-  from category (`user`, `smart_approve`) to `always_allow`, `ask_before`
-  and `never_allow` block lists, as serde_yaml writes them
-  (config/permission.rs:13-44, 260-262 at fb9e3c8). Only that nesting is
-  read, without a YAML dependency; any other line is a bad line.
-* `<config>/roaming_trust.json`: `{allowed: [<peer key>], revoked_keys:
-  [<peer key>]}`, the roaming peers allowed or refused
-  (goose-roaming/src/trust.rs:19-26 at fb9e3c8).
-* `<data>/schedule.json`: a JSON array of scheduled jobs, `id`, `source`,
-  `cron`, `last_run` (RFC 3339 or null), `currently_running`, `paused`,
-  `current_session_id`, `parameters` (pairs), `recipe_base_dir`
-  (scheduler/common.rs:167-187 at fb9e3c8).
-* `<state>/history.txt` and the older `.config/goose/history.txt`: rustyline
-  V2 history, `#V2` header then one prompt per line with `\\n` and `\\\\`
-  escaped. No timestamps and no session id. A secondary source (issue
-  122): `secondary()` is True for it and the database is the primary
-  store. The CLI adds every non-empty line typed at its prompt, slash
-  commands included, and saves the file before the message is sent
-  (`goose-cli/src/session/input.rs`, `session/mod.rs` at 591edd4), so a
-  prompt's text equals its `messages` row's once both are stripped; a
-  session removed with `goose session remove` leaves its prompts here.
-  Rows have an empty `timestamp_utc`, `session_id` and `project_path`, so
-  `dedup.deduplicate` pairs them with a database `user` row of any
-  session on text alone. rustyline keeps the last 100 entries and drops
-  a consecutive repeat. When both files exist each is read.
+* `sessions`: `id`, `name`, `description`, `session_type`, `working_dir`, `created_at`,
+  `provider_name`, `model_config_json.model_name`, `parent_session_id`, `schedule_id`,
+  `archived_at`, `goose_mode`; every column is read with a default.
+* `messages`: `id`, `session_id`, `role`, `content_json`, `created_timestamp`,
+  `metadata_json` (`userVisible`, `inference.provider`, `.requestedModel`, `.resolvedModel`).
+* Content blocks by `type`: `text`, `image`, `document`, `toolRequest` (`_meta`
+  `goose.executable`), `toolResponse`, `thinking`, `redactedThinking`,
+  `toolConfirmationRequest`, `actionRequired` (`data.actionType`), `systemNotification`,
+  `error`.
+* Legacy and request-log lines: `id`, `role`, `created`, `content`, `metadata`,
+  `model_config.model_name`, `input.messages`, `data`, `error`.
 
-Content blocks (`type`, camelCase): `text` {`text`}; `image` {`mimeType`};
-`document` {`name`, `mimeType`}; `toolRequest` {`id`, `toolCall`: {`status`,
-`value`: {`name`, `arguments`} | `error`}}; `toolResponse` {`id`,
-`toolResult`: {`status`, `value`: {`content`, `isError`} or a bare content
-array | `error`}}; `thinking` {`thinking`}; `redactedThinking`;
-`toolConfirmationRequest` {`toolName`, `arguments`, `prompt`};
-`actionRequired` {`data`}; `systemNotification` {`notificationType`, `msg`};
-`error` {`kind`, `message`}.
-
-Rows: one `system` row per session; one row per content block: text by
-role, `toolRequest` as `tool_use`, `toolResponse` as `tool_result` (the tool
-name looked up from the request with the same id), thinking blocks only with
-`--include-thinking`, the rest as `system`. Text the user never saw
-(`userVisible: false`, such as compaction summaries) is prefixed
-`[hidden]`. The model is `inference.provider/resolvedModel` (or
-`requestedModel`) per message, falling back to the session's
-`provider_name/model_config_json.model_name`. No git branch is recorded.
-The request log has no session id or cwd: its request line becomes one
-`system` row and each response message becomes rows like a transcript's,
-timestamped by the response's `created`; the request row inherits the first
-response's time. History entries carry no timestamp.
-
-Model and permission rows from `sessions.db` (issues 96 and 97), all
-`system`:
-
-* `model: <model_config_json.model_name> provider=<provider_name>` and
-  `permission mode: <goose_mode>` after each session's start row, at
-  `created_at`. `goose_mode` (default `auto`) is one value per session row,
-  so there is no mode change row.
-* `model: <old> -> <new> provider=<inference.provider>` before the rows of
-  a message whose `metadata_json.inference` names a different model
-  (`resolvedModel`, else `requestedModel`), with ` requested=<requestedModel>`
-  when the two differ; the start value is the session's model. Messages
-  without `inference` (user messages) do not change it.
-* Per call (issue 209), from `actionRequired` blocks
-  (`data.actionType`, message.rs:194-219 at fb9e3c8):
-  `permission request: <toolName> | <prompt> | <arguments>` for a
-  `toolConfirmation` (an empty prompt is left out) and `permission
-  decision: <permission> (toolConfirmationResponse)` for its answer
-  (`allow_once`, `always_allow`, `deny_once`, `always_deny`, `cancel`),
-  each with the block's `id` as `tool_use_id` and the tool name (the
-  answer's looked up from the request). A `toolRequest` whose `_meta`
-  holds `goose.executable` `false` and that no `toolConfirmationResponse`
-  of its session answers, a call the permission check refused or held, is
-  followed by `permission decision: not executable
-  (goose.executable=false)` with its tool name and id
-  (agents/state_machine/ops_tool_approval.rs:23, 57-127, 271-289 at
-  fb9e3c8); only `sessions.db` is checked. An `elicitation` or
-  `elicitationResponse` keeps the generic `action required: <compact
-  JSON>` row; an older `toolConfirmationRequest` block keeps its
-  `confirmation requested:` row.
-* Standing (issue 209), at the file's modification time with an empty
-  `session_id`: `permission setting: <category>.<level>=<tool> (from
-  <file>, file mtime)` per tool in `permission.yaml` and `permission
-  setting: roaming_trust.<allowed|revoked_keys>=<key> (from <file>, file
-  mtime)` per peer key, `<file>` the path relative to the home.
-* Scheduled jobs (issue 209), one row per `schedule.json` job at the
-  file's modification time with an empty `session_id`: `scheduled task:
-  <id> <cron> paused=<true|false> running=<true|false> source=<source>
-  last_run=<time> current_session=<id> recipe_base_dir=<dir>[
-  parameters=<compact JSON>] (from <file>, file mtime)`, `-` for an absent
-  value, `parameters` only when the job has any. A job's sessions run in
-  mode `auto` (scheduler/full.rs:876-882 at fb9e3c8) and name it in their
-  start row's `schedule=`.
-* Every row from these sources is source-derived; not observed on any
-  real install. A whole-file problem in `roaming_trust.json` or
-  `schedule.json` (unreadable, not JSON, not the expected type) is one
-  `parser: <message>` row; a `schedule.json` job that is not an object is
-  `parser: unparseable record <N> (not a JSON object): <record>`.
-
-The legacy JSONL sessions record no model, and the request log has no
-session id, so neither yields model rows.
-
-Bad stored values in `sessions.db` (issue 183): a `content_json`,
-`metadata_json` or `model_config_json` that does not decode as JSON, or
-decodes to another type than Goose writes (an array for `content_json`,
-an object for the other two), is one `system` row through `error_rows`,
-`parser: unparseable record <N> (<table>.<column>: <reason>): <stored
-value>`, the stored text in full, `<N>` the `messages.id` or the
-`sessions` rowid, with the session's `session_id` and `working_dir`, an
-empty `timestamp_utc` and `source_line` `<N>`. A NULL or empty
-`content_json` gives the same row with reason `empty` and no value. The
-session's other rows are still yielded: a bad `model_config_json` row
-follows the session start row and the session has no model; a bad
-`metadata_json` row precedes the message's content rows, which are kept
-with the session's model and as visible; a bad `content_json` row stands
-in for the message's content rows. Fixture only: the shapes are
-source-derived (block/goose at 591edd4), no real install has shown a bad
-value.
-
-Relayed sessions (issue 153): a `sessions` row whose `session_type` is
-`gateway` was carried through the gateway's chat bot (Telegram, the one
-platform implemented), so the chat keeps a copy on the platform. Its
-`name` is `<platform>/<display name or user id>` and its `working_dir`
-`.config/goose/gateway/<platform>/<user_id>`
-(`crates/goose/src/gateway/handler.rs:304-326` at aaif-goose/goose
-bfcc6ee). One `system` row after the session's start row, at
-`created_at`: `session relayed: gateway <platform> user <user_id> display
-<display> (from sessions.db session_type gateway, created_at)`, platform
-and user id from `working_dir` (the platform from `name` when the path
-does not match), display from `name`, `-` when it is absent or is the user
-id. It is not vendor sync, so `records_sync` stays False; `records_relay`
-is set, so a session without the row is `relayed` `no`. `config.yaml`
-`gateway_pairings` repeats the platform and user id and adds `paired_at`,
-but it is nested YAML (no YAML dependency) and a secret glob, so it is
-not read. Fixture only: no real install has shown a gateway session.
+Validated against source, block/goose at 591edd4 and aaif-goose/goose at fb9e3c8 and bfcc6ee,
+with a synthetic fixture; no real install. See `research/goose.md`.
 """
 
 from __future__ import annotations
@@ -206,38 +55,41 @@ from .base import (
 DATA = r"(?:\.local/share/goose|AppData/Roaming/Block/goose/data)"
 STATE = r"(?:\.local/state/goose|AppData/Roaming/Block/goose/data)"
 CONFIG = r"(?:\.config/goose|AppData/Roaming/Block/goose/config)"
-DB_RX = re.compile(r"^%s/sessions/sessions\.db$" % DATA)
-LEGACY_RX = re.compile(r"^%s/sessions/[^/]+\.jsonl$" % DATA)
-LLM_RX = re.compile(r"^%s/logs/llm_request\.[^/]+\.jsonl$" % STATE)
-HISTORY_RX = re.compile(r"^(?:%s|\.config/goose)/history\.txt$" % STATE)
-PERMISSION_RX = re.compile(r"^%s/permission\.yaml$" % CONFIG)
-TRUST_RX = re.compile(r"^%s/roaming_trust\.json$" % CONFIG)
-SCHEDULE_RX = re.compile(r"^%s/schedule\.json$" % DATA)
+DATABASE_PATTERN = re.compile(r"^%s/sessions/sessions\.db$" % DATA)
+LEGACY_PATTERN = re.compile(r"^%s/sessions/[^/]+\.jsonl$" % DATA)
+LLM_PATTERN = re.compile(r"^%s/logs/llm_request\.[^/]+\.jsonl$" % STATE)
+HISTORY_PATTERN = re.compile(r"^(?:%s|\.config/goose)/history\.txt$" % STATE)
+PERMISSION_PATTERN = re.compile(r"^%s/permission\.yaml$" % CONFIG)
+TRUST_PATTERN = re.compile(r"^%s/roaming_trust\.json$" % CONFIG)
+SCHEDULE_PATTERN = re.compile(r"^%s/schedule\.json$" % DATA)
 # The request log stamps each streamed chunk when it arrives, while
 # `sessions.db` stamps the assembled message with the later of its first
-# chunk's time and the session's newest stored message (issue 126).
+# chunk's time and the session's newest stored message.
 LLM_TOLERANCE_SECONDS = 600.0
 TOOL_EXECUTABLE_KEY = "goose.executable"
 # A gateway session's working directory, `<config>/gateway/<platform>/<user_id>`.
-GATEWAY_DIR_RX = re.compile(r"[/\\]gateway[/\\]([^/\\]+)[/\\]([^/\\]+)[/\\]?$")
+GATEWAY_DIRECTORY_PATTERN = re.compile(r"[/\\]gateway[/\\]([^/\\]+)[/\\]([^/\\]+)[/\\]?$")
 
 
 def epoch(value) -> str:
-    """`created_timestamp` is seconds, but some clients write milliseconds;
-    Goose divides anything above 1e10 by 1000 (session_manager.rs:729-741)."""
+    """Return a `created_timestamp` as UTC.
+
+    The value is in seconds, but some clients write milliseconds: Goose divides anything above 1e10
+    by 1000 (session_manager.rs:729-741).
+    """
     if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 10_000_000_000:
         value = value / 1000.0
     return to_utc(value)
 
 
 def _stored_json(value, kind: type) -> tuple[object, str, str]:
-    """(decoded value, reason, stored text) of a JSON column of `sessions.db`.
-    `kind` is the type Goose writes there (`list` for `content_json`, `dict`
-    for `metadata_json` and `model_config_json`). A NULL or empty column
-    gives (None, "", ""); a value that does not decode, or decodes to a
-    type other than `kind` (a JSON `null` excepted), gives (None, reason,
-    the stored text in full) for an `unparseable record` row (issue 183).
-    A BLOB is read as UTF-8 with replacement."""
+    """Decode a JSON column of `sessions.db`.
+
+    `kind` is the type Goose writes there (`list` for `content_json`, `dict` otherwise); a BLOB is
+    read as UTF-8 with replacement. Returns (decoded value, reason, stored text): (None, "", "") for
+    a NULL or empty column, and (None, reason, the stored text in full) for a value that does not
+    decode or decodes to another type than `kind` (a JSON `null` excepted).
+    """
     if value is None or value == "" or value == b"":
         return None, "", ""
     if isinstance(value, bytes):
@@ -245,28 +97,30 @@ def _stored_json(value, kind: type) -> tuple[object, str, str]:
     if not isinstance(value, str):
         return None, "not JSON text", str(value)
     try:
-        obj = json.loads(value)
-    except ValueError as e:
-        return None, str(e), value
-    if obj is not None and not isinstance(obj, kind):
+        decoded = json.loads(value)
+    except ValueError as error:
+        return None, str(error), value
+    if decoded is not None and not isinstance(decoded, kind):
         return None, "not a JSON %s" % ("array" if kind is list else "object"), value
-    return obj, "", value
+    return decoded, "", value
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    """Join the non-empty parts with ` | `."""
+    return " | ".join(part for part in parts if part)
 
 
 def gateway_text(session: dict) -> str:
-    """The `session relayed:` text of a `gateway` session, `""` for any
-    other: platform and user id from `working_dir`
-    (`<config>/gateway/<platform>/<user_id>`), else the platform from
-    `name`; the display name from `name` (`<platform>/<display name or user
-    id>`), `-` when it is the user id or absent."""
+    """Return the `session relayed:` text of a `gateway` session, `""` for any other.
+
+    The platform and user id come from `working_dir` (`<config>/gateway/<platform>/<user_id>`), else
+    the platform from `name`; the display name comes from `name` (`<platform>/<display name or user
+    id>`), `-` when it is the user id or absent.
+    """
     if session.get("session_type") != "gateway":
         return ""
-    m = GATEWAY_DIR_RX.search(str(session.get("working_dir") or ""))
-    platform, user_id = m.groups() if m else ("", "")
+    match = GATEWAY_DIRECTORY_PATTERN.search(str(session.get("working_dir") or ""))
+    platform, user_id = match.groups() if match else ("", "")
     name_platform, _, display = str(session.get("name") or "").partition("/")
     platform = platform or name_platform
     if display == user_id:
@@ -279,11 +133,12 @@ def gateway_text(session: dict) -> str:
 
 
 def _model(provider: str, name: str) -> str:
+    """Return `<provider>/<name>`, or the name alone when the provider is unknown."""
     return "%s/%s" % (provider, name) if provider and name else name or ""
 
 
 def result_text(tool_result) -> tuple[str, bool]:
-    """(text, is_error) of a toolResponse.toolResult."""
+    """Return (text, is_error) of a `toolResponse.toolResult`."""
     if not isinstance(tool_result, dict):
         return compact_json(tool_result), False
     if tool_result.get("status") == "error":
@@ -300,23 +155,23 @@ def result_text(tool_result) -> tuple[str, bool]:
 
 
 def unescape_history(line: str) -> str:
+    r"""Undo the backslash escapes of a rustyline `#V2` history line (`\n` is a line feed)."""
     out: list[str] = []
     i = 0
     while i < len(line):
-        c = line[i]
-        if c == "\\" and i + 1 < len(line):
-            nxt = line[i + 1]
-            out.append("\n" if nxt == "n" else nxt)
+        char = line[i]
+        if char == "\\" and i + 1 < len(line):
+            next_char = line[i + 1]
+            out.append("\n" if next_char == "n" else next_char)
             i += 2
             continue
-        out.append(c)
+        out.append(char)
         i += 1
     return "".join(out)
 
 
 def _unquote(value: str) -> str:
-    """A YAML scalar as `serde_yaml` writes it: plain, single-quoted (`''`
-    for a quote) or double-quoted (JSON escapes)."""
+    """Return a YAML scalar as `serde_yaml` writes it: plain, single-quoted or double-quoted."""
     if len(value) >= 2 and value[0] == value[-1] == "'":
         return value[1:-1].replace("''", "'")
     if len(value) >= 2 and value[0] == value[-1] == '"':
@@ -329,16 +184,16 @@ def _unquote(value: str) -> str:
 
 
 def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]]:
-    """(line, category, level, tool) for each tool in `permission.yaml`,
-    which `serde_yaml` writes as a map from category (`user`,
-    `smart_approve`) to `{always_allow, ask_before, never_allow}`, each a
-    block list of tool names or `[]` (config/permission.rs:13-44, 260-262 at
-    aaif-goose/goose fb9e3c8). Only that one nesting level is read: a line
-    that is not a category, a level or a list item under both is appended to
-    `errors` as (line, message, raw), as `iter_jsonl` does for JSONL."""
+    """Yield (line, category, level, tool) for each tool in `permission.yaml`.
+
+    `serde_yaml` writes a map from category (`user`, `smart_approve`) to `always_allow`,
+    `ask_before` and `never_allow`, each a block list of tool names or `[]`
+    (config/permission.rs:13-44, 260-262 at aaif-goose/goose fb9e3c8). Only that nesting is read:
+    any other line is appended to `errors` as (line, message, raw), as `iter_jsonl` does.
+    """
     category = level = ""
-    with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
+    with open(path, "rb") as handle:
+        for line_number, raw in enumerate(handle, 1):
             text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             body = text.strip()
             if not body or body.startswith("#") or body in ("---", "{}"):
@@ -347,33 +202,39 @@ def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]
             if body.startswith("- ") or body == "-":
                 tool = _unquote(body[1:].strip())
                 if category and level and tool:
-                    yield n, category, level, tool
+                    yield line_number, category, level, tool
                     continue
             elif body.endswith(":") and indent == 0:
                 category, level = _unquote(body[:-1].strip()), ""
                 continue
             elif indent > 0 and category:
-                key, sep, value = body.partition(":")
-                if sep and value.strip() in ("", "[]") and key.strip():
+                key, separator, value = body.partition(":")
+                if separator and value.strip() in ("", "[]") and key.strip():
                     level = _unquote(key.strip())
                     continue
             errors.append(
-                (n, "unparseable line (not a category, level or list item)", line_text(raw))
+                (
+                    line_number,
+                    "unparseable line (not a category, level or list item)",
+                    line_text(raw),
+                )
             )
 
 
 def _audience(block: dict):
+    """Return the `annotations.audience` of a content block, or None."""
     annotations = block.get("annotations")
     return annotations.get("audience") if isinstance(annotations, dict) else None
 
 
 def merge_delta(blocks: list, new: list) -> None:
-    """Append one streamed chunk's content blocks to the message assembled so
-    far, as `Conversation::push` does for chunks with the same message id
-    (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose
-    fb9e3c8): a one-block text chunk extends a last text block of the same
-    audience, a one-block thinking chunk extends a last thinking block that
-    is unsigned or has its signature, and anything else is appended."""
+    """Append one streamed chunk's content blocks to the message assembled so far.
+
+    As `Conversation::push` does for chunks with the same message id
+    (goose-provider-types/src/conversation.rs:75-119 at aaif-goose/goose fb9e3c8): a one-block text
+    chunk extends a last text block of the same audience, a one-block thinking chunk extends a last
+    thinking block that is unsigned or has its signature, and anything else is appended.
+    """
     if len(new) == 1 and blocks and isinstance(blocks[-1], dict) and isinstance(new[0], dict):
         last, block = blocks[-1], new[0]
         kind = last.get("type")
@@ -394,16 +255,17 @@ def merge_delta(blocks: list, new: list) -> None:
 
 
 def schedule_text(job: dict, rel: str) -> str:
-    """The `scheduled task:` text of one `schedule.json` job
-    (`ScheduledJob`, scheduler/common.rs:167-187 at aaif-goose/goose
-    fb9e3c8), `-` for an absent value; `parameters` is added only when the
-    job has any."""
+    """Return the `scheduled task:` text of one `schedule.json` job.
+
+    The job is a `ScheduledJob` (scheduler/common.rs:167-187 at aaif-goose/goose fb9e3c8); `-`
+    stands for an absent value, and `parameters` is added only when the job has any.
+    """
 
     def value(key: str) -> str:
-        v = job.get(key)
-        return "-" if v is None or v == "" else setting_value(v)
+        stored = job.get(key)
+        return "-" if stored is None or stored == "" else setting_value(stored)
 
-    params = job.get("parameters")
+    parameters = job.get("parameters")
     return (
         "scheduled task: %s %s paused=%s running=%s source=%s last_run=%s"
         " current_session=%s recipe_base_dir=%s%s (from %s, file mtime)"
@@ -416,54 +278,60 @@ def schedule_text(job: dict, rel: str) -> str:
             to_utc(job.get("last_run")) or value("last_run"),
             value("current_session_id"),
             value("recipe_base_dir"),
-            " parameters=%s" % compact_json(params) if params else "",
+            " parameters=%s" % compact_json(parameters) if parameters else "",
             rel,
         )
     )
 
 
 class GooseParser(Parser):
+    """Parse Goose's session database, legacy sessions, request logs, histories and settings."""
+
     agent = "goose"
     name = "goose"
     has_secondary = True
     records_relay = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for the Goose files this parser reads."""
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
-                DB_RX,
-                LEGACY_RX,
-                LLM_RX,
-                HISTORY_RX,
-                PERMISSION_RX,
-                TRUST_RX,
-                SCHEDULE_RX,
+            pattern.match(rel)
+            for pattern in (
+                DATABASE_PATTERN,
+                LEGACY_PATTERN,
+                LLM_PATTERN,
+                HISTORY_PATTERN,
+                PERMISSION_PATTERN,
+                TRUST_PATTERN,
+                SCHEDULE_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
-        return bool(HISTORY_RX.match(artifact.rel) or LLM_RX.match(artifact.rel))
+        """Return True for the prompt histories and request logs, which repeat `sessions.db`."""
+        return bool(HISTORY_PATTERN.match(artifact.rel) or LLM_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        if LLM_RX.match(artifact.rel):
+        """Return `LLM_TOLERANCE_SECONDS` for a request log, else the default window."""
+        if LLM_PATTERN.match(artifact.rel):
             return LLM_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Goose file."""
         rel = artifact.rel
-        if DB_RX.match(rel):
-            yield from self._parse_db(artifact, opts)
-        elif LEGACY_RX.match(rel):
+        if DATABASE_PATTERN.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif LEGACY_PATTERN.match(rel):
             yield from self._parse_legacy(artifact, opts)
-        elif LLM_RX.match(rel):
+        elif LLM_PATTERN.match(rel):
             yield from self._parse_llm_log(artifact, opts)
-        elif PERMISSION_RX.match(rel):
+        elif PERMISSION_PATTERN.match(rel):
             yield from self._parse_permission_yaml(artifact)
-        elif TRUST_RX.match(rel):
+        elif TRUST_PATTERN.match(rel):
             yield from self._parse_roaming_trust(artifact)
-        elif SCHEDULE_RX.match(rel):
+        elif SCHEDULE_PATTERN.match(rel):
             yield from self._parse_schedule(artifact)
         else:
             yield from self._parse_history(artifact, opts)
@@ -475,14 +343,14 @@ class GooseParser(Parser):
         session_id: str = "",
         project_path: str = "",
         model: str = "",
-        ts: str = "",
+        timestamp: str = "",
     ) -> Row:
         row = self.base_row(artifact)
         row.source_line = line
         row.session_id = session_id
         row.project_path = project_path
         row.model = model
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
     @staticmethod
@@ -507,25 +375,27 @@ class GooseParser(Parser):
         opts: Options,
         answered: set[str] | None = None,
     ) -> Iterator[Row]:
-        """`answered` holds the ids of the tool requests the session's
-        `toolConfirmationResponse` blocks answer; when it is given (only for
-        `sessions.db`), a `toolRequest` whose `_meta` holds
-        `goose.executable` `false` and no answer is followed by its
-        `permission decision: not executable` row."""
+        """Yield the rows of a message's content blocks.
+
+        `answered` holds the ids of the tool requests the session's `toolConfirmationResponse`
+        blocks answer; when it is given (only for `sessions.db`), a `toolRequest` whose `_meta`
+        holds `goose.executable` `false` and no answer is followed by its `permission decision: not
+        executable` row.
+        """
         if isinstance(content, str):
             text_block: dict = {"type": "text", "text": content}
             content = [text_block]
         if not isinstance(content, list):
             return
         text_type = role if role in ("user", "assistant") else "system"
-        for b in content:
-            if not isinstance(b, dict):
+        for block in content:
+            if not isinstance(block, dict):
                 continue
-            kind = b.get("type")
+            kind = block.get("type")
             row = Row(**base.__dict__)
             if kind == "text":
                 row.turn_type = text_type
-                text = b.get("text") or ""
+                text = block.get("text") or ""
                 if role not in ("user", "assistant"):
                     text = "%s: %s" % (role, text)
                 if not user_visible:
@@ -534,12 +404,12 @@ class GooseParser(Parser):
                 row.turn_type = text_type
                 text = "[%s] %s" % (
                     kind,
-                    _join(str(b.get("name") or ""), str(b.get("mimeType") or "")),
+                    _join(str(block.get("name") or ""), str(block.get("mimeType") or "")),
                 )
             elif kind == "toolRequest":
                 row.turn_type = "tool_use"
-                row.tool_use_id = str(b.get("id") or "")
-                call = b.get("toolCall") or {}
+                row.tool_use_id = str(block.get("id") or "")
+                call = block.get("toolCall") or {}
                 if call.get("status") == "error":
                     text = "[error] " + str(call.get("error") or "")
                 else:
@@ -549,41 +419,46 @@ class GooseParser(Parser):
                 tool_names[row.tool_use_id] = row.tool_name
             elif kind == "toolResponse":
                 row.turn_type = "tool_result"
-                row.tool_use_id = str(b.get("id") or "")
+                row.tool_use_id = str(block.get("id") or "")
                 row.tool_name = tool_names.get(row.tool_use_id, "")
-                text, is_error = result_text(b.get("toolResult"))
+                text, is_error = result_text(block.get("toolResult"))
                 if is_error:
                     text = "[error] " + text
             elif kind in ("thinking", "redactedThinking"):
                 if not opts.include_thinking:
                     continue
                 row.turn_type = "thinking"
-                text = (b.get("thinking") or "") if kind == "thinking" else "[redacted thinking]"
+                text = (
+                    (block.get("thinking") or "") if kind == "thinking" else "[redacted thinking]"
+                )
             elif kind == "toolConfirmationRequest":
                 row.turn_type = "system"
-                row.tool_name = str(b.get("toolName") or "")
-                row.tool_use_id = str(b.get("id") or "")
+                row.tool_name = str(block.get("toolName") or "")
+                row.tool_use_id = str(block.get("id") or "")
                 text = _join(
                     "confirmation requested: " + row.tool_name,
-                    str(b.get("prompt") or ""),
-                    compact_json(b.get("arguments") or {}),
+                    str(block.get("prompt") or ""),
+                    compact_json(block.get("arguments") or {}),
                 )
             elif kind == "systemNotification":
                 row.turn_type = "system"
-                text = "%s: %s" % (b.get("notificationType") or "notification", b.get("msg") or "")
+                text = "%s: %s" % (
+                    block.get("notificationType") or "notification",
+                    block.get("msg") or "",
+                )
             elif kind == "error":
                 row.turn_type = "system"
-                text = "error %s: %s" % (b.get("kind") or "", b.get("message") or "")
+                text = "error %s: %s" % (block.get("kind") or "", block.get("message") or "")
             elif kind == "actionRequired":
                 row.turn_type = "system"
-                text = self._action_text(row, b.get("data"), tool_names)
+                text = self._action_text(row, block.get("data"), tool_names)
             else:
                 row.turn_type = "system"
-                text = compact_json(b)
+                text = compact_json(block)
             row.text = compact(text)
             yield row
             if kind == "toolRequest" and answered is not None:
-                verdict = b.get("_meta")
+                verdict = block.get("_meta")
                 if (
                     isinstance(verdict, dict)
                     and verdict.get(TOOL_EXECUTABLE_KEY) is False
@@ -596,10 +471,12 @@ class GooseParser(Parser):
 
     @staticmethod
     def _action_text(row: Row, data, tool_names: dict[str, str]) -> str:
-        """The text of an `actionRequired` block, setting `row`'s tool join:
-        a tool confirmation is a `permission request:`, its answer a
-        `permission decision:` (message.rs:194-219 at aaif-goose/goose
-        fb9e3c8); an elicitation keeps the generic `action required:` row."""
+        """Return the text of an `actionRequired` block, setting `row`'s tool join.
+
+        A tool confirmation is a `permission request:` and its answer a `permission decision:`
+        (message.rs:194-219 at aaif-goose/goose fb9e3c8); an elicitation keeps the generic `action
+        required:` row.
+        """
         kind = data.get("actionType") if isinstance(data, dict) else None
         if isinstance(data, dict) and kind == "toolConfirmation":
             row.tool_name = str(data.get("toolName") or "")
@@ -618,7 +495,7 @@ class GooseParser(Parser):
         return "action required: " + compact_json(data)
 
     # -- sessions.db ---------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             row = self._row(artifact, 0)
             row.turn_type = "system"
@@ -626,88 +503,101 @@ class GooseParser(Parser):
             yield row
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 if "messages" not in tables:
                     return
                 sessions: dict[str, dict] = {}
                 seen_model: dict[str, str] = {}
                 seen_mode: dict[str, str] = {}
                 if "sessions" in tables:
-                    for s in con.execute(
+                    for session in connection.execute(
                         "select rowid as _rowid, * from sessions order by created_at, rowid"
                     ):
-                        s = dict(s)
-                        cfg, reason, raw = _stored_json(s.get("model_config_json"), dict)
-                        cfg_errors = []
+                        session = dict(session)
+                        config, reason, raw = _stored_json(session.get("model_config_json"), dict)
+                        config_errors = []
                         if reason:
-                            cfg_errors.append(
+                            config_errors.append(
                                 (
-                                    s["_rowid"],
+                                    session["_rowid"],
                                     "unparseable record %d (sessions.model_config_json: %s)"
-                                    % (s["_rowid"], reason),
+                                    % (session["_rowid"], reason),
                                     raw,
                                 )
                             )
                         model_name = str(
-                            (cfg.get("model_name") if isinstance(cfg, dict) else "") or ""
+                            (config.get("model_name") if isinstance(config, dict) else "") or ""
                         )
-                        s["_model"] = _model(s.get("provider_name") or "", model_name)
-                        sid = str(s.get("id") or "")
-                        sessions[sid] = s
+                        session["_model"] = _model(session.get("provider_name") or "", model_name)
+                        session_id = str(session.get("id") or "")
+                        sessions[session_id] = session
                         row = self._row(
                             artifact,
-                            s["_rowid"],
-                            sid,
-                            s.get("working_dir") or "",
-                            s["_model"],
-                            to_utc(s.get("created_at")),
+                            session["_rowid"],
+                            session_id,
+                            session.get("working_dir") or "",
+                            session["_model"],
+                            to_utc(session.get("created_at")),
                         )
                         row.turn_type = "system"
                         row.text = compact(
                             _join(
                                 "session start",
-                                s.get("name") or "",
-                                s.get("description") or "",
-                                "type=%s" % s["session_type"] if s.get("session_type") else "",
-                                "parent=%s" % s["parent_session_id"]
-                                if s.get("parent_session_id")
+                                session.get("name") or "",
+                                session.get("description") or "",
+                                "type=%s" % session["session_type"]
+                                if session.get("session_type")
                                 else "",
-                                "schedule=%s" % s["schedule_id"] if s.get("schedule_id") else "",
-                                "archived=%s" % s["archived_at"] if s.get("archived_at") else "",
+                                "parent=%s" % session["parent_session_id"]
+                                if session.get("parent_session_id")
+                                else "",
+                                "schedule=%s" % session["schedule_id"]
+                                if session.get("schedule_id")
+                                else "",
+                                "archived=%s" % session["archived_at"]
+                                if session.get("archived_at")
+                                else "",
                             ),
                         )
                         yield row
                         yield from error_rows(
-                            self, artifact, cfg_errors, sid, s.get("working_dir") or ""
+                            self,
+                            artifact,
+                            config_errors,
+                            session_id,
+                            session.get("working_dir") or "",
                         )
-                        text = gateway_text(s)
+                        text = gateway_text(session)
                         if text:
                             yield self._system_copy(row, text)
-                        text = track_change("model", seen_model, sid, model_name)
+                        text = track_change("model", seen_model, session_id, model_name)
                         if text:
-                            if s.get("provider_name"):
-                                text += " provider=%s" % s["provider_name"]
+                            if session.get("provider_name"):
+                                text += " provider=%s" % session["provider_name"]
                             yield self._system_copy(row, text)
                         text = track_change(
-                            "permission mode", seen_mode, sid, str(s.get("goose_mode") or "")
+                            "permission mode",
+                            seen_mode,
+                            session_id,
+                            str(session.get("goose_mode") or ""),
                         )
                         if text:
                             yield self._system_copy(row, text)
-                answered = self._answered(con)
+                answered = self._answered(connection)
                 tool_names: dict[str, str] = {}
-                for m in con.execute(
+                for message in connection.execute(
                     "select * from messages order by session_id, created_timestamp, id"
                 ):
-                    m = dict(m)
-                    sid = str(m.get("session_id") or "")
-                    s = sessions.get(sid, {})
-                    project_path = s.get("working_dir") or ""
-                    record = m.get("id") or 0
-                    msg_errors: list = []
-                    meta, reason, raw = _stored_json(m.get("metadata_json"), dict)
+                    message = dict(message)
+                    session_id = str(message.get("session_id") or "")
+                    session = sessions.get(session_id, {})
+                    project_path = session.get("working_dir") or ""
+                    record = message.get("id") or 0
+                    message_errors: list = []
+                    meta, reason, raw = _stored_json(message.get("metadata_json"), dict)
                     if reason:
-                        msg_errors.append(
+                        message_errors.append(
                             (
                                 record,
                                 "unparseable record %s (messages.metadata_json: %s)"
@@ -716,30 +606,32 @@ class GooseParser(Parser):
                             )
                         )
                     meta = meta if isinstance(meta, dict) else {}
-                    inf = meta.get("inference") or {}
+                    inference = meta.get("inference") or {}
                     model = _model(
-                        inf.get("provider") or "",
-                        inf.get("resolvedModel") or inf.get("requestedModel") or "",
-                    ) or s.get("_model", "")
+                        inference.get("provider") or "",
+                        inference.get("resolvedModel") or inference.get("requestedModel") or "",
+                    ) or session.get("_model", "")
                     base = self._row(
                         artifact,
                         record,
-                        sid,
+                        session_id,
                         project_path,
                         model,
-                        epoch(m.get("created_timestamp")) or to_utc(m.get("timestamp")),
+                        epoch(message.get("created_timestamp")) or to_utc(message.get("timestamp")),
                     )
-                    resolved = str(inf.get("resolvedModel") or inf.get("requestedModel") or "")
-                    text = track_change("model", seen_model, sid, resolved)
+                    resolved = str(
+                        inference.get("resolvedModel") or inference.get("requestedModel") or ""
+                    )
+                    text = track_change("model", seen_model, session_id, resolved)
                     if text:
-                        if inf.get("provider"):
-                            text += " provider=%s" % inf["provider"]
-                        requested = str(inf.get("requestedModel") or "")
+                        if inference.get("provider"):
+                            text += " provider=%s" % inference["provider"]
+                        requested = str(inference.get("requestedModel") or "")
                         if requested and requested != resolved:
                             text += " requested=%s" % requested
                         yield self._system_copy(base, text)
-                    yield from error_rows(self, artifact, msg_errors, sid, project_path)
-                    content, reason, raw = _stored_json(m.get("content_json"), list)
+                    yield from error_rows(self, artifact, message_errors, session_id, project_path)
+                    content, reason, raw = _stored_json(message.get("content_json"), list)
                     if content is None and not reason:
                         reason = "not a JSON array" if raw else "empty"
                     if reason:
@@ -754,41 +646,43 @@ class GooseParser(Parser):
                                     raw,
                                 )
                             ],
-                            sid,
+                            session_id,
                             project_path,
                         )
                         continue
                     yield from self._block_rows(
                         artifact,
                         base,
-                        str(m.get("role") or ""),
+                        str(message.get("role") or ""),
                         content,
                         meta.get("userVisible", True) is not False,
                         tool_names,
                         opts,
-                        answered.get(sid, set()),
+                        answered.get(session_id, set()),
                     )
-        except sqlite3.DatabaseError as e:
+        except sqlite3.DatabaseError as error:
             row = self._row(artifact, 0)
             row.turn_type = "system"
-            row.text = "parser: SQLite error: %s" % e
+            row.text = "parser: SQLite error: %s" % error
             yield row
 
     @staticmethod
-    def _answered(con) -> dict[str, set[str]]:
-        """Session id to the tool request ids its `toolConfirmationResponse`
-        blocks answer. A pre-scan: a `content_json` that does not decode is
-        skipped here and reported by the full read of the same row."""
+    def _answered(connection) -> dict[str, set[str]]:
+        """Map each session id to the tool request ids its `toolConfirmationResponse` blocks answer.
+
+        A pre-scan: a `content_json` that does not decode is skipped here and reported by the full
+        read of the same row.
+        """
         answered: dict[str, set[str]] = {}
-        for sid, stored in con.execute(
+        for session_id, stored in connection.execute(
             "select session_id, content_json from messages"
             " where content_json like '%toolConfirmationResponse%'"
         ):
             content, _, _ = _stored_json(stored, list)
-            for b in content if isinstance(content, list) else []:
-                data = b.get("data") if isinstance(b, dict) else None
+            for block in content if isinstance(content, list) else []:
+                data = block.get("data") if isinstance(block, dict) else None
                 if isinstance(data, dict) and data.get("actionType") == "toolConfirmationResponse":
-                    answered.setdefault(str(sid or ""), set()).add(str(data.get("id") or ""))
+                    answered.setdefault(str(session_id or ""), set()).add(str(data.get("id") or ""))
         return answered
 
     # -- legacy sessions/<YYYYMMDD_HHMMSS>.jsonl ------------------------------------------
@@ -797,32 +691,44 @@ class GooseParser(Parser):
         session_id = artifact.disk_path.name[: -len(".jsonl")]
         project_path = ""
         tool_names: dict[str, str] = {}
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            if "role" not in rec and "content" not in rec:
-                session_id = str(rec.get("id") or session_id)
-                project_path = str(rec.get("working_dir") or "")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            if "role" not in record and "content" not in record:
+                session_id = str(record.get("id") or session_id)
+                project_path = str(record.get("working_dir") or "")
                 row = self._row(
-                    artifact, n, session_id, project_path, ts=to_utc(rec.get("created_at"))
+                    artifact,
+                    line_number,
+                    session_id,
+                    project_path,
+                    timestamp=to_utc(record.get("created_at")),
                 )
                 row.turn_type = "system"
                 row.text = compact(
                     _join(
                         "session start (legacy)",
-                        str(rec.get("description") or ""),
-                        "%s messages" % rec["message_count"] if "message_count" in rec else "",
+                        str(record.get("description") or ""),
+                        "%s messages" % record["message_count"]
+                        if "message_count" in record
+                        else "",
                     ),
                 )
                 yield row
                 continue
-            meta = rec.get("metadata")
+            meta = record.get("metadata")
             if not isinstance(meta, dict):
                 meta = {}
-            base = self._row(artifact, n, session_id, project_path, ts=epoch(rec.get("created")))
+            base = self._row(
+                artifact,
+                line_number,
+                session_id,
+                project_path,
+                timestamp=epoch(record.get("created")),
+            )
             yield from self._block_rows(
                 artifact,
                 base,
-                str(rec.get("role") or ""),
-                rec.get("content"),
+                str(record.get("role") or ""),
+                record.get("content"),
                 meta.get("userVisible", True) is not False,
                 tool_names,
                 opts,
@@ -849,61 +755,63 @@ class GooseParser(Parser):
                 )
                 current = None
 
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            if "input" in rec or "model_config" in rec:
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            if "input" in record or "model_config" in record:
                 flush()
-                cfg = rec.get("model_config") or {}
-                inp = rec.get("input")
-                if not isinstance(inp, dict):
-                    inp = {}
-                model = str(cfg.get("model_name") or inp.get("model") or "")
-                msgs = inp.get("messages")
-                if not isinstance(msgs, list):
-                    msgs = []
+                config = record.get("model_config") or {}
+                request_input = record.get("input")
+                if not isinstance(request_input, dict):
+                    request_input = {}
+                model = str(config.get("model_name") or request_input.get("model") or "")
+                messages = request_input.get("messages")
+                if not isinstance(messages, list):
+                    messages = []
                 last_user = next(
                     (
-                        text_of(m.get("content"))
-                        for m in reversed(msgs)
-                        if isinstance(m, dict) and m.get("role") == "user"
+                        text_of(message.get("content"))
+                        for message in reversed(messages)
+                        if isinstance(message, dict) and message.get("role") == "user"
                     ),
                     "",
                 )
-                request = self._row(artifact, n, model=model)
+                request = self._row(artifact, line_number, model=model)
                 request.turn_type = "system"
                 request.text = compact(
                     _join(
                         "llm request",
-                        "%d messages" % len(msgs),
+                        "%d messages" % len(messages),
                         "last user: " + last_user if last_user else "",
                     ),
                 )
                 continue
-            data = rec.get("data")
+            data = record.get("data")
             if isinstance(data, dict) and "content" in data:
                 content = data.get("content")
                 if isinstance(content, str):
                     content = [{"type": "text", "text": content}]
                 if not isinstance(content, list) or not content:
                     continue  # a usage or metadata chunk adds no content
-                mid = str(data.get("id") or "")
-                if current is not None and mid and current[1] == mid:
+                message_id = str(data.get("id") or "")
+                if current is not None and message_id and current[1] == message_id:
                     merge_delta(current[3], content)
                     continue
                 flush()
-                base = self._row(artifact, n, model=model, ts=epoch(data.get("created")))
+                base = self._row(
+                    artifact, line_number, model=model, timestamp=epoch(data.get("created"))
+                )
                 if request is not None and not request.timestamp_utc:
                     request.timestamp_utc = base.timestamp_utc
-                current = (base, mid, str(data.get("role") or "assistant"), list(content))
-            elif rec.get("error"):
+                current = (base, message_id, str(data.get("role") or "assistant"), list(content))
+            elif record.get("error"):
                 flush()
-                row = self._row(artifact, n, model=model)
+                row = self._row(artifact, line_number, model=model)
                 row.turn_type = "system"
                 row.text = compact(
                     "llm error: "
                     + (
-                        rec["error"]
-                        if isinstance(rec["error"], str)
-                        else compact_json(rec["error"])
+                        record["error"]
+                        if isinstance(record["error"], str)
+                        else compact_json(record["error"])
                     ),
                 )
                 pending.append(row)
@@ -914,81 +822,81 @@ class GooseParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     # -- standing files: permission.yaml, roaming_trust.json, schedule.json -------------
-    def _standing_row(self, artifact: Artifact, line: int, ts: str, text: str) -> Row:
-        row = self._row(artifact, line, ts=ts)
+    def _standing_row(self, artifact: Artifact, line: int, timestamp: str, text: str) -> Row:
+        row = self._row(artifact, line, timestamp=timestamp)
         row.turn_type = "system"
         row.text = compact(text)
         return row
 
     def _read_json_file(self, artifact: Artifact) -> tuple[object, str]:
-        """(document, error message) of a whole-file JSON store."""
+        """Return (document, error message) of a whole-file JSON store."""
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            return None, "unreadable %s (%s)" % (artifact.rel, e)
+        except OSError as error:
+            return None, "unreadable %s (%s)" % (artifact.rel, error)
         try:
             return json.loads(raw), ""
-        except ValueError as e:
-            return None, "%s is not JSON (%s)" % (artifact.rel, e)
+        except ValueError as error:
+            return None, "%s is not JSON (%s)" % (artifact.rel, error)
 
     def _parse_permission_yaml(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        ts = file_mtime(artifact)
-        for n, category, level, tool in permission_entries(artifact.disk_path, errors):
+        timestamp = file_mtime(artifact)
+        for line_number, category, level, tool in permission_entries(artifact.disk_path, errors):
             yield self._standing_row(
                 artifact,
-                n,
-                ts,
+                line_number,
+                timestamp,
                 "permission setting: %s.%s=%s (from %s, file mtime)"
                 % (category, level, tool, artifact.rel),
             )
         yield from error_rows(self, artifact, errors)
 
     def _parse_roaming_trust(self, artifact: Artifact) -> Iterator[Row]:
-        doc, message = self._read_json_file(artifact)
-        ts = file_mtime(artifact)
-        if not message and not isinstance(doc, dict):
+        document, message = self._read_json_file(artifact)
+        timestamp = file_mtime(artifact)
+        if not message and not isinstance(document, dict):
             message = "%s is not a JSON object" % artifact.rel
-        if message or not isinstance(doc, dict):
-            yield self._standing_row(artifact, 0, ts, "parser: " + message)
+        if message or not isinstance(document, dict):
+            yield self._standing_row(artifact, 0, timestamp, "parser: " + message)
             return
         for key in ("allowed", "revoked_keys"):
-            values = doc.get(key)
+            values = document.get(key)
             for peer in values if isinstance(values, list) else []:
                 yield self._standing_row(
                     artifact,
                     1,
-                    ts,
+                    timestamp,
                     "permission setting: roaming_trust.%s=%s (from %s, file mtime)"
                     % (key, setting_value(peer), artifact.rel),
                 )
 
     def _parse_schedule(self, artifact: Artifact) -> Iterator[Row]:
-        doc, message = self._read_json_file(artifact)
-        ts = file_mtime(artifact)
-        if not message and not isinstance(doc, list):
+        document, message = self._read_json_file(artifact)
+        timestamp = file_mtime(artifact)
+        if not message and not isinstance(document, list):
             message = "%s is not a JSON array" % artifact.rel
-        if message or not isinstance(doc, list):
-            yield self._standing_row(artifact, 0, ts, "parser: " + message)
+        if message or not isinstance(document, list):
+            yield self._standing_row(artifact, 0, timestamp, "parser: " + message)
             return
         errors: list = []
-        for i, job in enumerate(doc, 1):
+        for i, job in enumerate(document, 1):
             if not isinstance(job, dict):
                 errors.append(
                     (0, "unparseable record %d (not a JSON object)" % i, compact_json(job))
                 )
                 continue
-            yield self._standing_row(artifact, 1, ts, schedule_text(job, artifact.rel))
+            yield self._standing_row(artifact, 1, timestamp, schedule_text(job, artifact.rel))
         yield from error_rows(self, artifact, errors)
 
     # -- history.txt ------------------------------------------------------------------------
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                if not line or (n == 1 and line.startswith("#V")):
+                if not line or (line_number == 1 and line.startswith("#V")):
                     continue
-                row = self._row(artifact, n)
+                row = self._row(artifact, line_number)
                 row.turn_type = "user"
                 row.text = compact(unescape_history(line))
                 yield row

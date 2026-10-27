@@ -1,205 +1,31 @@
-"""Hermes Agent sessions.
+r"""Hermes Agent sessions.
 
-Hermes (NousResearch/hermes-agent, checked at 8b66a51) keeps every
-conversation of a profile, whatever the front end (CLI, TUI, desktop,
-messaging gateway, cron, subagents), in one SQLite database in OpenAI
-chat-completions message shape. See `research/hermes.md`.
+Hermes keeps every conversation of a profile, whatever the front end, in one SQLite database
+in OpenAI chat-completions message shape. Reads, under `<hermes>` (`.hermes[_<suffix>]` or
+`AppData/Local/hermes[_<suffix>]`, then optionally `profiles/<name>`; empty when the base is a
+Docker or Podman volume's `_data`): `state.db` (primary); the secondary copies
+`state-snapshots/<id>/state.db`, `sessions/<id>.jsonl`, `.hermes_history`,
+`cron/output/<job>/<time>.md`, `response_store.db` and a project's
+`trajectory_samples.jsonl` and `failed_trajectories.jsonl`; and `pastes/pending.json`,
+`config.yaml` (`command_allowlist` only), `[platforms/]pairing/<platform>-approved.json` and
+the desktop app's `connections.json`. Yields transcript rows and model, permission, relay,
+deletion, scratch-directory, debug-upload and remote-backend `system` rows.
 
-Files, relative to the home directory, where `<hermes>` is `.hermes`,
-`.hermes_<suffix>`, `AppData/Local/hermes` or `AppData/Local/hermes_<suffix>`,
-optionally followed by `profiles/<name>` (named profiles are complete homes).
-A Hermes home collected from a Docker or Podman named volume (the
-`hermes|*hermes*` volume line; the image mounts the Hermes home at
-`/opt/data`) has the volume's `_data` as its base, so `<hermes>` is empty
-there and the paths start at `state.db`, `sessions/`, `state-snapshots/`,
-`pastes/` or `profiles/<name>/` (issue 181; source-derived, not observed on
-any real install):
+Fields the parser depends on:
 
-* `<hermes>/state.db`, with `-wal` and `-shm` sidecars (WAL mode, schema
-  version 31 at the checked commit). Migrations add columns in place, so
-  every column is read with a default.
-  - `sessions`: `id`, `source`, `model`, `parent_session_id`, `started_at`
-    (epoch seconds), `end_reason`, `cwd`, `git_branch`, `git_repo_root`,
-    `title`.
-  - `messages`: `id` (write order), `session_id`, `role` (`user`,
-    `assistant`, `tool`, `system`), `content` (text; list or dict content is
-    stored as `"\\x00json:"` + JSON), `tool_calls` (JSON list of `{id,
-    call_id, type, function: {name, arguments}}`, `arguments` a JSON
-    string), `tool_call_id`, `tool_name`, `timestamp` (epoch seconds),
-    `reasoning`, `reasoning_content`, `finish_reason`, `active`,
-    `display_kind` (`model_switch` marks a model-switch marker).
-* `<hermes>/state-snapshots/<id>/state.db`: quick snapshots, consistent
-  copies of `state.db` made with SQLite's backup API by `/snapshot`,
-  `hermes backup --quick` and `hermes update` (20 kept by default). `<id>` is
-  the UTC time `YYYYmmdd-HHMMSS`, optionally followed by `-<label>` and a
-  `-<n>` collision suffix. Read with the `state.db` reader, after one
-  `system` row `state snapshot <id>: older copy of state.db`, timestamped
-  from the id when it starts with a valid time, else empty. Collectors
-  before the issue 123 change excluded `state-snapshots` unless run with
-  `--full`.
-* `<hermes>/sessions/<session_id>.jsonl`: written only when `state.db` was
-  replaced under a running process; one message dict per line with the same
-  keys as a `messages` row (`tool_calls` may be a list rather than a string,
-  `timestamp` may be absent). It records no working directory or model.
-* `<hermes>/pastes/pending.json`: a JSON list of `{url, expire_at}`
-  (`expire_at` epoch seconds, a float: the upload time plus 21600 s), the
-  paste.rs links of `hermes debug share`, the gateway's `/debug` and the
-  dashboard's debug share, whose logs hold verbatim recent messages; an
-  entry is dropped after `hermes debug delete` or once it is a day past
-  its expiry. One `system` row per entry, `debug report uploaded: <url>
-  (from pastes/pending.json, expire_at minus 6 hours)`, at `expire_at`
-  minus 21600 seconds, with an empty `session_id`: the upload is host-wide
-  and marks no session, so `records_sync` stays False. A file that is not
-  a JSON list is one `parser:` row; an entry that is not an object with a
-  `url` is its own `parser: unparseable record <n>` row carrying the
-  entry. Fixture only: no real install has shown the file.
+* `sessions`: `id`, `source`, `model`, `parent_session_id`, `started_at`, `end_reason`,
+  `cwd`, `git_branch`, `git_repo_root`, `title`, `archived`, `chat_id`, `chat_type`,
+  `thread_id`, `user_id`, `display_name`, `origin_json`, `model_config` (`yolo_mode`).
+* `messages`: `id`, `session_id`, `role`, `content` (`\x00json:` + JSON for parts),
+  `tool_calls`, `tool_call_id`, `tool_name`, `timestamp`, `reasoning`, `reasoning_content`,
+  `active`, `display_kind`; `session_model_usage` (`model`, `billing_provider`, `task`,
+  `first_seen`), `state_meta`, `conversation_generations`, `hosted_room_events` and
+  `hosted_rooms`.
+* `responses` (`response_id`, `data`), `conversations` (`name`, `response_id`).
 
-Secondary sources (issue 122, `secondary`): the snapshots and the
-`sessions/<id>.jsonl` diverts. `state.db` is the store of record; a
-snapshot is a copy of it at the snapshot time, so its rows carry the same
-`session_id`, `cwd` project path and message timestamps as the live rows
-and pair with them exactly; what survives is what the live database has
-lost since (a session pruned after 90 idle days, a deleted session, a
-`state.db` replaced or rebuilt). Repeats across several snapshots
-collapse to the first copy. A row whose text changed since the snapshot
-(a turn rewound or compacted later, now `[rewound] ...`; a session whose
-`end_reason` was set later) does not pair and both are kept. A divert
-holds the messages a live process could not write to the replaced
-database, so its rows pair only when those messages also reached a
-database the parser reads (a snapshot, a later `state.db`); they carry the
-message's own `timestamp` when the line has one, else none (they then
-match on text within the session), the session id from the file name and
-no project path. Both use the default 2-second tolerance; the copies are
-exact.
-
-Rows: one `system` row per session (title, source, parent, end reason); per
-message one `user`, `assistant`, `tool_result` (role `tool`, joined on
-`tool_call_id`) or `system` row for non-empty content, a `thinking` row for
-`reasoning`/`reasoning_content` with `--include-thinking`, and one `tool_use`
-row per `tool_calls` entry whose text is the `command` or `path` argument,
-else the arguments. A `tool_calls` value that is not valid JSON, is not a
-list or holds an entry that is not an object yields one `parser:
-unparseable record <messages.id> (<reason>): <value as stored>` row through
-`error_rows` after the message's other rows, with the message's session
-and project path (issue 182); the entries that are objects still give
-`tool_use` rows. Messages are ordered by `timestamp, id`. Rewind and
-compaction keep the old rows with `active = 0` instead of deleting them (both
-set the same flags, so the two cannot be told apart); those rows are still
-evidence and are emitted with a `[rewound]` prefix on their text (except
-model-switch markers, below). The model is the session's `model`; messages
-record none of their own beyond the markers. `project_path`
-is `sessions.cwd`, else `git_repo_root`, and `git_branch` is
-`sessions.git_branch`. Not parsed: the legacy `sessions/<id>.json` and
-`session_<id>.json` snapshots (nothing at the checked commit writes them,
-only `_remove_session_files` deletes them, so their shape is not known),
-`/save` exports, the `backups/*.zip` archives, the copies of
-`response_store.db` and the other stores inside a quick snapshot, the
-`approvals` settings nested in `config.yaml`, and the desktop app's
-single-connection `connection.json`.
-
-Model rows (issue 96), `system`, after each session's start row:
-`session_model_usage` (`session_id`, `model`, `billing_provider`, `task`,
-`first_seen` in epoch seconds) holds one row per model, billing route and
-task that a session's API calls used, so its main-loop rows (`task` empty;
-auxiliary calls such as compression or title generation name their task
-and are skipped) ordered by `first_seen` give `model: <id>` for the first
-and `model: <old> -> <new>` for each later one, timestamped at
-`first_seen` and suffixed ` provider=<billing_provider>` when set. The
-table aggregates per model, so a switch back to a model already used is
-not visible. A session with no such rows (an older database, or no API call
-yet) gets one `model: <sessions.model>` row at `started_at`;
-`sessions.model` is rewritten by a `/model` switch, so it is the latest
-model, not necessarily the first. The `model` column of the other rows
-stays `sessions.model`.
-
-Model-switch markers (issue 180): a switch made in the TUI, the desktop
-app or another TUI gateway front end is a `messages` row with `role`
-`user`, `display_kind` `model_switch` and the content `[System: The
-active model for this chat has changed to <model> via provider
-<provider>. From this point forward, ...]` (the provider part only when
-one is set), at the switch time (tui_gateway/server.py:1274-1331 at
-86fa9e6, present at 8b66a51 as well). Each switch sets `active = 0` on
-the session's earlier markers (hermes_state_messages.py:1064-1070 at
-86fa9e6), which is not a rewind. Each marker is one `system` row
-`model: <old> -> <model> provider=<provider>` at its time, with `model`
-set to the new model and no `[rewound]` prefix, never a `user` row. The
-marker names only the new model: `<old>` is the session's previous
-marker's model, else the last main-loop `session_model_usage` model first
-seen before the marker; with neither, or when it equals the new one, the
-row is `model: <model> provider=<provider>`. A marker whose text does not
-have that form is a `system` row `model_switch: <text>`. The classic
-CLI's `/model` writes no marker. Source-derived: no real install has
-shown a marker row.
-
-Issue 208, source-derived from hermes-agent 86fa9e6 (not observed on any
-real install); the field names each depends on are in brackets.
-
-* Session rows, after a session's model rows, at its `started_at`
-  [`sessions.source`, `chat_id`, `chat_type`, `thread_id`, `user_id`,
-  `display_name`, `origin_json` (`user_name`, `chat_name`,
-  `imported_from` {`tool`, `path`, `foreign_session_id`}), `model_config`
-  (`yolo_mode`), `archived`, `cwd`, `git_branch`]: `session relayed:
-  <source> chat <chat_id> type <chat_type> thread <thread_id> user
-  <user_id> name <user_name> display <display_name> (from state.db
-  sessions, started_at)` for a session whose `source` is a messaging
-  platform of gateway/config.py (every one but `local` and `api_server`)
-  or that has a `chat_id`, so `records_relay` is True; `permission
-  setting: yolo_mode=<true|false> (from state.db sessions.model_config,
-  started_at)` for a session whose `/yolo` bypass is recorded; and
-  `scratch directory: <cwd> (git worktree the agent created in <repo>,
-  branch <git_branch>)` for a `cwd` of the form `<repo>/.worktrees/<name>`
-  on a branch starting `hermes/` or `hermes-subagent/`. The start row ends
-  ` | archived=1` for an archived session and ` | imported from <tool>
-  <path> session <foreign_session_id>` for a session copied from Claude
-  Code or Codex CLI. `-` stands for an absent value.
-* `permission decision: approved (<approval>)`, `permission decision:
-  blocked <error>` (with ` user_summary=<user_summary>`) and `permission
-  decision: pending pattern=<pattern_key> smart_denied=<smart_denied>`
-  after a `terminal` tool result whose JSON content has `approval` or a
-  `status` of `blocked` or `pending_approval`, with the call's
-  `tool_use_id`.
-* `state_meta` (`key`, `value`): `session deleted: <id>[ sweep] (from
-  state.db state_meta gateway.retired_session.v1, retired_at)` per
-  deletion fence, at its `retired_at`, ` sweep` when `expires` is set.
-  `conversation_generations` (`source`, `session_key`, `generation`):
-  `relay peer: <source> <session_key> generation <n> (from state.db
-  conversation_generations)` per row, with no time. `hosted_room_events`
-  (`room_id`, `seq`, `kind`, `actor_json` {`kind`, `id`,
-  `display_name`}, `payload_json` {`text`}, `created_at`) with
-  `hosted_rooms.name`: `bot mode room <name> (<room_id>) seq <seq> <kind>
-  actor <kind>:<id> (<display_name>): <text or payload>`.
-* `<hermes>/config.yaml`: `permission setting: command_allowlist=<pattern>
-  (from config.yaml, file mtime)` per entry of the top-level block list;
-  any other construct under the key is a whole-file `parser:` row.
-  `<hermes>/[platforms/]pairing/<platform>-approved.json` (user id ->
-  {`user_name`, `approved_at`}): `permission setting:
-  pairing.<platform>.<user id> user_name=<user_name> (from
-  <dir>/<platform>-approved.json, approved_at)` at `approved_at`.
-* Secondary sources: `<hermes>/.hermes_history` (prompt_toolkit
-  `FileHistory`; `user` rows, `slash command: <entry>` for an entry that
-  starts with `/`), `<hermes>/cron/output/<job>/<time>.md` (`cron run:
-  job <job> ...`, then the prompt as `user` and the response as
-  `assistant`, by the `**Prompt Characters:**` and `**Response
-  Characters:**` frames or the `## Prompt` and last `## Response`
-  headings, else `cron run output: <document>`), `<hermes>/response_store.db`
-  (`responses.response_id`, `data` {`response` {`status`, `model`,
-  `created_at`}, `conversation_history`, `session_id`},
-  `conversations.name`; a header row per response, then the history
-  messages no earlier response of the session held at the same position)
-  and the trajectory files `trajectory_samples.jsonl` and
-  `failed_trajectories.jsonl` of a project (`conversations` [{`from`,
-  `value`}], `timestamp`, `model`, `completed`). The history and the cron
-  files keep host-local times without a zone (the TUI's history entries
-  are UTC), emitted as if UTC, so their `secondary_tolerance` is 14 hours
-  plus 2 seconds; history, response-store messages and trajectory turns
-  carry no session id, or, for the response store, no time.
-* The desktop app's `connections.json` in its Electron userData directory
-  (`connections` [{`kind`, `label`, `url`, `host`, `user`, `port`,
-  `org`, `name`, `remoteProfile`}], `quarantined` [{`reason`}]): `remote
-  backend: <kind> <label> <target> (from connections.json, file mtime)`
-  per connection that is not `local`, and `remote backend quarantined by
-  the app: <reason>` per quarantined entry. Its `token` and `headers` are
-  never printed.
+Validated against source, NousResearch/hermes-agent at 8b66a51 and 86fa9e6, with a synthetic
+fixture; no real install. Times without a zone (the history and cron files) are emitted as if
+UTC. See `research/hermes.md`.
 """
 
 from __future__ import annotations
@@ -231,29 +57,29 @@ from .base import (
 # The Hermes home a path starts with: `.hermes[_<suffix>]/` or
 # `AppData/Local/hermes[_<suffix>]/` under a user's home, or nothing when the
 # collection base is a Docker or Podman named volume's `_data` (the
-# `hermes|*hermes*` volume line), which holds the Hermes home itself (issue
-# 181); either one optionally followed by `profiles/<name>/`.
+# `hermes|*hermes*` volume line), which holds the Hermes home itself; either
+# one optionally followed by `profiles/<name>/`.
 HOME = r"(?:(?:\.hermes(?:_[^/]+)?|AppData/Local/hermes(?:_[^/]+)?)/)?(?:profiles/[^/]+/)?"
-DB_RX = re.compile(r"^%sstate\.db$" % HOME)
-JSONL_RX = re.compile(r"^%ssessions/[^/]+\.jsonl$" % HOME)
-SNAP_RX = re.compile(r"^%sstate-snapshots/([^/]+)/state\.db$" % HOME)
-SNAP_TIME_RX = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-|$)")
-PASTES_RX = re.compile(r"^%spastes/pending\.json$" % HOME)
+DATABASE_PATTERN = re.compile(r"^%sstate\.db$" % HOME)
+JSONL_PATTERN = re.compile(r"^%ssessions/[^/]+\.jsonl$" % HOME)
+SNAPSHOT_PATTERN = re.compile(r"^%sstate-snapshots/([^/]+)/state\.db$" % HOME)
+SNAPSHOT_TIME_PATTERN = re.compile(r"^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})(?:-|$)")
+PASTES_PATTERN = re.compile(r"^%spastes/pending\.json$" % HOME)
 # A paste.rs upload's `expire_at` is its upload time plus this (hermes_cli/debug.py).
 PASTE_LIFETIME = 21600
-# Issue 208, source-derived (hermes-agent 86fa9e6): standing permission files,
+# Read from hermes-agent 86fa9e6: the standing permission files,
 # the prompt history, the cron run archive, the API server's response store,
 # the trajectory files a run with --save-trajectories leaves in its working
 # directory (project files; the base is the project) and the desktop app's
 # connection registry in its Electron userData directory.
-CONFIG_RX = re.compile(r"^%sconfig\.yaml$" % HOME)
-PAIRING_RX = re.compile(r"^%s((?:platforms/)?pairing)/([^/]+)-approved\.json$" % HOME)
-HISTORY_RX = re.compile(r"^%s\.hermes_history$" % HOME)
-CRON_RX = re.compile(r"^%scron/output/([^/]+)/([^/]+)\.md$" % HOME)
-CRON_TIME_RX = re.compile(r"^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)$")
-RESPONSES_RX = re.compile(r"^%sresponse_store\.db$" % HOME)
-TRAJECTORY_RX = re.compile(r"^(?:trajectory_samples|failed_trajectories)\.jsonl$")
-CONNECTIONS_RX = re.compile(
+CONFIG_PATTERN = re.compile(r"^%sconfig\.yaml$" % HOME)
+PAIRING_PATTERN = re.compile(r"^%s((?:platforms/)?pairing)/([^/]+)-approved\.json$" % HOME)
+HISTORY_PATTERN = re.compile(r"^%s\.hermes_history$" % HOME)
+CRON_PATTERN = re.compile(r"^%scron/output/([^/]+)/([^/]+)\.md$" % HOME)
+CRON_TIME_PATTERN = re.compile(r"^(\d{4}-\d\d-\d\d)_(\d\d)-(\d\d)-(\d\d)$")
+RESPONSES_PATTERN = re.compile(r"^%sresponse_store\.db$" % HOME)
+TRAJECTORY_PATTERN = re.compile(r"^(?:trajectory_samples|failed_trajectories)\.jsonl$")
+CONNECTIONS_PATTERN = re.compile(
     r"^(?:\.config|Library/Application Support|AppData/Roaming)/Hermes/connections\.json$"
 )
 # The classic CLI's history entries and the cron run files carry host-local
@@ -290,11 +116,11 @@ MESSAGING = frozenset(
 )
 NOT_RELAYED = frozenset(("local", "api_server"))
 RETIRED_PREFIX = "gateway.retired_session.v1."
-WORKTREE_RX = re.compile(r"^(.*)[/\\]\.worktrees[/\\][^/\\]+[/\\]?$")
+WORKTREE_PATTERN = re.compile(r"^(.*)[/\\]\.worktrees[/\\][^/\\]+[/\\]?$")
 WORKTREE_BRANCHES = ("hermes/", "hermes-subagent/")
 # The cron run document's length frames (cron/scheduler_prompt.py).
-CRON_PROMPT_FRAME_RX = re.compile(r"(?m)^\*\*Prompt Characters:\*\* (\d+)\n## Prompt\n\n")
-CRON_RESPONSE_FRAME_RX = re.compile(r"\*\*Response Characters:\*\* (\d+)\n## Response\n\n")
+CRON_PROMPT_FRAME_PATTERN = re.compile(r"(?m)^\*\*Prompt Characters:\*\* (\d+)\n## Prompt\n\n")
+CRON_RESPONSE_FRAME_PATTERN = re.compile(r"\*\*Response Characters:\*\* (\d+)\n## Response\n\n")
 CRON_PROMPT_HEADING = "## Prompt\n\n"
 CRON_RESPONSE_HEADING = "## Response\n\n"
 # ShareGPT `from` values of a trajectory entry (agent/agent_runtime_helpers.py).
@@ -310,8 +136,7 @@ ROLE_TYPES = {"user": "user", "assistant": "assistant", "tool": "tool_result", "
 
 
 def decode_content(value):
-    """`messages.content` as Hermes stored it: plain text, or list/dict
-    multimodal parts behind the NUL-prefixed JSON sentinel."""
+    """Return `messages.content` as stored: text, or the parts behind the JSON sentinel."""
     if isinstance(value, str) and value.startswith(JSON_PREFIX):
         try:
             return json.loads(value[len(JSON_PREFIX) :])
@@ -321,18 +146,20 @@ def decode_content(value):
 
 
 def content_text(value) -> str:
+    """Return the text of a `messages.content` value, image parts as `[image]`."""
     content = decode_content(value)
     if isinstance(content, list):
         content = [
             {"type": "image"}
-            if isinstance(b, dict) and b.get("type") in ("image_url", "input_image")
-            else b
-            for b in content
+            if isinstance(block, dict) and block.get("type") in ("image_url", "input_image")
+            else block
+            for block in content
         ]
     return text_of(content)
 
 
 def _json(value, default):
+    """Decode a JSON text, returning `default` for an empty or undecodable value."""
     if value is None or value == "":
         return default
     if not isinstance(value, str):
@@ -344,24 +171,27 @@ def _json(value, default):
 
 
 def model_switch(content) -> tuple[str, str] | None:
-    """(model, provider) named by a model-switch marker's text, provider
-    `""` when the marker has none; None when the text is not one."""
+    """Return (model, provider) named by a model-switch marker, or None when the text is not one.
+
+    The provider is `""` when the marker names none.
+    """
     if not isinstance(content, str) or not content.startswith(SWITCH_PREFIX):
         return None
-    head, sep, _ = content[len(SWITCH_PREFIX) :].partition(SWITCH_END)
-    if not sep:
+    head, separator, _ = content[len(SWITCH_PREFIX) :].partition(SWITCH_END)
+    if not separator:
         return None
     model, _, provider = head.partition(SWITCH_PROVIDER)
     return (model, provider) if model else None
 
 
-def tool_calls(m: dict, line) -> tuple[list, list]:
-    """The `tool_calls` of message `m` as (calls, errors). A value that is
-    not valid JSON, is not a list (a lone object is taken as a one-call
-    list) or holds an entry that is not an object is an `errors` entry
-    carrying the value as stored, for `error_rows` (issue 182); the
-    entries that are objects are still returned."""
-    value = m.get("tool_calls")
+def tool_calls(message: dict, line) -> tuple[list, list]:
+    """Return the `tool_calls` of `message` as (calls, errors).
+
+    A value that is not valid JSON, is not a list (a lone object is taken as a one-call list) or
+    holds an entry that is not an object gives an `errors` entry carrying the value as stored, for
+    `error_rows`; the entries that are objects are still returned.
+    """
+    value = message.get("tool_calls")
     if value is None or value == "":
         return [], []
     raw = value if isinstance(value, str) else compact_json(value)
@@ -369,19 +199,20 @@ def tool_calls(m: dict, line) -> tuple[list, list]:
     if isinstance(value, str):
         try:
             value = json.loads(value)
-        except ValueError as e:
-            return [], [(line, "%s (tool_calls is not valid JSON: %s)" % (label, e), raw)]
+        except ValueError as error:
+            return [], [(line, "%s (tool_calls is not valid JSON: %s)" % (label, error), raw)]
     if isinstance(value, dict):
         value = [value]
     if not isinstance(value, list):
         return [], [(line, "%s (tool_calls is not a list)" % label, raw)]
-    calls = [c for c in value if isinstance(c, dict)]
+    calls = [call for call in value if isinstance(call, dict)]
     if len(calls) != len(value):
         return calls, [(line, "%s (tool_calls entry is not an object)" % label, raw)]
     return calls, []
 
 
 def call_summary(arguments) -> str:
+    """Return the `command`, `path`, `file_path`, `url` or `query` argument, else the arguments."""
     args = _json(arguments, arguments)
     if isinstance(args, dict):
         for k in ("command", "path", "file_path", "url", "query"):
@@ -392,7 +223,8 @@ def call_summary(arguments) -> str:
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    """Join the non-empty parts with ` | `."""
+    return " | ".join(part for part in parts if part)
 
 
 def _dash(value) -> str:
@@ -403,12 +235,12 @@ def _dash(value) -> str:
 
 
 def terminal_decision(content) -> str:
-    """The `permission decision:` row text, less its label, for a `terminal`
-    tool result whose JSON records an approval outcome
-    (tools/terminal_tool.py:1062-1087 at 86fa9e6): `approved (<approval
-    note>)`, `blocked <error>` with ` user_summary=<summary>` when a person
-    was asked, or `pending pattern=<pattern_key> smart_denied=<bool>` for a
-    command waiting on a gateway `/approve`; `""` for any other result."""
+    """Return the `permission decision:` text, less its label, of a `terminal` tool result.
+
+    The result's JSON records the approval outcome (tools/terminal_tool.py:1062-1087 at 86fa9e6):
+    `approved (<note>)`, `blocked <error>` with ` user_summary=<summary>` when a person was asked,
+    or `pending pattern=<pattern_key> smart_denied=<bool>`; `""` for any other result.
+    """
     value = decode_content(content)
     if isinstance(value, str):
         try:
@@ -434,10 +266,12 @@ def terminal_decision(content) -> str:
 
 
 def yaml_scalar(value: str) -> str | None:
-    """A one-line YAML scalar as a string: double-quoted (JSON escapes),
-    single-quoted (`''` for a quote) or plain (a trailing ` #` comment
-    removed); None for anything else (a mapping, a flow collection, an
-    alias, a block scalar, an unterminated quote)."""
+    """Return a one-line YAML scalar as a string, or None for anything else.
+
+    Double-quoted (JSON escapes), single-quoted (`''` for a quote) and plain scalars (a trailing `
+    #` comment removed) are read; a mapping, a flow collection, an alias, a block scalar or an
+    unterminated quote gives None.
+    """
     if value[:1] in ("'", '"'):
         quote, i = value[0], 1
         while i < len(value):
@@ -466,24 +300,25 @@ def yaml_scalar(value: str) -> str | None:
 
 
 def read_flat_list(lines: list[str], key: str) -> tuple[list[tuple[int, str]], str]:
-    """The strings of the top-level YAML block list `key` in `lines`, as
-    (line number, string), and an error naming the first line that is not a
-    `- <scalar>` item of it (`""` when there is none). Only that shape is
-    read: an absent key, `key:` with no items and `key: []` give no entries,
-    and any other construct under the key is an error."""
+    """Return the strings of the top-level YAML block list `key` and the first problem.
+
+    The strings come as (line number, string); the problem names the first line that is not a `-
+    <scalar>` item of the list, `""` when there is none. An absent key, `key:` with no items and
+    `key: []` give no entries.
+    """
     entries: list[tuple[int, str]] = []
     start = 0
-    for n, line in enumerate(lines, 1):
+    for line_number, line in enumerate(lines, 1):
         if line.startswith(key + ":"):
-            start = n
+            start = line_number
             rest = line[len(key) + 1 :].split(" #", 1)[0].strip()
             if rest not in ("", "[]", "null", "~"):
-                return [], "line %d: %s is not a block list" % (n, key)
+                return [], "line %d: %s is not a block list" % (line_number, key)
             break
     if not start:
         return [], ""
-    for n in range(start + 1, len(lines) + 1):
-        line = lines[n - 1]
+    for line_number in range(start + 1, len(lines) + 1):
+        line = lines[line_number - 1]
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -491,118 +326,129 @@ def read_flat_list(lines: list[str], key: str) -> tuple[list[tuple[int, str]], s
             break  # the next top-level key
         value = yaml_scalar(stripped[2:].strip()) if stripped.startswith("- ") else None
         if value is None:
-            return entries, "line %d: not a string item of %s" % (n, key)
-        entries.append((n, value))
+            return entries, "line %d: not a string item of %s" % (line_number, key)
+        entries.append((line_number, value))
     return entries, ""
 
 
-def split_cron_doc(doc: str) -> tuple[str, str] | None:
-    """(prompt, response) of a cron run document: by its length frames when
-    the writer stamped them (`**Prompt Characters:** <n>` before `## Prompt`,
-    `**Response Characters:** <n>` before `## Response`), else at the first
-    `## Prompt` heading and the last `## Response` heading (an unframed
-    document of an older writer); None for a document with neither (a failed,
-    blocked or script-gated run, whose document is kept whole)."""
-    frame = CRON_PROMPT_FRAME_RX.search(doc)
-    if frame and doc.find(CRON_PROMPT_HEADING) == frame.end() - len(CRON_PROMPT_HEADING):
+def split_cron_doc(document: str) -> tuple[str, str] | None:
+    """Return (prompt, response) of a cron run document, or None.
+
+    The length frames (`**Prompt Characters:** <n>`, `**Response Characters:** <n>`) are used when
+    the writer stamped them, else the first `## Prompt` and the last `## Response` heading; a
+    document with neither (a failed, blocked or script-gated run) gives None.
+    """
+    frame = CRON_PROMPT_FRAME_PATTERN.search(document)
+    if frame and document.find(CRON_PROMPT_HEADING) == frame.end() - len(CRON_PROMPT_HEADING):
         end = frame.end() + int(frame.group(1))
-        reply = CRON_RESPONSE_FRAME_RX.match(doc, end + 2)
+        reply = CRON_RESPONSE_FRAME_PATTERN.match(document, end + 2)
         if reply:
-            prompt = doc[frame.end() : end]
-            return prompt, doc[reply.end() : reply.end() + int(reply.group(1))]
-    start = doc.find(CRON_PROMPT_HEADING)
-    cut = doc.rfind(CRON_RESPONSE_HEADING)
+            prompt = document[frame.end() : end]
+            return prompt, document[reply.end() : reply.end() + int(reply.group(1))]
+    start = document.find(CRON_PROMPT_HEADING)
+    cut = document.rfind(CRON_RESPONSE_HEADING)
     if start < 0 or cut <= start:
         return None
-    prompt = doc[start + len(CRON_PROMPT_HEADING) : cut]
+    prompt = document[start + len(CRON_PROMPT_HEADING) : cut]
     if prompt.endswith("\n\n"):
         prompt = prompt[:-2]
-    reply_text = doc[cut + len(CRON_RESPONSE_HEADING) :]
+    reply_text = document[cut + len(CRON_RESPONSE_HEADING) :]
     if reply_text.endswith("\n"):
         reply_text = reply_text[:-1]
     return prompt, reply_text
 
 
 class HermesParser(Parser):
+    """Parse Hermes's session databases, their copies, histories and settings."""
+
     agent = "hermes"
     name = "hermes"
     has_secondary = True
     records_relay = True
 
     WANTED = (
-        DB_RX,
-        SNAP_RX,
-        JSONL_RX,
-        PASTES_RX,
-        CONFIG_RX,
-        PAIRING_RX,
-        HISTORY_RX,
-        CRON_RX,
-        RESPONSES_RX,
-        TRAJECTORY_RX,
-        CONNECTIONS_RX,
+        DATABASE_PATTERN,
+        SNAPSHOT_PATTERN,
+        JSONL_PATTERN,
+        PASTES_PATTERN,
+        CONFIG_PATTERN,
+        PAIRING_PATTERN,
+        HISTORY_PATTERN,
+        CRON_PATTERN,
+        RESPONSES_PATTERN,
+        TRAJECTORY_PATTERN,
+        CONNECTIONS_PATTERN,
     )
-    SECONDARY = (SNAP_RX, JSONL_RX, HISTORY_RX, CRON_RX, RESPONSES_RX, TRAJECTORY_RX)
+    SECONDARY = (
+        SNAPSHOT_PATTERN,
+        JSONL_PATTERN,
+        HISTORY_PATTERN,
+        CRON_PATTERN,
+        RESPONSES_PATTERN,
+        TRAJECTORY_PATTERN,
+    )
 
     def wants(self, artifact: Artifact) -> bool:
-        return any(rx.match(artifact.rel) for rx in self.WANTED)
+        """Return True for the Hermes files this parser reads."""
+        return any(pattern.match(artifact.rel) for pattern in self.WANTED)
 
     def secondary(self, artifact: Artifact) -> bool:
-        return any(rx.match(artifact.rel) for rx in self.SECONDARY)
+        """Return True for the files that repeat the events of `state.db`."""
+        return any(pattern.match(artifact.rel) for pattern in self.SECONDARY)
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        """`.hermes_history` and the cron run files keep host-local times with
-        no zone, emitted as if UTC, so their window spans every zone offset
-        (14 hours) plus the default 2 seconds; the other sources keep the
-        default, their times being copies of the store's."""
-        if HISTORY_RX.match(artifact.rel) or CRON_RX.match(artifact.rel):
+        """Return `LOCAL_TOLERANCE` for the history and cron run files, else the default window."""
+        if HISTORY_PATTERN.match(artifact.rel) or CRON_PATTERN.match(artifact.rel):
             return LOCAL_TOLERANCE
         return TOLERANCE_SECONDS
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Hermes file."""
         rel = artifact.rel
-        snap = SNAP_RX.match(rel)
-        if snap:
-            yield self._snapshot_row(artifact, snap.group(1))
-            yield from self._parse_db(artifact, opts)
-        elif DB_RX.match(rel):
-            yield from self._parse_db(artifact, opts)
-        elif PASTES_RX.match(rel):
+        snapshot = SNAPSHOT_PATTERN.match(rel)
+        if snapshot:
+            yield self._snapshot_row(artifact, snapshot.group(1))
+            yield from self._parse_database(artifact, opts)
+        elif DATABASE_PATTERN.match(rel):
+            yield from self._parse_database(artifact, opts)
+        elif PASTES_PATTERN.match(rel):
             yield from self._parse_pastes(artifact)
-        elif CONFIG_RX.match(rel):
+        elif CONFIG_PATTERN.match(rel):
             yield from self._parse_config(artifact)
-        elif pairing := PAIRING_RX.match(rel):
+        elif pairing := PAIRING_PATTERN.match(rel):
             yield from self._parse_pairing(artifact, pairing)
-        elif HISTORY_RX.match(rel):
+        elif HISTORY_PATTERN.match(rel):
             yield from self._parse_history(artifact)
-        elif cron := CRON_RX.match(rel):
+        elif cron := CRON_PATTERN.match(rel):
             yield from self._parse_cron(artifact, cron)
-        elif RESPONSES_RX.match(rel):
+        elif RESPONSES_PATTERN.match(rel):
             yield from self._parse_responses(artifact, opts)
-        elif TRAJECTORY_RX.match(rel):
+        elif TRAJECTORY_PATTERN.match(rel):
             yield from self._parse_trajectory(artifact)
-        elif CONNECTIONS_RX.match(rel):
+        elif CONNECTIONS_PATTERN.match(rel):
             yield from self._parse_connections(artifact)
         else:
             yield from self._parse_jsonl(artifact, opts)
 
     def _snapshot_row(self, artifact: Artifact, snap_id: str) -> Row:
-        """The `system` row naming a quick snapshot, at the UTC time its id
-        starts with (`backup.py` names it `%Y%m%d-%H%M%S[-label]`)."""
+        """Return the `system` row naming a quick snapshot, at the UTC time its id starts with.
+
+        `backup.py` names a snapshot `%Y%m%d-%H%M%S[-label]`.
+        """
         row = self._system(artifact, 0, {}, "state snapshot %s: older copy of state.db" % snap_id)
-        m = SNAP_TIME_RX.match(snap_id)
-        if m:
-            row.timestamp_utc = to_utc("%s-%s-%sT%s:%s:%sZ" % m.groups())
+        match = SNAPSHOT_TIME_PATTERN.match(snap_id)
+        if match:
+            row.timestamp_utc = to_utc("%s-%s-%sT%s:%s:%sZ" % match.groups())
         return row
 
-    def _row(self, artifact: Artifact, line: int, session: dict, ts: str = "") -> Row:
+    def _row(self, artifact: Artifact, line: int, session: dict, timestamp: str = "") -> Row:
         row = self.base_row(artifact)
         row.source_line = line
         row.session_id = str(session.get("id") or "")
         row.project_path = str(session.get("cwd") or session.get("git_repo_root") or "")
         row.git_branch = str(session.get("git_branch") or "")
         row.model = str(session.get("model") or "")
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
     def _system(self, artifact: Artifact, line: int, session: dict, text: str) -> Row:
@@ -614,7 +460,7 @@ class HermesParser(Parser):
     def _message_rows(
         self,
         artifact: Artifact,
-        m: dict,
+        message: dict,
         session: dict,
         line: int,
         tool_names: dict[str, str],
@@ -622,49 +468,51 @@ class HermesParser(Parser):
         switches: dict[str, str],
         usage: dict[str, list[dict]] | None = None,
     ) -> Iterator[Row]:
-        ts = to_utc(m.get("timestamp"))
-        role = str(m.get("role") or "")
-        if m.get("display_kind") == "model_switch":
-            yield self._switch_row(artifact, m, session, line, switches, usage or {})
+        timestamp = to_utc(message.get("timestamp"))
+        role = str(message.get("role") or "")
+        if message.get("display_kind") == "model_switch":
+            yield self._switch_row(artifact, message, session, line, switches, usage or {})
             return
-        marker = "[rewound] " if m.get("active", 1) in (0, "0", False) else ""
+        marker = "[rewound] " if message.get("active", 1) in (0, "0", False) else ""
 
-        def mk(turn_type: str, text: str) -> Row:
-            row = self._row(artifact, line, session, ts)
+        def make_row(turn_type: str, text: str) -> Row:
+            row = self._row(artifact, line, session, timestamp)
             row.turn_type = turn_type
             row.text = compact(marker + text)
             return row
 
         if opts.include_thinking:
-            reasoning = m.get("reasoning") or m.get("reasoning_content")
+            reasoning = message.get("reasoning") or message.get("reasoning_content")
             if reasoning:
-                yield mk("thinking", str(reasoning))
-        text = content_text(m.get("content"))
+                yield make_row("thinking", str(reasoning))
+        text = content_text(message.get("content"))
         turn_type = ROLE_TYPES.get(role, "system")
         if turn_type == "tool_result":
-            row = mk("tool_result", text)
-            row.tool_use_id = str(m.get("tool_call_id") or "")
-            row.tool_name = str(m.get("tool_name") or tool_names.get(row.tool_use_id, ""))
+            row = make_row("tool_result", text)
+            row.tool_use_id = str(message.get("tool_call_id") or "")
+            row.tool_name = str(message.get("tool_name") or tool_names.get(row.tool_use_id, ""))
             yield row
-            decision = terminal_decision(m.get("content")) if row.tool_name == "terminal" else ""
+            decision = (
+                terminal_decision(message.get("content")) if row.tool_name == "terminal" else ""
+            )
             if decision:
-                perm = self._row(artifact, line, session, ts)
-                perm.turn_type = "system"
-                perm.text = compact("permission decision: " + decision)
-                perm.tool_name, perm.tool_use_id = row.tool_name, row.tool_use_id
-                yield perm
+                permission = self._row(artifact, line, session, timestamp)
+                permission.turn_type = "system"
+                permission.text = compact("permission decision: " + decision)
+                permission.tool_name, permission.tool_use_id = row.tool_name, row.tool_use_id
+                yield permission
         elif text:
             if turn_type == "system" and role not in ("", "system"):
                 text = "%s: %s" % (role, text)
-            yield mk(turn_type, text)
-        calls, errors = tool_calls(m, line)
-        for c in calls:
-            fn = c.get("function")
-            if not isinstance(fn, dict):
-                fn = {}
-            row = mk("tool_use", call_summary(fn.get("arguments")))
-            row.tool_use_id = str(c.get("id") or c.get("call_id") or "")
-            row.tool_name = str(fn.get("name") or "")
+            yield make_row(turn_type, text)
+        calls, errors = tool_calls(message, line)
+        for call in calls:
+            function = call.get("function")
+            if not isinstance(function, dict):
+                function = {}
+            row = make_row("tool_use", call_summary(function.get("arguments")))
+            row.tool_use_id = str(call.get("id") or call.get("call_id") or "")
+            row.tool_name = str(function.get("name") or "")
             tool_names[row.tool_use_id] = row.tool_name
             yield row
         yield from error_rows(
@@ -678,37 +526,35 @@ class HermesParser(Parser):
     def _switch_row(
         self,
         artifact: Artifact,
-        m: dict,
+        message: dict,
         session: dict,
         line: int,
         switches: dict[str, str],
         usage: dict[str, list[dict]],
     ) -> Row:
-        """The `system` row for a TUI gateway model-switch marker (a `user`
-        message with `display_kind` `model_switch`, issue 180): `model: <old>
-        -> <new> provider=<provider>` at the marker's time. The marker names
-        only the new model; the old one is the session's previous marker's,
-        else the last main-loop `session_model_usage` model first seen
-        before the marker, else unknown (`model: <new>`). A later switch
-        sets the marker's `active` to 0, which is not a rewind, so the row
-        has no `[rewound]` prefix. A marker whose text does not parse is a
-        `system` row `model_switch: <text>`."""
-        row = self._row(artifact, line, session, to_utc(m.get("timestamp")))
+        """Return the `system` row of a TUI gateway model-switch marker.
+
+        The marker names only the new model: the old one is the session's previous marker's, else
+        the last main-loop `session_model_usage` model first seen before it, else unknown. A later
+        switch sets the marker's `active` to 0, which is not a rewind, so the row has no `[rewound]`
+        prefix; a marker whose text does not parse is a `model_switch: <text>` row.
+        """
+        row = self._row(artifact, line, session, to_utc(message.get("timestamp")))
         row.turn_type = "system"
-        sid = row.session_id
-        parsed = model_switch(m.get("content"))
+        session_id = row.session_id
+        parsed = model_switch(message.get("content"))
         if parsed is None:
-            row.text = compact("model_switch: " + content_text(m.get("content")))
+            row.text = compact("model_switch: " + content_text(message.get("content")))
             return row
         model, provider = parsed
-        old = switches.get(sid, "")
-        at = m.get("timestamp")
-        if not old and isinstance(at, (int, float)):
-            for u in usage.get(sid) or []:
-                first = u.get("first_seen")
-                if isinstance(first, (int, float)) and first < at:
-                    old = str(u.get("model") or "")
-        switches[sid] = model
+        old = switches.get(session_id, "")
+        switch_time = message.get("timestamp")
+        if not old and isinstance(switch_time, (int, float)):
+            for usage_row in usage.get(session_id) or []:
+                first = usage_row.get("first_seen")
+                if isinstance(first, (int, float)) and first < switch_time:
+                    old = str(usage_row.get("model") or "")
+        switches[session_id] = model
         row.text = "model: %s -> %s" % (old, model) if old and old != model else "model: " + model
         if provider:
             row.text += " provider=%s" % provider
@@ -723,23 +569,23 @@ class HermesParser(Parser):
         usage: dict[str, list[dict]],
         seen: dict[str, str],
     ) -> Iterator[Row]:
-        sid = start.session_id
-        uses = usage.get(sid) or []
+        session_id = start.session_id
+        uses = usage.get(session_id) or []
         if not uses:
-            text = track_change("model", seen, sid, str(session.get("model") or ""))
+            text = track_change("model", seen, session_id, str(session.get("model") or ""))
             if text:
                 yield self._copy(start, text, str(session.get("model") or ""))
             return
-        for u in uses:
-            model = str(u.get("model") or "")
-            text = track_change("model", seen, sid, model)
+        for usage_row in uses:
+            model = str(usage_row.get("model") or "")
+            text = track_change("model", seen, session_id, model)
             if not text:
                 continue
-            if u.get("billing_provider"):
-                text += " provider=%s" % u["billing_provider"]
+            if usage_row.get("billing_provider"):
+                text += " provider=%s" % usage_row["billing_provider"]
             row = self._copy(start, text, model)
-            row.source_line = u["_rowid"]
-            row.timestamp_utc = to_utc(u.get("first_seen")) or start.timestamp_utc
+            row.source_line = usage_row["_rowid"]
+            row.timestamp_utc = to_utc(usage_row.get("first_seen")) or start.timestamp_utc
             yield row
 
     @staticmethod
@@ -751,95 +597,107 @@ class HermesParser(Parser):
         return row
 
     # -- state.db ------------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield self._system(artifact, 0, {}, "parser: not a SQLite database")
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 if "messages" not in tables:
                     return
                 # (session_id, project_path, error entry) per record that does
                 # not decode, reported after the file's other rows.
                 record_errors: list[tuple[str, str, tuple]] = []
                 sessions: dict[str, dict] = {}
-                usage = self._usage(con, tables)
+                usage = self._usage(connection, tables)
                 if "sessions" in tables:
                     seen_model: dict[str, str] = {}
-                    for s in con.execute(
+                    for session_row in connection.execute(
                         "select rowid as _rowid, * from sessions order by started_at, rowid"
                     ):
-                        s = dict(s)
-                        sessions[str(s.get("id") or "")] = s
-                        yield from self._session_rows(artifact, s, usage, seen_model, record_errors)
+                        session_row = dict(session_row)
+                        sessions[str(session_row.get("id") or "")] = session_row
+                        yield from self._session_rows(
+                            artifact, session_row, usage, seen_model, record_errors
+                        )
                 tool_names: dict[str, str] = {}
                 switches: dict[str, str] = {}
-                for m in con.execute("select * from messages order by timestamp, id"):
-                    m = dict(m)
-                    sid = str(m.get("session_id") or "")
-                    session = sessions.get(sid) or {"id": sid}
+                for message in connection.execute("select * from messages order by timestamp, id"):
+                    message = dict(message)
+                    session_id = str(message.get("session_id") or "")
+                    session = sessions.get(session_id) or {"id": session_id}
                     yield from self._message_rows(
-                        artifact, m, session, m.get("id") or 0, tool_names, opts, switches, usage
+                        artifact,
+                        message,
+                        session,
+                        message.get("id") or 0,
+                        tool_names,
+                        opts,
+                        switches,
+                        usage,
                     )
                 if "state_meta" in tables:
-                    yield from self._retired_rows(artifact, con, sessions, record_errors)
+                    yield from self._retired_rows(artifact, connection, sessions, record_errors)
                 if "conversation_generations" in tables:
-                    yield from self._generation_rows(artifact, con)
+                    yield from self._generation_rows(artifact, connection)
                 if "hosted_room_events" in tables:
-                    yield from self._room_rows(artifact, con, tables, record_errors)
-                for sid, project, entry in record_errors:
-                    yield from error_rows(self, artifact, [entry], sid, project)
-        except sqlite3.DatabaseError as e:
-            yield self._system(artifact, 0, {}, "parser: SQLite error: %s" % e)
+                    yield from self._room_rows(artifact, connection, tables, record_errors)
+                for session_id, project, entry in record_errors:
+                    yield from error_rows(self, artifact, [entry], session_id, project)
+        except sqlite3.DatabaseError as error:
+            yield self._system(artifact, 0, {}, "parser: SQLite error: %s" % error)
 
     @staticmethod
-    def _usage(con, tables) -> dict[str, list[dict]]:
-        """The main-loop `session_model_usage` rows per session, by `first_seen`."""
+    def _usage(connection, tables) -> dict[str, list[dict]]:
+        """Return the main-loop `session_model_usage` rows per session, by `first_seen`."""
         usage: dict[str, list[dict]] = {}
         if "session_model_usage" in tables:
-            for u in con.execute(
+            for usage_row in connection.execute(
                 "select rowid as _rowid, * from session_model_usage order by first_seen, rowid"
             ):
-                u = dict(u)
-                if not u.get("task"):
-                    usage.setdefault(str(u.get("session_id") or ""), []).append(u)
+                usage_row = dict(usage_row)
+                if not usage_row.get("task"):
+                    usage.setdefault(str(usage_row.get("session_id") or ""), []).append(usage_row)
         return usage
 
     @staticmethod
-    def _column_json(s: dict, column: str, record_errors: list) -> dict:
-        """`sessions.<column>` decoded as a JSON object, `{}` when it is empty;
-        a value that does not decode to an object is an entry of
-        `record_errors` carrying the value as stored."""
-        raw = s.get(column)
+    def _column_json(session: dict, column: str, record_errors: list) -> dict:
+        """Return `sessions.<column>` decoded as a JSON object, `{}` when it is empty.
+
+        A value that does not decode to an object is appended to `record_errors` with the value as
+        stored, and gives `{}`.
+        """
+        raw = session.get(column)
         if raw is None or raw == "":
             return {}
-        sid = str(s.get("id") or "")
-        project = str(s.get("cwd") or s.get("git_repo_root") or "")
-        label = "unparseable record %s (sessions.%s" % (s.get("_rowid"), column)
+        session_id = str(session.get("id") or "")
+        project = str(session.get("cwd") or session.get("git_repo_root") or "")
+        label = "unparseable record %s (sessions.%s" % (session.get("_rowid"), column)
         try:
             value = json.loads(raw) if isinstance(raw, str) else raw
-        except ValueError as e:
-            record_errors.append((sid, project, (s.get("_rowid"), "%s: %s)" % (label, e), raw)))
+        except ValueError as error:
+            record_errors.append(
+                (session_id, project, (session.get("_rowid"), "%s: %s)" % (label, error), raw))
+            )
             return {}
         if not isinstance(value, dict):
-            entry = (s.get("_rowid"), "%s: not a JSON object)" % label, str(raw))
-            record_errors.append((sid, project, entry))
+            entry = (session.get("_rowid"), "%s: not a JSON object)" % label, str(raw))
+            record_errors.append((session_id, project, entry))
             return {}
         return value
 
     def _session_rows(
         self,
         artifact: Artifact,
-        s: dict,
+        session: dict,
         usage: dict[str, list[dict]],
         seen_model: dict[str, str],
         record_errors: list,
     ) -> Iterator[Row]:
-        """A session's start row, its model rows, and, at `started_at`, its
-        relay, `/yolo` and worktree rows (issue 208, source-derived)."""
-        origin = self._column_json(s, "origin_json", record_errors)
-        config = self._column_json(s, "model_config", record_errors)
+        """Yield a session's start row, its model rows, and its relay, `/yolo` and worktree rows."""
+        origin = self._column_json(session, "origin_json", record_errors)
+        config = self._column_json(session, "model_config", record_errors)
         imported = origin.get("imported_from")
         imported_text = ""
         if isinstance(imported, dict):
@@ -850,37 +708,39 @@ class HermesParser(Parser):
             )
         start = self._system(
             artifact,
-            s["_rowid"],
-            s,
+            session["_rowid"],
+            session,
             compact(
                 _join(
                     "session start",
-                    str(s.get("title") or ""),
-                    "source=%s" % s["source"] if s.get("source") else "",
-                    "parent=%s" % s["parent_session_id"] if s.get("parent_session_id") else "",
-                    "end=%s" % s["end_reason"] if s.get("end_reason") else "",
-                    "archived=1" if s.get("archived") in (1, "1", True) else "",
+                    str(session.get("title") or ""),
+                    "source=%s" % session["source"] if session.get("source") else "",
+                    "parent=%s" % session["parent_session_id"]
+                    if session.get("parent_session_id")
+                    else "",
+                    "end=%s" % session["end_reason"] if session.get("end_reason") else "",
+                    "archived=1" if session.get("archived") in (1, "1", True) else "",
                     imported_text,
                 ),
             ),
         )
-        start.timestamp_utc = to_utc(s.get("started_at"))
+        start.timestamp_utc = to_utc(session.get("started_at"))
         yield start
-        yield from self._model_rows(artifact, s, start, usage, seen_model)
-        source = str(s.get("source") or "")
-        if source in MESSAGING or (s.get("chat_id") and source not in NOT_RELAYED):
+        yield from self._model_rows(artifact, session, start, usage, seen_model)
+        source = str(session.get("source") or "")
+        if source in MESSAGING or (session.get("chat_id") and source not in NOT_RELAYED):
             yield self._copy(
                 start,
                 "session relayed: %s chat %s type %s thread %s user %s name %s display %s"
                 " (from state.db sessions, started_at)"
                 % (
                     source,
-                    _dash(s.get("chat_id")),
-                    _dash(s.get("chat_type")),
-                    _dash(s.get("thread_id")),
-                    _dash(s.get("user_id")),
+                    _dash(session.get("chat_id")),
+                    _dash(session.get("chat_type")),
+                    _dash(session.get("thread_id")),
+                    _dash(session.get("user_id")),
                     _dash(origin.get("user_name")),
-                    _dash(s.get("display_name") or origin.get("chat_name")),
+                    _dash(session.get("display_name") or origin.get("chat_name")),
                 ),
                 start.model,
             )
@@ -891,9 +751,9 @@ class HermesParser(Parser):
                 % setting_value(config["yolo_mode"]),
                 start.model,
             )
-        cwd = str(s.get("cwd") or "")
-        tree = WORKTREE_RX.match(cwd)
-        branch = str(s.get("git_branch") or "")
+        cwd = str(session.get("cwd") or "")
+        tree = WORKTREE_PATTERN.match(cwd)
+        branch = str(session.get("git_branch") or "")
         if tree and branch.startswith(WORKTREE_BRANCHES):
             yield self._copy(
                 start,
@@ -902,86 +762,105 @@ class HermesParser(Parser):
                 start.model,
             )
 
-    def _retired_rows(self, artifact, con, sessions: dict, record_errors: list) -> Iterator[Row]:
-        """One `session deleted:` row per `state_meta` deletion fence
-        `gateway.retired_session.v1.<session id>`
-        (hermes_state_mutation_retirement.py at 86fa9e6), at its `retired_at`,
-        with ` sweep` after the id when a sweep, not a delete, retired it
-        (`expires`)."""
-        for r in con.execute(
+    def _retired_rows(
+        self, artifact, connection, sessions: dict, record_errors: list
+    ) -> Iterator[Row]:
+        """Yield one `session deleted:` row per `state_meta` deletion fence, at its `retired_at`.
+
+        The key is `gateway.retired_session.v1.<session id>` (hermes_state_mutation_retirement.py at
+        86fa9e6); ` sweep` follows the id when a sweep, not a delete, retired it (`expires`).
+        """
+        for table_row in connection.execute(
             "select rowid as _rowid, key, value from state_meta where key like ? order by rowid",
             (RETIRED_PREFIX + "%",),
         ):
-            sid = str(r["key"])[len(RETIRED_PREFIX) :]
-            session = sessions.get(sid) or {"id": sid}
+            session_id = str(table_row["key"])[len(RETIRED_PREFIX) :]
+            session = sessions.get(session_id) or {"id": session_id}
             project = str(session.get("cwd") or session.get("git_repo_root") or "")
             try:
-                value = json.loads(r["value"] or "")
+                value = json.loads(table_row["value"] or "")
                 reason = "not a JSON object"
-            except (TypeError, ValueError) as e:
-                value, reason = None, str(e)
+            except (TypeError, ValueError) as error:
+                value, reason = None, str(error)
             if not isinstance(value, dict):
-                label = "unparseable record %s (state_meta.value: %s)" % (r["_rowid"], reason)
-                record_errors.append((sid, project, (r["_rowid"], label, str(r["value"] or ""))))
+                label = "unparseable record %s (state_meta.value: %s)" % (
+                    table_row["_rowid"],
+                    reason,
+                )
+                record_errors.append(
+                    (
+                        session_id,
+                        project,
+                        (table_row["_rowid"], label, str(table_row["value"] or "")),
+                    )
+                )
                 continue
             row = self._system(
                 artifact,
-                r["_rowid"],
+                table_row["_rowid"],
                 session,
                 "session deleted: %s%s (from state.db state_meta gateway.retired_session.v1,"
-                " retired_at)" % (sid, " sweep" if value.get("expires") else ""),
+                " retired_at)" % (session_id, " sweep" if value.get("expires") else ""),
             )
             row.timestamp_utc = to_utc(value.get("retired_at"))
             yield row
 
-    def _generation_rows(self, artifact, con) -> Iterator[Row]:
-        """One `relay peer:` row per `conversation_generations` row, which
-        Hermes never deletes: the messaging chats that ever had a
-        conversation. The table has no time, so the rows have none."""
-        for r in con.execute(
+    def _generation_rows(self, artifact, connection) -> Iterator[Row]:
+        """Yield one `relay peer:` row per `conversation_generations` row, with no time.
+
+        Hermes never deletes these rows, so they name every messaging chat that had a conversation.
+        """
+        for table_row in connection.execute(
             "select rowid as _rowid, source, session_key, generation"
             " from conversation_generations order by rowid"
         ):
             yield self._system(
                 artifact,
-                r["_rowid"],
+                table_row["_rowid"],
                 {},
                 "relay peer: %s %s generation %s (from state.db conversation_generations)"
-                % (_dash(r["source"]), _dash(r["session_key"]), _dash(r["generation"])),
+                % (
+                    _dash(table_row["source"]),
+                    _dash(table_row["session_key"]),
+                    _dash(table_row["generation"]),
+                ),
             )
 
-    def _room_rows(self, artifact, con, tables, record_errors: list) -> Iterator[Row]:
-        """One `system` row per Bot Mode room event (`hosted_room_events`,
-        gateway/hosted_rooms.py at 86fa9e6), at its `created_at`: `bot mode
-        room <name> (<room_id>) seq <seq> <kind> actor <actor kind>:<actor
-        id> (<display_name>): <text>` for a `message.user` or
-        `message.member` event, the payload as compact JSON for the other
-        kinds. Whether a room message is also a `messages` row was not
-        determined, so these are never `user` rows."""
+    def _room_rows(self, artifact, connection, tables, record_errors: list) -> Iterator[Row]:
+        """Yield one `system` row per Bot Mode room event, at its `created_at`.
+
+        The events are `hosted_room_events` (gateway/hosted_rooms.py at 86fa9e6): the text of a
+        `message.user` or `message.member` event, the payload as compact JSON for the other kinds.
+        Whether a room message is also a `messages` row is not known, so these are never `user`
+        rows.
+        """
         names: dict[str, str] = {}
         if "hosted_rooms" in tables:
-            for r in con.execute("select room_id, name from hosted_rooms"):
-                names[str(r["room_id"])] = str(r["name"] or "")
-        for r in con.execute(
+            for table_row in connection.execute("select room_id, name from hosted_rooms"):
+                names[str(table_row["room_id"])] = str(table_row["name"] or "")
+        for table_row in connection.execute(
             "select rowid as _rowid, * from hosted_room_events order by created_at, room_id, seq"
         ):
-            r = dict(r)
-            parsed = [self._room_json(r, c, record_errors) for c in ("actor_json", "payload_json")]
+            table_row = dict(table_row)
+            parsed = [
+                self._room_json(table_row, column, record_errors)
+                for column in ("actor_json", "payload_json")
+            ]
             actor, payload = parsed
             if actor is None or payload is None:
                 continue
-            kind = str(r.get("kind") or "")
-            room = str(r.get("room_id") or "")
+            kind = str(table_row.get("kind") or "")
+            room = str(table_row.get("room_id") or "")
             body = payload.get("text") if kind in ("message.user", "message.member") else None
             row = self._system(
                 artifact,
-                r["_rowid"],
+                table_row["_rowid"],
                 {},
                 "bot mode room %s (%s) seq %s %s actor %s:%s (%s): %s"
                 % (
                     _dash(names.get(room)),
                     room,
-                    _dash(r.get("seq")),
+                    _dash(table_row.get("seq")),
                     kind,
                     _dash(actor.get("kind")),
                     _dash(actor.get("id")),
@@ -989,22 +868,30 @@ class HermesParser(Parser):
                     body if isinstance(body, str) else compact_json(payload),
                 ),
             )
-            row.timestamp_utc = to_utc(r.get("created_at"))
+            row.timestamp_utc = to_utc(table_row.get("created_at"))
             yield row
 
     @staticmethod
-    def _room_json(r: dict, column: str, record_errors: list) -> dict | None:
-        """`hosted_room_events.<column>` of event `r` as a JSON object; None,
-        with an entry in `record_errors`, when it does not decode to one."""
+    def _room_json(room_event: dict, column: str, record_errors: list) -> dict | None:
+        """Return `hosted_room_events.<column>` of an event as a JSON object.
+
+        None, with an entry in `record_errors`, when the value does not decode to one.
+        """
         try:
-            value = json.loads(r.get(column) or "")
+            value = json.loads(room_event.get(column) or "")
             reason = "not a JSON object"
-        except (TypeError, ValueError) as e:
-            value, reason = None, str(e)
+        except (TypeError, ValueError) as error:
+            value, reason = None, str(error)
         if isinstance(value, dict):
             return value
-        label = "unparseable record %s (hosted_room_events.%s: %s)" % (r["_rowid"], column, reason)
-        record_errors.append(("", "", (r["_rowid"], label, str(r.get(column) or ""))))
+        label = "unparseable record %s (hosted_room_events.%s: %s)" % (
+            room_event["_rowid"],
+            column,
+            reason,
+        )
+        record_errors.append(
+            ("", "", (room_event["_rowid"], label, str(room_event.get(column) or "")))
+        )
         return None
 
     # -- sessions/<id>.jsonl -------------------------------------------------------------
@@ -1013,8 +900,10 @@ class HermesParser(Parser):
         session = {"id": artifact.disk_path.name[: -len(".jsonl")]}
         tool_names: dict[str, str] = {}
         switches: dict[str, str] = {}
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            yield from self._message_rows(artifact, rec, session, n, tool_names, opts, switches)
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            yield from self._message_rows(
+                artifact, record, session, line_number, tool_names, opts, switches
+            )
         yield from error_rows(
             self,
             artifact,
@@ -1025,32 +914,37 @@ class HermesParser(Parser):
 
     # -- pastes/pending.json -------------------------------------------------------------
     def _parse_pastes(self, artifact: Artifact) -> Iterator[Row]:
-        """One `debug report uploaded:` row per entry, at `expire_at` minus
-        the 6-hour paste lifetime; a file that is not a JSON list is one
-        `parser:` row and an entry that is not an object with a `url` is
-        its own row carrying the entry."""
+        """Yield one `debug report uploaded:` row per `pastes/pending.json` entry.
+
+        The time is `expire_at` minus the six-hour paste lifetime. A file that is not a JSON list is
+        one `parser:` row, and an entry that is not an object with a `url` its own row.
+        """
         try:
-            doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
+            document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
             yield from error_rows(
-                self, artifact, [(0, "pastes/pending.json did not parse (%s)" % e, "")]
+                self, artifact, [(0, "pastes/pending.json did not parse (%s)" % error, "")]
             )
             return
-        if not isinstance(doc, list):
+        if not isinstance(document, list):
             yield from error_rows(
                 self, artifact, [(0, "pastes/pending.json is not a JSON list", "")]
             )
             return
         errors: list = []
-        for n, entry in enumerate(doc, 1):
+        for position, entry in enumerate(document, 1):
             if not isinstance(entry, dict) or not entry.get("url"):
                 errors.append(
-                    (n, "unparseable record %d (not an object with a url)" % n, compact_json(entry))
+                    (
+                        position,
+                        "unparseable record %d (not an object with a url)" % position,
+                        compact_json(entry),
+                    )
                 )
                 continue
             row = self._system(
                 artifact,
-                n,
+                position,
                 {},
                 "debug report uploaded: %s (from pastes/pending.json, expire_at minus 6 hours)"
                 % entry["url"],
@@ -1062,41 +956,40 @@ class HermesParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _read_json(self, artifact: Artifact, name: str, errors: list):
-        """The decoded JSON document of `artifact`, or None with a whole-file
-        entry naming `name` appended to `errors` when it cannot be read."""
+        """Return the JSON document of `artifact`, or None with a whole-file entry in `errors`."""
         try:
             return json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            errors.append((0, "%s did not parse (%s)" % (name, e), ""))
+        except (OSError, ValueError) as error:
+            errors.append((0, "%s did not parse (%s)" % (name, error), ""))
             return None
 
-    def _setting(self, artifact: Artifact, line: int, text: str, ts: str) -> Row:
+    def _setting(self, artifact: Artifact, line: int, text: str, timestamp: str) -> Row:
         row = self._system(artifact, line, {}, text)
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
-    # -- config.yaml (issue 208) ---------------------------------------------------------
+    # -- config.yaml ---------------------------------------------------------------------
     def _parse_config(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting: command_allowlist=<pattern> (from
-        config.yaml, file mtime)` row per entry of the top-level
-        `command_allowlist` block list, the patterns an "always" answer
-        approved for good (tools/approval.py:401-495 at 86fa9e6). The
-        nested `approvals` settings are not read. Any other construct under
-        the key is one whole-file `parser:` row after the entries before it."""
+        """Yield one `permission setting: command_allowlist=<pattern>` row per allowlist entry.
+
+        The entries are the top-level `command_allowlist` block list that an "always" answer writes
+        (tools/approval.py:401-495 at 86fa9e6); the nested `approvals` settings are not read. Any
+        other construct under the key is one whole-file `parser:` row after the entries before it.
+        """
         errors: list = []
         try:
             text = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            errors.append((0, "config.yaml could not be read (%s)" % e, ""))
+        except OSError as error:
+            errors.append((0, "config.yaml could not be read (%s)" % error, ""))
             text = ""
         entries, problem = read_flat_list(text.splitlines(), "command_allowlist")
-        ts = file_mtime(artifact) if entries else ""
-        for n, pattern in entries:
+        timestamp = file_mtime(artifact) if entries else ""
+        for line_number, pattern in entries:
             yield self._setting(
                 artifact,
-                n,
+                line_number,
                 "permission setting: command_allowlist=%s (from config.yaml, file mtime)" % pattern,
-                ts,
+                timestamp,
             )
         if problem:
             errors.append(
@@ -1104,45 +997,46 @@ class HermesParser(Parser):
             )
         yield from error_rows(self, artifact, errors)
 
-    # -- pairing/<platform>-approved.json (issue 208) ------------------------------------
-    def _parse_pairing(self, artifact: Artifact, m: re.Match) -> Iterator[Row]:
-        """One `permission setting: pairing.<platform>.<user id>
-        user_name=<user_name> (from <dir>/<platform>-approved.json,
-        approved_at)` row per user the gateway's owner approved to drive the
-        agent (gateway/pairing.py:431-438 at 86fa9e6), at `approved_at`."""
-        name = "%s/%s-approved.json" % (m.group(1), m.group(2))
+    # -- pairing/<platform>-approved.json ------------------------------------------------
+    def _parse_pairing(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
+        """Yield one `permission setting: pairing.<platform>.<user id>` row per approved user.
+
+        The users are those the gateway's owner approved to drive the agent (gateway/pairing.py:
+        431-438 at 86fa9e6), each at its `approved_at`.
+        """
+        name = "%s/%s-approved.json" % (match.group(1), match.group(2))
         errors: list = []
-        doc = self._read_json(artifact, name, errors)
-        if doc is not None and not isinstance(doc, dict):
+        document = self._read_json(artifact, name, errors)
+        if document is not None and not isinstance(document, dict):
             errors.append((0, "%s is not a JSON object" % name, ""))
-            doc = None
-        for n, (user, info) in enumerate((doc or {}).items(), 1):
+            document = None
+        for position, (user, info) in enumerate((document or {}).items(), 1):
             if not isinstance(info, dict):
-                label = "unparseable record %d (not an object)" % n
-                errors.append((n, label, compact_json({user: info})))
+                label = "unparseable record %d (not an object)" % position
+                errors.append((position, label, compact_json({user: info})))
                 continue
             yield self._setting(
                 artifact,
-                n,
+                position,
                 "permission setting: pairing.%s.%s user_name=%s (from %s, approved_at)"
-                % (m.group(2), user, _dash(info.get("user_name")), name),
+                % (match.group(2), user, _dash(info.get("user_name")), name),
                 to_utc(info.get("approved_at")),
             )
         yield from error_rows(self, artifact, errors)
 
-    # -- .hermes_history (issue 208) -----------------------------------------------------
+    # -- .hermes_history -----------------------------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
-        """The prompt history of the classic CLI and the TUI, prompt_toolkit's
-        `FileHistory` form read with the Aider parser's `read_input_history`:
-        one `user` row per entry at its time, or a `system` row `slash
-        command: <entry>` for an entry that starts with `/`, with no session
-        or project. The TUI writes UTC times with milliseconds, the classic
-        CLI host-local ones with microseconds; both are emitted as written."""
+        """Yield the prompt history of the classic CLI and the TUI, with no session or project.
+
+        The file is prompt_toolkit's `FileHistory`, read with the Aider parser's
+        `read_input_history`: one `user` row per entry at its time, or a `slash command:` row for an
+        entry that starts with `/`. The TUI writes UTC times, the classic CLI host-local ones.
+        """
         errors: list = []
-        for n, ts, text in read_input_history(artifact.disk_path, errors):
+        for line_number, timestamp, text in read_input_history(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(ts)
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(timestamp)
             if text.startswith("/"):
                 row.turn_type, row.text = "system", compact("slash command: " + text)
             else:
@@ -1150,81 +1044,81 @@ class HermesParser(Parser):
             yield row
         yield from error_rows(self, artifact, errors)
 
-    # -- cron/output/<job>/<time>.md (issue 208) -----------------------------------------
-    def _parse_cron(self, artifact: Artifact, m: re.Match) -> Iterator[Row]:
-        """A cron run's document (cron/scheduler.py:2238-2246 and 2634-2640 at
-        86fa9e6): a `system` row `cron run: job <job id> (from cron/output,
-        file name time, host-local)`, then the run's prompt as a `user` row
-        and its response as an `assistant` row, or the whole document as a
-        `system` row `cron run output: <document>` when it has no prompt and
-        response sections. All at the file name's time, which is Hermes'
-        configured zone or the host's, written as if UTC; no session id."""
-        clock = CRON_TIME_RX.match(m.group(2))
-        ts = to_utc("%sT%s:%s:%s" % clock.groups()) if clock else ""
+    # -- cron/output/<job>/<time>.md -----------------------------------------------------
+    def _parse_cron(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
+        """Yield the rows of a cron run's document, all at the file name's time.
+
+        A `cron run: job <job id>` row (cron/scheduler.py:2238-2246 and 2634-2640 at 86fa9e6), then
+        the prompt as `user` and the response as `assistant`, or the whole document as a `cron run
+        output:` row when it has no prompt and response sections. The time is Hermes' configured
+        zone or the host's, written as if UTC; there is no session id.
+        """
+        clock = CRON_TIME_PATTERN.match(match.group(2))
+        timestamp = to_utc("%sT%s:%s:%s" % clock.groups()) if clock else ""
         errors: list = []
         try:
-            doc = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            errors.append((0, "cron run file could not be read (%s)" % e, ""))
-            doc = ""
+            document = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
+        except OSError as error:
+            errors.append((0, "cron run file could not be read (%s)" % error, ""))
+            document = ""
         rows = [("system", "cron run: job %s (from cron/output, file name time, host-local)")]
-        parts = split_cron_doc(doc) if doc else None
+        parts = split_cron_doc(document) if document else None
         if parts:
             rows += [("user", parts[0]), ("assistant", parts[1])]
-        elif doc:
-            rows.append(("system", "cron run output: " + doc))
-        for n, (turn_type, text) in enumerate(rows):
+        elif document:
+            rows.append(("system", "cron run output: " + document))
+        for position, (turn_type, text) in enumerate(rows):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = ts
+            row.source_line = position
+            row.timestamp_utc = timestamp
             row.turn_type = turn_type
-            row.text = compact(text % m.group(1) if n == 0 else text)
+            row.text = compact(text % match.group(1) if position == 0 else text)
             yield row
         yield from error_rows(self, artifact, errors)
 
-    # -- response_store.db (issue 208) ---------------------------------------------------
+    # -- response_store.db ---------------------------------------------------------------
     def _parse_responses(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """The API server's Responses store
-        (gateway/platforms/api_server_response_store.py at 86fa9e6): per
-        `responses` row, by the response's `created_at`, a `system` row `api
-        server response <id> status=<status> model=<model>
-        conversation=<name> (from response_store.db responses, created_at)`,
-        then the messages of its `conversation_history` that an earlier
-        response of the same session did not already hold at the same
-        position (each row stores the whole history to that point), read as
-        `state.db` messages with `data.session_id` and no time of their own."""
+        """Yield the rows of the API server's Responses store.
+
+        Per `responses` row (gateway/platforms/api_server_response_store.py at 86fa9e6), by the
+        response's `created_at`: an `api server response` row, then the messages of its
+        `conversation_history` that no earlier response of the session held at the same position,
+        read as `state.db` messages with `data.session_id` and no time of their own.
+        """
         if not is_sqlite(artifact.disk_path):
             yield self._system(artifact, 0, {}, "parser: not a SQLite database")
             return
         record_errors: list = []
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 if "responses" not in tables:
                     yield self._system(artifact, 0, {}, "parser: no responses table")
                     return
                 names: dict[str, str] = {}
                 if "conversations" in tables:
-                    for r in con.execute("select name, response_id from conversations"):
-                        names[str(r["response_id"])] = str(r["name"])
-                stored = self._responses(con, record_errors)
-        except sqlite3.DatabaseError as e:
-            yield self._system(artifact, 0, {}, "parser: SQLite error: %s" % e)
+                    for table_row in connection.execute(
+                        "select name, response_id from conversations"
+                    ):
+                        names[str(table_row["response_id"])] = str(table_row["name"])
+                stored = self._responses(connection, record_errors)
+        except sqlite3.DatabaseError as error:
+            yield self._system(artifact, 0, {}, "parser: SQLite error: %s" % error)
             return
         seen: dict[str, set] = {}
         tool_names: dict[str, str] = {}
         switches: dict[str, str] = {}
-        for _, rowid, rid, data in stored:
-            sid = str(data.get("session_id") or "")
+        for _, rowid, response_id, data in stored:
+            session_id = str(data.get("session_id") or "")
             response = data.get("response") if isinstance(data.get("response"), dict) else {}
             header = self._system(
                 artifact,
                 rowid,
-                {"id": sid},
+                {"id": session_id},
                 "api server response %s status=%s model=%s conversation=%s"
                 " (from response_store.db responses, created_at)"
-                % (rid, _dash(response.get("status")), _dash(response.get("model")),
-                   _dash(names.get(rid))),
+                % (response_id, _dash(response.get("status")), _dash(response.get("model")),
+                   _dash(names.get(response_id))),
             )  # fmt: skip
             header.timestamp_utc = to_utc(response.get("created_at"))
             yield header
@@ -1238,82 +1132,83 @@ class HermesParser(Parser):
                     record_errors.append((rowid, label + ": not an object)", compact_json(message)))
                     continue
                 key = (i, compact_json(message))
-                if key in seen.setdefault(sid, set()):
+                if key in seen.setdefault(session_id, set()):
                     continue
-                seen[sid].add(key)
+                seen[session_id].add(key)
                 yield from self._message_rows(
-                    artifact, message, {"id": sid}, rowid, tool_names, opts, switches
+                    artifact, message, {"id": session_id}, rowid, tool_names, opts, switches
                 )
         yield from error_rows(self, artifact, record_errors)
 
     @staticmethod
-    def _responses(con, record_errors: list) -> list[tuple]:
-        """(created_at, rowid, response_id, data) per `responses` row whose
-        `data` decodes to an object, by the response's `created_at`."""
+    def _responses(connection, record_errors: list) -> list[tuple]:
+        """Return (created_at, rowid, response_id, data) per `responses` row whose `data` decodes.
+
+        The list is sorted by the response's `created_at`.
+        """
         out = []
-        for r in con.execute("select rowid as _rowid, response_id, data from responses"):
+        for table_row in connection.execute(
+            "select rowid as _rowid, response_id, data from responses"
+        ):
             try:
-                data = json.loads(r["data"] or "")
+                data = json.loads(table_row["data"] or "")
                 reason = "not a JSON object"
-            except (TypeError, ValueError) as e:
-                data, reason = None, str(e)
+            except (TypeError, ValueError) as error:
+                data, reason = None, str(error)
             if not isinstance(data, dict):
-                label = "unparseable record %s (responses.data: %s)" % (r["_rowid"], reason)
-                record_errors.append((r["_rowid"], label, str(r["data"] or "")))
+                label = "unparseable record %s (responses.data: %s)" % (table_row["_rowid"], reason)
+                record_errors.append((table_row["_rowid"], label, str(table_row["data"] or "")))
                 continue
             response = data.get("response")
             created = response.get("created_at") if isinstance(response, dict) else None
             if not isinstance(created, (int, float)) or isinstance(created, bool):
                 created = 0
-            out.append((created, r["_rowid"], str(r["response_id"] or ""), data))
-        out.sort(key=lambda t: (t[0], t[1]))
+            out.append((created, table_row["_rowid"], str(table_row["response_id"] or ""), data))
+        out.sort(key=lambda entry: (entry[0], entry[1]))
         return out
 
-    # -- trajectory_samples.jsonl, failed_trajectories.jsonl (issue 208) -------------------
+    # -- trajectory_samples.jsonl, failed_trajectories.jsonl -------------------------------
     def _parse_trajectory(self, artifact: Artifact) -> Iterator[Row]:
-        """A `--save-trajectories` file in the run's working directory
-        (agent/trajectory.py:37-41 at 86fa9e6): per line a `system` row
-        `trajectory: model=<model> completed=<completed> (from <file>,
-        timestamp host-local)` at the line's `timestamp` (local time without
-        a zone, written as if UTC), then one row per ShareGPT entry of
-        `conversations` with no time of its own: `human` a `user` row,
-        `gpt` an `assistant` row, `tool` a `tool_result` row, `system` a
-        `system` row `trajectory system prompt: <value>`, any other a
-        `system` row `<from>: <value>`. No session; the project is the
-        directory the file was collected from."""
+        """Yield the rows of a `--save-trajectories` file in the run's working directory.
+
+        Per line (agent/trajectory.py:37-41 at 86fa9e6) a `trajectory:` row at the line's
+        `timestamp` (local time, written as if UTC), then one row per ShareGPT entry of
+        `conversations` with no time of its own, typed by `from` (`TRAJECTORY_TYPES`, `system` as a
+        `trajectory system prompt:` row). No session; the project is the collected directory.
+        """
         errors: list = []
         project = artifact.home.original if artifact.home.project else ""
         name = artifact.disk_path.name
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 if not raw.strip():
                     continue
                 try:
-                    rec = json.loads(raw.decode("utf-8", errors="replace"))
+                    record = json.loads(raw.decode("utf-8", errors="replace"))
                     reason = "not a JSON object"
-                except ValueError as e:
-                    rec, reason = None, str(e)
-                if not isinstance(rec, dict):
-                    errors.append((n, "unparseable line (%s)" % reason, line_text(raw)))
+                except ValueError as error:
+                    record, reason = None, str(error)
+                if not isinstance(record, dict):
+                    errors.append((line_number, "unparseable line (%s)" % reason, line_text(raw)))
                     continue
-                convs = rec.get("conversations")
-                if not isinstance(convs, list):
+                conversations = record.get("conversations")
+                if not isinstance(conversations, list):
                     reason = "conversations is not a list"
-                    errors.append((n, "unparseable line (%s)" % reason, line_text(raw)))
+                    errors.append((line_number, "unparseable line (%s)" % reason, line_text(raw)))
                     continue
                 head = self.base_row(artifact)
-                head.source_line, head.project_path, head.turn_type = n, project, "system"
-                head.model = str(rec.get("model") or "")
-                head.timestamp_utc = to_utc(rec.get("timestamp"))
+                head.source_line, head.project_path, head.turn_type = line_number, project, "system"
+                head.model = str(record.get("model") or "")
+                head.timestamp_utc = to_utc(record.get("timestamp"))
                 head.text = "trajectory: model=%s completed=%s (from %s, timestamp host-local)" % (
-                    _dash(rec.get("model")),
-                    _dash(rec.get("completed")),
+                    _dash(record.get("model")),
+                    _dash(record.get("completed")),
                     name,
                 )
                 yield head
-                for entry in convs:
+                for entry in conversations:
                     row = self.base_row(artifact)
-                    row.source_line, row.project_path, row.model = n, project, head.model
+                    row.source_line, row.project_path, row.model = line_number, project, head.model
                     sender = entry.get("from") if isinstance(entry, dict) else None
                     value = text_of(entry.get("value")) if isinstance(entry, dict) else ""
                     if sender in TRAJECTORY_TYPES:
@@ -1327,48 +1222,55 @@ class HermesParser(Parser):
                     yield row
         yield from error_rows(self, artifact, errors, "", project)
 
-    # -- Hermes desktop connections.json (issue 208) -----------------------------------
+    # -- Hermes desktop connections.json -----------------------------------------------
     def _parse_connections(self, artifact: Artifact) -> Iterator[Row]:
-        """The desktop app's connection registry
-        (apps/desktop/electron/connection-registry.ts at 86fa9e6): one
-        `remote backend: <kind> <label> <url, or user@host:port for ssh>
-        (from connections.json, file mtime)` row per connection that is not
-        the app's own `local` runtime, ending with ` org=`, ` name=` and
-        ` profile=` when recorded, and `remote backend quarantined by the app:
-        <reason> (from connections.json, file mtime)` per entry the app could
-        not load. Tokens and headers are never printed."""
+        """Yield the desktop app's remote backends and quarantined entries, at the file's mtime.
+
+        One `remote backend:` row per connection that is not the app's own `local` runtime
+        (apps/desktop/electron/connection-registry.ts at 86fa9e6), with ` org=`, ` name=` and `
+        profile=` when recorded, and one `remote backend quarantined by the app:` row per entry the
+        app could not load. Tokens and headers are never printed.
+        """
         errors: list = []
-        doc = self._read_json(artifact, "connections.json", errors)
-        conns = doc.get("connections") if isinstance(doc, dict) else None
-        if doc is not None and not isinstance(conns, list):
+        document = self._read_json(artifact, "connections.json", errors)
+        connections = document.get("connections") if isinstance(document, dict) else None
+        if document is not None and not isinstance(connections, list):
             errors.append((0, "connections.json has no connections list", ""))
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         tail = " (from connections.json, file mtime)"
-        for n, c in enumerate(conns if isinstance(conns, list) else [], 1):
-            if not isinstance(c, dict):
-                errors.append((n, "unparseable record %d (not an object)" % n, compact_json(c)))
+        for position, connection in enumerate(
+            connections if isinstance(connections, list) else [], 1
+        ):
+            if not isinstance(connection, dict):
+                errors.append(
+                    (
+                        position,
+                        "unparseable record %d (not an object)" % position,
+                        compact_json(connection),
+                    )
+                )
                 continue
-            if c.get("kind") == "local":
+            if connection.get("kind") == "local":
                 continue
-            target = c.get("url")
-            if not target and c.get("host"):
+            target = connection.get("url")
+            if not target and connection.get("host"):
                 target = "%s%s%s" % (
-                    "%s@" % c["user"] if c.get("user") else "",
-                    c["host"],
-                    ":%s" % c["port"] if c.get("port") else "",
+                    "%s@" % connection["user"] if connection.get("user") else "",
+                    connection["host"],
+                    ":%s" % connection["port"] if connection.get("port") else "",
                 )
             text = "remote backend: %s %s %s" % (
-                _dash(c.get("kind")),
-                _dash(c.get("label")),
+                _dash(connection.get("kind")),
+                _dash(connection.get("label")),
                 _dash(target),
             )
             for key, label in (("org", "org"), ("name", "name"), ("remoteProfile", "profile")):
-                if c.get(key):
-                    text += " %s=%s" % (label, setting_value(c[key]))
-            yield self._setting(artifact, n, text + tail, ts)
-        quarantined = doc.get("quarantined") if isinstance(doc, dict) else None
-        for q in quarantined if isinstance(quarantined, list) else []:
-            reason = q.get("reason") if isinstance(q, dict) else None
+                if connection.get(key):
+                    text += " %s=%s" % (label, setting_value(connection[key]))
+            yield self._setting(artifact, position, text + tail, timestamp)
+        quarantined = document.get("quarantined") if isinstance(document, dict) else None
+        for entry in quarantined if isinstance(quarantined, list) else []:
+            reason = entry.get("reason") if isinstance(entry, dict) else None
             text = "remote backend quarantined by the app: %s" % _dash(reason)
-            yield self._setting(artifact, 0, text + tail, ts)
+            yield self._setting(artifact, 0, text + tail, timestamp)
         yield from error_rows(self, artifact, errors)

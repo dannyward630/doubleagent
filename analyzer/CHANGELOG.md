@@ -181,6 +181,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (<reason>): <record>` row with the chat's session id, beside the rows
   of the chats it recovered; the record was dropped silently before
   ([#280]).
+- A relative `--since` or `--until` value past Python's integer
+  conversion digit limit (4300 by default) gives the usual out-of-range
+  error instead of Python's own conversion message, and every rejected
+  bound's message now ends with the accepted forms, the out-of-range
+  relative and epoch values included ([#283]).
 - The `crush` and `gemini-cli` parsers give a `parser:` row, with the
   file's project, for an unreadable Crush `projects.json`, Gemini CLI
   `logs.json` or legacy Gemini CLI session file, so the failure sits in
@@ -2084,6 +2089,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#283]: https://github.com/seanthegeek/doubleagent/issues/283
 [#282]: https://github.com/seanthegeek/doubleagent/issues/282
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277

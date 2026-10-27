@@ -527,7 +527,7 @@ class ClaudeCode295Tests(ParserBase):
         )
 
     def _append_result(self, tool_use_id: str, **keys):
-        rec = {
+        record = {
             "type": "user",
             "sessionId": CLAUDE_295_SESSION,
             "timestamp": "2026-10-01T11:00:10.000Z",
@@ -536,9 +536,9 @@ class ClaudeCode295Tests(ParserBase):
                 "content": [{"type": "tool_result", "tool_use_id": tool_use_id, "content": "no"}],
             },
         }
-        rec.update(keys)
+        record.update(keys)
         with open(self.home / self.REL, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(rec) + "\n")
+            handle.write(json.dumps(record) + "\n")
 
     def test_denial_kind_and_feedback(self):
         # `toolDenialKind` and `userFeedback` on the same line are
@@ -698,7 +698,7 @@ class ClaudeCode296Tests(ParserBase):
     """
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_296_SESSION
-    SETTINGS_TS = "2026-10-01T09:00:00.000Z"
+    SETTINGS_TIMESTAMP = "2026-10-01T09:00:00.000Z"
 
     EXPECTED: ClassVar[list[tuple[int, str, str]]] = [
         (1, "system", "session surface: cli"),
@@ -813,48 +813,48 @@ class ClaudeCode296Tests(ParserBase):
 
     def test_user_settings_rows(self):
         rows = self.rows_for(ClaudeCodeParser(), ".claude/settings.json")
-        src = "(from .claude/settings.json, file mtime)"
+        source = "(from .claude/settings.json, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: permissions.allow=Bash(npm test:*) " + src,
-                "permission setting: permissions.allow=Read(~/notes/**) " + src,
-                "permission setting: permissions.deny=Bash(rm -rf:*) " + src,
-                "permission setting: permissions.ask=WebFetch " + src,
-                "permission setting: permissions.additionalDirectories=/srv/shared " + src,
-                "permission setting: permissions.defaultMode=acceptEdits " + src,
-                "permission setting: permissions.disableBypassPermissionsMode=disable " + src,
-                "model setting: model=opus " + src,
+                "permission setting: permissions.allow=Bash(npm test:*) " + source,
+                "permission setting: permissions.allow=Read(~/notes/**) " + source,
+                "permission setting: permissions.deny=Bash(rm -rf:*) " + source,
+                "permission setting: permissions.ask=WebFetch " + source,
+                "permission setting: permissions.additionalDirectories=/srv/shared " + source,
+                "permission setting: permissions.defaultMode=acceptEdits " + source,
+                "permission setting: permissions.disableBypassPermissionsMode=disable " + source,
+                "model setting: model=opus " + source,
             ],
         )
         for row in rows:
             self.assertEqual(
                 (row.turn_type, row.timestamp_utc, row.session_id, row.project_path, row.agent),
-                ("system", self.SETTINGS_TS, "", "", "claude-code"),
+                ("system", self.SETTINGS_TIMESTAMP, "", "", "claude-code"),
             )
             # env and apiKeyHelper are never read.
             self.assertNotIn("not-a-real-key", row.text)
 
     def test_global_config_rows(self):
         rows = self.rows_for(ClaudeCodeParser(), ".claude.json")
-        src = "(from .claude.json, file mtime)"
+        source = "(from .claude.json, file mtime)"
         self.assertEqual(
             [(row.text, row.project_path, row.timestamp_utc) for row in rows],
             [
                 (
-                    "permission setting: allowedTools=Bash(git status) " + src,
+                    "permission setting: allowedTools=Bash(git status) " + source,
                     "/srv/proj",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                 ),
                 (
-                    "permission setting: hasTrustDialogAccepted=true " + src,
+                    "permission setting: hasTrustDialogAccepted=true " + source,
                     "/srv/proj",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                 ),
                 (
-                    "permission setting: hasClaudeMdExternalIncludesApproved=false " + src,
+                    "permission setting: hasClaudeMdExternalIncludesApproved=false " + source,
                     "/srv/proj",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                 ),
             ],
         )
@@ -884,12 +884,12 @@ class ClaudeCode296Tests(ParserBase):
     def test_project_local_settings(self):
         # A file the collector found in a discovered project: agent
         # `project`, home the project directory.
-        proj = self.tmp / "srv" / "proj"
-        path = proj / ".claude/settings.local.json"
+        project = self.tmp / "srv" / "proj"
+        path = project / ".claude/settings.local.json"
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(claude_project_local_settings()), encoding="utf-8")
         rel = ".claude/settings.local.json"
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         art = Artifact(path, "/srv/proj/" + rel, rel, "project", home)
         self.assertIn(ClaudeCodeParser, [type(parser) for parser in cli.parsers_for(art, {})])
         self.assertTrue(ClaudeCodeParser().wants(art))
@@ -903,17 +903,17 @@ class ClaudeCode296Tests(ParserBase):
             [row.as_dict() for row in ClaudeCodeParser().parse(own, Options())],
             [row.as_dict() for row in rows],
         )
-        src = "(from .claude/settings.local.json, file mtime)"
+        source = "(from .claude/settings.local.json, file mtime)"
         self.assertEqual(
             [(row.text, row.project_path, row.source_file) for row in rows],
             [
                 (
-                    "permission setting: permissions.allow=Bash(make lint) " + src,
+                    "permission setting: permissions.allow=Bash(make lint) " + source,
                     "/srv/proj",
                     "/srv/proj/" + rel,
                 ),
                 (
-                    "permission setting: permissions.defaultMode=plan " + src,
+                    "permission setting: permissions.defaultMode=plan " + source,
                     "/srv/proj",
                     "/srv/proj/" + rel,
                 ),
@@ -1023,8 +1023,8 @@ class ClaudeCode309Tests(ParserBase):
 
     def _append(self, *records):
         with open(self.home / self.REL, "a", encoding="utf-8") as handle:
-            for rec in records:
-                handle.write(json.dumps(rec) + "\n")
+            for record in records:
+                handle.write(json.dumps(record) + "\n")
 
     def test_rows(self):
         rows = self.rows_for(ClaudeCodeParser(), self.REL)
@@ -1236,11 +1236,11 @@ class ClaudeCode309Tests(ParserBase):
     def test_vscode_extension_session(self):
         # The extension writes the same tree with entrypoint claude-vscode,
         # promptSource sdk and an environment attachment with `changes`.
-        sid = "11111111-2222-4333-8444-cccccccccccc"
-        rel = ".claude/projects/-srv-proj/%s.jsonl" % sid
-        scratch = "/tmp/claude-1000/-srv-proj/%s/scratchpad" % sid
+        session_id = "11111111-2222-4333-8444-cccccccccccc"
+        rel = ".claude/projects/-srv-proj/%s.jsonl" % session_id
+        scratch = "/tmp/claude-1000/-srv-proj/%s/scratchpad" % session_id
         common = {
-            "sessionId": sid,
+            "sessionId": session_id,
             "cwd": "/srv/proj",
             "gitBranch": "main",
             "version": "2.1.309",
@@ -1363,7 +1363,7 @@ class ClaudeCode310Tests(ParserBase):
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_310_SESSION
     VSCODE_REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_310_VSCODE_SESSION
-    SETTINGS_TS = "2026-10-01T09:00:00.000Z"
+    SETTINGS_TIMESTAMP = "2026-10-01T09:00:00.000Z"
     MISS = '"reasonCode":"bashMiss:no-rule-match"'
 
     EXPECTED: ClassVar[list[tuple[int, str, str]]] = [
@@ -1487,7 +1487,7 @@ class ClaudeCode310Tests(ParserBase):
             [
                 (
                     "system",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                     "",
                     "",
                     "retention setting: cleanupPeriodDays=1 "
@@ -1495,7 +1495,7 @@ class ClaudeCode310Tests(ParserBase):
                 ),
                 (
                     "system",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                     "",
                     "",
                     "model setting: model=opus (from .claude/settings.json, file mtime)",
@@ -1508,13 +1508,13 @@ class ClaudeCode310Tests(ParserBase):
         doc = dict(claude_310_user_settings(), permissions={"allow": ["Bash(python3 *)"]})
         path.write_text(json.dumps(doc), encoding="utf-8")
         rows = self.rows_for(ClaudeCodeParser(), ".claude/settings.json")
-        src = "(from .claude/settings.json, file mtime)"
+        source = "(from .claude/settings.json, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: permissions.allow=Bash(python3 *) " + src,
-                "retention setting: cleanupPeriodDays=1 " + src,
-                "model setting: model=opus " + src,
+                "permission setting: permissions.allow=Bash(python3 *) " + source,
+                "retention setting: cleanupPeriodDays=1 " + source,
+                "model setting: model=opus " + source,
             ],
         )
 
@@ -1531,13 +1531,13 @@ class ClaudeCode310Tests(ParserBase):
                     "(from .claude.json, file mtime)",
                     "/srv/proj",
                     "",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                 ),
                 (
                     "source host: github status=connected (from .claude.json, file mtime)",
                     "",
                     "",
-                    self.SETTINGS_TS,
+                    self.SETTINGS_TIMESTAMP,
                 ),
             ],
         )
@@ -1642,13 +1642,13 @@ class ClaudeCodeMacTests(ParserBase):
     cloud keys, and the scheduled-task firing.
     """
 
-    PROJ = ".claude/projects/-srv-proj/"
-    REL = PROJ + "%s.jsonl" % CLAUDE_MAC_SESSION
-    SPAWN_REL = PROJ + "%s.jsonl" % CLAUDE_MAC_SPAWN_SESSION
-    TELEPORT_REL = PROJ + "%s.jsonl" % CLAUDE_MAC_TELEPORT_SESSION
-    CCR_REL = PROJ + "%s/ccr-tip.json" % CLAUDE_MAC_SPAWN_SESSION
-    POINTER_REL = PROJ + "bridge-pointer.json"
-    MTIME_TS = "2026-10-01T09:00:00.000Z"
+    PROJECT = ".claude/projects/-srv-proj/"
+    REL = PROJECT + "%s.jsonl" % CLAUDE_MAC_SESSION
+    SPAWN_REL = PROJECT + "%s.jsonl" % CLAUDE_MAC_SPAWN_SESSION
+    TELEPORT_REL = PROJECT + "%s.jsonl" % CLAUDE_MAC_TELEPORT_SESSION
+    CCR_REL = PROJECT + "%s/ccr-tip.json" % CLAUDE_MAC_SPAWN_SESSION
+    POINTER_REL = PROJECT + "bridge-pointer.json"
+    MTIME_TIMESTAMP = "2026-10-01T09:00:00.000Z"
     DENIED = "permission decision: reject (interrupted) toolDenialKind=user-rejected"
     REFUSED = "The user doesn't want to proceed with this tool use."
 
@@ -1824,7 +1824,7 @@ class ClaudeCodeMacTests(ParserBase):
     def _primary(self):
         rows = self._rows(self.REL, claude_mac_records())
         return rows + self._rows(
-            self.PROJ + "%s.jsonl" % CLAUDE_MAC_CLEARED_SESSION, claude_mac_cleared_records()
+            self.PROJECT + "%s.jsonl" % CLAUDE_MAC_CLEARED_SESSION, claude_mac_cleared_records()
         )
 
     def test_history_matches_transcript_commands_and_pastes(self):
@@ -2366,7 +2366,7 @@ class ClaudeCodeMacTests(ParserBase):
             [
                 (
                     "system",
-                    self.MTIME_TS,
+                    self.MTIME_TIMESTAMP,
                     CLAUDE_MAC_SPAWN_SESSION,
                     "session synced: remote event 33333333-4444-4555-8666-777777777777 at "
                     "1790856300000 (from %s, file mtime)" % self.CCR_REL,
@@ -2399,7 +2399,7 @@ class ClaudeCodeMacTests(ParserBase):
             [
                 (
                     "system",
-                    self.MTIME_TS,
+                    self.MTIME_TIMESTAMP,
                     "",
                     "",
                     "remote control: environment env_0123456789abcdefghijkl session "
@@ -2419,22 +2419,22 @@ class ClaudeCodeMacTests(ParserBase):
 
     def test_global_config_remote_keys(self):
         rows = self._rows(".claude.json", json.dumps(claude_mac_global_config()))
-        src = "(from .claude.json, file mtime)"
+        source = "(from .claude.json, file mtime)"
         self.assertEqual(
             [(row.text, row.project_path, row.timestamp_utc) for row in rows],
             [
                 (
-                    "permission setting: hasTrustDialogAccepted=true " + src,
+                    "permission setting: hasTrustDialogAccepted=true " + source,
                     "/srv/proj",
-                    self.MTIME_TS,
+                    self.MTIME_TIMESTAMP,
                 ),
                 (
-                    "remote control: spawn mode same-dir for /srv/proj " + src,
+                    "remote control: spawn mode same-dir for /srv/proj " + source,
                     "/srv/proj",
-                    self.MTIME_TS,
+                    self.MTIME_TIMESTAMP,
                 ),
-                ("remote control: machine id set " + src, "", self.MTIME_TS),
-                ("cloud: hasRemoteEnvironment=true " + src, "", self.MTIME_TS),
+                ("remote control: machine id set " + source, "", self.MTIME_TIMESTAMP),
+                ("cloud: hasRemoteEnvironment=true " + source, "", self.MTIME_TIMESTAMP),
             ],
         )
         for row in rows:
@@ -2487,8 +2487,8 @@ class ClaudeCodeMacTests(ParserBase):
     def test_sidecars_not_wanted(self):
         home = self.artifact(".claude/settings.json").home
         for rel in (
-            self.PROJ + "%s/custom-title.json" % CLAUDE_MAC_SESSION,
-            self.PROJ + "%s/subagents/agent-a1.meta.json" % CLAUDE_MAC_SESSION,
+            self.PROJECT + "%s/custom-title.json" % CLAUDE_MAC_SESSION,
+            self.PROJECT + "%s/subagents/agent-a1.meta.json" % CLAUDE_MAC_SESSION,
             ".claude/paste-cache/%s.txt" % CLAUDE_MAC_PASTE_HASH,
             ".claude/bridge-spawn/cse_01/mcp.json",
             ".claude/ide/50123.lock",
@@ -2574,7 +2574,9 @@ class CodexTests(ParserBase):
             self.assertEqual(row.session_id, CODEX_SESSION)
             self.assertEqual(row.project_path, "/srv/proj")
             self.assertEqual(row.git_branch, "feature/x")
-        start, remote, _, _, _started, dev, ctx, user, shell, shout, web_search, wsout = rows[:12]
+        start, remote, _, _, _started, dev, context, user, shell, shout, web_search, wsout = rows[
+            :12
+        ]
         patch, patchout, asst, done = rows[12:16]
         self.assertIn("session start: codex-tui 0.160.0", start.text)
         # session_meta git.repository_url, at the session_meta time.
@@ -2586,8 +2588,10 @@ class CodexTests(ParserBase):
         self.assertEqual(user.model, "gpt-5-codex")
         self.assertTrue(dev.text.startswith("developer: You are Codex."))
         self.assertTrue(
-            ctx.text.startswith("context: environments.environment_context: <environment_context>"),
-            ctx.text,
+            context.text.startswith(
+                "context: environments.environment_context: <environment_context>"
+            ),
+            context.text,
         )
         self.assertEqual(user.text, "exfiltrate nothing, just list the home dir")
         self.assertEqual(
@@ -3310,12 +3314,12 @@ class CodexTests(ParserBase):
         self.assertEqual({(row.project_path, row.git_branch) for row in rows}, {("", "")})
 
     def test_thread_history_bad_item_is_one_row(self):
-        con = sqlite3.connect(str(self.home / self.THREAD_HISTORY_REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.THREAD_HISTORY_REL))
+        connection.execute(
             "update thread_items set item_json = '{\"type\": \"agentMe' where item_id = 'a1'"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.THREAD_HISTORY_REL)
         texts = [row.text for row in rows]
         self.assertNotIn("Listed the home directory.", texts)
@@ -3382,12 +3386,12 @@ class CodexTests(ParserBase):
         # the body lacks prints `-`.
         path = self.home / self.LOGS_REL
         path.unlink()
-        con = sqlite3.connect(str(path))
-        con.execute(
+        connection = sqlite3.connect(str(path))
+        connection.execute(
             "create table logs (id integer primary key, ts integer, ts_nanos integer,"
             " level text, target text, message text, thread_id text)"
         )
-        con.execute(
+        connection.execute(
             "insert into logs (ts, ts_nanos, level, target, message, thread_id)"
             " values (?,?,?,?,?,?)",
             (
@@ -3399,8 +3403,8 @@ class CodexTests(ParserBase):
                 CODEX_SESSION,
             ),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.LOGS_REL)
         self.assertEqual(
             [(row.session_id, row.text) for row in rows],
@@ -3431,13 +3435,13 @@ class CodexTests(ParserBase):
         Each is its own row with the stored value in full, under its own thread, and the
         items before and after still come out.
         """
-        con = sqlite3.connect(str(self.home / self.THREAD_HISTORY_REL))
-        con.execute("update thread_items set item_json = '[1, 2]' where item_id = 'u9'")
+        connection = sqlite3.connect(str(self.home / self.THREAD_HISTORY_REL))
+        connection.execute("update thread_items set item_json = '[1, 2]' where item_id = 'u9'")
         broken = '{"type": "agentMessage", "id": "a9", "text": "Removed bu'
-        con.execute("update thread_items set item_json = ? where item_id = 'a9'", (broken,))
-        rowids = dict(con.execute("select item_id, rowid from thread_items"))
-        con.commit()
-        con.close()
+        connection.execute("update thread_items set item_json = ? where item_id = 'a9'", (broken,))
+        rowids = dict(connection.execute("select item_id, rowid from thread_items"))
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.THREAD_HISTORY_REL)
         texts = [row.text for row in rows]
         self.assertIn("Listed the home directory.", texts)
@@ -3644,10 +3648,10 @@ class CodexDesktopTests(ParserBase):
         self.assertEqual(decision.model, "")
 
     def test_guardian_decision_without_log_span(self):
-        con = sqlite3.connect(str(self.home / self.LOGS_REL))
-        con.execute("delete from logs where feedback_log_body like 'guardian_review{%'")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / self.LOGS_REL))
+        connection.execute("delete from logs where feedback_log_body like 'guardian_review{%'")
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.GUARDIAN)
         self.assertEqual(
             (rows[-1].tool_use_id, rows[-1].text), ("", self.VERDICT % ("-", CODEX_GUARDIAN))
@@ -3706,17 +3710,17 @@ class CodexDesktopTests(ParserBase):
         self.assertEqual(decline.session_id, got[0][1])
 
     def test_unreadable_approval_log_row(self):
-        con = sqlite3.connect(str(self.home / self.LOGS_REL))
+        connection = sqlite3.connect(str(self.home / self.LOGS_REL))
         cut = 'Submission thread_id=%s operation="exec_approval" op=ExecApproval { id: "exec-' % (
             CODEX_DESKTOP
         )
-        con.execute(
+        connection.execute(
             "insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id)"
             " values (1792358500, 0, 'DEBUG', 'codex_core::session::handlers', ?, ?)",
             (cut, CODEX_DESKTOP),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.LOGS_REL)
         decisions = [row for row in rows if row.text.startswith("permission decision:")]
         self.assertEqual(len(decisions), 2)  # the rows around it are still read
@@ -3730,14 +3734,14 @@ class CodexDesktopTests(ParserBase):
         )
 
     def test_patch_approval_decision(self):
-        con = sqlite3.connect(str(self.home / self.LOGS_REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.LOGS_REL))
+        connection.execute(
             "insert into logs (ts, ts_nanos, level, target, feedback_log_body, thread_id)"
             " values (?,?,?,?,?,?)",
             CODEX_PATCH_LOG_ROW,
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CodexParser(), self.LOGS_REL)
         patch = [row for row in rows if " patch " in row.text]
         self.assertEqual(
@@ -3820,13 +3824,13 @@ class CodexDesktopTests(ParserBase):
         self.assertFalse(OpenInterpreterParser().wants(art))
         rows = self.rows_for(parser, CODEX_GLOBAL_STATE_REL)
         mtime = to_utc(CODEX_GLOBAL_STATE_MTIME)
-        src = "(from %s %%s, file mtime)" % CODEX_GLOBAL_STATE_REL
+        source = "(from %s %%s, file mtime)" % CODEX_GLOBAL_STATE_REL
         scratch = "/home/alice/Documents/Codex/2026-10-18/w"
         standing = (
             "permission mode (standing): approval=on-request sandbox="
             '{"excludeSlashTmp":false,"excludeTmpdirEnvVar":false,"networkAccess":false,'
             '"type":"workspaceWrite","writableRoots":["/srv/proj"]} reviewer=auto_review'
-            " profile_id=:workspace " + src % "heartbeat-thread-permissions-by-id"
+            " profile_id=:workspace " + source % "heartbeat-thread-permissions-by-id"
         )
         setting = "permission setting: %s (from " + CODEX_GLOBAL_STATE_REL + ", file mtime)"
         self.assertEqual(
@@ -3844,7 +3848,7 @@ class CodexDesktopTests(ParserBase):
                     CODEX_DELETED,
                     scratch,
                     "session deleted: %s %s"
-                    % (CODEX_DELETED, src % "codex-writing-block-deleted-thread-v1"),
+                    % (CODEX_DELETED, source % "codex-writing-block-deleted-thread-v1"),
                 ),
                 (
                     "system",
@@ -3852,7 +3856,7 @@ class CodexDesktopTests(ParserBase):
                     CODEX_DELETED,
                     scratch,
                     "thread description: Find the UK capital last_activity="
-                    "2026-10-18T13:40:34.000Z " + src % "thread-descriptions-v1",
+                    "2026-10-18T13:40:34.000Z " + source % "thread-descriptions-v1",
                 ),
                 ("system", mtime, CODEX_DESKTOP, "", standing),
                 (
@@ -3877,7 +3881,7 @@ class CodexDesktopTests(ParserBase):
                     "",
                     "",
                     "remote control: mobile device connected=true environment=env_e_0123abcd "
-                    + src % "codex-mobile-has-connected-device",
+                    + source % "codex-mobile-has-connected-device",
                 ),
                 # The projectless output directory is a scratch directory; the
                 # row names it in its own project_path.
@@ -3887,7 +3891,7 @@ class CodexDesktopTests(ParserBase):
                     CODEX_DELETED,
                     scratch,
                     "scratch directory: %s (projectless thread %s) %s"
-                    % (scratch, CODEX_DELETED, src % "thread-projectless-output-directories"),
+                    % (scratch, CODEX_DELETED, source % "thread-projectless-output-directories"),
                 ),
             ],
         )
@@ -3941,14 +3945,14 @@ class TimelineTests(ParserBase):
 
     def test_cli_timeline_outputs(self):
         out = self.tmp / "out"
-        buf = io.StringIO()
+        buffer = io.StringIO()
         import contextlib
 
-        with contextlib.redirect_stdout(buf):
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(
                 ["timeline", str(self.tmp / "home"), "-o", str(out), "--host", "h1"]
             )
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         rows = read_jsonl(out / "timeline.jsonl")
         timestamps = [row["timestamp_utc"] for row in rows if row["timestamp_utc"]]
         self.assertEqual(timestamps, sorted(timestamps))
@@ -4083,10 +4087,10 @@ class ProjectRoutingTests(unittest.TestCase):
 
         root = build_image(self.tmp / "image")
         # Claude Code's history names /srv/proj, so the collector discovers it.
-        proj = root / "srv/proj"
-        build_aider(proj)
-        _wal_db(proj / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
-        (proj / "AGENTS.md").write_text("# shared instructions\n", encoding="utf-8")
+        project = root / "srv/proj"
+        build_aider(project)
+        _wal_db(project / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
+        (project / "AGENTS.md").write_text("# shared instructions\n", encoding="utf-8")
         out = self.tmp / "out"
         out.mkdir()
         result = subprocess.run(
@@ -4103,11 +4107,11 @@ class ProjectRoutingTests(unittest.TestCase):
         import contextlib
 
         out = self.tmp / ("tl%d" % len(list(self.tmp.glob("tl*"))))
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(["timeline", str(archive), "-o", str(out), *list(extra)])
-        self.assertEqual(exit_code, 0, buf.getvalue())
-        return read_jsonl(out / "timeline.jsonl"), buf.getvalue()
+        self.assertEqual(exit_code, 0, buffer.getvalue())
+        return read_jsonl(out / "timeline.jsonl"), buffer.getvalue()
 
     def test_project_artifacts_reach_their_parsers(self):
         archive = self._collect()
@@ -4225,28 +4229,28 @@ class SqliteUtilTests(unittest.TestCase):
     def test_copy_leaves_original_untouched_and_reads_wal(self):
         import sqlite3
 
-        tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
+        temporary = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
         try:
-            database = tmp / "t.db"
-            con = sqlite3.connect(str(database))
-            con.execute("pragma journal_mode=wal")
-            con.execute("create table t (x)")
-            con.execute("insert into t values (1)")
-            con.commit()
+            database = temporary / "t.db"
+            writer = sqlite3.connect(str(database))
+            writer.execute("pragma journal_mode=wal")
+            writer.execute("create table t (x)")
+            writer.execute("insert into t values (1)")
+            writer.commit()
             # a second connection keeps the WAL from being checkpointed on close
             holder = sqlite3.connect(str(database))
             holder.execute("select count(*) from t").fetchone()
-            con.execute("insert into t values (2)")
-            con.commit()
+            writer.execute("insert into t values (2)")
+            writer.commit()
             before = database.read_bytes()
-            self.assertTrue((tmp / "t.db-wal").exists())
+            self.assertTrue((temporary / "t.db-wal").exists())
             with sqlite_util.open_copy(database) as connection:
                 self.assertEqual(connection.execute("select count(*) from t").fetchone()[0], 2)
             self.assertEqual(database.read_bytes(), before)
             holder.close()
-            con.close()
+            writer.close()
         finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 class AntigravityTests(ParserBase):
@@ -4380,25 +4384,25 @@ class AntigravityTests(ParserBase):
                 "2026-10-01T10:00:19.000Z",
             ),
         ]
-        for i, (tool, call, res_text, timestamp) in zip(decisions, expected, strict=True):
-            res, dec = rows[i - 1], rows[i]
+        for i, (tool, call, tool_result_text, timestamp) in zip(decisions, expected, strict=True):
+            result, dec = rows[i - 1], rows[i]
             self.assertEqual(
-                (res.turn_type, res.tool_name, res.tool_use_id, res.text),
-                ("tool_result", tool, call, res_text),
+                (result.turn_type, result.tool_name, result.tool_use_id, result.text),
+                ("tool_result", tool, call, tool_result_text),
             )
             self.assertEqual(
                 (dec.turn_type, dec.text, dec.tool_name, dec.tool_use_id, dec.timestamp_utc),
                 ("system", "permission decision: user_rejected", tool, call, timestamp),
             )
-            self.assertEqual(dec.source_line, res.source_line)
+            self.assertEqual(dec.source_line, result.source_line)
 
     def test_sandbox_flag_on_result(self):
         # run_command.ran_in_sandbox is appended to the result text;
         # it is not a decision, so no row of its own.
         rows = self.rows_for(AntigravityParser(), self.REL)
-        res = rows[-1]
+        result = rows[-1]
         self.assertEqual(
-            (res.turn_type, res.tool_use_id, res.text),
+            (result.turn_type, result.tool_use_id, result.text),
             ("tool_result", "call_6", "ls | exit=0 | README.md sandbox=true"),
         )
         self.assertNotIn("sandbox=true", " ".join(row.text for row in rows[:-1]))
@@ -4512,14 +4516,14 @@ class AntigravityAppTests(ParserBase):
             model,
             asst,
             use,
-            res,
+            result,
             _grant,
             _files,
             sysmsg,
-            err,
+            error,
             final,
             del_use,
-            del_res,
+            delete_result,
         ) = rows
         # One model for the whole conversation: a start row only.
         self.assertEqual(
@@ -4541,11 +4545,11 @@ class AntigravityAppTests(ParserBase):
             (use.tool_name, use.tool_use_id, use.text), ("run_command", "call_7", "brew outdated")
         )
         self.assertEqual(
-            (res.tool_name, res.tool_use_id, res.text),
+            (result.tool_name, result.tool_use_id, result.text),
             ("run_command", "call_7", "node (24.1.0) < 24.2.0"),
         )
         self.assertEqual(sysmsg.text, "system_message: background task finished")
-        self.assertEqual(err.text, "error: model overloaded")
+        self.assertEqual(error.text, "error: model overloaded")
         self.assertEqual(
             (final.text, final.model), ("One package is outdated: node.", "gemini-3.8-pro")
         )
@@ -4556,7 +4560,7 @@ class AntigravityAppTests(ParserBase):
             ("delete_file", "call_8", "/home/u/proj/old.log"),
         )
         self.assertEqual(
-            (del_res.tool_name, del_res.tool_use_id, del_res.text),
+            (delete_result.tool_name, delete_result.tool_use_id, delete_result.text),
             ("delete_file", "call_8", "delete_file | /home/u/proj/old.log | remove the stale log"),
         )
         self.assertEqual([row.source_line for row in rows], [0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 5, 6, 7])
@@ -4566,12 +4570,12 @@ class AntigravityAppTests(ParserBase):
         # permission_grants entry and per file_access_permissions entry,
         # after the step's tool_result, keyed to its call.
         rows = self.rows_for(AntigravityParser(), self.REL)
-        res, grant, files = rows[5:8]
-        self.assertEqual(res.turn_type, "tool_result")
+        result, grant, files = rows[5:8]
+        self.assertEqual(result.turn_type, "tool_result")
         for row in (grant, files):
             self.assertEqual(
                 (row.turn_type, row.tool_name, row.tool_use_id, row.timestamp_utc, row.source_line),
-                ("system", "run_command", "call_7", res.timestamp_utc, 2),
+                ("system", "run_command", "call_7", result.timestamp_utc, 2),
             )
         self.assertEqual(
             grant.text,
@@ -4603,13 +4607,13 @@ class AntigravityAppTests(ParserBase):
                 ]
             },
         }
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute(
             "INSERT INTO steps (idx, step_type, status, step_payload) VALUES (50, 21, 3, ?)",
             (protobuf.encode(step, "Step", AGY),),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(AntigravityParser(), self.REL)
         self.assertEqual(
             [(row.turn_type, row.tool_use_id) for row in rows[-2:]],
@@ -4625,10 +4629,10 @@ class AntigravityAppTests(ParserBase):
     def test_bad_permissions_blob_is_reported(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute("UPDATE steps SET permissions = ? WHERE idx = 2", (b"\x12\x05ab",))
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute("UPDATE steps SET permissions = ? WHERE idx = 2", (b"\x12\x05ab",))
+        connection.commit()
+        connection.close()
         rows = self.rows_for(AntigravityParser(), self.REL)
         self.assertEqual(
             [(row.turn_type, row.text) for row in rows if row.text.startswith("parser:")],
@@ -4730,13 +4734,13 @@ class AntigravityAppTests(ParserBase):
     def test_bad_step_is_reported_not_fatal(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute(
             "INSERT INTO steps (idx, step_type, status, step_payload) VALUES (99, 15, 3, ?)",
             (b"\xa2\x01\x05ab",),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(AntigravityParser(), self.REL)
         self.assertEqual(len(rows), 14)
         self.assertEqual(rows[10].text, "One package is outdated: node.")
@@ -4766,7 +4770,7 @@ class AntigravityBrainTests(ParserBase):
         AGY_APP_CONVERSATION
     )
     DATABASE = ".gemini/antigravity-cli/conversations/%s.db" % AGY_CONVERSATION
-    APP_DB = ".gemini/antigravity/conversations/%s.db" % AGY_APP_CONVERSATION
+    APP_DATABASE = ".gemini/antigravity/conversations/%s.db" % AGY_APP_CONVERSATION
 
     @staticmethod
     def shape(rows):
@@ -4953,7 +4957,7 @@ class AntigravityBrainTests(ParserBase):
         # conversations pairs with a database row: the app's shortened tool
         # output on its tool_use_id, the others on their text too.
         parser = AntigravityParser()
-        for database, mirror in ((self.DATABASE, self.FULL), (self.APP_DB, self.APP)):
+        for database, mirror in ((self.DATABASE, self.FULL), (self.APP_DATABASE, self.APP)):
             for thinking in (False, True):
                 primary = self.rows_for(parser, database, include_thinking=thinking)
                 secondary = [
@@ -5872,7 +5876,7 @@ class KiroTests(ParserBase):
         self.assertEqual(
             [row.model for row in conv], ["claude-sonnet-4"] * 3 + ["claude-opus-4"] * 2
         )
-        user, asst, use, res, final = conv
+        user, asst, use, result, final = conv
         self.assertEqual(
             (user.text, user.timestamp_utc), ("list the files here", "2026-04-24T03:17:15.123Z")
         )
@@ -5886,10 +5890,10 @@ class KiroTests(ParserBase):
         )
         # null user.timestamp falls back to the entry's request start
         self.assertEqual(
-            (res.tool_name, res.tool_use_id, res.timestamp_utc),
+            (result.tool_name, result.tool_use_id, result.timestamp_utc),
             ("execute_bash", "tooluse_abc123", "2026-04-24T03:17:17.000Z"),
         )
-        self.assertEqual(res.text, "total 8\nREADME.md [Success]")
+        self.assertEqual(result.text, "total 8\nREADME.md [Success]")
         self.assertEqual(final.timestamp_utc, "2026-04-24T03:17:18.100Z")
 
     def test_export_variants(self):
@@ -6018,9 +6022,9 @@ class KiroTests(ParserBase):
 
     def test_salvage(self):
         self.assertEqual(salvage('{"a": 1}'), ({"a": 1}, ""))
-        state, err = salvage('{"conversation_id": "c\\"1", "history": [{"x": 1}, {"y": ')
+        state, error = salvage('{"conversation_id": "c\\"1", "history": [{"x": 1}, {"y": ')
         self.assertEqual(state, {"conversation_id": 'c"1', "history": [{"x": 1}]})
-        self.assertTrue(err)
+        self.assertTrue(error)
         self.assertEqual(salvage("garbage")[0], None)
 
     # -- source-derived rows ---------------------------------------------------
@@ -6162,18 +6166,18 @@ class KiroTests(ParserBase):
         parser = KiroParser()
         self.assertTrue(parser.wants(self.artifact(self.AGENT)))
         rows = self.rows_for(parser, self.AGENT)
-        src = "(from .aws/amazonq/cli-agents/dev.json, file mtime)"
+        source = "(from .aws/amazonq/cli-agents/dev.json, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: allowedTools=fs_read " + src,
-                "permission setting: allowedTools=@git " + src,
+                "permission setting: allowedTools=fs_read " + source,
+                "permission setting: allowedTools=@git " + source,
                 'permission setting: toolsSettings.execute_bash.allowedCommands=["git status"] '
-                + src,
+                + source,
                 'permission setting: toolsSettings.execute_bash.deniedCommands=["rm -rf .*"] '
-                + src,
-                "permission setting: toolsSettings.execute_bash.autoAllowReadonly=true " + src,
-                'permission setting: toolsSettings.fs_write.deniedPaths=["/etc"] ' + src,
+                + source,
+                "permission setting: toolsSettings.execute_bash.autoAllowReadonly=true " + source,
+                'permission setting: toolsSettings.fs_write.deniedPaths=["/etc"] ' + source,
             ],
         )
         mtime = to_utc((self.home / self.AGENT).stat().st_mtime)
@@ -6189,11 +6193,11 @@ class KiroTests(ParserBase):
         )
 
     def _project_artifact(self, rel, record):
-        proj = self.tmp / "srv" / "proj"
-        path = proj / rel
+        project = self.tmp / "srv" / "proj"
+        path = project / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(record), encoding="utf-8")
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         return Artifact(path, "/srv/proj/" + rel, rel, "kiro", home)
 
     def test_project_agent_config(self):
@@ -6432,7 +6436,7 @@ class GeminiCliTests(ParserBase):
             "status": "awaiting_approval",
             "timestamp": "2026-10-01T09:00:32.000Z",
         }
-        msg = {
+        message = {
             "id": "s-g1",
             "timestamp": "2026-10-01T09:00:31.000Z",
             "type": "gemini",
@@ -6441,7 +6445,7 @@ class GeminiCliTests(ParserBase):
             "toolCalls": [call],
         }
         with open(self.home / rel, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(msg) + "\n")
+            handle.write(json.dumps(message) + "\n")
         rows = self.rows_for(GeminiCliParser(), rel)
         self.assertEqual(
             [(row.turn_type, row.text) for row in rows[2:]],
@@ -6532,10 +6536,10 @@ class GeminiCliTests(ParserBase):
             art = next(artifact for artifact in self.col.artifacts if artifact.rel == rel)
             self.assertFalse(parser.wants(art), rel)
         # trusted_hooks.json and the acknowledged agents live in the home only.
-        proj = self.tmp / "srv" / "proj"
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        project = self.tmp / "srv" / "proj"
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         for rel in (".gemini/trusted_hooks.json", ".gemini/acknowledgments/agents.json"):
-            art = Artifact(proj / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
+            art = Artifact(project / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
             self.assertFalse(parser.wants(art), rel)
 
     def test_truncated_last_line_is_reported_not_fatal(self):
@@ -6658,19 +6662,19 @@ class GeminiCliTests(ParserBase):
     def test_settings_rows(self):
         self.sources()
         rows = self.rows_for(GeminiCliParser(), ".gemini/settings.json")
-        src = " (from .gemini/settings.json, file mtime)"
+        source = " (from .gemini/settings.json, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: tools.allowed=run_shell_command(git)" + src,
-                "permission setting: tools.allowed=run_shell_command(npm test)" + src,
-                "permission setting: tools.exclude=web_fetch" + src,
-                "permission setting: general.defaultApprovalMode=auto_edit" + src,
-                "permission setting: tools.sandbox=docker" + src,
-                "permission setting: security.disableYoloMode=true" + src,
-                "permission setting: security.folderTrust.enabled=true" + src,
-                "session retention: general.sessionRetention.enabled=true" + src,
-                "session retention: general.sessionRetention.maxAge=7d" + src,
+                "permission setting: tools.allowed=run_shell_command(git)" + source,
+                "permission setting: tools.allowed=run_shell_command(npm test)" + source,
+                "permission setting: tools.exclude=web_fetch" + source,
+                "permission setting: general.defaultApprovalMode=auto_edit" + source,
+                "permission setting: tools.sandbox=docker" + source,
+                "permission setting: security.disableYoloMode=true" + source,
+                "permission setting: security.folderTrust.enabled=true" + source,
+                "session retention: general.sessionRetention.enabled=true" + source,
+                "session retention: general.sessionRetention.maxAge=7d" + source,
             ],
         )
         for row in rows:
@@ -6699,7 +6703,7 @@ class GeminiCliTests(ParserBase):
         self.sources()
         rel = ".gemini/policies/auto-saved.toml"
         rows = self.rows_for(GeminiCliParser(), rel)
-        src = " (from .gemini/policies/auto-saved.toml, file mtime)"
+        source = " (from .gemini/policies/auto-saved.toml, file mtime)"
         if sys.version_info < (3, 11):
             self.assertEqual(
                 [row.text for row in rows],
@@ -6713,9 +6717,9 @@ class GeminiCliTests(ParserBase):
             [row.text for row in rows],
             [
                 "permission setting: policy allow run_shell_command priority=2.95 "
-                'commandPrefix=["git","status"]' + src,
+                'commandPrefix=["git","status"]' + source,
                 "permission setting: policy allow search priority=2.95 mcpName=docs "
-                'modes=["autoEdit"]' + src,
+                'modes=["autoEdit"]' + source,
             ],
         )
         for row in rows:
@@ -6735,19 +6739,19 @@ class GeminiCliTests(ParserBase):
     def test_project_settings_and_policy(self):
         # A project's .gemini/settings.json and workspace policy file: the
         # rows carry the project directory.
-        proj = self.tmp / "srv" / "proj"
-        (proj / ".gemini/policies").mkdir(parents=True)
-        (proj / ".gemini/settings.json").write_text(
+        project = self.tmp / "srv" / "proj"
+        (project / ".gemini/policies").mkdir(parents=True)
+        (project / ".gemini/settings.json").write_text(
             json.dumps({"tools": {"confirmationRequired": ["write_file"]}}), encoding="utf-8"
         )
-        (proj / ".gemini/policies/auto-saved.toml").write_text(
+        (project / ".gemini/policies/auto-saved.toml").write_text(
             '[[rule]]\ndecision = "allow"\npriority = 2.95\ntoolName = "write_file"\n',
             encoding="utf-8",
         )
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         parser = GeminiCliParser()
         rel = ".gemini/settings.json"
-        art = Artifact(proj / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
+        art = Artifact(project / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
         self.assertTrue(parser.wants(art))
         self.assertEqual(
             [(row.text, row.project_path) for row in parser.parse(art, Options())],
@@ -6761,7 +6765,7 @@ class GeminiCliTests(ParserBase):
         )
         if sys.version_info >= (3, 11):
             rel = ".gemini/policies/auto-saved.toml"
-            art = Artifact(proj / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
+            art = Artifact(project / rel, "/srv/proj/" + rel, rel, "gemini-cli", home)
             self.assertEqual(
                 [(row.text, row.project_path) for row in parser.parse(art, Options())],
                 [
@@ -7026,11 +7030,11 @@ class CrushTests(ParserBase):
         art = next(artifact for artifact in self.col.artifacts if artifact.rel == self.REL)
         import sqlite3
 
-        con = sqlite3.connect("file:%s?immutable=1" % art.disk_path.as_posix(), uri=True)
+        connection = sqlite3.connect("file:%s?immutable=1" % art.disk_path.as_posix(), uri=True)
         try:
-            self.assertEqual(con.execute("select count(*) from messages").fetchone()[0], 0)
+            self.assertEqual(connection.execute("select count(*) from messages").fetchone()[0], 0)
         finally:
-            con.close()
+            connection.close()
         self.assertTrue(Path(str(art.disk_path) + "-wal").is_file())
 
     def test_thinking_opt_in(self):
@@ -7068,13 +7072,13 @@ class CrushTests(ParserBase):
         import sqlite3
 
         database = self.home / self.REL
-        con = sqlite3.connect(str(database))
-        con.execute(
+        connection = sqlite3.connect(str(database))
+        connection.execute(
             "INSERT INTO messages(id,session_id,role,parts,model,provider,created_at,updated_at) "
             "VALUES ('m5','6f1c0001','assistant','[{\"type\":\"text\",\"data\":{\"text\":\"cut','m','p',1760000006,1760000006)"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CrushParser(), self.REL)
         # m5 names model "m" from provider "p", so its parse error follows a model row.
         self.assertEqual(len(rows), 10)
@@ -7094,11 +7098,11 @@ class CrushTests(ParserBase):
     def _insert(self, statements):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
+        connection = sqlite3.connect(str(self.home / self.REL))
         for sql in statements:
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
 
     def test_bad_parts_carries_the_value_in_full(self):
         # The stored parts value is the row's text, unshortened, and the
@@ -7575,13 +7579,13 @@ class GooseTests(ParserBase):
     def test_bad_content_json_is_reported_not_fatal(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute(
             "INSERT INTO messages(session_id,role,content_json,created_timestamp) "
             "VALUES ('20260301_1','assistant','[{\"type\":\"text\",\"te',1772355606)"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = [
             row
             for row in self.rows_for(GooseParser(), self.REL)
@@ -7651,11 +7655,11 @@ class GooseTests(ParserBase):
     def _gateway_rows(self, display="alice"):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
+        connection = sqlite3.connect(str(self.home / self.REL))
         for sql in goose_gateway_records(display):
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
         return [
             row
             for row in self.rows_for(GooseParser(), self.REL)
@@ -7698,11 +7702,11 @@ class GooseTests(ParserBase):
 
         from fixtures import GOOSE_BAD_SESSION, goose_bad_json_records
 
-        con = sqlite3.connect(str(self.home / self.REL))
+        connection = sqlite3.connect(str(self.home / self.REL))
         for sql in goose_bad_json_records():
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
         return [
             row
             for row in self.rows_for(GooseParser(), self.REL)
@@ -7773,14 +7777,14 @@ class GooseTests(ParserBase):
     def test_content_json_of_the_wrong_shape_or_empty_is_reported(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute(
             "INSERT INTO messages(id,session_id,role,content_json,created_timestamp) VALUES "
             "(201,'20260301_1','assistant','{\"type\":\"text\"}',1772355606),"
             "(202,'20260301_1','assistant','',1772355607)"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(GooseParser(), self.REL)
         self.assertEqual(
             [row.text for row in rows if row.source_line in (201, 202)],
@@ -7797,11 +7801,11 @@ class GooseTests(ParserBase):
     def _permission_rows(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
+        connection = sqlite3.connect(str(self.home / self.REL))
         for sql in goose_permission_records():
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
         return [
             row
             for row in self.rows_for(GooseParser(), self.REL)
@@ -7870,11 +7874,11 @@ class GooseTests(ParserBase):
         # even while its `_meta` still says false.
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.REL))
+        connection = sqlite3.connect(str(self.home / self.REL))
         for sql in goose_permission_records():
-            con.execute(sql.replace('"goose.executable":true', '"goose.executable":false'))
-        con.commit()
-        con.close()
+            connection.execute(sql.replace('"goose.executable":true', '"goose.executable":false'))
+        connection.commit()
+        connection.close()
         rows = self.rows_for(GooseParser(), self.REL)
         verdicts = [row.tool_use_id for row in rows if "goose.executable" in row.text]
         self.assertEqual(verdicts, ["call_p2"])
@@ -8126,15 +8130,15 @@ class ContinueTests(ParserBase):
         )
         self.assertEqual([row.source_line for row in rows], [0, 0, 0, 1, 3, 4, 5, 5, 5, 5, 5])
 
-    def _write_session(self, sid: str, workspace: str, states: list, mode: str = "") -> str:
+    def _write_session(self, session_id: str, workspace: str, states: list, mode: str = "") -> str:
         """Write a one-item session file `sid` in `workspace`.
 
         Its assistant item has `states`; the input is reopened so the parser is offered
         it.
         """
         calls = [state["toolCall"] for state in states]
-        sess = {
-            "sessionId": sid,
+        session = {
+            "sessionId": session_id,
             "title": "t",
             "workspaceDirectory": workspace,
             "history": [
@@ -8146,9 +8150,9 @@ class ContinueTests(ParserBase):
             ],
         }
         if mode:
-            sess["mode"] = mode
-        rel = ".continue/sessions/%s.json" % sid
-        (self.home / rel).write_text(json.dumps(sess), encoding="utf-8")
+            session["mode"] = mode
+        rel = ".continue/sessions/%s.json" % session_id
+        (self.home / rel).write_text(json.dumps(session), encoding="utf-8")
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
         return rel
 
@@ -8516,8 +8520,8 @@ class ContinueTests(ParserBase):
         self.assertEqual(rows[-1].text, bad_line_text())
 
     def test_load_session_trailing_data(self):
-        obj, problem = load_session('{"sessionId": "x", "history": []}\n{"junk"')
-        self.assertEqual(obj["sessionId"], "x")
+        session, problem = load_session('{"sessionId": "x", "history": []}\n{"junk"')
+        self.assertEqual(session["sessionId"], "x")
         self.assertIn("trailing data", problem)
 
     POSTED = (
@@ -8833,9 +8837,9 @@ class AiderTests(ParserBase):
         A y or n answer may come from --yes-always.
         """
         rows = self.rows_for(AiderParser(), self.CHAT)
-        idx = [i for i, row in enumerate(rows) if row.text.startswith("permission decision: ")]
+        index = [i for i, row in enumerate(rows) if row.text.startswith("permission decision: ")]
         self.assertEqual(
-            [(rows[i].text, rows[i].source_line, rows[i].session_id) for i in idx],
+            [(rows[i].text, rows[i].source_line, rows[i].session_id) for i in index],
             [
                 (
                     "permission decision: no (Run shell command?) answer=n default=Yes;"
@@ -8851,10 +8855,10 @@ class AiderTests(ParserBase):
                 ),
             ],
         )
-        for i in idx:
+        for i in index:
             self.assertEqual(rows[i].turn_type, "system")
-        self.assertEqual(rows[idx[0]].timestamp_utc, "2026-10-02T12:00:05.123Z")
-        self.assertEqual(rows[idx[0] - 1].turn_type, "tool_result")
+        self.assertEqual(rows[index[0]].timestamp_utc, "2026-10-02T12:00:05.123Z")
+        self.assertEqual(rows[index[0] - 1].turn_type, "tool_result")
 
     def test_thinking_opt_in(self):
         # Aider records no reasoning; the flag must not change the rows.
@@ -9020,13 +9024,13 @@ class ZedTests(ParserBase):
     SIDEBAR = ".local/share/zed/db/0-stable/db.sqlite"
 
     def _insert(self, thread_id, data_type, data, updated="2026-10-03T12:00:00+00:00"):
-        con = sqlite3.connect(str(self.home / self.REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.REL))
+        connection.execute(
             "INSERT INTO threads(id,summary,updated_at,data_type,data,folder_paths) VALUES (?,?,?,?,?,?)",
             (thread_id, "extra", updated, data_type, data, "/srv/other"),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
 
     def test_rows(self):
         rows = [
@@ -9186,17 +9190,17 @@ class ZedTests(ParserBase):
     def test_bad_kv_value_is_reported_not_fatal(self):
         # A scoped_kv_store value that does not decode is its own parser:
         # row, carried in full, after the file's other rows.
-        con = sqlite3.connect(str(self.home / self.SIDEBAR))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.SIDEBAR))
+        connection.execute(
             "INSERT INTO scoped_kv_store(namespace,key,value) VALUES (?,?,?)",
             ("agent_draft_prompts", "cut-draft", '[{"type":"text","text":"cut'),
         )
-        con.execute(
+        connection.execute(
             "INSERT INTO scoped_kv_store(namespace,key,value) VALUES (?,?,?)",
             ("created_git_worktrees", "local\n/srv/wt2", '{"created_at_nanos":1}'),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(ZedParser(), self.SIDEBAR)
         self.assertEqual(len(rows), 12)
         self.assertTrue(rows[9].text.startswith("sidebar terminal: "))
@@ -9515,8 +9519,8 @@ class ZedTests(ParserBase):
             "parser: unparseable record 3 (JSONDecodeError: Expecting ':' delimiter: line 1"
             ' column 39 (char 38)): {"version":"0.3.0","messages":[{"User"',
         )
-        for sid in ("list-thread", "cut-thread"):
-            row = by_session[sid]
+        for session_id in ("list-thread", "cut-thread"):
+            row = by_session[session_id]
             self.assertEqual(
                 (row.turn_type, row.project_path, row.timestamp_utc), ("system", "/srv/other", "")
             )
@@ -9891,7 +9895,7 @@ from fixtures import (
 class VsCodeSyncTests(ParserBase):
     """Test Copilot Chat's session sync and cloud agent records."""
 
-    SRC = "(from User/globalStorage/github.copilot-chat/cloudSessions.json, file mtime)"
+    SOURCE = "(from User/globalStorage/github.copilot-chat/cloudSessions.json, file mtime)"
     TASKS = (
         "(from state.vscdb GitHub.copilot-chat github.copilot.cloudAgent.ownedTasks, recordedAt)"
     )
@@ -9907,13 +9911,13 @@ class VsCodeSyncTests(ParserBase):
                     "system",
                     VSCODE_SESSION,
                     timestamp,
-                    "session synced: remote session cs-0001 task ct-0001 " + self.SRC,
+                    "session synced: remote session cs-0001 task ct-0001 " + self.SOURCE,
                 ),
                 (
                     "system",
                     VSCODE_OTHER_MACHINE_SESSION,
                     timestamp,
-                    "session synced: remote session cs-0002 task - " + self.SRC,
+                    "session synced: remote session cs-0002 task - " + self.SOURCE,
                 ),
             ],
         )
@@ -9971,7 +9975,7 @@ class VsCodeSyncTests(ParserBase):
         rows = self.rows_for(VsCodeParser(), VSCODE_STATE_REL)
         rest = [row for row in rows if not row.text.startswith("session ")]
         timestamp = to_utc(VSCODE_GRANTS_MTIME)
-        src = "(from User/globalStorage/state.vscdb, file mtime)"
+        source = "(from User/globalStorage/state.vscdb, file mtime)"
         self.assertEqual(
             [
                 (row.turn_type, row.session_id, row.project_path, row.timestamp_utc, row.text)
@@ -10008,14 +10012,14 @@ class VsCodeSyncTests(ParserBase):
                     "",
                     "",
                     timestamp,
-                    "permission setting: chat/autoconfirm-post.read_file=Read File " + src,
+                    "permission setting: chat/autoconfirm-post.read_file=Read File " + source,
                 ),
                 (
                     "system",
                     "",
                     "",
                     timestamp,
-                    "permission setting: chat.tools.global.autoApprove.optIn=true " + src,
+                    "permission setting: chat.tools.global.autoApprove.optIn=true " + source,
                 ),
             ],
         )
@@ -10023,20 +10027,20 @@ class VsCodeSyncTests(ParserBase):
 
     def test_workspace_state_grants(self):
         rows = self.rows_for(VsCodeParser(), VSCODE_WS_STATE_REL)
-        src = "(from User/workspaceStorage/abc123/state.vscdb, file mtime)"
+        source = "(from User/workspaceStorage/abc123/state.vscdb, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: chat/autoconfirm.run_in_terminal=true " + src,
+                "permission setting: chat/autoconfirm.run_in_terminal=true " + source,
                 "permission setting: chat/autoconfirm.mcp_github_create_issue="
                 + json.dumps(
                     {"arguments": '{"repo":"x"}', "label": "Create issue"},
                     separators=(",", ":"),
                 )
                 + " "
-                + src,
-                "permission setting: chat/servers/autoconfirm.github=true " + src,
-                "permission setting: chat.externalPath.workspaceAllowlist=/srv/shared " + src,
+                + source,
+                "permission setting: chat/servers/autoconfirm.github=true " + source,
+                "permission setting: chat.externalPath.workspaceAllowlist=/srv/shared " + source,
             ],
         )
         for row in rows:
@@ -10056,15 +10060,15 @@ class VsCodeSyncTests(ParserBase):
 
     def test_settings_rows(self):
         rows = self.rows_for(VsCodeParser(), VSCODE_PROFILE_SETTINGS_REL)
-        src = " (from User/profiles/-5f3a1b2c/settings.json, file mtime)"
+        source = " (from User/profiles/-5f3a1b2c/settings.json, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: chat.tools.terminal.autoApprove.npm test=true" + src,
-                "permission setting: chat.tools.terminal.autoApprove.rm=false" + src,
-                "permission setting: chat.tools.edits.autoApprove={}" + src,
-                "permission setting: chat.permissions.default=autoApprove" + src,
-                "model setting: chat.defaultModel=copilot/gpt-5" + src,
+                "permission setting: chat.tools.terminal.autoApprove.npm test=true" + source,
+                "permission setting: chat.tools.terminal.autoApprove.rm=false" + source,
+                "permission setting: chat.tools.edits.autoApprove={}" + source,
+                "permission setting: chat.permissions.default=autoApprove" + source,
+                "model setting: chat.defaultModel=copilot/gpt-5" + source,
             ],
         )
         for row in rows:
@@ -10264,7 +10268,7 @@ class OpenCodeTests(ParserBase):
             user,
             synth,
             use,
-            res,
+            result,
             asst,
             finish,
             v2user,
@@ -10330,7 +10334,7 @@ class OpenCodeTests(ParserBase):
             ("bash", "call_x1", "ls", "2026-10-03T09:00:02.500Z"),
         )
         self.assertEqual(
-            (res.tool_name, res.tool_use_id, res.text, res.timestamp_utc),
+            (result.tool_name, result.tool_use_id, result.text, result.timestamp_utc),
             ("bash", "call_x1", "a.txt", "2026-10-03T09:00:03.000Z"),
         )
         self.assertEqual(asst.text, "There is one file, a.txt.")
@@ -10382,12 +10386,12 @@ class OpenCodeTests(ParserBase):
         self.assertEqual(
             [row.turn_type for row in rows], ["tool_use", "tool_result", "assistant", "system"]
         )
-        use, res, _asst, err = rows
+        use, result, _asst, error = rows
         self.assertEqual((use.tool_name, use.text), ("read", "/srv/proj/.env"))
-        self.assertEqual(res.text, "[error] permission denied")
-        self.assertEqual(err.text, "error: APIError overloaded")
+        self.assertEqual(result.text, "[error] permission denied")
+        self.assertEqual(error.text, "error: APIError overloaded")
         self.assertEqual(
-            err.source_file,
+            error.source_file,
             "/alice/" + self.STORAGE + "message/%s/msg_b.json" % OPENCODE_LEGACY_SESSION,
         )
         self.assertTrue(all(row.session_id == OPENCODE_LEGACY_SESSION for row in rows))
@@ -10481,17 +10485,17 @@ class OpenCodeTests(ParserBase):
         # One row per record, carrying the stored value in full.
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        part_rowid = con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        part_rowid = connection.execute(
             "INSERT INTO part VALUES ('prt_09','msg_02',?,1791018005000,1791018005000,'{\"type\":\"te')",
             (OPENCODE_SESSION,),
         ).lastrowid
-        msg_rowid = con.execute(
+        message_rowid = connection.execute(
             "INSERT INTO message VALUES ('msg_09',?,1791018006000,1791018006000,'{bad')",
             (OPENCODE_SESSION,),
         ).lastrowid
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
         self.assertEqual(len([row for row in rows if row.turn_type == "tool_use"]), 2)
         bad = [row for row in rows if row.text.startswith("parser:")]
@@ -10511,11 +10515,11 @@ class OpenCodeTests(ParserBase):
                 ),
                 (
                     "parser: unparseable record %d (message.data: %s): {bad"
-                    % (msg_rowid, json_reason("{bad")),
+                    % (message_rowid, json_reason("{bad")),
                     OPENCODE_SESSION,
                     "/srv/proj",
                     "",
-                    msg_rowid,
+                    message_rowid,
                 ),
             ],
         )
@@ -10572,16 +10576,16 @@ class OpenCodeTests(ParserBase):
         self.assertEqual(sessions[KILO_SESSION]["agent"], "kilo-code")
         self.assertEqual({session["project_path"] for session in sessions.values()}, {"/srv/proj"})
 
-    V2_DB = ".local/share/opencode/" + OPENCODE_V2_DB_NAME
-    NEXT_DB = ".local/share/opencode/" + OPENCODE_NEXT_DB_NAME
+    V2_DATABASE = ".local/share/opencode/" + OPENCODE_V2_DB_NAME
+    NEXT_DATABASE = ".local/share/opencode/" + OPENCODE_NEXT_DB_NAME
 
     def test_v2_database(self):
         # A database upgraded to 2.0 is read from `session_v2` and
         # `session_message`; the 1.x rows of a migrated session are not
         # repeated, and a session deleted in 2.0 is recovered from them.
         parser = OpenCodeParser()
-        rows = self.rows_for(parser, self.V2_DB)
-        self.assertFalse(parser.secondary(self.artifact(self.V2_DB)))
+        rows = self.rows_for(parser, self.V2_DATABASE)
+        self.assertFalse(parser.secondary(self.artifact(self.V2_DATABASE)))
         got = [(row.session_id, row.turn_type, row.text, row.recovered) for row in rows]
         self.assertEqual(
             got,
@@ -10662,7 +10666,7 @@ class OpenCodeTests(ParserBase):
 
         parser = OpenCodeParser()
         self.assertTrue(OpenCodeParser.has_secondary)
-        self.assertTrue(parser.secondary(self.artifact(self.NEXT_DB)))
+        self.assertTrue(parser.secondary(self.artifact(self.NEXT_DATABASE)))
         self.assertFalse(parser.secondary(self.artifact(self.DATABASE)))
         out = self.tmp / "out"
         with contextlib.redirect_stdout(io.StringIO()):
@@ -10705,20 +10709,20 @@ class OpenCodeTests(ParserBase):
         # records before and after it are still read.
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.V2_DB))
-        rowid = con.execute(
+        connection = sqlite3.connect(str(self.home / self.V2_DATABASE))
+        rowid = connection.execute(
             "INSERT INTO session_message VALUES ('msg_nbad',?,'assistant',20,1791025210000,"
             '1791025210000,\'{"agent":"build","content":[\')',
             (OPENCODE_V2_ONLY,),
         ).lastrowid
-        con.execute(
+        connection.execute(
             "INSERT INTO session_message VALUES ('msg_nafter',?,'user',21,1791025211000,"
             '1791025211000,\'{"text":"after the cut"}\')',
             (OPENCODE_V2_ONLY,),
         )
-        con.commit()
-        con.close()
-        rows = self.rows_for(OpenCodeParser(), self.V2_DB)
+        connection.commit()
+        connection.close()
+        rows = self.rows_for(OpenCodeParser(), self.V2_DATABASE)
         texts = [row.text for row in rows if row.session_id == OPENCODE_V2_ONLY]
         self.assertIn("idle: succeeded", texts)
         self.assertIn("after the cut", texts)
@@ -10746,14 +10750,14 @@ class OpenCodeTests(ParserBase):
         # is its own row and the parts around it are kept.
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.V2_DB))
-        rowid = con.execute(
+        connection = sqlite3.connect(str(self.home / self.V2_DATABASE))
+        rowid = connection.execute(
             "INSERT INTO part VALUES ('prt_d1b','msg_d1',?,1791025801000,1791025801000,'[1,')",
             (OPENCODE_DELETED,),
         ).lastrowid
-        con.commit()
-        con.close()
-        rows = self.rows_for(OpenCodeParser(), self.V2_DB)
+        connection.commit()
+        connection.close()
+        rows = self.rows_for(OpenCodeParser(), self.V2_DATABASE)
         deleted = [(row.turn_type, row.text) for row in rows if row.session_id == OPENCODE_DELETED]
         self.assertIn(("user", "what was deleted"), deleted)
         self.assertIn(("assistant", "A deleted reply."), deleted)
@@ -10769,13 +10773,13 @@ class OpenCodeTests(ParserBase):
         # A value that decodes but is not a JSON object is reported too.
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        rowid = con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        rowid = connection.execute(
             "INSERT INTO message VALUES ('msg_10',?,1791018007000,1791018007000,'[1]')",
             (OPENCODE_SESSION,),
         ).lastrowid
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
         self.assertEqual(
             [row.text for row in rows if row.text.startswith("parser:")],
@@ -10784,7 +10788,7 @@ class OpenCodeTests(ParserBase):
 
     # -- standing state, past use, scratch directories --------------------------------
     STATE = ".local/state/opencode/"
-    STATE_DB = ".local/share/opencode/" + OPENCODE_STATE_DB_NAME
+    STATE_DATABASE = ".local/share/opencode/" + OPENCODE_STATE_DB_NAME
 
     def with_state(self):
         build_opencode_state(self.home)
@@ -10792,8 +10796,8 @@ class OpenCodeTests(ParserBase):
 
     def test_state_db_rows(self):
         self.with_state()
-        rows = self.rows_for(OpenCodeParser(), self.STATE_DB)
-        db_name = OPENCODE_STATE_DB_NAME
+        rows = self.rows_for(OpenCodeParser(), self.STATE_DATABASE)
+        database_name = OPENCODE_STATE_DB_NAME
         self.assertEqual(
             [(row.session_id, row.project_path, row.timestamp_utc, row.text) for row in rows[1:6]],
             [
@@ -10801,49 +10805,49 @@ class OpenCodeTests(ParserBase):
                     OPENCODE_ARCHIVED,
                     "/srv/proj",
                     "2026-10-03T12:01:30.000Z",
-                    "session archived (from %s session_v2, time_archived)" % db_name,
+                    "session archived (from %s session_v2, time_archived)" % database_name,
                 ),
                 (
                     OPENCODE_ARCHIVED,
                     "/srv/proj",
                     "2026-10-03T12:01:00.000Z",
                     "permission setting: session bash git *=allow "
-                    "(from %s session_v2.permission, time_updated)" % db_name,
+                    "(from %s session_v2.permission, time_updated)" % database_name,
                 ),
                 (
                     OPENCODE_ARCHIVED,
                     "/srv/proj",
                     "2026-10-03T12:01:00.000Z",
                     "permission setting: session edit *.env=deny "
-                    "(from %s session_v2.permission, time_updated)" % db_name,
+                    "(from %s session_v2.permission, time_updated)" % database_name,
                 ),
                 (
                     "",
                     OPENCODE_WORKTREE,
                     "2026-10-03T12:00:04.000Z",
                     "scratch directory: %s (git worktree of /srv/proj strategy=git) "
-                    "(from %s worktree, time_created)" % (OPENCODE_WORKTREE, db_name),
+                    "(from %s worktree, time_created)" % (OPENCODE_WORKTREE, database_name),
                 ),
                 (
                     "",
                     "/srv/proj",
                     "2026-10-03T12:00:03.000Z",
                     "permission setting: bash npm test=allow (from %s permission, time_created)"
-                    % db_name,
+                    % database_name,
                 ),
             ],
         )
         self.assertTrue(all(row.turn_type == "system" for row in rows[:6]))
         # A deny rule in 2.0: the result, then the decision on the call's id.
-        res, decision = rows[-2:]
-        self.assertEqual(res.text, "[error] permission.rejected Permission denied: edit")
+        result, decision = rows[-2:]
+        self.assertEqual(result.text, "[error] permission.rejected Permission denied: edit")
         self.assertEqual(
             (decision.turn_type, decision.text, decision.tool_use_id, decision.timestamp_utc),
             (
                 "system",
                 "permission decision: rejected (permission.rejected)",
                 "call_s1",
-                res.timestamp_utc,
+                result.timestamp_utc,
             ),
         )
 
@@ -10851,13 +10855,13 @@ class OpenCodeTests(ParserBase):
         import sqlite3
 
         self.with_state()
-        con = sqlite3.connect(str(self.home / self.STATE_DB))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.STATE_DATABASE))
+        connection.execute(
             "UPDATE session_v2 SET permission = '{\"x\":' WHERE id = ?", (OPENCODE_ARCHIVED,)
         )
-        con.commit()
-        con.close()
-        rows = self.rows_for(OpenCodeParser(), self.STATE_DB)
+        connection.commit()
+        connection.close()
+        rows = self.rows_for(OpenCodeParser(), self.STATE_DATABASE)
         bad = [row for row in rows if row.text.startswith("parser:")]
         self.assertEqual(
             [(row.text, row.session_id) for row in bad],
@@ -10885,8 +10889,8 @@ class OpenCodeTests(ParserBase):
             'tool call. Here are some of the relevant rules [{"permission":"bash"}]',
             "call_r4": "Tool execution aborted",
         }
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        for index, (call, err) in enumerate(texts.items()):
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        for index, (call, error) in enumerate(texts.items()):
             data = {
                 "type": "tool",
                 "callID": call,
@@ -10894,16 +10898,16 @@ class OpenCodeTests(ParserBase):
                 "state": {
                     "status": "error",
                     "input": {"command": "rm -rf build"},
-                    "error": err,
+                    "error": error,
                     "time": {"start": 1791018004000 + index, "end": 1791018004500 + index},
                 },
             }
-            con.execute(
+            connection.execute(
                 "INSERT INTO part VALUES (?, 'msg_02', ?, 1791018004000, 1791018004000, ?)",
                 ("prt_07%d" % index, OPENCODE_SESSION, json.dumps(data)),
             )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
         got = [
             (row.tool_use_id, row.text)
@@ -10919,12 +10923,12 @@ class OpenCodeTests(ParserBase):
             ],
         )
         for call, _ in got:
-            res = next(
+            result = next(
                 row for row in rows if row.tool_use_id == call and row.turn_type == "tool_result"
             )
             dec = next(row for row in rows if row.tool_use_id == call and row.turn_type == "system")
-            self.assertEqual(rows.index(dec), rows.index(res) + 1)
-            self.assertEqual(dec.timestamp_utc, res.timestamp_utc)
+            self.assertEqual(rows.index(dec), rows.index(result) + 1)
+            self.assertEqual(dec.timestamp_utc, result.timestamp_utc)
 
     def test_prompt_history_is_secondary(self):
         self.with_state()
@@ -11011,11 +11015,11 @@ class OpenCodeTests(ParserBase):
             [
                 (
                     "system",
-                    sid,
+                    session_id,
                     to_utc(OPENCODE_STATE_MTIME),
-                    "session pinned: %s (from %s pinned, file mtime)" % (sid, rel),
+                    "session pinned: %s (from %s pinned, file mtime)" % (session_id, rel),
                 )
-                for sid in (OPENCODE_SESSION, OPENCODE_PINNED_GONE)
+                for session_id in (OPENCODE_SESSION, OPENCODE_PINNED_GONE)
             ],
         )
         (self.home / rel).write_text('{"pinned": [', encoding="utf-8")
@@ -11040,12 +11044,12 @@ class OpenCodeTests(ParserBase):
         with contextlib.redirect_stdout(io.StringIO()):
             cli.main(["timeline", str(self.tmp / "home"), "-o", str(out), "--agent", "opencode"])
         timeline = read_jsonl(out / "timeline.jsonl")
-        hist = [row for row in timeline if row["source_file"].endswith("prompt-history.jsonl")]
+        history = [row for row in timeline if row["source_file"].endswith("prompt-history.jsonl")]
         # "list files" pairs with the 1.x transcript's prompt and the shell
         # line "git status" with the 2.0 `shell` record's call, so both are
         # dropped; the prompt no transcript holds is kept, as recovered.
         self.assertEqual(
-            [(row["text"], row["recovered"]) for row in hist],
+            [(row["text"], row["recovered"]) for row in history],
             [("only the history kept this", "yes")],
         )
         sessions = {row["session_id"] for row in read_jsonl(out / "sessions.jsonl")}
@@ -11083,7 +11087,7 @@ class KiloCodeTests(ParserBase):
                 (row.host, row.user, row.agent, row.session_id, row.project_path),
                 ("h1", "alice", "kilo-code", KILO_SESSION, "/srv/proj"),
             )
-        start, model, mode, user, use, res, switch, mode_switch, user2 = rows
+        start, model, mode, user, use, result, switch, mode_switch, user2 = rows
         self.assertEqual(
             [(row.text, row.timestamp_utc) for row in (model, mode)],
             [
@@ -11115,7 +11119,7 @@ class KiloCodeTests(ParserBase):
             (use.tool_name, use.tool_use_id, use.text), ("bash", "call_1", "pytest -q")
         )
         self.assertEqual(
-            (res.tool_use_id, res.text, res.timestamp_utc),
+            (result.tool_use_id, result.text, result.timestamp_utc),
             ("call_1", "3 passed", "2026-10-03T10:00:03.000Z"),
         )
 
@@ -11130,7 +11134,7 @@ class KiloCodeTests(ParserBase):
                 (row.agent, row.session_id, row.project_path, row.model),
                 ("kilo-code", KILO_TASK, "/srv/proj", ""),
             )
-        start, user, env, asst, use, res, final = rows
+        start, user, env, asst, use, result, final = rows
         self.assertEqual(start.text, "task: fix tests mode=code status=completed")
         self.assertEqual(
             (user.text, user.timestamp_utc, user.source_line),
@@ -11142,7 +11146,7 @@ class KiloCodeTests(ParserBase):
             (use.tool_name, use.tool_use_id, use.text),
             ("execute_command", "toolu_01A", "pytest -q"),
         )
-        self.assertEqual((res.tool_use_id, res.text), ("toolu_01A", "3 passed"))
+        self.assertEqual((result.tool_use_id, result.text), ("toolu_01A", "3 passed"))
         self.assertEqual((final.text, final.source_line), ("All three tests pass.", 5))
 
     def test_thinking_opt_in(self):
@@ -11238,11 +11242,16 @@ class KiloCodeTests(ParserBase):
     def test_config_permission_rows(self):
         self.with_state()
         rows = self.rows_for(KiloCodeParser(), self.CONFIG)
-        src = "(from %s, file mtime)" % self.CONFIG
+        source = "(from %s, file mtime)" % self.CONFIG
         self.assertEqual(
             [(row.turn_type, row.session_id, row.timestamp_utc, row.text) for row in rows],
             [
-                ("system", "", to_utc(KILO_SHARE_MTIME), "permission setting: %s %s" % (text, src))
+                (
+                    "system",
+                    "",
+                    to_utc(KILO_SHARE_MTIME),
+                    "permission setting: %s %s" % (text, source),
+                )
                 for text in (
                     "permission.bash.git status=allow",
                     "permission.bash.rm *=deny",
@@ -11253,7 +11262,7 @@ class KiloCodeTests(ParserBase):
         (self.home / self.CONFIG).write_text('{"permission": "allow"}', encoding="utf-8")
         rows = self.rows_for(KiloCodeParser(), self.CONFIG)
         self.assertEqual(
-            [row.text for row in rows], ["permission setting: permission=allow " + src]
+            [row.text for row in rows], ["permission setting: permission=allow " + source]
         )
         (self.home / self.CONFIG).write_text('{"model": "x"}', encoding="utf-8")
         self.assertEqual(self.rows_for(KiloCodeParser(), self.CONFIG), [])
@@ -11265,11 +11274,11 @@ class KiloCodeTests(ParserBase):
     def test_sandbox_rows(self):
         self.with_state()
         rows = self.rows_for(KiloCodeParser(), self.POLICY)
-        src = "(from %s, file mtime)" % self.POLICY
+        source = "(from %s, file mtime)" % self.POLICY
         self.assertEqual(
             [row.text for row in rows],
             [
-                "permission setting: sandbox.%s %s" % (text, src)
+                "permission setting: sandbox.%s %s" % (text, source)
                 for text in (
                     "enabled=true",
                     "mode=proxy",
@@ -11322,7 +11331,7 @@ class KiloCodeTests(ParserBase):
     def test_remote_control_rows(self):
         self.with_state()
         rows = self.rows_for(KiloCodeParser(), self.LOG)
-        src = "(from log/%s, " % KILO_LOG_NAME
+        source = "(from log/%s, " % KILO_LOG_NAME
         self.assertEqual(
             [
                 (row.source_line, row.session_id, row.project_path, row.timestamp_utc, row.text)
@@ -11334,7 +11343,7 @@ class KiloCodeTests(ParserBase):
                     "",
                     "",
                     "2026-10-03T10:00:05.000Z",
-                    "remote control: connection enabled connected=true " + src + "line time)",
+                    "remote control: connection enabled connected=true " + source + "line time)",
                 ),
                 (
                     3,
@@ -11342,7 +11351,7 @@ class KiloCodeTests(ParserBase):
                     "/srv/proj",
                     "2026-10-03T10:00:09.250Z",
                     "remote control: session started model=anthropic/claude-sonnet-4-5 "
-                    "directory=/srv/proj " + src + "startedAt)",
+                    "directory=/srv/proj " + source + "startedAt)",
                 ),
                 (
                     4,
@@ -11350,14 +11359,14 @@ class KiloCodeTests(ParserBase):
                     "",
                     "2026-10-03T10:05:00.000Z",
                     "remote control: session ended reason=disabled durationMs=290750 "
-                    "startedAt=2026-10-03T10:00:09.250Z " + src + "line time)",
+                    "startedAt=2026-10-03T10:00:09.250Z " + source + "line time)",
                 ),
                 (
                     5,
                     "",
                     "",
                     "2026-10-03T10:05:00.000Z",
-                    "remote control: connection disabled " + src + "line time)",
+                    "remote control: connection disabled " + source + "line time)",
                 ),
             ],
         )
@@ -11418,7 +11427,7 @@ class KiloCodeTests(ParserBase):
         # message is the part's `state.error` (session/processor.ts:299-312).
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.DATABASE))
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
         data = {
             "type": "tool",
             "callID": "call_k9",
@@ -11431,12 +11440,12 @@ class KiloCodeTests(ParserBase):
                 "time": {"start": 1791021603500, "end": 1791021603600},
             },
         }
-        con.execute(
+        connection.execute(
             "INSERT INTO part VALUES ('prt_01JAXZ','msg_01JAXA',?,1791021603500,1791021603500,?)",
             (KILO_SESSION, json.dumps(data)),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(KiloCodeParser(), self.DATABASE)
         dec = [row for row in rows if row.text.startswith("permission decision:")]
         self.assertEqual(
@@ -11488,7 +11497,7 @@ class OpenCodeSyncTests(ParserBase):
     def test_rows(self):
         self.assertTrue(OpenCodeParser.records_sync)
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
-        src = "(from %s event session.updated.1, info.time.updated)" % OPENCODE_SHARE_DB_NAME
+        source = "(from %s event session.updated.1, info.time.updated)" % OPENCODE_SHARE_DB_NAME
         self.assertEqual(
             self.sync_rows(rows),
             [
@@ -11502,14 +11511,14 @@ class OpenCodeSyncTests(ParserBase):
                 ),
                 (
                     OPENCODE_UNSHARED,
-                    "session synced: share url https://opncd.ai/share/UNSHAR06 " + src,
+                    "session synced: share url https://opncd.ai/share/UNSHAR06 " + source,
                     "2026-10-03T10:00:12.000Z",
                     3,
                     "/srv/proj",
                 ),
                 (
                     OPENCODE_UNSHARED,
-                    "session unshared " + src,
+                    "session unshared " + source,
                     "2026-10-03T10:00:14.000Z",
                     5,
                     "/srv/proj",
@@ -11537,13 +11546,13 @@ class OpenCodeSyncTests(ParserBase):
     def test_bad_event_data_is_reported_not_fatal(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        connection.execute(
             "INSERT INTO event VALUES ('evt_bad', ?, 9, 'session.updated.1', '{\"info\":')",
             (OPENCODE_PRIVATE,),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
         self.assertEqual(len(self.sync_rows(rows)), 3)
         # The event is carried in full, under its session.
@@ -11703,7 +11712,7 @@ class ClineTests(ParserBase):
                 ("/srv/proj", "", "claude-sonnet-4-5"),
             )
             self.assertTrue(row.timestamp_utc.endswith("Z"), row)
-        user, api, read, _text, cmd, out, ckpt, done = rows
+        user, api, read, _text, command, out, ckpt, done = rows
         self.assertEqual(
             (user.text, user.timestamp_utc),
             ("fix tests | [1 image(s)]", "2026-10-03T10:00:00.000Z"),
@@ -11717,7 +11726,7 @@ class ClineTests(ParserBase):
             ("readFile", "1791021602000", "src/app.py | /srv/proj/src/app.py"),
         )
         self.assertEqual(
-            (cmd.tool_name, cmd.tool_use_id, cmd.text),
+            (command.tool_name, command.tool_use_id, command.text),
             ("execute_command", "1791021604000", "pytest -q"),
         )
         self.assertEqual((out.tool_use_id, out.text), ("1791021604000", "3 passed"))
@@ -11751,12 +11760,12 @@ class ClineTests(ParserBase):
         # No per-message timestamps: every row inherits the task id's time.
         self.assertEqual({row.timestamp_utc for row in rows}, {"2026-10-03T09:55:00.000Z"})
         self.assertEqual({row.project_path for row in rows}, {"/srv/proj"})
-        use, res = rows[1], rows[2]
+        use, result = rows[1], rows[2]
         self.assertEqual(
             (use.tool_name, use.tool_use_id, use.text),
             ("execute_command", "toolu_01A", "pytest -q"),
         )
-        self.assertEqual((res.tool_use_id, res.text), ("toolu_01A", "3 passed"))
+        self.assertEqual((result.tool_use_id, result.text), ("toolu_01A", "3 passed"))
 
     def test_history_and_metadata(self):
         rows = self.rows_for(ClineParser(), CLINE_GS + "state/taskHistory.json")
@@ -11855,14 +11864,14 @@ class ClineTests(ParserBase):
             [row.turn_type for row in rows],
             ["user", "tool_use", "tool_result", "system", "assistant"],
         )
-        _user, use, res, switch, asst = rows
+        _user, use, result, switch, asst = rows
         # m2 names the manifest's model, so no row; m4 switches
         self.assertEqual(
             (switch.text, switch.model, switch.timestamp_utc, switch.source_line),
             (
                 "model: claude-sonnet-4-5 -> claude-opus-4-5 provider=anthropic",
                 "claude-opus-4-5",
-                res.timestamp_utc,
+                result.timestamp_utc,
                 4,
             ),
         )
@@ -11872,8 +11881,10 @@ class ClineTests(ParserBase):
         self.assertEqual(
             (use.tool_name, use.tool_use_id, use.text), ("bash", "call_1", "pytest -q")
         )
-        self.assertEqual((res.tool_name, res.tool_use_id, res.text), ("bash", "call_1", "3 passed"))
-        self.assertEqual(asst.timestamp_utc, res.timestamp_utc)  # no ts: previous message's time
+        self.assertEqual(
+            (result.tool_name, result.tool_use_id, result.text), ("bash", "call_1", "3 passed")
+        )
+        self.assertEqual(asst.timestamp_utc, result.timestamp_utc)  # no ts: previous message's time
         self.assertEqual([row.source_line for row in rows], [1, 2, 3, 4, 4])
 
     def test_sdk_messages_without_manifest_start_from_first_model(self):
@@ -12005,14 +12016,14 @@ class ClineTests(ParserBase):
     def test_session_search_without_fts5(self):
         # A SQLite build without the module: the virtual table cannot be read.
         path = self.home / self.SEARCH
-        con = sqlite3.connect(str(path))
-        con.execute("PRAGMA writable_schema = ON")
-        con.execute(
+        connection = sqlite3.connect(str(path))
+        connection.execute("PRAGMA writable_schema = ON")
+        connection.execute(
             "UPDATE sqlite_master SET sql = replace(sql, 'fts5(', 'nofts(') "
             "WHERE name = 'session_search'"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(ClineParser(), self.SEARCH)
         self.assertEqual(rows[0].turn_type, "system")
         self.assertIn("parser: session_search unreadable (no such module: nofts)", rows[0].text)
@@ -12648,7 +12659,7 @@ class RooCodeTests(ParserBase):
                 ("h1", "alice", "roo-code", ROO_TASK),
             )
             self.assertEqual((row.project_path, row.git_branch, row.model), ("/srv/proj", "", ""))
-        user, api, diff, approved, cmd, out, condense, ask, feedback, _done = rows
+        user, api, diff, approved, command, out, condense, ask, feedback, _done = rows
         # The tool ask marked isAnswered (approved, by a click or automatically).
         self.assertEqual(
             approved.text,
@@ -12663,7 +12674,7 @@ class RooCodeTests(ParserBase):
         )
         self.assertIn("apiProtocol=anthropic", api.text)
         self.assertEqual((diff.tool_name, diff.text), ("appliedDiff", "src/util.py | -old\n+new"))
-        self.assertEqual((out.tool_use_id, out.text), (cmd.tool_use_id, "1 passed"))
+        self.assertEqual((out.tool_use_id, out.text), (command.tool_use_id, "1 passed"))
         self.assertTrue(condense.text.startswith("condense_context: prevContextTokens=9000"))
         self.assertIn("Renamed helper; tests pass.", condense.text)
         self.assertEqual(ask.text, "Commit now? | yes; no")
@@ -12927,14 +12938,14 @@ class RooCodeTests(ParserBase):
         self.assertNotIn("ghp-not-a-real-token", " ".join(row.text for row in rows))
         # A project's .roo/mcp.json carries the project.
         art = self.artifact(".roo/mcp.json")
-        proj = Artifact(
+        project = Artifact(
             art.disk_path,
             "/srv/proj/.roo/mcp.json",
             art.rel,
             art.agent,
             Home(art.home.disk_path, "/srv/proj", "alice", "h1", project=True),
         )
-        rows = list(parser.parse(proj, Options()))
+        rows = list(parser.parse(project, Options()))
         self.assertEqual(len(rows), 2)
         self.assertEqual({row.project_path for row in rows}, {"/srv/proj"})
 
@@ -13181,12 +13192,12 @@ class TabbyTests(ParserBase):
     def test_bad_payload_is_reported_not_fatal(self):
         import sqlite3
 
-        con = sqlite3.connect(str(self.home / TABBY_REL))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / TABBY_REL))
+        connection.execute(
             "INSERT INTO user_events(user_id,kind,created_at,payload) VALUES(1,'view','2026-10-01 10:00:05','{\"view\":')"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(TabbyParser(), TABBY_REL)
         self.assertEqual(len(rows), 14)
         self.assertIn("payload did not parse", rows[-3].text)
@@ -13255,10 +13266,10 @@ class TabbyTests(ParserBase):
                     for secret in TABBY_SECRETS:
                         self.assertNotIn(secret, str(value))
         out = self.tmp / "out"
-        buf = io.StringIO()
+        buffer = io.StringIO()
         import contextlib
 
-        with contextlib.redirect_stdout(buf):
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(
                 [
                     "timeline",
@@ -13271,7 +13282,7 @@ class TabbyTests(ParserBase):
                     "tabby",
                 ]
             )
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         produced = [path for path in out.rglob("*") if path.is_file()]
         self.assertTrue(produced)
         for path in produced:
@@ -13279,7 +13290,7 @@ class TabbyTests(ParserBase):
             for secret in TABBY_SECRETS:
                 self.assertNotIn(secret.encode(), data, path)
         for secret in TABBY_SECRETS:
-            self.assertNotIn(secret, buf.getvalue())
+            self.assertNotIn(secret, buffer.getvalue())
 
     def test_no_new_secret_reaches_rows(self):
         # The model api_key, the client token and the VS Code endpoint token
@@ -14017,9 +14028,9 @@ class ShellGptTests(ParserBase):
         rows = self.rows_for(ShellGptParser(), self.CHAT)
         self.assertEqual([row.turn_type for row in rows], ["system", "user", "tool_use", "system"])
         self.assertIn("parser: truncated after 3 message(s)", rows[-1].text)
-        msgs, err = load_messages("not json")
+        msgs, error = load_messages("not json")
         self.assertEqual(msgs, [])
-        self.assertTrue(err)
+        self.assertTrue(error)
 
 
 from doubleagent.parsers.letta import LettaParser, decode_key
@@ -14677,25 +14688,25 @@ class LittleCoderTests(ParserBase):
 
     def test_legacy_config_rows(self):
         rows = self.rows_for(LittleCoderParser(), LC_LEGACY_CONFIG)
-        src = "(from .little-coder/config.json, file mtime)"
+        source = "(from .little-coder/config.json, file mtime)"
         self.assertEqual(
             [(row.turn_type, row.text, row.timestamp_utc, row.session_id) for row in rows],
             [
                 (
                     "system",
-                    "session synced: gist %s %s" % (LC_LEGACY_GIST, src),
+                    "session synced: gist %s %s" % (LC_LEGACY_GIST, source),
                     "2026-09-27T10:00:00.000Z",
                     "",
                 ),
                 (
                     "system",
-                    "session relayed: telegram chat 424242 %s" % src,
+                    "session relayed: telegram chat 424242 %s" % source,
                     "2026-09-27T10:00:00.000Z",
                     "",
                 ),
                 (
                     "system",
-                    "permission setting: permission_mode=manual %s" % src,
+                    "permission setting: permission_mode=manual %s" % source,
                     "2026-09-27T10:00:00.000Z",
                     "",
                 ),
@@ -14896,10 +14907,10 @@ class LettaTests(ParserBase):
 
     def test_sessions_start_line(self):
         # No caller writes recordSessionStart's line; one is still read.
-        rec = dict(letta_sessions_records()[1], timestamp=1790856000000)
+        record = dict(letta_sessions_records()[1], timestamp=1790856000000)
         for key in ("message_count", "tool_call_count", "exit_reason"):
-            del rec[key]
-        _jsonl(self.home / ".letta/sessions.jsonl", [rec])
+            del record[key]
+        _jsonl(self.home / ".letta/sessions.jsonl", [record])
         rows = self.rows_for(LettaParser(), ".letta/sessions.jsonl")
         self.assertEqual(
             rows[0].text,
@@ -14922,16 +14933,16 @@ class LettaTests(ParserBase):
     def test_permission_settings(self):
         rel = ".config/letta/settings.json"
         rows = self.rows_for(LettaParser(), rel)
-        src = "(from .config/letta/settings.json, file mtime)"
+        source = "(from .config/letta/settings.json, file mtime)"
         self.assertEqual(
             [(row.turn_type, row.session_id, row.timestamp_utc, row.text) for row in rows],
             [
                 ("system", "", to_utc(LETTA_LEGACY_SETTINGS_MTIME), text)
                 for text in (
-                    "permission setting: permissions.mode=acceptEdits " + src,
-                    "permission setting: permissions.allow=Bash(npm test) " + src,
-                    "permission setting: permissions.deny=Bash(rm -rf:*) " + src,
-                    "permission setting: permissions.additionalDirectories=/srv/shared " + src,
+                    "permission setting: permissions.mode=acceptEdits " + source,
+                    "permission setting: permissions.allow=Bash(npm test) " + source,
+                    "permission setting: permissions.deny=Bash(rm -rf:*) " + source,
+                    "permission setting: permissions.additionalDirectories=/srv/shared " + source,
                 )
             ],
         )
@@ -15119,7 +15130,7 @@ class PiSyncTests(ParserBase):
     """Test the `pi.bug-report` entry that `/bug` appends."""
 
     REL = PI_DIR + PI_BUG_FILE
-    SRC = "(from session entry pi.bug-report, entry timestamp)"
+    SOURCE = "(from session entry pi.bug-report, entry timestamp)"
 
     def test_rows(self):
         self.assertTrue(PiParser.records_sync)
@@ -15137,14 +15148,14 @@ class PiSyncTests(ParserBase):
                 (
                     "system",
                     "session synced: bug report %s uploaded to radius.pi.dev "
-                    "transcript=true summary=false %s" % (PI_BUG_REPORT, self.SRC),
+                    "transcript=true summary=false %s" % (PI_BUG_REPORT, self.SOURCE),
                     "2026-10-01T13:00:30.000Z",
                     3,
                 ),
                 (
                     "system",
                     "bug report exported: %s path=/srv/proj/pi-bug-report-%s.zip %s"
-                    % (PI_BUG_ZIP, PI_BUG_ZIP, self.SRC),
+                    % (PI_BUG_ZIP, PI_BUG_ZIP, self.SOURCE),
                     "2026-10-01T13:01:00.000Z",
                     4,
                 ),
@@ -15168,10 +15179,10 @@ class PiSyncTests(ParserBase):
         texts = [row.text for row in self.rows_for(PiParser(), self.REL)]
         self.assertIn(
             "session synced: bug report - uploaded to radius.pi.dev transcript=- summary=- "
-            + self.SRC,
+            + self.SOURCE,
             texts,
         )
-        self.assertIn("bug report exported: - path=- " + self.SRC, texts)
+        self.assertIn("bug report exported: - path=- " + self.SOURCE, texts)
 
     def test_truncated_line_is_reported_not_fatal(self):
         row = CodexTests.check_bad_line(self, PiParser, self.REL, 3)
@@ -15255,13 +15266,13 @@ class LettaSyncTests(ParserBase):
         self.assertEqual([row for row in rows if "sk-not-real" in row.text], [])
 
     def test_project_settings_rows(self):
-        proj = self.tmp / "srv" / "proj"
+        project = self.tmp / "srv" / "proj"
         rel = ".letta/settings.local.json"
-        path = proj / rel
+        path = project / rel
         path.parent.mkdir(parents=True)
         path.write_text(json.dumps(letta_project_settings()), encoding="utf-8")
         os.utime(path, (LETTA_LOCAL_SETTINGS_MTIME, LETTA_LOCAL_SETTINGS_MTIME))
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         art = Artifact(path, "/srv/proj/" + rel, rel, "letta", home)
         self.assertTrue(LettaParser().wants(art))
         rows = list(LettaParser().parse(art, Options()))
@@ -15454,15 +15465,15 @@ class HermesTests(ParserBase):
     def test_database_without_usage_table_uses_session_model(self):
         database = self.tmp / "nousage" / "state.db"
         database.parent.mkdir()
-        con = sqlite3.connect(str(database))
-        con.executescript(
+        connection = sqlite3.connect(str(database))
+        connection.executescript(
             "CREATE TABLE sessions (id TEXT, source TEXT, model TEXT, started_at REAL);"
             "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT,"
             " content TEXT, timestamp REAL);"
             "INSERT INTO sessions VALUES ('s1','cli','m1',1790856000.0);"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         art = dc_replace(
             next(artifact for artifact in self.col.artifacts if artifact.rel == self.REL),
             disk_path=database,
@@ -15533,14 +15544,14 @@ class HermesTests(ParserBase):
     def test_older_schema_without_active_or_reasoning(self):
         database = self.tmp / "old" / "state.db"
         database.parent.mkdir()
-        con = sqlite3.connect(str(database))
-        con.executescript(
+        connection = sqlite3.connect(str(database))
+        connection.executescript(
             "CREATE TABLE messages (id INTEGER PRIMARY KEY, session_id TEXT, role TEXT, content TEXT,"
             " tool_call_id TEXT, tool_calls TEXT, timestamp REAL);"
             "INSERT INTO messages VALUES (1,'s1','user','hi',NULL,NULL,1790856000.0);"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         art = dc_replace(
             next(artifact for artifact in self.col.artifacts if artifact.rel == self.REL),
             disk_path=database,
@@ -15822,15 +15833,15 @@ class HermesTests(ParserBase):
 
         database = self.tmp / "switch1" / "state.db"
         database.parent.mkdir()
-        con = sqlite3.connect(str(database))
-        con.executescript(HERMES_SWITCH_SCHEMA)
-        con.execute(
+        connection = sqlite3.connect(str(database))
+        connection.executescript(HERMES_SWITCH_SCHEMA)
+        connection.execute(
             "INSERT INTO messages (session_id,role,content,timestamp,display_kind)"
             " VALUES ('s1','user',?,1790874010.0,'model_switch')",
             (HERMES_SWITCH_MARKER % ("openai/gpt-5", " via provider openai"),),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         art = dc_replace(self.artifact(self.REL), disk_path=database)
         rows = list(HermesParser().parse(art, Options()))
         self.assertEqual(
@@ -17200,9 +17211,9 @@ class CodexArchiveAndZstdTests(ParserBase):
         cobj = zstandard.ZstdCompressor().compressobj()
         blob = b""
         for (
-            rec
+            record
         ) in codex_rollout_records():  # one block per line, so a cut frame keeps earlier blocks
-            blob += cobj.compress(_rollout_bytes([rec])) + cobj.flush(
+            blob += cobj.compress(_rollout_bytes([record])) + cobj.flush(
                 zstandard.COMPRESSOBJ_FLUSH_BLOCK
             )
         blob += cobj.flush()
@@ -17502,7 +17513,7 @@ class OpenClawTests(ParserBase):
     DATABASE = OPENCLAW_AGENT + "/agent/openclaw-agent.sqlite"
     LEGACY = OPENCLAW_AGENT + "/sessions/%s.jsonl" % OPENCLAW_LEGACY
 
-    def transcript(self, sid):
+    def transcript(self, session_id):
         """Return the database rows of generation `sid` that come from its transcript.
 
         This leaves out the rows of the session metadata and side tables (which name
@@ -17512,7 +17523,7 @@ class OpenClawTests(ParserBase):
         return [
             row
             for row in self.rows_for(OpenClawParser(), self.DATABASE)
-            if row.session_id == sid
+            if row.session_id == session_id
             and "openclaw-agent.sqlite" not in row.text
             and not row.recovered
             and row.text != "also restart nginx"
@@ -17661,21 +17672,21 @@ class OpenClawTests(ParserBase):
                 "system",
             ],
         )
-        start, ctx, bash, out, compaction, model, asst, err = rows
+        start, context, bash, out, compaction, model, asst, error = rows
         self.assertEqual(
             (model.text, model.model, model.timestamp_utc),
             ("model: gpt-5", "gpt-5", "2026-09-20T08:05:10.000Z"),
         )
         self.assertEqual({row.session_id for row in rows}, {OPENCLAW_LEGACY})
         self.assertIn("key=" + OPENCLAW_KEY, start.text)  # from the legacy sessions.json
-        self.assertTrue(ctx.text.startswith("runtime context:"))
+        self.assertTrue(context.text.startswith("runtime context:"))
         self.assertEqual(
             (bash.tool_name, bash.text, out.tool_use_id), ("bash", "uptime", bash.tool_use_id)
         )
         self.assertEqual(out.text, "[exit=0] up 3 days")
         self.assertEqual(compaction.text, "compaction (tokens_before=5000): checked uptime")
         self.assertEqual(asst.timestamp_utc, "2026-09-20T08:05:10.000Z")  # message ms timestamp
-        self.assertEqual((err.text, err.model), ("assistant error: rate limited", "gpt-5"))
+        self.assertEqual((error.text, error.model), ("assistant error: rate limited", "gpt-5"))
         self.assertEqual([row.source_line for row in rows], [1, 2, 3, 3, 4, 5, 5, 5])
 
     def test_deleted_archive_file(self):
@@ -17844,17 +17855,17 @@ class OpenClawTests(ParserBase):
         )
 
     def test_bad_line_in_archive_blob(self):
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        rowid, name, blob = con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        rowid, name, blob = connection.execute(
             "SELECT rowid, archive_name, archive_blob FROM session_transcript_archives"
             " WHERE encoding = 'identity'"
         ).fetchone()
-        con.execute(
+        connection.execute(
             "UPDATE session_transcript_archives SET archive_blob = ? WHERE rowid = ?",
             (bytes(blob).rstrip(b"\n") + b"\n" + BAD_LINE.encode(), rowid),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         line = bytes(blob).rstrip(b"\n").count(b"\n") + 2
         rows = self.transcript(OPENCLAW_RESET_SESSION)
         self.assertEqual([row.turn_type for row in rows], ["system", "user", "system", "system"])
@@ -17883,13 +17894,13 @@ class OpenClawTests(ParserBase):
         self.assertEqual((rows[-1].turn_type, rows[-1].text), ("system", bad_line_text()))
 
     def test_bad_event_row_is_reported_not_fatal(self):
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        connection.execute(
             "INSERT INTO transcript_events VALUES (?,?,?,?,NULL,NULL,NULL)",
             (OPENCLAW_SESSION, 9, '{"type":"message","trunc', 1790845300000),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.transcript(OPENCLAW_SESSION)
         self.assertEqual(len(rows), 8)
         self.assertEqual(
@@ -17900,13 +17911,13 @@ class OpenClawTests(ParserBase):
     def test_null_event_row_is_reported_not_fatal(self):
         # A row whose event_json is valid JSON but not an object (here
         # `null`) is reported as "not a JSON object".
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        connection.execute(
             "INSERT INTO transcript_events VALUES (?,?,?,?,NULL,NULL,NULL)",
             (OPENCLAW_SESSION, 9, "null", 1790845300000),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.transcript(OPENCLAW_SESSION)
         self.assertEqual(len(rows), 8)
         self.assertEqual(rows[-1].turn_type, "system")
@@ -17949,17 +17960,17 @@ class OpenClawTests(ParserBase):
         self.assertEqual(synced, {OPENCLAW_SESSION})
 
     def test_share_without_transcript_rows(self):
-        con = sqlite3.connect(str(self.home / self.DATABASE))
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
         entry = {
             "sessionId": "gone",
             "publicShare": {"id": "f" * 48, "sessionId": "gone", "createdAt": 1790900000000},
         }
-        con.execute(
+        connection.execute(
             "INSERT INTO session_nodes VALUES ('agent:main:x','gone',?,0,NULL,NULL)",
             (json.dumps(entry),),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenClawParser(), self.DATABASE)
         self.assertEqual(
             (rows[-1].session_id, rows[-1].text, rows[-1].timestamp_utc),
@@ -17967,15 +17978,17 @@ class OpenClawTests(ParserBase):
         )
 
     def test_bad_entry_json_is_reported_not_fatal(self):
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        connection.execute(
             "INSERT INTO session_nodes VALUES ('agent:main:y','y',?,0,NULL,NULL)",
             (BAD_LINE,),
         )
-        rowid = con.execute("SELECT rowid FROM session_nodes WHERE session_key = 'agent:main:y'")
+        rowid = connection.execute(
+            "SELECT rowid FROM session_nodes WHERE session_key = 'agent:main:y'"
+        )
         rowid = rowid.fetchone()[0]
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenClawParser(), self.DATABASE)
         self.assertIn(
             self.SHARE_TEXT % (OPENCLAW_SHARE_ID, OPENCLAW_SESSION), [row.text for row in rows]
@@ -18024,12 +18037,12 @@ class OpenClawTests(ParserBase):
 
     def test_bad_manifest_json_is_reported_not_fatal(self):
         path = self.home / OPENCLAW_STATE_DB
-        con = sqlite3.connect(str(path))
-        con.execute(
+        connection = sqlite3.connect(str(path))
+        connection.execute(
             "INSERT INTO backup_runs VALUES ('run-99',1790870000000,'/x','ok',?)", (BAD_LINE,)
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = [
             row
             for row in self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
@@ -18117,18 +18130,18 @@ class OpenClawTests(ParserBase):
         )
 
     def test_non_object_line_in_archive_blob(self):
-        con = sqlite3.connect(str(self.home / self.DATABASE))
-        rowid, name, blob = con.execute(
+        connection = sqlite3.connect(str(self.home / self.DATABASE))
+        rowid, name, blob = connection.execute(
             "SELECT rowid, archive_name, archive_blob FROM session_transcript_archives"
             " WHERE encoding = 'identity'"
         ).fetchone()
         head, _, rest = bytes(blob).partition(b"\n")
-        con.execute(
+        connection.execute(
             "UPDATE session_transcript_archives SET archive_blob = ? WHERE rowid = ?",
             (head + b"\n42\n" + rest, rowid),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.transcript(OPENCLAW_RESET_SESSION)
         self.assertEqual([row.turn_type for row in rows], ["system", "user", "system", "system"])
         self.assertEqual(rows[1].text, "check disk space on the server")
@@ -18142,11 +18155,11 @@ class OpenClawTests(ParserBase):
     def connect_database(self):
         return sqlite3.connect(str(self.home / self.DATABASE))
 
-    def texts(self, prefix, rel=None, sid=None):
+    def texts(self, prefix, rel=None, session_id=None):
         return [
             row
             for row in self.rows_for(OpenClawParser(), rel or self.DATABASE)
-            if row.text.startswith(prefix) and (sid is None or row.session_id == sid)
+            if row.text.startswith(prefix) and (session_id is None or row.session_id == session_id)
         ]
 
     def test_relay_row_from_conversation(self):
@@ -18167,10 +18180,10 @@ class OpenClawTests(ParserBase):
         )  # the reset session's Control UI conversation and delivery are no relay
 
     def test_relay_row_fallbacks(self):
-        con = self.connect_database()
-        con.execute("DELETE FROM session_conversations")
-        con.commit()
-        con.close()
+        connection = self.connect_database()
+        connection.execute("DELETE FROM session_conversations")
+        connection.commit()
+        connection.close()
         self.assertEqual(
             [row.text for row in self.texts("session relayed:")],
             [
@@ -18178,10 +18191,10 @@ class OpenClawTests(ParserBase):
                 " session_windows, started_at)"
             ],
         )
-        con = self.connect_database()
-        con.execute("UPDATE session_windows SET channel = 'webchat'")
-        con.commit()
-        con.close()
+        connection = self.connect_database()
+        connection.execute("UPDATE session_windows SET channel = 'webchat'")
+        connection.commit()
+        connection.close()
         rows = self.texts("session relayed:")
         self.assertEqual(
             [(row.session_id, row.timestamp_utc, row.text) for row in rows],
@@ -18195,10 +18208,10 @@ class OpenClawTests(ParserBase):
                 )
             ],
         )
-        con = self.connect_database()
-        con.execute("UPDATE session_windows SET hook_external_content_source = 'gmail'")
-        con.commit()
-        con.close()
+        connection = self.connect_database()
+        connection.execute("UPDATE session_windows SET hook_external_content_source = 'gmail'")
+        connection.commit()
+        connection.close()
         self.assertEqual(
             [row.text for row in self.texts("session relayed:")],
             [
@@ -18305,13 +18318,13 @@ class OpenClawTests(ParserBase):
         self.assertEqual({row.project_path for row in rows}, {"/srv/proj"})
 
     def test_bad_pending_input_is_reported_not_fatal(self):
-        con = self.connect_database()
-        con.execute(
+        connection = self.connect_database()
+        connection.execute(
             "INSERT INTO session_pending_inputs VALUES (9,'in-9',?,?,'run-9',?,'queued',1,NULL)",
             (OPENCLAW_KEY, OPENCLAW_SESSION, BAD_LINE),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenClawParser(), self.DATABASE)
         self.assertIn("also restart nginx", [row.text for row in rows])
         reason = bad_line_text().split("(", 1)[1].split("): ", 1)[0]
@@ -18366,16 +18379,16 @@ class OpenClawTests(ParserBase):
             for side in ("-wal", "-shm"):
                 Path(str(path) + side).unlink(missing_ok=True)
             path.unlink()
-            con = sqlite3.connect(str(path))
-            con.execute(
+            connection = sqlite3.connect(str(path))
+            connection.execute(
                 "CREATE TABLE openclaw_engine_anchor (store_id TEXT NOT NULL, engine TEXT NOT NULL"
                 " CHECK (engine = 'postgres'), schema TEXT NOT NULL)"
             )
-            con.execute(
+            connection.execute(
                 "INSERT INTO openclaw_engine_anchor VALUES ('st-1','postgres','oc_%s_0123')" % label
             )
-            con.commit()
-            con.close()
+            connection.commit()
+            connection.close()
             rows = self.rows_for(OpenClawParser(), rel)
             self.assertEqual(
                 [(row.turn_type, row.source_line, row.text) for row in rows],
@@ -18462,13 +18475,13 @@ class OpenClawTests(ParserBase):
         )
 
     def test_bad_exec_config_withholds_the_text(self):
-        con = sqlite3.connect(str(self.home / OPENCLAW_STATE_DB))
-        con.execute(
+        connection = sqlite3.connect(str(self.home / OPENCLAW_STATE_DB))
+        connection.execute(
             "UPDATE exec_approvals_config SET raw_json = ?",
             ('{"socket": {"token": "%s"' % OPENCLAW_SOCKET_TOKEN,),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
         self.assertTrue(rows[-1].text.startswith("parser: exec_approvals_config raw_json"))
         self.assertTrue(
@@ -18764,7 +18777,7 @@ class NanobotTests(ParserBase):
         self.assertEqual(inv["deduplicated"], {"nanobot": 11})
 
     # -- sessions.sqlite3 --------------------------------------------------------
-    DB_ROWS: ClassVar[list[tuple[int, str, str, str]]] = [
+    DATABASE_ROWS: ClassVar[list[tuple[int, str, str, str]]] = [
         (
             2,
             "system",
@@ -18799,7 +18812,7 @@ class NanobotTests(ParserBase):
         rows = self.rows_for(parser, NANOBOT_DB_REL)
         self.assertEqual(
             [(row.source_line, row.turn_type, row.session_id, row.text) for row in rows],
-            self.DB_ROWS,
+            self.DATABASE_ROWS,
         )
         self.assertEqual(
             {(row.agent, row.project_path) for row in rows}, {("nanobot", "/srv/proj")}
@@ -18868,10 +18881,10 @@ class NanobotTests(ParserBase):
             )
 
     def test_sqlite_bad_metadata(self):
-        con = sqlite3.connect(str(self.home / NANOBOT_DB_REL))
-        con.execute("UPDATE sessions SET metadata = 'not json' WHERE key = 'heartbeat'")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / NANOBOT_DB_REL))
+        connection.execute("UPDATE sessions SET metadata = 'not json' WHERE key = 'heartbeat'")
+        connection.commit()
+        connection.close()
         rows = [
             row
             for row in self.rows_for(NanobotParser(), NANOBOT_DB_REL)
@@ -18885,7 +18898,7 @@ class NanobotTests(ParserBase):
         self.assertEqual(
             [(row.source_line, row.turn_type, row.text) for row in rows],
             [
-                *[(line, turn_type, text) for line, turn_type, _, text in self.DB_ROWS[:3]],
+                *[(line, turn_type, text) for line, turn_type, _, text in self.DATABASE_ROWS[:3]],
                 (2, "system", "parser: unparseable session metadata (%s): not json" % reason),
             ],
         )
@@ -19390,11 +19403,11 @@ class CodyTests(ParserBase):
             chat_time("0f0e-uuid", "Sat, 03 Oct 2026 11:00:00 GMT"), "2026-10-03T11:00:00.000Z"
         )
         self.assertEqual(chat_time("0f0e-uuid", None), "")
-        hist = json.loads((self.home / CODY_JB_REL).read_text(encoding="utf-8"))
-        hist["https://example.org/-bob"] = {
-            "chat": {CODY_CHAT: hist[CODY_ACCOUNT]["chat"][CODY_CHAT]}
+        history = json.loads((self.home / CODY_JB_REL).read_text(encoding="utf-8"))
+        history["https://example.org/-bob"] = {
+            "chat": {CODY_CHAT: history[CODY_ACCOUNT]["chat"][CODY_CHAT]}
         }
-        (self.home / CODY_JB_REL).write_text(json.dumps(hist), encoding="utf-8")
+        (self.home / CODY_JB_REL).write_text(json.dumps(history), encoding="utf-8")
         sids = {row.session_id for row in self.rows_for(CodyParser(), CODY_JB_REL)}
         self.assertEqual(
             sids,
@@ -19513,11 +19526,11 @@ class CodyTests(ParserBase):
         )
 
     def test_other_confirmation_error_is_printed_not_interpreted(self):
-        hist = json.loads((self.home / CODY_JB_REL).read_text(encoding="utf-8"))
-        agentic = hist[CODY_ACCOUNT]["chat"][CODY_AGENTIC_CHAT]
+        history = json.loads((self.home / CODY_JB_REL).read_text(encoding="utf-8"))
+        agentic = history[CODY_ACCOUNT]["chat"][CODY_AGENTIC_CHAT]
         step = agentic["interactions"][0]["assistantMessage"]["processes"][0]
         step.update(state="error", error={"name": "Error", "message": "aborted"})
-        (self.home / CODY_JB_REL).write_text(json.dumps(hist), encoding="utf-8")
+        (self.home / CODY_JB_REL).write_text(json.dumps(history), encoding="utf-8")
         rows = self.rows_for(CodyParser(), CODY_JB_REL)
         self.assertEqual(
             rows[9].text,
@@ -19541,18 +19554,18 @@ class CodyTests(ParserBase):
         self.assertEqual(art.agent, "vscode")
         self.assertIn(CodyParser, [type(parser) for parser in cli.parsers_for(art, by_agent())])
         rows = self.rows_for(CodyParser(), CODY_SETTINGS_REL)
-        src = " (from %s, file mtime)" % CODY_SETTINGS_REL
+        source = " (from %s, file mtime)" % CODY_SETTINGS_REL
         self.assertEqual(
             [row.text for row in rows],
             [
                 "permission setting: cody.agentic.context.experimentalOptions.shell.allow"
-                '=["git","ls"]' + src,
+                '=["git","ls"]' + source,
                 "permission setting: cody.agentic.context.experimentalOptions.shell.block"
-                '=["sudo"]' + src,
-                "permission setting: cody.agentic.context.experimentalShell=true" + src,
-                "permission setting: cody.chat.agenticContext=false" + src,
-                'permission setting: cody.mcpServers.github.disabledTools=["delete_repo"]' + src,
-                "permission setting: cody.mcpServers.web.disabled=true" + src,
+                '=["sudo"]' + source,
+                "permission setting: cody.agentic.context.experimentalShell=true" + source,
+                "permission setting: cody.chat.agenticContext=false" + source,
+                'permission setting: cody.mcpServers.github.disabledTools=["delete_repo"]' + source,
+                "permission setting: cody.mcpServers.web.disabled=true" + source,
             ],
         )
         mtime = to_utc((self.home / CODY_SETTINGS_REL).lstat().st_mtime)
@@ -19588,16 +19601,16 @@ class CodyTests(ParserBase):
 
         self.settings_col()
         rows = self.rows_for(CodyParser(), CODY_PREFS_REL)
-        src = "endpoint=https://sourcegraph.com/ (from %s, file mtime)" % CODY_PREFS_REL
+        source = "endpoint=https://sourcegraph.com/ (from %s, file mtime)" % CODY_PREFS_REL
         self.assertEqual(
             [(row.text, row.model) for row in rows],
             [
                 (
-                    "model setting: selected.chat=%s %s" % (CODY_MODEL_SWITCHED, src),
+                    "model setting: selected.chat=%s %s" % (CODY_MODEL_SWITCHED, source),
                     CODY_MODEL_SWITCHED,
                 ),
-                ("model setting: defaults.chat=%s %s" % (CODY_MODEL, src), CODY_MODEL),
-                ("model setting: defaults.edit=%s %s" % (CODY_MODEL, src), CODY_MODEL),
+                ("model setting: defaults.chat=%s %s" % (CODY_MODEL, source), CODY_MODEL),
+                ("model setting: defaults.edit=%s %s" % (CODY_MODEL, source), CODY_MODEL),
             ],
         )
         mtime = to_utc((self.home / CODY_PREFS_REL).lstat().st_mtime)
@@ -19613,16 +19626,16 @@ class CodyTests(ParserBase):
         rows = self.rows_for(CodyParser(), CODY_VSCDB_REL)
         # The chat rows come first, unchanged.
         self.assertEqual([row.text for row in rows[:2]][1], "explain build.sh")
-        src = "(from %s cody-model-preferences, file mtime)" % CODY_VSCDB_REL
+        source = "(from %s cody-model-preferences, file mtime)" % CODY_VSCDB_REL
         self.assertEqual(
             [row.text for row in rows[4:]],
             [
                 "model setting: selected.chat=%s endpoint=https://sourcegraph.com/ %s"
-                % (CODY_MODEL_SWITCHED, src),
+                % (CODY_MODEL_SWITCHED, source),
                 "model setting: defaults.chat=%s endpoint=https://sourcegraph.com/ %s"
-                % (CODY_MODEL, src),
+                % (CODY_MODEL, source),
                 "model setting: defaults.edit=%s endpoint=https://sourcegraph.com/ %s"
-                % (CODY_MODEL, src),
+                % (CODY_MODEL, source),
             ],
         )
         self.assertEqual({row.source_line for row in rows[4:]}, {0})
@@ -19638,12 +19651,12 @@ class CodyTests(ParserBase):
     def legacy_artifact(self, text=None):
         from fixtures import CODY_LEGACY_REL, CODY_LEGACY_XML
 
-        proj = self.tmp / "srv" / "proj"
-        path = proj / CODY_LEGACY_REL
+        project = self.tmp / "srv" / "proj"
+        path = project / CODY_LEGACY_REL
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(CODY_LEGACY_XML if text is None else text, encoding="utf-8")
-        (proj / ".idea/workspace.xml").write_text("<project />", encoding="utf-8")
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        (project / ".idea/workspace.xml").write_text("<project />", encoding="utf-8")
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         return Artifact(path, "/srv/proj/" + CODY_LEGACY_REL, CODY_LEGACY_REL, "cody", home)
 
     def test_legacy_history_rows(self):
@@ -19935,13 +19948,13 @@ class TwinnyTests(ParserBase):
         home = self.tmp / "said-home"
         build_twinny_said(home)
         value = json.dumps(twinny_said_records())
-        con = sqlite3.connect(str(home / TWINNY_SAID_REL))
-        con.execute(
+        connection = sqlite3.connect(str(home / TWINNY_SAID_REL))
+        connection.execute(
             "UPDATE ItemTable SET value = ? WHERE key = 'rjmacarthy.twinny'",
             (value[: len(value) // 2].encode("utf-8"),),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self._said_rows(home)
         self.assertEqual([row.turn_type for row in rows], ["system"])
         self.assertTrue(
@@ -19962,7 +19975,7 @@ class TwinnyTests(ParserBase):
         _, arts = self._415()
         art = arts[TWINNY_415_REL]
         rows = list(TwinnyParser().parse(art, Options()))
-        src = " (from state.vscdb rjmacarthy.twinny, file mtime)"
+        source = " (from state.vscdb rjmacarthy.twinny, file mtime)"
         reply = "reply=" + TWINNY_415_CHANGE
         policy = "permission setting: twinny.teamPolicy."
         self.assertEqual(
@@ -19974,18 +19987,18 @@ class TwinnyTests(ParserBase):
                 "Fixed both.",
                 "file changed: modified src/a.ts +3 -1 " + reply,
                 "file changed: created logo.png +0 -0 %s noUndo=true" % reply,
-                "permission mode: agentMode=true" + src,
-                "permission setting: autoRunCommands=false" + src,
-                "permission setting: alwaysRunCommands=npm test" + src,
-                "permission setting: alwaysRunCommands=git status" + src,
-                "permission setting: alwaysRunMcpTools=github/list_issues" + src,
-                policy + "url=https://gateway.example.invalid" + src,
-                policy + "policy.teamOnly=true" + src,
-                policy + "policy.agent.commands=ask" + src,
-                policy + "policy.agent.blockedPaths=secrets/" + src,
-                policy + "policy.agent.blockedPaths=.env" + src,
-                policy + "providerIds=team-0a1b-chat" + src,
-                policy + "fetchedAt=2026-10-03T09:00:00.000Z" + src,
+                "permission mode: agentMode=true" + source,
+                "permission setting: autoRunCommands=false" + source,
+                "permission setting: alwaysRunCommands=npm test" + source,
+                "permission setting: alwaysRunCommands=git status" + source,
+                "permission setting: alwaysRunMcpTools=github/list_issues" + source,
+                policy + "url=https://gateway.example.invalid" + source,
+                policy + "policy.teamOnly=true" + source,
+                policy + "policy.agent.commands=ask" + source,
+                policy + "policy.agent.blockedPaths=secrets/" + source,
+                policy + "policy.agent.blockedPaths=.env" + source,
+                policy + "providerIds=team-0a1b-chat" + source,
+                policy + "fetchedAt=2026-10-03T09:00:00.000Z" + source,
             ],
         )
         for row in rows[4:6]:
@@ -20055,7 +20068,7 @@ class TwinnyTests(ParserBase):
         art = arts[TWINNY_415_LOG_REL]
         self.assertTrue(TwinnyParser().secondary(art))
         rows = list(TwinnyParser().parse(art, Options()))
-        src = " (from Twinny.log, log line time, host-local)"
+        source = " (from Twinny.log, log line time, host-local)"
         self.assertEqual(
             [
                 (row.turn_type, row.session_id, row.timestamp_utc, row.source_line, row.text)
@@ -20067,7 +20080,7 @@ class TwinnyTests(ParserBase):
                     "",
                     "2026-10-03T14:00:01.250Z",
                     1,
-                    "log info: Chat → qwen2.5-coder:7b (Ollama) · 2 messages, 41 chars" + src,
+                    "log info: Chat → qwen2.5-coder:7b (Ollama) · 2 messages, 41 chars" + source,
                 ),
                 (
                     "system",
@@ -20075,7 +20088,7 @@ class TwinnyTests(ParserBase):
                     "2026-10-03T14:00:01.251Z",
                     2,
                     "log debug: Chat messages"
-                    + src
+                    + source
                     + "\n[user]\nwhich tests fail?\n\n[assistant]\nTwo tests fail.",
                 ),
                 (
@@ -20083,7 +20096,7 @@ class TwinnyTests(ParserBase):
                     "",
                     "2026-10-03T14:00:06.400Z",
                     8,
-                    "log info: Chat ← 5.1s · 15 chars" + src,
+                    "log info: Chat ← 5.1s · 15 chars" + source,
                 ),
             ],
         )
@@ -20677,7 +20690,7 @@ class MuseCodeTests(ParserBase):
             )
             self.assertEqual((row.project_path, row.git_branch), ("/srv/proj", "main"))
             self.assertTrue(row.timestamp_utc.endswith("Z"), row)
-        mode, model, security, name, user, use, result, req, review, dec, asst, change = rows
+        mode, model, security, name, user, use, result, request, review, dec, asst, change = rows
         self.assertEqual({row.model for row in rows[:-1]}, {MUSE_MODEL})
         self.assertEqual(
             (mode.text, mode.timestamp_utc),
@@ -20729,7 +20742,7 @@ class MuseCodeTests(ParserBase):
             ("bash", "call_01", "[exit 1] 1 failing"),
         )
         self.assertEqual(
-            (req.tool_name, req.tool_use_id, req.text),
+            (request.tool_name, request.tool_use_id, request.text),
             ("network", "call_02", "approval requested: https registry.example.org:443"),
         )
         self.assertEqual(
@@ -21197,9 +21210,9 @@ class OllamaTests(ParserBase):
         out = self.run_timeline("all")
         rows = read_jsonl(out / "timeline.jsonl")
         sessions = read_jsonl(out / "sessions.jsonl")
-        hist = [row for row in rows if row["source_file"].endswith("/.ollama/history")]
-        self.assertEqual(len(hist), 3)
-        self.assertEqual(rows[-3:], hist)
+        history = [row for row in rows if row["source_file"].endswith("/.ollama/history")]
+        self.assertEqual(len(history), 3)
+        self.assertEqual(rows[-3:], history)
         self.assertTrue(all(row["timestamp_utc"] for row in rows[:-3]))
         self.assertEqual({session["session_id"] for session in sessions}, {OLLAMA_CHAT})
         for session in sessions:
@@ -21222,8 +21235,8 @@ class OllamaTests(ParserBase):
         import sqlite3
 
         chat = OLLAMA_CHAT
-        con = sqlite3.connect(str(self.home / OLLAMA_DB_REL))
-        con.executescript(
+        connection = sqlite3.connect(str(self.home / OLLAMA_DB_REL))
+        connection.executescript(
             "INSERT INTO messages (id, chat_id, role, content, model_name, created_at) VALUES"
             " (5, '%(c)s', 'user', 'search twice', NULL, '2026-03-01 09:01:00-08:00'),"
             " (6, '%(c)s', 'assistant', 'Searching.', 'gemma4:e4b', '2026-03-01 09:01:01-08:00'),"
@@ -21236,8 +21249,8 @@ class OllamaTests(ParserBase):
             ' \'{"query":"ollama","max_results":3}\', NULL),'
             " (3, 6, 'function', 'browser.find', '{\"pattern\":\"x\"}', NULL);" % {"c": chat}
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL)
         # message 6 switches back to gemma4; the placeholder 10 yields nothing
         self.assertEqual(
@@ -21669,14 +21682,14 @@ class ClaudeDesktopTests(ParserBase):
 
     def test_audit_short_dir_joins_record(self):
         # A record under agent/ whose UUID starts with the short dir name.
-        rec = (
+        record = (
             self.home
             / CD_COWORK_ORG
             / "agent"
             / ("local_%s-aaaa-4bbb-8ccc-dddddddddddd.json" % CD_FALLBACK_DIR)
         )
-        rec.parent.mkdir()
-        rec.write_text(
+        record.parent.mkdir()
+        record.write_text(
             json.dumps(
                 {
                     "sessionId": "local_%s-aaaa-4bbb-8ccc-dddddddddddd" % CD_FALLBACK_DIR,
@@ -21753,7 +21766,7 @@ class ClaudeDesktopTests(ParserBase):
 
     def test_cowork_grant_scalar_value(self):
         path = self.home / CD_RECORD_REL
-        rec = json.loads(path.read_text(encoding="utf-8"))
+        record = json.loads(path.read_text(encoding="utf-8"))
         for key in (
             "approvedToolNames",
             "webFetchAllowedUrls",
@@ -21761,9 +21774,9 @@ class ClaudeDesktopTests(ParserBase):
             "userApprovedFileAccessPaths",
             "enabledMcpTools",
         ):
-            rec.pop(key)
-        rec["fileDeleteApprovedMounts"] = "proj"
-        path.write_text(json.dumps(rec), encoding="utf-8")
+            record.pop(key)
+        record["fileDeleteApprovedMounts"] = "proj"
+        path.write_text(json.dumps(record), encoding="utf-8")
         rows = self.rows_for(ClaudeDesktopParser(), CD_RECORD_REL)
         self.assertEqual(
             [row.text for row in rows[1:] if row.turn_type == "system"],
@@ -21773,9 +21786,9 @@ class ClaudeDesktopTests(ParserBase):
     def test_record_without_session_and_with_error(self):
         shutil.rmtree(self.home / CD_COWORK_ORG / CD_SESSION)
         path = self.home / CD_RECORD_REL
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        rec.update(error="VM failed to start", errorCategory="vm", errorAt=1790762430000)
-        path.write_text(json.dumps(rec), encoding="utf-8")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record.update(error="VM failed to start", errorCategory="vm", errorAt=1790762430000)
+        path.write_text(json.dumps(record), encoding="utf-8")
         rows = self.rows_for(ClaudeDesktopParser(), CD_RECORD_REL)
         self.assertEqual(
             [
@@ -21852,12 +21865,12 @@ class ClaudeDesktopTests(ParserBase):
 
     def test_record_grants_fall_back_to_created_and_skip_empty(self):
         path = self.home / CD_CODE_RECORD_REL
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        rec.pop("lastActivityAt")
-        rec.pop("effort")
-        rec.update(alwaysAllowedReasons=[], chromeAllowedDomains=[], cuGrantFlags={})
-        rec.update(sessionPermissionUpdates=None, cuAllowedApps="", cuFlagsGrantedAt=None)
-        path.write_text(json.dumps(rec), encoding="utf-8")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record.pop("lastActivityAt")
+        record.pop("effort")
+        record.update(alwaysAllowedReasons=[], chromeAllowedDomains=[], cuGrantFlags={})
+        record.update(sessionPermissionUpdates=None, cuAllowedApps="", cuFlagsGrantedAt=None)
+        path.write_text(json.dumps(record), encoding="utf-8")
         rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_RECORD_REL)
         self.assertTrue(rows[0].text.endswith("permission_mode=default effort=-"), rows[0].text)
         self.assertEqual(
@@ -21910,13 +21923,13 @@ class ClaudeDesktopTests(ParserBase):
         # An empty spawn object is not a remote spawn; an update-quit object
         # without a numeric `at` yields no second row.
         path = self.home / CD_CODE_RC_RECORD_REL
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        rec.update(
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record.update(
             remoteControlSpawn={},
             bridgeSessionIds=None,
             remoteControlLiveAtUpdateQuit={"accountId": "x", "at": "soon"},
         )
-        path.write_text(json.dumps(rec), encoding="utf-8")
+        path.write_text(json.dumps(record), encoding="utf-8")
         rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_RC_RECORD_REL)
         self.assertEqual(
             [row.text for row in rows],
@@ -21931,9 +21944,9 @@ class ClaudeDesktopTests(ParserBase):
         # The Code tab's transcript is claude-code's ~/.claude/projects file:
         # when it is in the input, the first prompt is not repeated.
         path = self.home / CD_CODE_RECORD_REL
-        rec = json.loads(path.read_text(encoding="utf-8"))
-        rec.update(cliSessionId=CLAUDE_SESSION, initialMessage="fix the test")
-        path.write_text(json.dumps(rec), encoding="utf-8")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        record.update(cliSessionId=CLAUDE_SESSION, initialMessage="fix the test")
+        path.write_text(json.dumps(record), encoding="utf-8")
         rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_RECORD_REL)
         self.assertEqual(
             [(row.turn_type, row.session_id) for row in rows if "permission grant" not in row.text],
@@ -22618,28 +22631,28 @@ class CopilotCliTests(ParserBase):
     def test_store_other_tables(self):
         # Checkpoints, references and Forge events: empty on the real
         # install, so their shapes are bundle-derived.
-        con = sqlite3.connect(str(self.home / COPILOT_STORE_REL))
+        connection = sqlite3.connect(str(self.home / COPILOT_STORE_REL))
         session = COPILOT_SESSION
-        con.execute(
+        connection.execute(
             "insert into checkpoints values (?, 1, 'Fix the test', 'The overview', NULL,"
             " 'Edited a file', NULL, NULL, 'Run lint', '2026-10-01T09:05:00.000Z')",
             (session,),
         )
-        con.execute(
+        connection.execute(
             "insert into session_refs values (?, 'pr', '#12', 0, '2026-10-01T09:06:00.000Z')",
             (session,),
         )
-        con.execute(
+        connection.execute(
             "insert into forge_trajectory_events values (?, 'call_01', 0, NULL, 'npm test',"
             " '1 failing', 1, NULL, NULL, '2026-10-01T09:00:08.000Z')",
             (session,),
         )
-        con.execute(
+        connection.execute(
             "insert into forge_trajectory_events values (NULL, NULL, NULL, NULL, NULL, NULL,"
             " NULL, NULL, NULL, NULL)"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(CopilotCliParser(), COPILOT_STORE_REL)[5:]
         self.assertEqual(
             [(row.turn_type, row.text, row.tool_use_id) for row in rows],
@@ -22908,10 +22921,10 @@ class CopilotCliTests(ParserBase):
         # Without workspace.yaml the snapshot takes its project from the
         # sidebar file; without a sessions.cwd the database does too.
         (self.home / COPILOT_WORKSPACE_REL).unlink()
-        con = sqlite3.connect(str(self.home / COPILOT_STORE_REL))
-        con.execute("update sessions set cwd = NULL")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / COPILOT_STORE_REL))
+        connection.execute("update sessions set cwd = NULL")
+        connection.commit()
+        connection.close()
         self.assertFalse(CopilotCliParser().wants(rel_only(COPILOT_SIDEBAR_REL[:-5] + ".txt")))
         self.assertEqual(self.rows_for(CopilotCliParser(), COPILOT_SIDEBAR_REL), [])
         for rel in (COPILOT_SNAPSHOTS_REL, COPILOT_STORE_REL):
@@ -23213,8 +23226,8 @@ class CopilotDesktopTests(ParserBase):
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.unlink()
-        con = sqlite3.connect(str(database))
-        con.executescript(
+        connection = sqlite3.connect(str(database))
+        connection.executescript(
             "CREATE TABLE accounts (login TEXT, host TEXT, kind TEXT, is_default INTEGER,"
             " access_token TEXT, created_at TEXT);"
             "INSERT INTO accounts VALUES (NULL, NULL, NULL, NULL, 'gho_x', NULL);"
@@ -23226,8 +23239,8 @@ class CopilotDesktopTests(ParserBase):
             "CREATE TABLE sessions (id TEXT, created_at TEXT);"
             "INSERT INTO sessions VALUES ('s1', NULL);"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
         rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL)
         self.assertEqual(
@@ -23386,12 +23399,12 @@ class HasSecondaryTests(ParserBase):
         build_kilo_state(self.home)
         build_twinny_415(self.tmp / "home" / "bob")  # a home of its own
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
-        proj = self.tmp / "srv" / "proj"
-        (proj / CODY_LEGACY_REL).parent.mkdir(parents=True, exist_ok=True)
-        (proj / CODY_LEGACY_REL).write_text(CODY_LEGACY_XML, encoding="utf-8")
-        home = Home(disk_path=proj, original="/srv/proj", user="alice", host="h1", project=True)
+        project = self.tmp / "srv" / "proj"
+        (project / CODY_LEGACY_REL).parent.mkdir(parents=True, exist_ok=True)
+        (project / CODY_LEGACY_REL).write_text(CODY_LEGACY_XML, encoding="utf-8")
+        home = Home(disk_path=project, original="/srv/proj", user="alice", host="h1", project=True)
         legacy = Artifact(
-            proj / CODY_LEGACY_REL, "/srv/proj/" + CODY_LEGACY_REL, CODY_LEGACY_REL, "cody", home
+            project / CODY_LEGACY_REL, "/srv/proj/" + CODY_LEGACY_REL, CODY_LEGACY_REL, "cody", home
         )
         parsers = by_agent()
         seen = set()
@@ -23591,16 +23604,16 @@ class ChatGptDesktopTests(ParserBase):
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.unlink()
-        con = sqlite3.connect(str(database))
-        con.execute("CREATE TABLE automations (id TEXT)")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(database))
+        connection.execute("CREATE TABLE automations (id TEXT)")
+        connection.commit()
+        connection.close()
         rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
         self.assertEqual([row.text for row in rows], ["parser: no local_thread_catalog table"])
         # Every column may be NULL but source_kind; a NULL time prints `-`
         # and the row falls back to source_created_at, then to no time.
-        con = sqlite3.connect(str(database))
-        con.executescript(
+        connection = sqlite3.connect(str(database))
+        connection.executescript(
             "CREATE TABLE local_thread_catalog (host_id TEXT, thread_id TEXT,"
             " display_title TEXT, source_created_at REAL, source_updated_at REAL,"
             " source_kind TEXT, conversation_origin TEXT);"
@@ -23609,8 +23622,8 @@ class ChatGptDesktopTests(ParserBase):
             "INSERT INTO local_thread_catalog VALUES"
             " (NULL, NULL, NULL, NULL, NULL, 'chatgpt', NULL);"
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
         self.assertEqual(
             [
@@ -23907,10 +23920,10 @@ class CursorTests(ParserBase):
         return self.rows_for(CursorParser(), CURSOR_STATE_REL, **options)
 
     def write_state(self, sql: str, params=()) -> None:
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
-        con.execute(sql, params)
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        connection.execute(sql, params)
+        connection.commit()
+        connection.close()
 
     def test_rows(self):
         rows = self.state_rows()
@@ -24312,20 +24325,22 @@ class CursorTests(ParserBase):
         add (`selectedOption` `run`) is an allow-always decision by its
         `appliedAllowlistOptionIds`.
         """
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
-            con.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
+            connection.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
         )
         for head, bubble in cursor_review_bubbles():
             data["fullConversationHeadersOnly"].append(head)
-            con.execute(
+            connection.execute(
                 "INSERT INTO cursorDiskKV VALUES (?, ?)",
                 ("bubbleId:%s:%s" % (CURSOR_LIVE, head["bubbleId"]), json.dumps(bubble)),
             )
-        con.execute("UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key))
-        con.commit()
-        con.close()
+        connection.execute(
+            "UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key)
+        )
+        connection.commit()
+        connection.close()
         rows = [row for row in self.state_rows() if row.session_id == CURSOR_LIVE]
         pending = [row for row in rows if row.tool_use_id == self.CALL % (5, 3, 5, 3)]
         self.assertEqual(
@@ -24430,18 +24445,18 @@ class CursorTests(ParserBase):
         self.assertEqual((bad.source_line, bad.project_path), (14, "/srv/proj"))
 
     def test_remote_origin(self):
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
-        (value,) = con.execute(
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        (value,) = connection.execute(
             "SELECT value FROM composerHeaders WHERE composerId = ?", (CURSOR_ARCHIVED,)
         ).fetchone()
         head = json.loads(value)
         head["agentLocation"]["type"] = "cloud"
-        con.execute(
+        connection.execute(
             "UPDATE composerHeaders SET value = ? WHERE composerId = ?",
             (json.dumps(head), CURSOR_ARCHIVED),
         )
-        con.commit()
-        con.close()
+        connection.commit()
+        connection.close()
         rows = [row for row in self.state_rows() if row.session_id == CURSOR_ARCHIVED]
         self.assertEqual(
             (rows[1].timestamp_utc, rows[1].text),
@@ -24523,10 +24538,10 @@ class CursorTests(ParserBase):
             bad[0].text,
         )
         self.assertTrue(bad[0].text.endswith('): [{"bcId": "bc-cut"'), bad[0].text)
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
-        con.execute("DROP TABLE ItemTable")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        connection.execute("DROP TABLE ItemTable")
+        connection.commit()
+        connection.close()
         self.assertFalse([row for row in self.state_rows() if "cloud" in row.text])
 
     def test_mcp_servers_and_plugins(self):
@@ -24648,20 +24663,22 @@ class CursorTests(ParserBase):
         It is not a pending prompt; a queued, cancelled call has no permission row
         (Cursor 3.26.13 on Windows).
         """
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
-            con.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
+            connection.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
         )
         for head, bubble in cursor_stopped_bubbles():
             data["fullConversationHeadersOnly"].append(head)
-            con.execute(
+            connection.execute(
                 "INSERT INTO cursorDiskKV VALUES (?, ?)",
                 ("bubbleId:%s:%s" % (CURSOR_LIVE, head["bubbleId"]), json.dumps(bubble)),
             )
-        con.execute("UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key))
-        con.commit()
-        con.close()
+        connection.execute(
+            "UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key)
+        )
+        connection.commit()
+        connection.close()
         rows = [row for row in self.state_rows() if row.tool_use_id in ("tc9", "tc10")]
         self.assertEqual(
             [(row.timestamp_utc, row.tool_use_id, row.turn_type, row.text) for row in rows],
@@ -24686,20 +24703,22 @@ class CursorTests(ParserBase):
         It is a tool_use and a tool_result, since the bubble records no decision (Cursor
         3.26.13 on Windows); `toolCallBinary` is not read.
         """
-        con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
+        connection = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
-            con.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
+            connection.execute("SELECT value FROM cursorDiskKV WHERE key = ?", (key,)).fetchone()[0]
         )
         head, bubble = cursor_mcp_bubble()
         data["fullConversationHeadersOnly"].append(head)
-        con.execute(
+        connection.execute(
             "INSERT INTO cursorDiskKV VALUES (?, ?)",
             ("bubbleId:%s:%s" % (CURSOR_LIVE, head["bubbleId"]), json.dumps(bubble)),
         )
-        con.execute("UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key))
-        con.commit()
-        con.close()
+        connection.execute(
+            "UPDATE cursorDiskKV SET value = ? WHERE key = ?", (json.dumps(data), key)
+        )
+        connection.commit()
+        connection.close()
         call = bubble["toolFormerData"]["toolCallId"]
         rows = [row for row in self.state_rows() if row.tool_use_id == call]
         self.assertEqual(
@@ -24727,10 +24746,10 @@ class CursorTests(ParserBase):
         self.assertFalse([row for row in self.state_rows() if "Q0FMTEJJTkFSWQ" in row.text])
 
     def test_search_without_fts_content(self):
-        con = sqlite3.connect(str(self.home / CURSOR_SEARCH_REL))
-        con.execute("DROP TABLE conversation_fts_content")
-        con.commit()
-        con.close()
+        connection = sqlite3.connect(str(self.home / CURSOR_SEARCH_REL))
+        connection.execute("DROP TABLE conversation_fts_content")
+        connection.commit()
+        connection.close()
         texts = [row.text for row in self.rows_for(CursorParser(), CURSOR_SEARCH_REL)]
         self.assertEqual(len(texts), 4)
         self.assertNotIn("source=local)", " ".join(texts))

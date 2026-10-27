@@ -25,7 +25,7 @@ from pathlib import Path
 
 from . import sqlite_util
 
-STATE_DB_RX = re.compile(r"(?:^|/)User/globalStorage/state\.vscdb$")
+STATE_DATABASE_PATTERN = re.compile(r"(?:^|/)User/globalStorage/state\.vscdb$")
 # Catalog agents whose `User/` directory holds a VS Code family state.vscdb.
 # An extension installed in a fork writes its global state to the fork's
 # database, which the catalog attributes to the fork, so parsers for such
@@ -83,4 +83,4 @@ def read_item(path: Path, key: str) -> tuple[object, list[str]]:
     return values.get(key), problems
 
 
-__all__ = ["SECRET_PREFIX", "STATE_DB_RX", "read_item", "read_items"]
+__all__ = ["SECRET_PREFIX", "STATE_DATABASE_PATTERN", "read_item", "read_items"]

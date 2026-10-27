@@ -1858,7 +1858,7 @@ $nonAsciiOutput = Join-Path $Out 'u71'
 New-Item -ItemType Directory -Path $nonAsciiOutput -Force | Out-Null
 $nonAsciiArgs = @{ Root = $NonAsciiRoot; OutputDir = $nonAsciiOutput; Quiet = $true; NoDocker = $true }
 $global:LASTEXITCODE = 0
-& $Collector @c71 *> $null
+& $Collector @nonAsciiArgs *> $null
 $nonAsciiExit = $LASTEXITCODE
 $nonAsciiManifest = Read-ManifestLines (Get-ChildItem -LiteralPath $nonAsciiOutput -Filter '*.manifest.jsonl' | Select-Object -First 1).FullName
 $nonAsciiSha = (Get-FileHash -LiteralPath ([System.IO.Path]::Combine($NonAsciiDir, $NonAsciiNames[0])) -Algorithm SHA256).Hash.ToLower()

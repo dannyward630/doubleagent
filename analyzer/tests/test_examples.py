@@ -56,6 +56,9 @@ def test_missing_or_duplicated_marker_fails(tmp_path):
     cases = {
         "missing end": text.replace(end + "\n", ""),
         "duplicated begin": text.replace(begin, begin + "\n" + begin),
+        "overlapping blocks": text.replace(examples.END % "detect-json" + "\n", "").replace(
+            end + "\n", end + "\n" + examples.END % "detect-json" + "\n"
+        ),
     }
     for case, broken in cases.items():
         document = tmp_path / "output.md"

@@ -1407,7 +1407,8 @@ documentation-only change needs only the last two rows and markdownlint.
   analyzer over the test fixtures, and the analyzer's
   [`analyzer/docs/output.md`](analyzer/docs/output.md) examples by
   `analyzer/tools/regenerate_examples.py`, rerun at every analyzer
-  `VERSION` bump, since `analyzer/tests/test_examples.py` fails until
+  `VERSION` bump and every change to what `detect --json` prints or
+  `inventory.json` holds, since `analyzer/tests/test_examples.py` fails until
   then), never edited by hand. A behaviour
   change without a README update is incomplete.
 - The [top-level README](README.md) and [`docs/index.md`](docs/index.md),

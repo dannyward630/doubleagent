@@ -298,6 +298,8 @@ def check(document: Path = DOCUMENT) -> list[str]:
     """
     text = document.read_text(encoding="utf-8")
     blocks = generate()
+    # The marker errors a rewrite would meet, overlapping blocks included.
+    render(text, blocks)
     diffs = []
     for name in BLOCKS:
         start, stop = _span(text, name)

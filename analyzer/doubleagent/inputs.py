@@ -35,9 +35,9 @@ from .catalog import Catalog
 
 PARSE_STATUSES = ("collected",)
 
-# Agent name collectors before 1.12.0 gave every file found through the
-# project catalog, and that later ones keep for files no single agent owns
-# (AGENTS.md). Such a file is offered to every parser.
+# The agent of a project file no single agent owns (AGENTS.md), and of
+# every project-catalog file in collections before collector 1.12.0. Such a
+# file is offered to every parser.
 PROJECT_AGENT = "project"
 
 # Parent directories whose children are user homes, as the collectors enumerate
@@ -48,6 +48,8 @@ ROOT_HOMES = ("root", "var/root")
 
 @dataclass
 class Home:
+    """A base the artifacts are relative to: a user's home, a volume or a project."""
+
     disk_path: Path  # where the home is on the analyst's disk
     original: str  # path on the source host, best effort
     user: str
@@ -62,6 +64,8 @@ class Home:
 
 @dataclass
 class Artifact:
+    """One attributed file of the input, with its manifest row when there is one."""
+
     disk_path: Path
     original: str  # path on the source host
     rel: str  # path relative to the home, posix
@@ -72,6 +76,8 @@ class Artifact:
 
 @dataclass
 class Collection:
+    """The opened input: its kind, homes, artifacts, notes and problems."""
+
     source: Path
     kind: str  # archive | collected | loose
     root: Path  # directory that holds fs/ (collected) or the tree itself (loose)
@@ -87,14 +93,17 @@ class Collection:
     _tmp: str | None = None
 
     def cleanup(self) -> None:
+        """Remove the directory an archive was extracted to, if any."""
         if self._tmp and os.path.isdir(self._tmp):
             shutil.rmtree(self._tmp, ignore_errors=True)
             self._tmp = None
 
     def artifacts_for(self, agent: str) -> list[Artifact]:
+        """Return the artifacts attributed to one agent."""
         return [artifact for artifact in self.artifacts if artifact.agent == agent]
 
     def agents(self) -> list[str]:
+        """Return the agents of the artifacts, in the order first met."""
         seen: dict[str, None] = {}
         for artifact in self.artifacts:
             seen.setdefault(artifact.agent)
@@ -102,17 +111,21 @@ class Collection:
 
 
 def error_reason(error: BaseException) -> str:
-    """The reason in an exception without the path it names: the OS message
-    of an OSError, lower-cased (`permission denied`, `no such file or
-    directory`), otherwise the exception's own text."""
+    """Return an exception's reason without the path it names.
+
+    An OSError gives its OS message lower-cased (`permission denied`), any
+    other exception its own text.
+    """
     if isinstance(error, OSError) and error.strerror:
         return error.strerror.lower()
     return str(error)
 
 
 def describe_error(path, error: BaseException) -> str:
-    """`<path>: <reason>` for a problem line or an error message. The path is
-    the file the OS reported when it names one, otherwise `path`."""
+    """Return `<path>: <reason>` for a problem line or an error message.
+
+    The path is the file the OS reported when it names one, otherwise `path`.
+    """
     name = error.filename if isinstance(error, OSError) and error.filename else path
     return "%s: %s" % (os.fsdecode(name), error_reason(error))
 
@@ -120,13 +133,17 @@ def describe_error(path, error: BaseException) -> str:
 def open_input(
     path: Path, catalog: Catalog, work_dir: Path | None = None, host: str = ""
 ) -> Collection:
-    """Open an archive, extracted collection or loose directory. Raises
-    OSError when the input itself, an archive member being extracted, or the
-    manifest cannot be read, and ValueError when a file input is not an
-    archive. Unreadable directories and files inside a loose tree are not
-    errors; they are recorded in `Collection.problems`."""
+    """Open an archive, an extracted collection or a loose directory.
+
+    Unreadable directories and files inside a loose tree are not errors; they
+    are recorded in `Collection.problems`.
+
+    Raises:
+        OSError: The input, an archive member or the manifest cannot be read.
+        ValueError: A file input is not an archive.
+    """
     path = Path(path)
-    # stat, not exists(): exists() hides the reason, and on Python 3.14 also
+    # stat, not exists(): exists() hides the reason, and from Python 3.14
     # returns False for a permission error.
     file_stat = path.stat()
     if stat.S_ISDIR(file_stat.st_mode):
@@ -216,10 +233,11 @@ def _safe_member(dest: Path, name: str) -> bool:
 
 
 def _skip_links(member, dest):
-    """Extraction filter: regular files and directories go through the data
-    filter; symlinks and hard links are not materialised. The collector
-    recreates symlinks with their original absolute targets, which the data
-    filter would reject; their targets are in the manifest `target` field."""
+    """Pass regular files and directories through the data filter and drop links.
+
+    The collector recreates symlinks with their absolute targets, which the
+    data filter would reject; the targets are in the manifest `target` field.
+    """
     if member.issym() or member.islnk() or member.isdev():
         return None
     return tarfile.data_filter(member, dest)
@@ -309,9 +327,9 @@ def _load_collected(collection: Collection, catalog: Catalog) -> None:
         rel = _relative_to_home(original, home_original)
         agent = str(row.get("agent") or "")
         if agent == PROJECT_AGENT:
-            # A project-catalog file. Collectors before 1.12.0 recorded every
-            # one as `project`; name the agent the bundled project catalog
-            # gives it, so old and new collections report the same agents.
+            # Collectors before 1.12.0 recorded every project-catalog file as
+            # `project`; the bundled project catalog names its agent, so old and
+            # new collections report the same agents.
             home.project = True
             agent = catalog.project_agent_for(rel) or PROJECT_AGENT
         disk_path = root / archive_path
@@ -341,8 +359,11 @@ def _load_collected(collection: Collection, catalog: Catalog) -> None:
 
 
 def _archive_dir_for_home(row: dict) -> str:
-    """fs/<home> as the collector lays it out, derived from one row so Windows
-    drive-letter layouts (fs/C/Users/alice) are handled without guessing."""
+    """Return `fs/<home>` as the collector laid it out, derived from one manifest row.
+
+    Deriving it from a row handles Windows drive-letter layouts
+    (`fs/C/Users/alice`) without guessing.
+    """
     original = str(row.get("path") or "")
     home = str(row.get("home") or "")
     archive_path = str(row.get("archive_path") or "")
@@ -418,9 +439,11 @@ def _discover_loose(collection: Collection, catalog: Catalog) -> None:
 
 
 def _user_from_parts(parts) -> str:
-    """Owner of a home from its path components, by the conventions the
-    collectors use to enumerate homes: home/<u>, Users/<u>, usr/home/<u>,
-    export/home/<u>, root, var/root. Empty when none applies."""
+    """Return the owner of a home from its path components, or `""`.
+
+    The conventions are those the collectors enumerate homes by: home/<user>,
+    Users/<user>, usr/home/<user>, export/home/<user>, root and var/root.
+    """
     parts = [part for part in parts if part]
     for parent in HOME_PARENTS:
         parent_parts = parent.split("/")
@@ -470,8 +493,7 @@ def _add_hits(collection: Collection, home: Home, hits) -> None:
 
 
 def _problem_recorder(collection: Collection):
-    """An os.walk onerror callback that records the unreadable directory as a
-    problem of the collection, once per path, instead of skipping it."""
+    """Return an os.walk `onerror` callback that records each unreadable path once as a problem."""
 
     def record(error: OSError) -> None:
         line = describe_error("", error)

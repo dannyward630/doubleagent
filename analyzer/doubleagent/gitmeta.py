@@ -1,42 +1,24 @@
-"""The remotes and checked-out branch of a collected project's repository.
+r"""Read the remotes and checked-out branch of a collected project's repository.
 
-The collectors gather a project's `.git/HEAD`, `.git/config`,
-`.git/FETCH_HEAD`, `.git/packed-refs`, `.git/refs`, `.git/logs` and
-`.git/worktrees` with agent `project` (the project catalog's `project|.git/...`
-lines, collector 1.19.0, issue 253). This module reads two of them:
+The collectors gather a project's `.git` metadata files with agent `project`;
+this module reads two of them:
 
 * `.git/config`, git's INI-like configuration: a `[remote "<name>"]` section
-  per remote, with `url` (where fetches come from, and pushes when there is
-  no `pushurl`) and `pushurl` (where pushes go). Section and key names are
-  matched without regard to case, as git does; the subsection (the remote's
-  name) is kept as written. The deprecated `[remote.<name>]` form is read
-  too. A value may be quoted, may hold `\\`, `\\"`, `\\n`, `\\t` and `\\b`
-  escapes, keeps the whitespace quotes or an escape protect while the bare
-  whitespace around it is trimmed, ends at a `#` or `;` outside quotes,
-  and continues on the next
-  line after a backslash at the end of the line that is part of the value:
-  a backslash that ends a comment, a header line or a blank line continues
-  nothing, as in git, so a comment such as `# C:\\git\\` never swallows the
-  header after it. A pair may follow its header on the same line
-  (`[remote "origin"] url = ...`), as git allows. A line that is not a
-  section header or a `key = value` pair, and the keys after an
-  unterminated section header, are skipped, and a value git rejects, a
-  quoted one the file ends inside or one with an escape git does not
-  define, is dropped and reported, since a config cut mid-URL or edited
-  by hand must not yield a destination git would not read; the deprecated
-  dotted form lower-cases its subsection, as git does;
-  the rest of the file is still read. A remote may have several `url` and
-  `pushurl` lines (git fetches from the first `url` and pushes to every
-  `pushurl`, or to every `url` when there is none), so every value of each
-  is kept, in file order.
+  (or the deprecated `[remote.<name>]`, whose name git lower-cases) per
+  remote, with every `url` and `pushurl` value kept in file order. Section
+  and key names match without regard to case. A value may be quoted, holds
+  the escapes `\\`, `\"`, `\n`, `\t` and `\b`, ends at a `#` or `;` outside
+  quotes, loses only its unprotected surrounding whitespace, and continues
+  after a backslash that ends the line outside a comment. A pair may follow
+  its header on one line. A line that is neither a header nor a pair, and the
+  keys after a malformed header, are skipped; a value git rejects (an
+  unterminated quote, an unknown escape) is dropped and reported.
 * `.git/HEAD`: `ref: refs/heads/<branch>` while a branch is checked out,
   else the commit hash of a detached HEAD.
 
-Files are read whole from the evidence copy, opened read-only and only when
-`lstat` says they are regular files, so a symlink is never followed. A file
-that cannot be read (missing, not a regular file, a permission or I/O
-error) gives no remotes and no head, and `project_git` reports it as a
-problem, `<path>: <reason>`, so an unreadable file is never mistaken for a
+Files are read whole from the evidence copy, only when `lstat` says they are
+regular files, so a symlink is never followed. A file that cannot be read is
+reported by `project_git` as `<path>: <reason>`, never taken for a
 repository without remotes.
 """
 
@@ -59,9 +41,11 @@ _ESCAPES = {"\\": "\\", '"': '"', "n": "\n", "t": "\t", "b": "\b"}
 
 
 def read_text(path: Path) -> tuple[str, str]:
-    """`(text, error)`: the whole file at `path` as text (UTF-8, undecodable
-    bytes replaced) and `""`, or `""` and the reason when it is missing,
-    unreadable or not a regular file. Never follows a symlink."""
+    """Return a whole file as text and `""`, or `""` and why it cannot be read.
+
+    The text is UTF-8 with undecodable bytes replaced. A symlink is never
+    followed; it is not a regular file.
+    """
     try:
         if not stat.S_ISREG(os.lstat(path).st_mode):
             return "", "not a regular file"
@@ -79,11 +63,11 @@ _ASCII_SPACE = " \t\r\f\v"
 
 
 def _physical_lines(text: str) -> list[str]:
-    """`text` split at line feeds only, a carriage return before one
-    removed, and an initial byte-order mark dropped: git ends a line at LF
-    or CRLF alone and accepts a UTF-8 BOM at the start of a config, while
-    `str.splitlines()` would also split at U+2028, U+0085 and the ASCII
-    separators, cutting a path that holds one."""
+    """Split text at LF or CRLF only, as git does, dropping a leading byte-order mark.
+
+    `str.splitlines()` would also split at the Unicode line separators and
+    the ASCII separators, cutting a path that holds one.
+    """
     if text.startswith("﻿"):
         text = text[1:]
     lines = text.split("\n")
@@ -93,15 +77,14 @@ def _physical_lines(text: str) -> list[str]:
 
 
 def _parse_value(lines: list[str], index: int, text: str) -> tuple[str, int, str]:
-    """The value that starts with `text` on line `i` of `lines`, with quotes
-    and escapes resolved, a trailing comment removed and only the bare
-    whitespace around it trimmed, the index of the last line it used, and
-    `""` or the reason git would reject the line (an unterminated quote, an
-    escape other than `\\\\`, `\\"`, `\\n`, `\\t` and `\\b`), in which case
-    the value is `""`: a backslash at the end of the line, outside a
-    comment, continues the value on the next line (a comment ends the line
-    and never continues it, as in git). A lone backslash at the end of the
-    file is dropped."""
+    """Return a config value, the index of its last line, and git's reason to reject it.
+
+    The value starts with `text` on line `index`; quotes and escapes are
+    resolved, a trailing comment removed and only unprotected whitespace
+    around it trimmed. A backslash ending the line outside a comment
+    continues the value; a lone backslash at the end of the file is dropped.
+    A rejected value is `""` and an accepted one has the reason `""`.
+    """
     # Each character with whether quotes or an escape protect it: only bare
     # whitespace around the value is trimmed, as git trims it, so a quoted
     # path that ends in a space keeps its space.
@@ -147,15 +130,12 @@ def _parse_value(lines: list[str], index: int, text: str) -> tuple[str, int, str
 
 
 def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
-    """The config's entries in order: `("[", header)` for a section header
-    and `(key, value)` for a pair, the key lower-cased and the value
-    resolved by `_parse_value`. A pair may follow its header on the same
-    line (`[remote "origin"] url = ...`), as git allows. Comment, blank and
-    unparseable lines are skipped; only a value continues across lines. A
-    pair git would reject, a quoted value the file ends inside or an
-    escape git does not define, is dropped and described in `errors`
-    (`line <n>: unterminated quoted value`, `line <n>: unsupported escape
-    \\q`), since its text is not the value git would have read."""
+    """Yield the config's entries in order: `("[", header)` or `(key, value)`.
+
+    The key is lower-cased and the value resolved by `_parse_value`. Comment,
+    blank and unparseable lines are skipped. A pair git would reject is
+    dropped and described in `errors` as `line <n>: <reason>`.
+    """
     lines = _physical_lines(text)
     index = 0
     while index < len(lines):
@@ -192,13 +172,13 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
 
 
 def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
-    """The remotes of a `.git/config` text: one `{"name", "urls",
-    "pushurls"}` per `[remote "<name>"]` section that sets a non-empty `url`
-    or `pushurl`, sorted by name. `urls` and `pushurls` hold every value of
-    the key in file order, `[]` when the section sets none: `pushurls` is
-    what the file says, not git's fallback to `urls`. A value the file ends
-    inside (an unterminated quote) is left out and, when `errors` is given,
-    described in it as `_entries` does."""
+    """Return the remotes of a `.git/config` text, sorted by name.
+
+    One `{"name", "urls", "pushurls"}` per remote section that sets a
+    non-empty `url` or `pushurl`, each list in file order. `pushurls` is what
+    the file says, not git's fallback to `urls`. A rejected value is left out
+    and, when `errors` is given, described in it.
+    """
     remotes: dict[str, dict] = {}
     current: str | None = None
     for key, value in _entries(text, [] if errors is None else errors):
@@ -224,10 +204,11 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
 
 
 def parse_head(text: str) -> str:
-    """The branch a `.git/HEAD` text names (`ref: refs/heads/<branch>`), the
-    full ref for any other symbolic ref, else the detached commit hash; ""
-    for an empty text. The first line ends at a line feed, and only ASCII
-    whitespace is trimmed, since a ref may hold other whitespace."""
+    """Return the branch a `.git/HEAD` text names, another ref in full, or the commit hash.
+
+    An empty text gives `""`. Only ASCII whitespace is trimmed, since a ref
+    may hold other whitespace.
+    """
     lines = [line.strip(_ASCII_SPACE) for line in _physical_lines(text)]
     first = next((line for line in lines if line), "")
     if first.startswith("ref:"):
@@ -239,18 +220,14 @@ def parse_head(text: str) -> str:
 def project_git(
     artifacts: Iterable[Artifact], problems: list[str] | None = None
 ) -> dict[str, dict]:
-    """`{"remotes": [...], "head": str}` per project directory among the
-    `artifacts`, keyed as `cli.project_agents` keys it (`home.original`, or
-    the disk path when that is empty), from its `.git/config` and
-    `.git/HEAD` files with agent `project`. A project without them is
-    absent. The file is chosen by name: the exact spelling when the
-    collection has it, else the first file whose name matches without
-    regard to case, because the PowerShell collector matches the catalog
-    that way and keeps the on-disk spelling (`.GIT/CONFIG` on Windows, and
-    on a macOS or other case-insensitive volume), while a case-sensitive
-    volume that holds both spellings keeps git's own. A file that cannot
-    be read, or a pair in it git would reject, is appended to `problems`,
-    when given, as `<original path>: <reason>` (once per path)."""
+    """Return `{"remotes", "head"}` per project directory among the artifacts.
+
+    Keys are as `cli.project_agents` keys them; a project without the files is
+    absent. The exact spelling `.git/config` wins, else the first file whose
+    name matches without regard to case, since the PowerShell collector keeps
+    the on-disk spelling (`.GIT/CONFIG`). A file that cannot be read, or a pair
+    git would reject, is added once to `problems` as `<original path>: <reason>`.
+    """
     chosen: dict[str, dict[str, Artifact]] = {}
     for artifact in artifacts:
         if not artifact.home.project or artifact.agent != PROJECT_AGENT:

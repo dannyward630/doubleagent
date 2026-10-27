@@ -1,4 +1,4 @@
-"""Command line: detect agents in an input, or write the JSONL timeline."""
+"""Run the `doubleagent` command: detect agents, write the timeline, merge inventories."""
 
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ PROJECT_MARKS = (
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Return the argument parser of the command and its subcommands."""
     parser = argparse.ArgumentParser(
         prog=PROG,
         description="Detect AI agent state in a collection and parse it into a JSONL timeline.",
@@ -164,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the command with the given arguments and return its exit code."""
     args = build_parser().parse_args(argv)
     if args.command == "catalog":
         return cmd_catalog(args)
@@ -204,6 +206,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def cmd_catalog(args: argparse.Namespace) -> int:
+    """Print the bundled catalog, or its agents and whether each has a parser."""
     catalog = catalog_mod.load()
     if not args.agents:
         sys.stdout.write(catalog.text)
@@ -218,6 +221,7 @@ def cmd_catalog(args: argparse.Namespace) -> int:
 
 
 def cmd_inventory(args: argparse.Namespace) -> int:
+    """Merge inventory files into the fleet CSV and print the per-agent rollup."""
     try:
         files = inventory_mod.input_files(args.input)
     except OSError as error:
@@ -263,13 +267,12 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 
 
 def detect_table(collection: Collection, include_projects: bool = True) -> list[dict]:
-    """One row per user, home and agent, in the order the first file was
-    met: `user`, `home`, `agent`, `files`, `bytes` (manifest `size`, or the
-    size on disk in loose mode), `parser`, `inferred`. With
-    `include_projects` false, artifacts in a project directory (a home
-    marked `project`) are left out: that is the first table of `detect`,
-    whose rows keep this order rather than the per-home grouping of
-    `home_agents`."""
+    """Return the rows of the `detect` table: one per user, home and agent.
+
+    Each row has `user`, `home`, `agent`, `files`, `bytes` (`artifact_bytes`),
+    `parser` and `inferred`, in the order the first file was met. Without
+    `include_projects`, artifacts in a project directory are left out.
+    """
     parsers = by_agent()
     rows: dict[tuple[str, str, str], dict] = OrderedDict()
     for artifact in collection.artifacts:
@@ -293,8 +296,7 @@ def detect_table(collection: Collection, include_projects: bool = True) -> list[
 
 
 def artifact_bytes(artifact) -> int:
-    """The size of one artifact: the manifest `size` when the input has a
-    manifest, else the file's `lstat` size (0 when it cannot be read)."""
+    """Return an artifact's manifest `size`, else its `lstat` size, 0 when unreadable."""
     if artifact.manifest is not None:
         return int(artifact.manifest.get("size") or 0)
     try:
@@ -304,15 +306,12 @@ def artifact_bytes(artifact) -> int:
 
 
 def home_agents(collection: Collection) -> list[dict]:
-    """The `homes` array of `detect --json` and inventory.json: one object
-    per user home or Docker volume (a home not marked `project`), in the
-    order its first collected row was met, with the keys `user`, `home`
-    (`home.original`: the manifest `home`, or in loose mode the path
-    relative to the input root with a leading `/`, `""` when the root is
-    the home), `inferred` and `agents`. `agents` is sorted by agent, one
-    object of `agent`, `files`, `bytes` (as in `detect_table`) and
-    `parser` per agent with files in that home; a home whose files were
-    all missing from the collection has an empty array."""
+    """Return the `homes` array of `detect --json` and inventory.json.
+
+    One object per home that is not a project, in the order its first row was
+    met, with `user`, `home`, `inferred` and `agents`: per agent with files
+    there, sorted, its `agent`, `files`, `bytes` and `parser`.
+    """
     parsers = by_agent()
     counts: dict[int, dict[str, dict]] = {}
     for artifact in collection.artifacts:
@@ -339,17 +338,14 @@ def home_agents(collection: Collection) -> list[dict]:
 
 
 def project_agents(collection: Collection) -> dict[str, dict]:
-    """The agents used on each project directory the input holds, keyed by
-    the directory's path on the source host (`home.original`, which in image
-    mode still carries the `-r` root) and sorted by it. Only artifacts whose
-    home is marked `project` count, so loose input yields an empty dict.
+    """Return the agents used in each project directory of the input, keyed by its path.
 
-    Each value has `users` (sorted distinct users whose rows name the
-    directory), `agents` (keyed by agent, sorted: `files` and `bytes` of
-    that agent's files in the directory), and `shared_files` and
-    `shared_bytes`, the files with agent `project` (those no single agent
-    owns, such as AGENTS.md), which is not an agent and so never a key of
-    `agents`. Bytes are the manifest `size`, as in `detect_table`."""
+    The path is `home.original` on the source host (with the image root in
+    image mode), sorted. Each value has the sorted `users`, the `agents`
+    with their `files` and `bytes`, and `shared_files` and `shared_bytes` for
+    the files of agent `project`, which no single agent owns. Loose input
+    gives an empty dict.
+    """
     groups: dict[str, dict] = {}
     for artifact in collection.artifacts:
         if not artifact.home.project:
@@ -380,14 +376,13 @@ def project_agents(collection: Collection) -> dict[str, dict]:
 
 
 def detect_object(collection: Collection) -> dict:
-    """The keys `detect --json` and inventory.json share, in order: `input`,
-    `kind`, `host`, `notes`, `homes` (`home_agents`) and `projects` (one
-    object per project directory from `project_agents`, its `agents` an
-    array of `agent`, `files`, `bytes`, `parser`, as in `homes`, and its
-    last two keys `remotes` and `head` from `gitmeta.project_git`, `[]`
-    and `""` without the repository files; one the analyzer cannot read is
-    added to `col.problems`). The callers add `problems`, and
-    `detect --json --files` adds `files`."""
+    """Return the keys `detect --json` and inventory.json share, in order.
+
+    The keys are `input`, `kind`, `host`, `notes`, `homes` (`home_agents`) and
+    `projects`, whose entries end with the repository's `remotes` and `head`
+    (`gitmeta.project_git`). A repository file that cannot be read is added
+    to `collection.problems`.
+    """
     parsers = by_agent()
     git = gitmeta.project_git(collection.artifacts, collection.problems)
     projects = [
@@ -416,10 +411,12 @@ def detect_object(collection: Collection) -> dict:
 
 
 def print_project_table(projects: list[dict]) -> None:
-    """The second table of `detect`: one line per agent of each project,
-    then a `(shared)` line when the project holds shared files, then a
-    `remotes:` line (`remotes_text`) when its repository has remotes; the
-    path and users appear on the project's first line only."""
+    """Print the project table of `detect`.
+
+    Each project gets one line per agent, a `(shared)` line for its shared
+    files and a `remotes:` line when its repository has remotes; the path and
+    users appear on its first line only.
+    """
     line = "%-40s %-14s %-18s %8s %12s  %s"
     print(line % ("project", "users", "agent", "files", "bytes", "parser"))
     for project in projects:
@@ -443,9 +440,7 @@ def print_project_table(projects: list[dict]) -> None:
 
 
 def remotes_text(remotes: list[dict]) -> str:
-    """`<name> <url> ...` per remote, its `urls` joined by a space, then
-    ` (push <pushurl> ...)` when it sets `pushurls`; remotes joined with
-    `, `."""
+    """Return the remotes as `<name> <url> ... (push <pushurl> ...)`, joined with `, `."""
     parts = []
     for remote in remotes:
         text = " ".join([remote["name"], *remote["urls"]])
@@ -456,6 +451,7 @@ def remotes_text(remotes: list[dict]) -> str:
 
 
 def cmd_detect(args: argparse.Namespace, collection: Collection) -> int:
+    """Print the homes, agents and projects of the input, as tables or JSON."""
     detection = detect_object(collection)
     if args.json:
         out = {**detection, "problems": collection.problems}
@@ -517,6 +513,7 @@ def cmd_detect(args: argparse.Namespace, collection: Collection) -> int:
 
 
 def parsers_for(artifact, parsers: dict[str, list]) -> list:
+    """Return the parsers offered an artifact: its agent's and those naming it in `reads_agents`."""
     # A file in a project directory that the catalog leaves to no single
     # agent (agent `project`, inputs.PROJECT_AGENT) may be read by any of
     # them, so it is offered to every parser.
@@ -533,10 +530,12 @@ def parsers_for(artifact, parsers: dict[str, list]) -> list:
 def collect_rows(
     collection: Collection, opts: Options, agents: list[str]
 ) -> tuple[list[Row], Counter, list[str], Counter]:
-    """Parse every artifact into timeline rows. Returns the rows, sorted;
-    their counts per (agent, turn_type); the problems; and the rows dropped
-    per agent because a secondary source repeated a primary store's event
-    (`dedup.deduplicate`, issue 122)."""
+    """Parse every artifact into timeline rows.
+
+    Returns:
+        The rows, sorted; their counts per (agent, turn_type); the problems;
+        and the rows `dedup.deduplicate` dropped per agent.
+    """
     parsers = by_agent()
     primary: list[Row] = []
     secondary: list[tuple[Row, float]] = []
@@ -553,7 +552,7 @@ def collect_rows(
             try:
                 for row in parser.parse(artifact, opts):
                     # One spelling per Windows folder, whichever parser and
-                    # store the path came from (issue 112).
+                    # store the path came from.
                     row.project_path = canonical_project_path(row.project_path)
                     if tolerance is None:
                         primary.append(row)
@@ -580,11 +579,14 @@ JSONL_SEPARATORS = (",", ":")
 
 
 def jsonl_line(record: dict) -> str:
-    """One JSON object on one line, keys in schema order. Non-ASCII text is
-    written as UTF-8 rather than escaped, so grep finds it as typed. U+2028
-    and U+2029 are escaped because some line readers (Python's
-    str.splitlines among them) split on them, and a record holding a lone
-    surrogate, which UTF-8 cannot encode, falls back to ASCII escapes."""
+    """Return a record as one JSON line, keys in schema order.
+
+    Non-ASCII text is written as UTF-8, so grep finds it as typed. The Unicode
+    line and paragraph separators are escaped because some readers split
+    on them, and a record
+    holding a lone surrogate, which UTF-8 cannot encode, falls back to ASCII
+    escapes.
+    """
     text = json.dumps(record, ensure_ascii=False, separators=JSONL_SEPARATORS)
     try:
         text.encode("utf-8")
@@ -594,6 +596,7 @@ def jsonl_line(record: dict) -> str:
 
 
 def write_jsonl(path: Path, rows) -> None:
+    """Write rows (`Row` or `SessionSummary`) to a JSONL file."""
     with open(path, "w", newline="\n", encoding="utf-8") as handle:
         for row in rows:
             handle.write(jsonl_line(row.as_dict()))
@@ -601,8 +604,11 @@ def write_jsonl(path: Path, rows) -> None:
 
 
 def build_filter(args: argparse.Namespace) -> RowFilter:
-    """The row filter from --since, --until, --keep-undated and --match.
-    Raises ValueError with a message for the user on a bad value."""
+    """Return the row filter of `--since`, `--until`, `--keep-undated` and `--match`.
+
+    Raises:
+        ValueError: A value is bad; the message is for the analyst.
+    """
     since = parse_bound(args.since) if args.since else ""
     until = parse_bound(args.until, end=True) if args.until else ""
     if since and until and since > until:
@@ -618,8 +624,7 @@ def build_filter(args: argparse.Namespace) -> RowFilter:
 
 
 def dropped_summary(deduplicated: Counter) -> str:
-    """The text of the timeline's `dropped:` line: the secondary-source rows
-    `dedup.deduplicate` dropped, with the agents that had any, by name."""
+    """Return the text of the timeline's `dropped:` line, with the agents that had any."""
     total = sum(deduplicated.values())
     text = "%d duplicate rows from secondary sources" % total
     if total:
@@ -638,14 +643,15 @@ def agents_summary(
     no_rows: list[str],
     collected_only: list[str] | None = None,
 ) -> str:
-    """The text of the timeline's `agents:` line. `detected` says whether the
-    input held any agent at all; `parsed` are the agents that produced rows,
-    `unparsed` the detected agents with no parser that are a parser backlog,
-    `collected_only` the detected agents with no parser whose files hold
-    nothing to parse (`parsers.NO_TRANSCRIPTS`), and `no_rows` the detected
-    agents whose parser ran and produced no rows. Each list is sorted and
-    reads `none` when empty; `collected_only` and `no_rows` are shown only
-    when they have an entry."""
+    """Return the text of the timeline's `agents:` line.
+
+    Args:
+        detected: Whether the input held any agent at all.
+        parsed: The agents that produced rows.
+        unparsed: The detected agents without a parser, a parser backlog.
+        no_rows: The detected agents whose parser ran and found no rows.
+        collected_only: The detected agents in `parsers.NO_TRANSCRIPTS`.
+    """
 
     def names(agents: list[str]) -> str:
         return ", ".join(sorted(set(agents))) or "none"
@@ -666,40 +672,15 @@ def project_inventory(
     collected: list[str] | None = None,
     files: dict[str, dict] | None = None,
 ) -> dict[str, dict]:
-    """Counts per project, the empty path included: rows and sessions in
-    total, and per agent the rows, sessions and rows by `turn_type`. A
-    session is counted under its summary's project, the first non-empty
-    `project_path` among its rows.
+    """Return the `projects` entries of inventory.json, the empty path included.
 
-    Paths are grouped by `project_key`, so the spellings of one Windows
-    folder that differ only in case are one project; any other path is
-    compared exactly as recorded. A group is keyed by the spelling of the
-    collected project it matches, else by the first spelling seen, in the
-    rows (timeline order), then the sessions, then `files`; the output is
-    sorted by that key.
-
-    Each non-empty key is a project entry with the keys `status`, `rows`,
-    `sessions`, `agents`, `shared_files`, then the four marks of
-    `PROJECT_MARKS` (`synced`, `relayed`, `origin`, `recovered`), in that
-    order. `status` is
-    `collected` when the group matches one of `collected` (the project
-    directories the input holds), else `referenced` (named only by rows); a
-    collected project no row names is listed with zero counts. `files` maps
-    a project path to `project_files` output, looked up through
-    `project_key` (the counts of paths with one key are added); each agent
-    of a project entry gets `files` and `bytes` after `turn_types` from it
-    (0 when absent), an agent with files and no rows is listed with zero
-    counts, and `shared_files` is the project's files with agent `project`.
-    Each mark is `project_mark` of the project's sessions. After the marks
-    come `remotes` and `head`, the repository's (`files` entry, `[]` and
-    `""` when it has none, so always for a `referenced` project), and
-    `recorded_remotes`, the sorted distinct URLs of the `git remote:` rows
-    (`GIT_REMOTE_PREFIX`) among `rows`: a row of a session is counted under
-    the session's project, a row without a session under its own
-    `project_path`. The empty path's entry (`outside_projects`) has no
-    `status`, no `shared_files`, no file counts and none of the three
-    repository keys: `rows`, `sessions`, `agents`, then the same marks over
-    its sessions."""
+    Paths are grouped by `project_key` and keyed by the collected spelling,
+    else the first seen. Each entry counts rows, sessions and turn types per
+    agent and adds the file counts of `files`, the marks of `PROJECT_MARKS`
+    and the repository keys; the empty path's entry (`outside_projects`) has
+    only the counts and the marks. The keys and their order are listed in
+    `analyzer/docs/output.md` under "inventory.json".
+    """
     groups: dict[str, dict] = {}
     names: dict[str, str] = {}
 
@@ -784,10 +765,11 @@ def project_inventory(
 
 
 def recorded_remotes(rows: list[Row], sessions: list[SessionSummary]) -> dict[str, set[str]]:
-    """The URLs of the `git remote:` rows of `rows` by `project_key`: a row
-    with a session id under its session's project (the summary's
-    `project_path`, which `sessions` holds), a row without one, or of a
-    session `sessions` does not hold, under its own `project_path`."""
+    """Return the URLs of the `git remote:` rows by `project_key`.
+
+    A row with a session is counted under its session's project, any other
+    row under its own `project_path`.
+    """
     projects = {
         (session.host, session.user, session.agent, session.session_id): session.project_path
         for session in sessions
@@ -805,12 +787,13 @@ def recorded_remotes(rows: list[Row], sessions: list[SessionSummary]) -> dict[st
 
 
 def project_mark(sessions: list[SessionSummary], mark: tuple, agents: set[str]) -> str:
-    """A project's mark (`PROJECT_MARKS` row `mark`) from its `sessions`:
-    the full label ("yes", or "remote" for origin) when every session has
-    the full value, the some label ("partial", "mixed") when some have a
-    counted value, the none label ("no", "local") when none has and one of
-    the project's `agents` records the mark, "" otherwise and for a project
-    with no session."""
+    """Return a project's mark, a row of `PROJECT_MARKS`, from its sessions.
+
+    The full label ("yes", or "remote" for origin) when every session has the
+    full value, the some label ("partial", "mixed") when some count, the none
+    label ("no", "local") when none does and one of `agents` records the mark,
+    else `""`, as for a project with no session.
+    """
     attribute, full, hits, labels, mark_agents = mark
     values = [getattr(session, attribute) for session in sessions]
     if not values:
@@ -823,11 +806,11 @@ def project_mark(sessions: list[SessionSummary], mark: tuple, agents: set[str]) 
 
 
 def collected_projects(collection: Collection) -> list[str]:
-    """The project directories the input holds, as their paths on the source
-    host: collection.json `projects`, even one none of whose files were
-    collected, and the homes marked `project` (which adds the bases of rows
-    with agent `project` in a collection whose collection.json is missing),
-    each in `canonical_project_path` form, sorted and de-duplicated."""
+    """Return the project directories the input holds, as paths on the source host.
+
+    They come from collection.json `projects` and the homes marked `project`,
+    each in `canonical_project_path` form, sorted and de-duplicated.
+    """
     summary = collection.summary or {}
     listed = summary.get("projects")
     paths = {str(path) for path in (listed if isinstance(listed, list) else []) if path}
@@ -838,27 +821,15 @@ def collected_projects(collection: Collection) -> list[str]:
 def scratch_keys(
     collection: Collection, rows: list[Row], catalog: catalog_mod.Catalog | None = None
 ) -> set[str]:
-    """The `project_key` of every path inventory.json would list as a
-    project that is a scratch directory, a working directory that belongs
-    to the agent rather than to the user (issue 149); inventory.json lists
-    these under `scratch_directories` instead of `projects`. A path is one
-    when either holds:
+    """Return the `project_key` of every project path that is a scratch directory.
 
-    1. A parser says so: a `system` row whose text starts with
-       `SCRATCH_PREFIX` (`scratch directory:`) names it in its own
-       `project_path`.
-    2. The catalog says so: the path, a `project_path` of `rows` or a
-       project directory the input holds (`collected_projects`), is in
-       or under a directory that a home catalog entry (of `cat`, the
-       bundled catalog when None) names, in one of the input's homes that
-       is not a project directory and has a known path on the source host
-       (`home_scratch_key`), or it is under a directory that one agent's
-       project catalog entry names inside another directory, as an
-       agent's own worktree `<project>/.claude/worktrees/<name>` is
-       (`project_scratch_key`, issue 227).
-
-    The collector's project list only adds paths to test: a scratch
-    directory the collector collected project files from stays one."""
+    A scratch directory is a working directory that belongs to the agent
+    rather than the user; inventory.json lists it under `scratch_directories`.
+    A path is one when a parser's `scratch directory:` row names it, or when a
+    home catalog entry claims it in one of the input's homes
+    (`home_scratch_key`) or a project catalog entry claims a directory above
+    it inside a project (`project_scratch_key`).
+    """
     keys = {
         project_key(row.project_path)
         for row in rows
@@ -881,16 +852,13 @@ def scratch_keys(
 
 
 def project_scratch_key(key: str, catalog: catalog_mod.Catalog) -> bool:
-    r"""Whether `key`, a `project_key`, lies under a directory that a
-    project catalog entry of one agent names inside a project:
-    `<project>/<entry>/<more>`, with at least one segment before the entry
-    (the project) and at least one after it, so `/srv/p/.kilo/worktrees/x`
-    is under the `kilo-code` entry `.kilo` of the project `/srv/p`, while
-    `/srv/p/.kilo` itself and `/srv/p/src` are not. The entries of the
-    pseudo-agent `project` (`AGENTS.md`, `.agents`), which belong to no
-    single agent, are skipped. Unlike `home_scratch_key` this needs no
-    home path, so it applies in loose mode too. A Windows path is split on
-    backslashes and its segments are matched without regard to case."""
+    r"""Return whether a `project_key` lies under a directory a project catalog entry names.
+
+    The entry must sit inside a project: at least one segment before it and
+    one after, so `/srv/p/.kilo/worktrees/x` is claimed while `/srv/p/.kilo`
+    is not. Entries of agent `project` are skipped. A Windows path is split on
+    backslashes and matched without regard to case.
+    """
     windows = is_windows_path(key)
     flags = re.IGNORECASE if windows else 0
     parts = [part for part in key.split("\\" if windows else "/") if part]
@@ -906,13 +874,12 @@ def project_scratch_key(key: str, catalog: catalog_mod.Catalog) -> bool:
 
 
 def home_scratch_key(key: str, home: str, catalog: catalog_mod.Catalog) -> bool:
-    r"""Whether `key`, a `project_key`, lies in or under a directory that a
-    home catalog entry names in `home`, a home's path on the source host:
-    `key` must be the home or start with it and a separator, and
-    `Catalog.claims_home_path` must claim the rest. A Windows home
-    (`C:\Users\a`) is compared in `project_key` form, lower case with
-    backslashes, and its segments are matched without regard to case; any
-    other home is compared exactly."""
+    r"""Return whether a `project_key` lies in or under a directory a home entry claims.
+
+    `home` is a home's path on the source host; `Catalog.claims_home_path`
+    must claim the rest of the key. A Windows home (`C:\Users\a`) is compared
+    in `project_key` form and matched without regard to case.
+    """
     windows = is_windows_path(home)
     separator = "\\" if windows else "/"
     home_key = project_key(home)
@@ -923,12 +890,13 @@ def home_scratch_key(key: str, home: str, catalog: catalog_mod.Catalog) -> bool:
 
 
 def project_files(collection: Collection, problems: list[str] | None = None) -> dict[str, dict]:
-    """`project_agents` keyed as `collected_projects` keys its paths, with
-    the image root stripped and in `canonical_project_path` form, and summed
-    when two directories map to one path: per path `agents` (agent to
-    `files` and `bytes`), `shared_files`, and the `remotes` and `head` of
-    `gitmeta.project_git` (the first directory's that has them; a
-    repository file it cannot read is added to `problems`)."""
+    """Return `project_agents` keyed as `collected_projects` keys its paths.
+
+    Directories that map to one path are summed. Each value has `agents`
+    (`files` and `bytes`), `shared_files`, and the first `remotes` and `head`
+    of `gitmeta.project_git`; a repository file it cannot read is added to
+    `problems`.
+    """
     summary = collection.summary or {}
     git = gitmeta.project_git(collection.artifacts, problems)
     merged: dict[str, dict] = {}
@@ -949,9 +917,12 @@ def project_files(collection: Collection, problems: list[str] | None = None) -> 
 
 
 def strip_image_root(path: str, summary: dict) -> str:
-    """A collected path as the imaged host saw it: in image mode the
-    collector records `-r <root>/srv/proj`, while the transcripts on that
-    host say `/srv/proj`. Paths outside the root are returned unchanged."""
+    """Return a collected path as the imaged host saw it.
+
+    In image mode the collector records `-r <root>/srv/proj` where the
+    transcripts say `/srv/proj`. A path outside the root is returned
+    unchanged.
+    """
     root = str(summary.get("root") or "")
     if summary.get("mode") != "image" or root in ("", "/", "\\"):
         return path
@@ -962,12 +933,12 @@ def strip_image_root(path: str, summary: dict) -> str:
 
 
 def synced_homes(homes: list[dict], sessions: list[SessionSummary]) -> list[dict]:
-    """The `homes` array of inventory.json: `homes` (`home_agents`) with four
-    last keys in each agent object, `synced_sessions`, `relayed_sessions`,
-    `remote_sessions` and `recovered_sessions`, the number of the sessions
-    of that user and agent whose `synced` (issue 151) or `relayed` (issue
-    153) is "yes", whose `origin` is "remote" (issue 153), or whose
-    `recovered` is "yes" or "partial"."""
+    """Return the `homes` array of inventory.json: `home_agents` with session counts.
+
+    Each agent object ends with `synced_sessions`, `relayed_sessions`,
+    `remote_sessions` and `recovered_sessions`, the user's sessions of that
+    agent with that mark.
+    """
     synced = Counter(
         (session.user, session.agent) for session in sessions if session.synced == "yes"
     )
@@ -999,6 +970,7 @@ def synced_homes(homes: list[dict], sessions: list[SessionSummary]) -> list[dict
 
 
 def cmd_timeline(args: argparse.Namespace, collection: Collection) -> int:
+    """Write timeline.jsonl, sessions.jsonl and inventory.json, and print the summary."""
     opts = Options(include_thinking=args.include_thinking)
     row_filter: RowFilter = args.row_filter
     args.output.mkdir(parents=True, exist_ok=True)

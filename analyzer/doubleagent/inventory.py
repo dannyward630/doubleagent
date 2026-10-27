@@ -1,6 +1,8 @@
-"""Fleet inventory: read the JSON Lines a collector prints with --inventory
-(sh) or -Inventory (PowerShell), one saved stdout per host, and flatten them
-into one CSV with a per-agent rollup.
+"""Merge the collectors' inventory output into one fleet CSV.
+
+The input is the JSON Lines a collector prints with --inventory (sh) or
+-Inventory (PowerShell), one saved stdout per host; the output is one CSV row
+per host and agent, and a per-agent rollup.
 
 Record shapes, from collect-agent-artifacts.sh and Collect-AgentArtifacts.ps1
 (collector 1.6.0):
@@ -48,14 +50,19 @@ TIME_FIELDS = ("at", "first", "last")
 
 
 def input_files(paths: Iterable[Path]) -> list[Path]:
-    """Each INPUT as given, or for a directory its regular files (not
-    recursive, symlinks not followed), sorted by name. Raises OSError when an
-    input cannot be stat'ed or listed, and ValueError for a symlink or an
-    input that is neither a file nor a directory."""
+    """Return each input file, and the regular files of each input directory.
+
+    A directory is not read recursively, its files are sorted by name, and
+    symlinks are not followed.
+
+    Raises:
+        OSError: An input cannot be stat'ed or listed.
+        ValueError: An input is a symlink, or neither a file nor a directory.
+    """
     out: list[Path] = []
     for path in paths:
-        # lstat, not exists(): exists() hides the reason, and on Python 3.14
-        # also returns False for a permission error.
+        # lstat, not exists(): exists() hides the reason, and from Python
+        # 3.14 returns False for a permission error.
         mode = os.lstat(path).st_mode
         if stat.S_ISLNK(mode):
             raise ValueError("%s is a symlink; give its target" % path)
@@ -97,7 +104,7 @@ def _record(line: str) -> dict | None:
 
 
 def read_file(path: Path) -> tuple[list[list[str]], int]:
-    """Rows for one captured stdout, and the number of junk lines skipped."""
+    """Return the CSV rows of one saved stdout and the number of junk lines skipped."""
     rows: list[list[str]] = []
     junk = 0
     host: dict[str, str] | None = None
@@ -132,8 +139,11 @@ def read_file(path: Path) -> tuple[list[list[str]], int]:
 
 
 def rollup(rows: list[list[str]]) -> list[tuple[str, int, int, str]]:
-    """(agent, hosts, users, latest last) per agent. users counts distinct
-    (host, user) pairs. Sorted by hosts, then users, descending, then name."""
+    """Return (agent, hosts, users, latest `last`) per agent.
+
+    `users` counts distinct (host, user) pairs. The list is sorted by hosts,
+    then users, descending, then by agent name.
+    """
     hosts: dict[str, set] = {}
     users: dict[str, set] = {}
     latest: dict[str, str] = {}

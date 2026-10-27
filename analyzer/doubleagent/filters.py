@@ -1,52 +1,15 @@
-"""Row filters for `timeline`: a time window (`--since`, `--until`) and text
-patterns (`--match`).
+"""Filter the timeline's rows by a time window (`--since`, `--until`) and by text (`--match`).
 
-A --since or --until value is one of the forms below, after surrounding
-whitespace is trimmed; day words, units, "ago", Z and UTC may be in any
-case. Anything else is an error that lists the forms; nothing is guessed. A value without an
-explicit offset is UTC, like the timeline.
-
-Absolute times, parsed by python-dateutil's strict ISO 8601 parser
-(`dateutil.parser.isoparse`):
-  2026-10-01                      a date
-  2026-10-01T09:30                date and time; seconds are optional and
-  2026-10-01 09:30:15             may carry a fraction; a space may replace
-  2026-10-01T09:30:15.250         the T
-  2026-10-01T09:30Z               a UTC offset directly after the time:
-  2026-10-01T09:30+02:00          Z, +HH:MM, +HHMM or +HH (- for west of
-  2026-10-01T09:30-0500           UTC)
-  2026-10-01 09:30 +02:00         the same offset after one space, and the
-  2026-10-01 09:30 UTC            word UTC for Z
-  2026-10, 2026                   a month or a year
-  20261001T0930, 2026-W40-1,      the other ISO 8601 forms isoparse reads:
-  2026-274                        basic format, week dates, ordinal dates
-  1759312800                      epoch seconds; a number above 10^11 is
-                                  milliseconds
-
-Day words, in the UTC calendar:
-  today, yesterday                that day
-  now                             the current time, exactly
-
-Relative times, counted back from now with `dateutil.relativedelta`, with
-or without a space between number and unit and with or without a trailing
-"ago":
-  45m, 45min, 45 minutes          minutes (m is always minutes)
-  36h, 36 hours                   hours
-  3d, 3 days                      days
-  2w, 2 weeks                     weeks
-  6mo, 6 months                   calendar months (mo is months)
-  1y, 1 year                      calendar years
-Months and years move the calendar date and keep the time of day; a day
-that does not exist in the target month becomes that month's last day
-(31 March less 1mo is 28 February).
-
-An absolute value names a period as long as its last written unit: 2026 a
-year, 2026-10 a month, a date (and today, yesterday) a day, 09 an hour,
-09:30 a minute, 09:30:15 a second; a value with a fraction of a second is
-an instant. --since takes the period's first millisecond and --until its
-last, so `--since 2026-10-01 --until 2026-10-01` selects that day and
-`--until "2026-10-01 09:30"` keeps an event at 09:30:40. now, relative
-times and epoch numbers are instants.
+A `--since` or `--until` value is an ISO 8601 time, read by python-dateutil's
+strict parser (`dateutil.parser.isoparse`), with an offset optionally after a
+space and `UTC` for Z; epoch seconds or milliseconds; `today`, `yesterday` or
+`now`; or a time relative to now (`45m`, `36h`, `3d`, `2w`, `6mo`, `1y`, with
+an optional `ago`), months and years counted with `dateutil.relativedelta`.
+Anything else is an error that lists the forms; nothing is guessed. A value
+without an offset is UTC. A value naming a period (a year, a month, a day,
+an hour, a minute, a second) gives its first millisecond for `--since` and
+its last for `--until`. The forms and their periods are listed in
+`analyzer/docs/filtering.md` under "WHEN forms".
 
 Bounds are canonical UTC strings in the timeline's own format, so a row is
 kept by a plain string comparison: since <= timestamp_utc <= until.
@@ -100,10 +63,16 @@ class BoundError(ValueError):
 
 
 def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> str:
-    """Return the canonical UTC string for a --since (`end` False) or
-    --until (`end` True) value in one of the forms in the module docstring.
-    A value naming a whole period gives its first millisecond for --since
-    and its last for --until."""
+    """Return the canonical UTC string for a `--since` or `--until` value.
+
+    Args:
+        text: The value as given.
+        end: True for `--until`, which takes the last millisecond of a period.
+        now: The current time, for tests; by default the clock's.
+
+    Raises:
+        BoundError: The value is not one of the accepted forms.
+    """
     text_value = " ".join(text.split())
     lowered = text_value.lower()
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
@@ -173,6 +142,8 @@ def _bound(start: datetime, length, end: bool) -> str:
 
 @dataclass
 class RowFilter:
+    """The time window and patterns of `timeline`, with counts of the rows each dropped."""
+
     since: str = ""
     until: str = ""
     keep_undated: bool = False
@@ -183,9 +154,11 @@ class RowFilter:
 
     @property
     def active(self) -> bool:
+        """Whether a window or a pattern is set."""
         return bool(self.since or self.until or self.patterns)
 
     def in_window(self, row: Row) -> bool:
+        """Return whether a row is inside the window, counting it when it is not."""
         if not (self.since or self.until):
             return True
         timestamp = row.timestamp_utc
@@ -199,9 +172,12 @@ class RowFilter:
         return True
 
     def apply(self, rows: list[Row]) -> list[Row]:
-        """Rows inside the window that match a pattern. A matched tool_use
-        keeps its tool_result, and a matched result its call, by session and
-        tool_use_id, when the partner is inside the window too."""
+        """Return the rows inside the window that match a pattern.
+
+        A matched `tool_use` keeps its `tool_result`, and a matched result its
+        call, by session and `tool_use_id`, when the partner is inside the
+        window too.
+        """
         kept = [row for row in rows if self.in_window(row)]
         if not self.patterns:
             return kept

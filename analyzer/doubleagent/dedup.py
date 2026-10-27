@@ -1,106 +1,26 @@
-"""Drop rows from secondary sources that a primary store also records
-(issue 122).
+"""Drop rows from secondary sources that a primary store also records.
 
 A secondary source is a file a parser reads beside the agent's own
-transcript store and that repeats some of its events: a per-prompt history
-file, a mirror or a projection (`Parser.secondary`). Every source is parsed
-on every run; this module then keeps each event once. A secondary row is
-dropped when a primary row has
+transcript store that repeats some of its events: a per-prompt history, a
+mirror or a projection (`Parser.secondary`). Every source is parsed on every
+run; this module keeps each event once. A secondary row is dropped when a
+primary row has the same identity (host, user, agent, turn type and text, or
+the same `tool_use_id` for two tool rows that both carry one), the same scope
+(session, else project, else none) and a time within the source's tolerance
+(`Parser.secondary_tolerance`). A secondary row with no time matches on text
+and scope alone. Matching is one-to-one, timestamped rows first.
 
-- the same `host`, `user`, `agent` and `turn_type`, and the same `text`;
-  but two `tool_use` or two `tool_result` rows that both carry a
-  `tool_use_id` pair on the same `tool_use_id` instead, and never on text
-  when the ids differ, since a mirror can record a call in another form
-  than the transcript does (Codex's projection holds the parsed command,
-  the rollout the model's arguments) and a call id is unique within a
-  session; a tool row without an id pairs on text with one with an id or
-  without;
-- the same `session_id` when the secondary row has one; otherwise the same
-  `project_path` when the secondary row has one; otherwise any primary row
-  of that host, user and agent, since a text-only history records neither;
-- when the secondary row has a `timestamp_utc`, a `timestamp_utc` at most
-  the source's tolerance away (`Parser.secondary_tolerance`, by default
-  `TOLERANCE_SECONDS`), the bound included; when it has none, any time or
-  none.
+The secondary rows no primary row took are then matched against each other,
+looking under broader scopes too, so the several copies of one event that
+backups and mirrors keep are shown once. A row pairs only with a row from a
+different `source_file`, and a `parser:` row is never dropped or taken.
 
-An agent whose secondary source writes an event in another form than its
-primary store registers a match form in `MATCH_FORMS`, and its rows match
-on the `(turn_type, text)` that function returns instead of their own:
-Claude Code's `history.jsonl` keeps a slash command as typed and a paste as
-expanded text, where the transcript has a tag-form `slash command:` row
-and the prompt joined differently (`claude_code.match_form`). It can also
-register a wider window for some of its secondary rows in
-`MATCH_TOLERANCES`: a Claude Code command that opens a picker or an
-overlay is recorded in the transcript when it completes, seconds to
-minutes after its history line (`claude_code.match_tolerance`). The
-widening is forward only and against primary rows only: the row keeps
-its source's window backwards (a record is never written before its
-line was typed) and among secondary sources, and it may not take a
-primary row recorded at or after the next secondary row of the same
-text that could take that same record (for a record of a session: the
-session's rows, the session-less rows of its project and the rows with
-neither; a row of another session never counts), so an earlier history
-line whose own record is missing never claims a later line's record.
-
-Matching is one-to-one, the primary row always survives, and a secondary
-row with no match is kept, so a session whose transcript was deleted,
-excluded by size or truncated is still recovered from its history lines.
-Each secondary row kept is marked `recovered` "yes" (`Row.recovered`),
-except its `system` rows (an index header, a thread record, a snapshot,
-a `parser:` problem), which describe the source rather than an event the
-primary store lost, and `sessions.jsonl` sums the marks per session.
-The timestamped secondary rows go first, in time order, each to the
-nearest unused primary row within its tolerance; then the rows with no
-timestamp, the session-scoped ones first, then those with only a project,
-then those with neither, each group in input order, each to the
-earliest-timestamped unused candidate, the undated candidates last in
-input order. Taking the timestamped rows first keeps an undated row from
-claiming the primary row a timestamped one would pair with, and taking
-the most specific undated copy first lets it, not a text-only history
-line, take the primary row.
-
-Then the secondary rows no primary row took are matched against the
-other secondary rows, one-to-one, under the same rule (the tolerance of
-the row being tested), and a row that pairs is dropped and counted like
-the others. The candidates are every secondary row a primary row took,
-so a third copy of a primary event collapses onto the copy the primary
-row took and only the primary row is left, and every row tested before
-it: the timestamped rows in time order, then the undated rows in input
-order, so the copy kept of several is the earliest timestamped one, and
-an undated copy pairs with a timestamped one (no time constraint on the
-undated side) rather than the reverse. In this pass a row looks under its
-own scope first and then under the broader ones, its project when it has
-one and then its identity alone, so a history line with a project and no
-session meets a mirror line with a session and no project; under a
-broader scope a candidate whose session or project differs from one the
-row records is never taken. This shows once the several copies of one
-event that backups, snapshots, archives and mirrors keep, also after the
-primary store is gone. A row pairs only with a row from a different
-`source_file`, since two identical lines in one file are two events that
-file records. The primary pass looks under the row's own scope only.
-
-Why two seconds: Codex writes `history.jsonl` `ts` in whole seconds beside
-the millisecond timestamps of its rollouts; an Antigravity history line and
-the database step for the same prompt differ by under a second; Claude
-Code writes its history entry when the prompt is submitted, as the
-transcript's user record is. Known miss: a prompt an agent queued and sent
-later (Claude Code queues input typed while it works) can be minutes from
-its transcript record, and is then shown twice, the history line's time
-being when it was typed.
-
-A `system` row whose `text` starts with `parser:` (`error_rows`) is never
-dropped and never a candidate (issue 135): it describes its own
-`source_file` (that file was unreadable, not a JSON array, cut off, or held
-an unparseable line), so two such rows are never the same event, even when
-a history file and a rollout fail with the same message.
-
-Two cases the fixed window does not fit. A text-only prompt history with no
-time of its own (Muse Code's `tui-history.jsonl`) yields rows with an empty
-`timestamp_utc`, and those match on text and scope alone. A mirror that
-stamps an event later than the primary store does (a transcript captured
-at the end of a turn) gets a wider window from its parser's
-`secondary_tolerance()`. A timestamped secondary row never matches a
-primary row with no timestamp.
+An agent can register a match form (`MATCH_FORMS`) when its secondary
+source writes an event in another form than its primary store, and a wider
+forward window for some rows (`MATCH_TOLERANCES`), bounded by the next
+secondary row of the same text (`_Bounds`). Every secondary row kept that is
+not a `system` row is marked `recovered` "yes". The full rule is in
+`analyzer/docs/output.md` under "Secondary sources".
 """
 
 from __future__ import annotations
@@ -112,6 +32,9 @@ from collections.abc import Callable, Container
 from .model import Row
 from .timeutil import epoch_ms
 
+# Codex writes its history `ts` in whole seconds beside the millisecond
+# times of its rollouts, and Antigravity's history line and database step for
+# one prompt differ by under a second.
 TOLERANCE_SECONDS = 2.0
 
 # The match form per agent: a function of a row that returns the
@@ -135,8 +58,7 @@ _TOOL_TYPES = ("tool_use", "tool_result")
 
 
 class _Bucket:
-    """The candidate rows of one match key: those with a timestamp, sorted
-    by time, and those without, in input order."""
+    """The candidates of one match key: the dated ones sorted by time, the rest in input order."""
 
     __slots__ = ("dated", "undated")
 
@@ -146,7 +68,7 @@ class _Bucket:
 
 
 def _has_id(row: Row) -> bool:
-    """Whether `r` is a tool call or result with a `tool_use_id`."""
+    """Return whether a row is a tool call or result with a `tool_use_id`."""
     return row.turn_type in _TOOL_TYPES and bool(row.tool_use_id)
 
 
@@ -161,27 +83,25 @@ def _by_id(row: Row) -> tuple[str, ...]:
 
 
 def _is_parser_row(row: Row) -> bool:
-    """Whether `r` is a `parser:` row about its own `source_file`, which
-    neither pairs nor is paired with (issue 135)."""
+    """Return whether a row is a `parser:` row, which never pairs: it describes its own file."""
     return row.turn_type == "system" and row.text.startswith("parser:")
 
 
 def _scope_rank(row: Row) -> int:
-    """0 for a row with a `session_id`, 1 for one with only a
-    `project_path`, 2 for one with neither."""
+    """Return 0 for a row with a `session_id`, 1 for one with only a project, else 2."""
     if row.session_id:
         return 0
     return 1 if row.project_path else 2
 
 
 def _lookups(row: Row, broaden: bool) -> list[tuple[tuple, bool, bool]]:
-    """The keys secondary row `r` looks under, in order, each with whether
-    it is a broader scope than the row's own and whether only candidates
-    without a `tool_use_id` may be taken there. A row with an id looks
-    under its id, then under its text for candidates with no id; any
-    other row under its text. The scope is the row's own (session, else
-    project, else none) and, with `broaden`, then its project when it has
-    one and its identity alone."""
+    """Return the keys a secondary row looks under, in order.
+
+    Each key comes with whether it is a broader scope than the row's own and
+    whether only candidates without a `tool_use_id` may be taken there. A row
+    with an id looks under its id, then its text; the scope is the row's own
+    and, with `broaden`, then its project and its identity alone.
+    """
     scopes: list[tuple] = []
     if row.session_id:
         scopes.append(("session", row.session_id))
@@ -201,9 +121,7 @@ def _lookups(row: Row, broaden: bool) -> list[tuple[tuple, bool, bool]]:
 
 
 def _add(buckets: dict[tuple, _Bucket], row: Row, index: int, time_ms: int | None) -> None:
-    """File candidate `r`, row index `i`, under its text and, with a
-    `tool_use_id`, its id, each under its session, its project and alone,
-    keeping each bucket's timestamps sorted."""
+    """File a candidate row under its text and id keys at every scope, keeping times sorted."""
     identities = [_by_text(row), _by_id(row)] if _has_id(row) else [_by_text(row)]
     for identity in identities:
         for scope in (("session", row.session_id), ("project", row.project_path), ("any",)):
@@ -222,12 +140,11 @@ def _nearest(
     used: Container[int],
     upper: _Upper | None = None,
 ) -> int | None:
-    """The index of the unused row in `dated` nearest to `ms`, no more
-    than `back_ms` before it or `forward_ms` after it, the earlier one on
-    a tie, and, when `upper` is given, before the epoch ms it returns for
-    that candidate's index (None for no bound); None when there is none.
-    The bound is the candidate's own (`_Bounds.upper`), so the scan runs
-    to the end of the window rather than stopping at one time."""
+    """Return the index of the unused candidate nearest in time, or None.
+
+    The candidate is at most `back_ms` before `time_ms` or `forward_ms` after
+    it, the earlier on a tie, and before the bound `upper` returns for it.
+    """
     best: tuple[int, int] | None = None
     position = bisect_left(dated, (time_ms - back_ms, -1))
     while position < len(dated) and dated[position][0] <= time_ms + forward_ms:
@@ -245,8 +162,7 @@ def _nearest(
 
 
 def _earliest(bucket: _Bucket, used: Container[int]) -> int | None:
-    """The index of the earliest-timestamped unused row in `bucket`, the
-    undated ones last in input order; None when every one is used."""
+    """Return the earliest unused candidate, the undated ones last, or None."""
     for _, index in bucket.dated:
         if index not in used:
             return index
@@ -264,10 +180,7 @@ def _pair(
     upper: _Upper | None = None,
     forward: float | None = None,
 ) -> int | None:
-    """The candidate in `bucket` not in `used` that secondary row `r` pairs
-    with under the time rule (`tolerance` either way, or `forward` after
-    `r` when given), before the candidate's bound from `upper` when one
-    is given, or None."""
+    """Return the unused candidate in `bucket` a secondary row pairs with under the time rule."""
     if bucket is None:
         return None
     time_ms = epoch_ms(row.timestamp_utc)
@@ -279,10 +192,11 @@ def _pair(
 
 
 def _processing_order(secondary: list[tuple[Row, float]], by_scope: bool) -> list[int]:
-    """The secondary row indices in the order the rule tests them: the
-    timestamped rows in time order, then the undated rows in input order,
-    with `by_scope` grouped session-scoped, project-scoped, unscoped.
-    `parser:` rows are left out, so they are never dropped."""
+    """Return the secondary row indices in the order the rule tests them.
+
+    Timestamped rows go in time order, then undated rows in input order,
+    grouped by scope with `by_scope`. `parser:` rows are left out.
+    """
     stamped = []
     undated = []
     for index, (row, _) in enumerate(secondary):
@@ -299,12 +213,12 @@ def _processing_order(secondary: list[tuple[Row, float]], by_scope: bool) -> lis
 
 
 class _Unavailable:
-    """The candidate rows row `r` may not pair with: those already taken;
-    with `same_file`, those from its own `source_file`, which records them
-    as separate events; under a key marked id-less, those with a
-    `tool_use_id`, a call of their own; and under a broader scope than
-    the row's own, those whose session or project differs from one `r`
-    records."""
+    """The candidates a row may not pair with.
+
+    Those are the candidates already taken; with `same_file`, those from its
+    own file; under an id-less key, those with a `tool_use_id`; and under a
+    broader scope, those whose session or project differs from the row's.
+    """
 
     def __init__(self, rows: list[Row], used: set[int], row: Row, same_file: bool) -> None:
         self.rows = rows
@@ -344,9 +258,7 @@ def _find(
     upper: _Upper | None = None,
     forward: float | None = None,
 ) -> int | None:
-    """The candidate row `r` pairs with, trying its lookups in order,
-    before each candidate's bound from `upper` and within `forward`
-    seconds after `r` when given."""
+    """Return the candidate a row pairs with, trying its lookups in order, or None."""
     for key, broad, idless in _lookups(row, broaden):
         unavailable.broad, unavailable.idless = broad, idless
         index = _pair(buckets.get(key), row, tolerance, unavailable, upper, forward)
@@ -356,8 +268,7 @@ def _find(
 
 
 def _scope(row: Row) -> tuple:
-    """The scope a row matches under: its session, else its project, else
-    none (the first of `_lookups`)."""
+    """Return the scope a row matches under: its session, else its project, else none."""
     if row.session_id:
         return ("session", row.session_id)
     if row.project_path:
@@ -366,19 +277,14 @@ def _scope(row: Row) -> tuple:
 
 
 class _Bounds:
-    """The times of the secondary rows by match text and scope, for the
-    next-line bound of a widened row (`upper`): a widened row may not take
-    a primary row recorded at or after the next strictly later secondary
-    row of the same text that could take that same primary row, so the
-    later line keeps the later record. Which rows could take it depends on
-    the candidate: a primary row of a session can be taken by that
-    session's rows, by its project's rows with no session and by the rows
-    with neither; one of a project with no session by the project's
-    session-less rows and the rows with neither; one with neither by the
-    rows with neither. A row of a different session never counts, and a
-    copy at the same time (the same line in two history files) does not
-    bound. Built only when some row is widened; each index is sorted once
-    and searched by bisection."""
+    """The times of the secondary rows by match text and scope.
+
+    A widened row may not take a primary row recorded at or after the next
+    later secondary row of the same text that could take that same primary
+    row, so the later line keeps the later record. Who could take it follows
+    the candidate's scope; a row of another session never counts, and a copy
+    at the same time does not bound.
+    """
 
     __slots__ = ("by_none", "by_project_free", "by_session")
 
@@ -402,9 +308,7 @@ class _Bounds:
                 times.sort()
 
     def upper(self, text: tuple, time_ms: int, candidate: Row) -> int | None:
-        """The bound for a widened row of match `text` at `ms` against
-        `candidate`, a primary row: the next time after `ms` among the
-        secondary rows that could take `candidate`, or None."""
+        """Return the next time after `time_ms` of a row that could take `candidate`, or None."""
         lists = [self.by_none.get(text)]
         if candidate.session_id:
             lists.append(self.by_session.get((text, candidate.session_id)))
@@ -421,8 +325,7 @@ class _Bounds:
 
 
 def _candidate_bound(bounds: _Bounds, primary: list[Row], row: Row) -> _Upper | None:
-    """The bound function for widened secondary row `r` over the rows of
-    `primary`, by candidate index; None when `r` has no timestamp."""
+    """Return the bound function of a widened row by candidate index, or None when undated."""
     time_ms = epoch_ms(row.timestamp_utc)
     if time_ms is None:
         return None
@@ -436,10 +339,11 @@ def _against_primary(
     bounds: _Bounds | None = None,
     forward: dict[int, float] | None = None,
 ) -> list[int]:
-    """The indices of the secondary rows that pair with a primary row,
-    each looking only under its own scope, and for a row in `forward` up
-    to that many seconds after it instead of its tolerance, taking no
-    candidate at or after the bound `bounds` gives for it."""
+    """Return the indices of the secondary rows that pair with a primary row.
+
+    Each row looks only under its own scope; a row in `forward` looks up to
+    that many seconds after it, before the bound `bounds` gives.
+    """
     buckets: dict[tuple, _Bucket] = {}
     for index, row in enumerate(primary):
         if not _is_parser_row(row):
@@ -460,10 +364,11 @@ def _against_primary(
 
 
 def _among_secondary(secondary: list[tuple[Row, float]], matched: set[int]) -> list[int]:
-    """The indices of the secondary rows, of those no primary row took, that
-    pair with another secondary row from a different `source_file`: one a
-    primary row took, or one tested before it. Each candidate is taken
-    once; a row looks under its own scope, then the broader ones."""
+    """Return the indices of the untaken secondary rows that pair with another secondary row.
+
+    A candidate is a row a primary row took or one tested before, from another
+    file; each is taken once, and a row also looks under broader scopes.
+    """
     rows = [row for row, _ in secondary]
     buckets: dict[tuple, _Bucket] = {}
     for index in sorted(matched):
@@ -483,9 +388,7 @@ def _among_secondary(secondary: list[tuple[Row, float]], matched: set[int]) -> l
 
 
 def _forward_windows(secondary: list[tuple[Row, float]]) -> dict[int, float]:
-    """The secondary rows whose agent's `MATCH_TOLERANCES` function gives a
-    window wider than their own, with that window: how far after the row a
-    primary row may be and still match."""
+    """Return the secondary rows whose agent's `MATCH_TOLERANCES` gives a wider window, with it."""
     windows: dict[int, float] = {}
     for index, (row, tolerance) in enumerate(secondary):
         window = MATCH_TOLERANCES.get(row.agent)
@@ -498,18 +401,13 @@ def _forward_windows(secondary: list[tuple[Row, float]]) -> dict[int, float]:
 def deduplicate(
     primary: list[Row], secondary: list[tuple[Row, float]]
 ) -> tuple[list[Row], Counter[str]]:
-    """The rows to keep (every primary row, then the secondary rows with no
-    primary match and no copy kept before them, in the order given) and
-    the dropped rows per agent. Each secondary row comes with its
-    tolerance in seconds. Every secondary row kept gets `recovered` "yes",
-    since no primary row holds its event, except a `system` row, which
-    describes the source itself (a header, a record, a `parser:` problem)
-    rather than a lost event; this is where the field is set. A row whose
-    agent registered a `MATCH_TOLERANCES` function may pair with a primary
-    row up to that function's window after it (its source's window still
-    bounds the search backwards and among secondary rows), and not with a
-    primary row recorded at or after the next secondary row of the same
-    text that could take that primary row (`_Bounds`)."""
+    """Return the rows to keep and the number of rows dropped per agent.
+
+    The rows kept are every primary row, then the secondary rows with no
+    match, in the order given; each secondary row comes with its tolerance in
+    seconds. A secondary row kept that is not a `system` row gets `recovered`
+    "yes" here.
+    """
     forward = _forward_windows(secondary)
     bounds = _Bounds(secondary) if forward else None
     matched = set(_against_primary(primary, secondary, bounds, forward))

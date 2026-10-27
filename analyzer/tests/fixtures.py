@@ -7309,7 +7309,7 @@ def zed_unknown_variants_record():
 VSCODE_SESSION = "9ab0c1d2-0000-4000-8000-00000000c0de"
 VSCODE_LEGACY_SESSION = "9ab0c1d2-0000-4000-8000-0000000001d0"
 VSCODE_T0 = 1791025200000  # 3 October 11:00:00 UTC, ms
-VSCODE_WS = ".config/Code/User/workspaceStorage/abc123"
+VSCODE_WORKSPACE = ".config/Code/User/workspaceStorage/abc123"
 
 
 def vscode_log_records(cwd="/srv/proj"):
@@ -7478,7 +7478,7 @@ def vscode_legacy_session(cwd="/srv/proj"):
 
 
 def build_vscode(home: Path) -> None:
-    workspace = home / VSCODE_WS
+    workspace = home / VSCODE_WORKSPACE
     _jsonl(workspace / "chatSessions" / (VSCODE_SESSION + ".jsonl"), vscode_log_records())
     (workspace / "workspace.json").write_text(
         json.dumps({"folder": "file:///srv/proj"}), encoding="utf-8"
@@ -7499,9 +7499,9 @@ def build_vscode(home: Path) -> None:
 # source-derived from microsoft/vscode at 4d22f4f
 # (research/vscode.md, Standing permission grants and Chat editing
 # sessions). The ids, labels and the login are invented.
-VSCODE_WS_STATE_REL = VSCODE_WS + "/state.vscdb"
+VSCODE_WORKSPACE_STATE_REL = VSCODE_WORKSPACE + "/state.vscdb"
 VSCODE_PROFILE_SETTINGS_REL = ".config/Code/User/profiles/-5f3a1b2c/settings.json"
-VSCODE_EDITING_REL = VSCODE_WS + "/chatEditingSessions/%s/state.json" % VSCODE_SESSION
+VSCODE_EDITING_REL = VSCODE_WORKSPACE + "/chatEditingSessions/%s/state.json" % VSCODE_SESSION
 VSCODE_GRANTS_MTIME = 1791025300  # 3 October 11:01:40 UTC
 
 
@@ -7535,7 +7535,7 @@ def vscode_editing_state(cwd="/srv/proj"):
 
 def build_vscode_grants(home: Path) -> None:
     _vscdb(
-        home / VSCODE_WS_STATE_REL,
+        home / VSCODE_WORKSPACE_STATE_REL,
         {
             "chat/autoconfirm": {
                 "run_in_terminal": True,
@@ -7584,11 +7584,11 @@ def build_vscode_grants(home: Path) -> None:
         encoding="utf-8",
     )
     _json(home / VSCODE_EDITING_REL, vscode_editing_state())
-    contents = home / VSCODE_WS / "chatEditingSessions" / VSCODE_SESSION / "contents"
+    contents = home / VSCODE_WORKSPACE / "chatEditingSessions" / VSCODE_SESSION / "contents"
     contents.mkdir(parents=True, exist_ok=True)
     (contents / "aaaaaaa").write_text("print('a')\n", encoding="utf-8")
     for rel in (
-        VSCODE_WS_STATE_REL,
+        VSCODE_WORKSPACE_STATE_REL,
         VSCODE_STATE_REL,
         VSCODE_PROFILE_SETTINGS_REL,
         VSCODE_EDITING_REL,
@@ -7648,14 +7648,14 @@ def build_vscode_sync(home: Path) -> None:
 # from the store's rule, not seen on an install. The chat's real project
 # is its `workingDirectory`. The second workspace is a user's multi-root
 # workspace file and a session that records no `workingDirectory`.
-VSCODE_AGENTS_WS = ".config/Code/User/workspaceStorage/a9e47500"
+VSCODE_AGENTS_WORKSPACE = ".config/Code/User/workspaceStorage/a9e47500"
 VSCODE_AGENTS_CWD = "/srv/agentproj"
-VSCODE_MULTIROOT_WS = ".config/Code/User/workspaceStorage/b0071000"
+VSCODE_MULTIROOT_WORKSPACE = ".config/Code/User/workspaceStorage/b0071000"
 VSCODE_MULTIROOT_FILE = "/srv/team/team.code-workspace"
 
 
 def build_vscode_agents_window(home: Path) -> None:
-    workspace = home / VSCODE_AGENTS_WS
+    workspace = home / VSCODE_AGENTS_WORKSPACE
     _jsonl(
         workspace / "chatSessions" / (VSCODE_SESSION + ".jsonl"),
         vscode_log_records(cwd=VSCODE_AGENTS_CWD),
@@ -7663,7 +7663,7 @@ def build_vscode_agents_window(home: Path) -> None:
     agents_file = home / ".config/Code/User/agent-sessions.code-workspace"
     _json(agents_file, {"folders": []})
     _json(workspace / "workspace.json", {"workspace": agents_file.as_uri()})
-    multi = home / VSCODE_MULTIROOT_WS
+    multi = home / VSCODE_MULTIROOT_WORKSPACE
     session = vscode_legacy_session()
     del session["workingDirectory"]
     _json(multi / "chatSessions" / (VSCODE_LEGACY_SESSION + ".json"), session)
@@ -9964,14 +9964,16 @@ def build_roo_code(home: Path) -> None:
     _json(mock / "secrets.json", {"roo_cline_config_api_config": '{"apiKey":"sk-not-real"}'})
     _json(mock / "global-state.json", roo_global_state())
     _json(
-        home / ROO_WS_STATE_REL,
+        home / ROO_WORKSPACE_STATE_REL,
         {"someWorkspaceKey": 1, ROO_RETRY_QUEUE: roo_retry_queue()},
     )
     _json(global_storage / "settings/mcp_settings.json", roo_mcp_settings())
     # A project's MCP file; in a project home its rows carry the project.
     _json(home / ".roo/mcp.json", roo_mcp_settings())
     _vscdb(home / ROO_VSCDB_REL, {ROO_EXTENSION_KEY: roo_global_state()})
-    _vscdb(home / ROO_WS_VSCDB_REL, {ROO_EXTENSION_KEY: {ROO_RETRY_QUEUE: roo_retry_queue()}})
+    _vscdb(
+        home / ROO_WORKSPACE_VSCDB_REL, {ROO_EXTENSION_KEY: {ROO_RETRY_QUEUE: roo_retry_queue()}}
+    )
 
 
 # Roo Code's global state (research/roo-code.md, Permission rows), as the
@@ -9981,8 +9983,8 @@ def build_roo_code(home: Path) -> None:
 # queue in the workspace state.
 ROO_EXTENSION_KEY = "RooVeterinaryInc.roo-cline"
 ROO_VSCDB_REL = ".config/Code - OSS/User/globalStorage/state.vscdb"
-ROO_WS_VSCDB_REL = ".config/Code - OSS/User/workspaceStorage/r00c0de/state.vscdb"
-ROO_WS_STATE_REL = ".vscode-mock/workspace-storage/5f3a2c1d/workspace-state.json"
+ROO_WORKSPACE_VSCDB_REL = ".config/Code - OSS/User/workspaceStorage/r00c0de/state.vscdb"
+ROO_WORKSPACE_STATE_REL = ".vscode-mock/workspace-storage/5f3a2c1d/workspace-state.json"
 ROO_RETRY_QUEUE = "roo.retryQueue"
 ROO_CLOUD_TOKEN = "eyJ-not-a-real-session-token"
 
@@ -13989,8 +13991,8 @@ def build_openclaw(home: Path) -> None:
 
 # -- nanobot (HKUDS/nanobot at acdae3d) ------------------------------------------
 NANOBOT_KEY = "telegram:123456789"
-NANOBOT_WS = "0123456789abcdef0123456789abcdef"
-NANOBOT_REL = ".nanobot/sessions/%s/dGVsZWdyYW06MTIzNDU2Nzg5.jsonl" % NANOBOT_WS
+NANOBOT_WORKSPACE = "0123456789abcdef0123456789abcdef"
+NANOBOT_REL = ".nanobot/sessions/%s/dGVsZWdyYW06MTIzNDU2Nzg5.jsonl" % NANOBOT_WORKSPACE
 NANOBOT_LEGACY_REL = ".nanobot/sessions/cli_direct.jsonl"
 NANOBOT_HISTORY_REL = ".nanobot/workspace/memory/history.jsonl"
 
@@ -14108,10 +14110,10 @@ def build_nanobot(home: Path) -> None:
 # triggers/local_runner.py:212-214, webui/session_list_index.py:198-205 and
 # 416-497. Source-derived; no real install.
 NANOBOT_TOKEN = "sk-not-real"
-NANOBOT_UNIFIED_REL = ".nanobot/sessions/%s/dW5pZmllZDpkZWZhdWx0.jsonl" % NANOBOT_WS
+NANOBOT_UNIFIED_REL = ".nanobot/sessions/%s/dW5pZmllZDpkZWZhdWx0.jsonl" % NANOBOT_WORKSPACE
 NANOBOT_PAIRING_REL = ".nanobot/pairing.json"
 NANOBOT_CONFIG_REL = ".nanobot/config.json"
-NANOBOT_SIDEBAR_REL = ".nanobot/sessions/%s/.webui_session_index.json" % NANOBOT_WS
+NANOBOT_SIDEBAR_REL = ".nanobot/sessions/%s/.webui_session_index.json" % NANOBOT_WORKSPACE
 NANOBOT_CRON_RUN_REL = ".nanobot/workspace/cron/runs/job1_1791187200000_ab12cd34.json"
 NANOBOT_TRIGGER_RUN_REL = ".nanobot/workspace/triggers/runs/d-1.json"
 NANOBOT_RUN_KEY = "slack:C42"
@@ -14301,7 +14303,7 @@ def build_nanobot_sweep(home: Path) -> None:
 # at UTC+2: the session file's local times read two hours later than the
 # WebUI's true-UTC created_at_ms.
 NANOBOT_WEBUI_KEY = "websocket:chat-1"
-NANOBOT_WEBUI_SESSION_REL = ".nanobot/sessions/%s/d2Vic29ja2V0OmNoYXQtMQ.jsonl" % NANOBOT_WS
+NANOBOT_WEBUI_SESSION_REL = ".nanobot/sessions/%s/d2Vic29ja2V0OmNoYXQtMQ.jsonl" % NANOBOT_WORKSPACE
 NANOBOT_WEBUI_REL = ".nanobot/webui/websocket_chat-1.jsonl"
 NANOBOT_WEBUI_SEGMENT_REL = ".nanobot/webui/websocket_chat-1.segments/000001.jsonl"
 NANOBOT_CLI_HISTORY_REL = ".nanobot/history/cli_history"
@@ -14470,12 +14472,14 @@ def build_nanobot_webui(home: Path) -> None:
 # database) and a jsonl-backup/ copy of the older workspace file of the
 # heartbeat session, whose first turn a /new later removed from the
 # database.
-NANOBOT_DATABASE_WS = "fedcba9876543210fedcba9876543210"
-NANOBOT_DATABASE_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_WORKSPACE = "fedcba9876543210fedcba9876543210"
+NANOBOT_DATABASE_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DATABASE_WORKSPACE
 NANOBOT_DATABASE_KEY = "discord:555"
-NANOBOT_DATABASE_FROZEN_REL = ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_FROZEN_REL = (
+    ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DATABASE_WORKSPACE
+)
 NANOBOT_DATABASE_BACKUP_REL = (
-    ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DATABASE_WS
+    ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DATABASE_WORKSPACE
 )
 NANOBOT_DATABASE_SCHEMA = """
 CREATE TABLE storage_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -15181,10 +15185,10 @@ TWINNY_415_CONVERSATION = "7d1c2b3a-1111-4000-8000-000000000004"
 TWINNY_415_CHANGE = "5f0e9d8c-2222-4000-8000-000000000001"
 TWINNY_415_USER = ".config/Code/User"
 TWINNY_415_REL = TWINNY_415_USER + "/globalStorage/state.vscdb"
-TWINNY_415_WS = TWINNY_415_USER + "/workspaceStorage/ws1"
-TWINNY_415_WORKSPACE_DATABASE_REL = TWINNY_415_WS + "/state.vscdb"
+TWINNY_415_WORKSPACE = TWINNY_415_USER + "/workspaceStorage/ws1"
+TWINNY_415_WORKSPACE_DATABASE_REL = TWINNY_415_WORKSPACE + "/state.vscdb"
 TWINNY_415_CHANGES_REL = (
-    TWINNY_415_WS + "/rjmacarthy.twinny/agent-changes/%s.json" % TWINNY_415_CHANGE
+    TWINNY_415_WORKSPACE + "/rjmacarthy.twinny/agent-changes/%s.json" % TWINNY_415_CHANGE
 )
 TWINNY_415_LOG_DIR = ".config/Code/logs/20261003T120000/window1/exthost/rjmacarthy.twinny"
 TWINNY_415_LOG_REL = TWINNY_415_LOG_DIR + "/Twinny.log"
@@ -15324,7 +15328,7 @@ def build_twinny_415(home: Path) -> None:
     changes = home / TWINNY_415_CHANGES_REL
     changes.parent.mkdir(parents=True, exist_ok=True)
     changes.write_text(json.dumps(twinny_415_change_record()), encoding="utf-8")
-    (home / TWINNY_415_WS / "workspace.json").write_text(
+    (home / TWINNY_415_WORKSPACE / "workspace.json").write_text(
         '{"folder":"file:///srv/proj"}\n', encoding="utf-8"
     )
     log = home / TWINNY_415_LOG_REL

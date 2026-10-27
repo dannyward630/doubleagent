@@ -42,6 +42,13 @@ Work is split by model to keep Fable for the parts that need it.
   shared-file edits append-only, and send one more Opus subagent to merge
   the branches and resolve the overlaps (registries, fixtures, test
   classes, README tables).
+- **Opus reads it cold.** Before the pull request opens, one Opus subagent
+  with nothing from the session reviews the committed diff from a bare
+  prompt: read AGENTS.md, read every changed file whole, run the tests, ask
+  whether the hunks agree with each other, label each finding substantive
+  or wording. A substantive finding is fixed and the round repeated until
+  one finds only wording. Copilot's review on the pull request is the
+  second cold reader, never the first.
 - **Fable reviews.** The main session checks each diff against the brief
   and the research documents, runs the tests itself, fixes or sends back
   what is wrong, then commits, pushes and opens the pull request; the user

@@ -373,8 +373,8 @@ def _json_object(raw: object, rowid: int, label: str, errors: list) -> dict | No
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
     try:
         value = json.loads(text)
-    except ValueError as e:
-        errors.append((rowid, "%s (%s)" % (label, e), text))
+    except ValueError as error:
+        errors.append((rowid, "%s (%s)" % (label, error), text))
         return None
     if not isinstance(value, dict):
         errors.append((rowid, "%s (not a JSON object)" % label, text))
@@ -400,11 +400,11 @@ def relay_texts(session_id: str, last_channel: object) -> list[str]:
     return texts
 
 
-def _first_key(d: dict, names: tuple[str, ...]) -> tuple[str, object] | None:
+def _first_key(mapping: dict, names: tuple[str, ...]) -> tuple[str, object] | None:
     """(name, value) of the first of `names` that `d` holds, else None."""
     for name in names:
-        if name in d:
-            return name, d[name]
+        if name in mapping:
+            return name, mapping[name]
     return None
 
 
@@ -412,10 +412,10 @@ def _has_switch(records: list[tuple[int, dict]]) -> bool:
     """True when a session records a `/model` switch: a `_command` assistant
     message whose text starts `Switched model preset to`."""
     return any(
-        rec.get("role") == "assistant"
-        and rec.get("_command")
-        and SWITCH_RX.match(text_of(rec.get("content")))
-        for _, rec in records
+        record.get("role") == "assistant"
+        and record.get("_command")
+        and SWITCH_RX.match(text_of(record.get("content")))
+        for _, record in records
     )
 
 
@@ -443,8 +443,8 @@ class NanobotParser(Parser):
         """True for a cron or trigger run record; the bare `cron/runs/` form
         only at the root of a project base, where the project catalog put
         it."""
-        m = RUN_RX.match(artifact.rel)
-        if m is None:
+        match = RUN_RX.match(artifact.rel)
+        if match is None:
             return False
         return artifact.rel.startswith(".nanobot") or artifact.home.project
 
@@ -465,10 +465,10 @@ class NanobotParser(Parser):
         file (the file's own directory, or its parent for a
         `.migration-conflicts/` or `jsonl-backup/` copy); None for a legacy
         global file or any other path."""
-        m = SESSION_RX.match(artifact.rel)
-        if not m or not m.group("ws"):
+        match = SESSION_RX.match(artifact.rel)
+        if not match or not match.group("ws"):
             return None
-        return artifact.disk_path.parent.parent if m.group("sub") else artifact.disk_path.parent
+        return artifact.disk_path.parent.parent if match.group("sub") else artifact.disk_path.parent
 
     @classmethod
     def _frozen(cls, artifact: Artifact) -> bool:
@@ -476,12 +476,12 @@ class NanobotParser(Parser):
         imported: a `<stem>.jsonl` of the namespace or a `jsonl-backup/`
         copy, when the database is beside it. A `.migration-conflicts/`
         copy and a legacy global file were never imported."""
-        m = SESSION_RX.match(artifact.rel)
+        match = SESSION_RX.match(artifact.rel)
         namespace = cls._namespace(artifact)
-        if m is None or namespace is None or m.group("sub") == ".migration-conflicts/":
+        if match is None or namespace is None or match.group("sub") == ".migration-conflicts/":
             return False
-        db = namespace / DB_NAME
-        return not db.is_symlink() and db.is_file()
+        database = namespace / DB_NAME
+        return not database.is_symlink() and database.is_file()
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         if WEBUI_RX.match(artifact.rel) or self._is_run(artifact):
@@ -509,15 +509,15 @@ class NanobotParser(Parser):
             yield from self._parse_history(artifact, opts)
 
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = SESSION_RX.match(artifact.rel)
-        assert m is not None  # parse() routes only matching paths here
+        match = SESSION_RX.match(artifact.rel)
+        assert match is not None  # parse() routes only matching paths here
         namespace = self._namespace(artifact)
         project = _read_marker(namespace / ".workspace") if namespace else ""
         errors: list = []
         session_id = yield from self._session_rows(
             artifact,
             opts,
-            decode_stem(m.group("stem")),
+            decode_stem(match.group("stem")),
             project,
             iter_jsonl(artifact.disk_path, errors),
         )
@@ -536,7 +536,7 @@ class NanobotParser(Parser):
         them and as `_parse_db` rebuilds them from `sessions.sqlite3`.
         Returns the session id, the metadata `key` when there is one."""
         model = ""
-        last_ts = ""
+        last_timestamp = ""
         models: dict = {}
         records = list(records)
         # With a `/model` switch in the session, the metadata's preset is the
@@ -546,118 +546,122 @@ class NanobotParser(Parser):
         preset = ""  # the preset the last switch set, "" before any
         requested = ""  # the preset name of the last `/model <name>`
 
-        def row(
-            n: int, turn_type: str, text: str, tool_name: str = "", tool_use_id: str = ""
+        def make_row(
+            source_line: int, turn_type: str, text: str, tool_name: str = "", tool_use_id: str = ""
         ) -> Row:
-            r = self.base_row(artifact)
-            r.source_line = n
-            r.session_id = session_id
-            r.project_path = project
-            r.timestamp_utc = last_ts
-            r.model = model
-            r.turn_type = turn_type
-            r.tool_name = tool_name
-            r.tool_use_id = tool_use_id
-            r.text = compact(text)
-            return r
+            row = self.base_row(artifact)
+            row.source_line = source_line
+            row.session_id = session_id
+            row.project_path = project
+            row.timestamp_utc = last_timestamp
+            row.model = model
+            row.turn_type = turn_type
+            row.tool_name = tool_name
+            row.tool_use_id = tool_use_id
+            row.text = compact(text)
+            return row
 
-        for n, rec in records:
-            rtype = rec.get("_type")
-            if rtype == "metadata":
-                if rec.get("key"):
-                    session_id = str(rec["key"])
-                meta = rec.get("metadata")
+        for line_number, record in records:
+            record_type = record.get("_type")
+            if record_type == "metadata":
+                if record.get("key"):
+                    session_id = str(record["key"])
+                meta = record.get("metadata")
                 if not isinstance(meta, dict):
                     meta = {}
                 model = "" if switched else str(meta.get("_nanobot_model_preset") or "")
-                last_ts = to_utc(rec.get("created_at")) or to_utc(rec.get("updated_at"))
-                yield row(
-                    n,
+                last_timestamp = to_utc(record.get("created_at")) or to_utc(
+                    record.get("updated_at")
+                )
+                yield make_row(
+                    line_number,
                     "system",
                     " ".join(
-                        x
-                        for x in (
+                        part
+                        for part in (
                             "session start: key=%s" % session_id,
                             "last_channel=%s" % meta["last_channel"]
                             if meta.get("last_channel")
                             else "",
-                            "updated_at=%s" % rec["updated_at"] if rec.get("updated_at") else "",
+                            "updated_at=%s" % record["updated_at"]
+                            if record.get("updated_at")
+                            else "",
                             "workspace=%s" % project if project else "",
                         )
-                        if x
+                        if part
                     ),
                 )
                 for text in relay_texts(session_id, meta.get("last_channel")):
-                    yield row(n, "system", text)
+                    yield make_row(line_number, "system", text)
                 text = track_change("model", models, session_id, model)
                 if text:
-                    yield row(n, "system", text + " (preset)")
+                    yield make_row(line_number, "system", text + " (preset)")
                 scope = meta.get("workspace_scope")
                 if isinstance(scope, dict) and (
                     scope.get("access_mode") or scope.get("project_path")
                 ):
-                    yield row(
-                        n,
+                    yield make_row(
+                        line_number,
                         "system",
                         "permission mode: access_mode=%s project=%s"
                         " (from session metadata workspace_scope)"
                         % (scope.get("access_mode") or "", scope.get("project_path") or ""),
                     )
                 continue
-            if rtype is not None and "role" not in rec:
+            if record_type is not None and "role" not in record:
                 continue  # provider_state and future record types
-            last_ts = to_utc(rec.get("timestamp")) or last_ts
-            role = rec.get("role")
-            text = text_of(rec.get("content"))
+            last_timestamp = to_utc(record.get("timestamp")) or last_timestamp
+            role = record.get("role")
+            text = text_of(record.get("content"))
             if role == "user":
-                if rec.get("_hidden_history"):
-                    yield row(n, "system", "summarised history: " + text)
+                if record.get("_hidden_history"):
+                    yield make_row(line_number, "system", "summarised history: " + text)
                 else:
-                    if rec.get("_command"):
-                        m = MODEL_COMMAND_RX.match(text)
-                        requested = m.group(1) if m else requested
-                    yield row(n, "user", text)
+                    if record.get("_command"):
+                        match = MODEL_COMMAND_RX.match(text)
+                        requested = match.group(1) if match else requested
+                    yield make_row(line_number, "user", text)
             elif role == "assistant":
-                reasoning = rec.get("reasoning_content")
+                reasoning = record.get("reasoning_content")
                 if opts.include_thinking and isinstance(reasoning, str) and reasoning:
-                    yield row(n, "thinking", reasoning)
+                    yield make_row(line_number, "thinking", reasoning)
                 if text:
-                    yield row(n, "assistant", text)
-                m = SWITCH_RX.match(text) if rec.get("_command") else None
-                if m:
+                    yield make_row(line_number, "assistant", text)
+                match = SWITCH_RX.match(text) if record.get("_command") else None
+                if match:
                     resolved = RESOLVED_RX.search(text)
                     switch = "model: %s%s (preset)%s%s" % (
                         preset + " -> " if preset else "",
-                        m.group(1),
+                        match.group(1),
                         " requested=%s" % requested if requested else "",
                         " resolved=%s" % resolved.group(1) if resolved else "",
                     )
-                    preset = model = m.group(1)
+                    preset = model = match.group(1)
                     requested = ""
-                    yield row(n, "system", switch)
-                for tc in rec.get("tool_calls") or []:
-                    if not isinstance(tc, dict):
+                    yield make_row(line_number, "system", switch)
+                for tool_call in record.get("tool_calls") or []:
+                    if not isinstance(tool_call, dict):
                         continue
-                    fn = tc.get("function")
-                    if not isinstance(fn, dict):
-                        fn = {}
-                    yield row(
-                        n,
+                    function = tool_call.get("function")
+                    if not isinstance(function, dict):
+                        function = {}
+                    yield make_row(
+                        line_number,
                         "tool_use",
-                        tool_args_text(fn.get("arguments")),
-                        str(fn.get("name") or ""),
-                        str(tc.get("id") or ""),
+                        tool_args_text(function.get("arguments")),
+                        str(function.get("name") or ""),
+                        str(tool_call.get("id") or ""),
                     )
             elif role == "tool":
-                yield row(
-                    n,
+                yield make_row(
+                    line_number,
                     "tool_result",
                     text,
-                    str(rec.get("name") or ""),
-                    str(rec.get("tool_call_id") or ""),
+                    str(record.get("name") or ""),
+                    str(record.get("tool_call_id") or ""),
                 )
             else:
-                yield row(n, "system", "%s: %s" % (role or "message", text))
+                yield make_row(line_number, "system", "%s: %s" % (role or "message", text))
         return session_id
 
     def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -667,8 +671,8 @@ class NanobotParser(Parser):
             return
         messages: dict[str, list[tuple[int, object, object]]] = {}
         try:
-            with open_copy(artifact.disk_path) as con:
-                missing = {"sessions", "messages"} - table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                missing = {"sessions", "messages"} - table_names(connection)
                 if missing:
                     text = "parser: no %s table in the session database" % " or ".join(
                         sorted(missing)
@@ -676,19 +680,19 @@ class NanobotParser(Parser):
                     yield self._file_row(artifact, project, text)
                     return
                 sessions = [
-                    tuple(r)
-                    for r in con.execute(
+                    tuple(table_row)
+                    for table_row in connection.execute(
                         "SELECT rowid, key, created_at, updated_at, metadata FROM sessions"
                         " ORDER BY created_at, key"
                     )
                 ]
-                for rowid, key, position, record in con.execute(
+                for rowid, key, position, record in connection.execute(
                     "SELECT rowid, session_key, position, record FROM messages"
                     " ORDER BY session_key, position"
                 ):
                     messages.setdefault(str(key), []).append((rowid, position, record))
-        except sqlite3.DatabaseError as e:
-            yield self._file_row(artifact, project, "parser: SQLite error: %s" % e)
+        except sqlite3.DatabaseError as error:
+            yield self._file_row(artifact, project, "parser: SQLite error: %s" % error)
             return
         known = {str(sess[1]) for sess in sessions}
         # Messages whose session row is gone (nanobot enforces the foreign
@@ -724,111 +728,128 @@ class NanobotParser(Parser):
                 },
             )
         for rowid, position, raw in messages:
-            rec = _json_object(raw, rowid, "unparseable record %s" % position, errors)
-            if rec is not None:
-                yield rowid, rec
+            record = _json_object(raw, rowid, "unparseable record %s" % position, errors)
+            if record is not None:
+                yield rowid, record
 
     def _file_row(self, artifact: Artifact, project: str, text: str) -> Row:
         """A whole-file `parser:` row for a database that cannot be read."""
-        r = self.base_row(artifact)
-        r.project_path = project
-        r.turn_type = "system"
-        r.text = text
-        return r
+        row = self.base_row(artifact)
+        row.project_path = project
+        row.turn_type = "system"
+        row.text = text
+        return row
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = ORIGINAL_MEMORY_RX.match(artifact.original or "")
-        project = m.group(1) if m else ""
+        match = ORIGINAL_MEMORY_RX.match(artifact.original or "")
+        project = match.group(1) if match else ""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            r = self.base_row(artifact)
-            r.source_line = n
-            r.session_id = str(rec.get("session_key") or "")
-            r.project_path = project
-            r.timestamp_utc = to_utc(rec.get("timestamp"))
-            r.turn_type = "system"
-            r.text = compact(
-                "memory history #%s: %s" % (rec.get("cursor", ""), rec.get("content") or ""),
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            row = self.base_row(artifact)
+            row.source_line = line_number
+            row.session_id = str(record.get("session_key") or "")
+            row.project_path = project
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.turn_type = "system"
+            row.text = compact(
+                "memory history #%s: %s" % (record.get("cursor", ""), record.get("content") or ""),
             )
-            yield r
+            yield row
         yield from error_rows(self, artifact, errors, "", project)
 
     @staticmethod
     def _webui_workspace(artifact: Artifact, session_id: str) -> str:
         """The `.workspace` of the session file for `session_id` under the
         same nanobot directory, when exactly one workspace holds one."""
-        m = WEBUI_RX.match(artifact.rel)
-        assert m is not None  # parse() routes only matching paths here
-        state = artifact.disk_path.parents[2 if m.group("seg") else 1]
+        match = WEBUI_RX.match(artifact.rel)
+        assert match is not None  # parse() routes only matching paths here
+        state = artifact.disk_path.parents[2 if match.group("seg") else 1]
         stem = base64.urlsafe_b64encode(session_id.encode("utf-8")).decode("ascii").rstrip("=")
         found: set[str] = set()
         try:
-            for f in (state / "sessions").glob("*/%s.jsonl" % stem):
-                if not (f.is_symlink() or f.parent.is_symlink()) and f.is_file():
-                    found.add(_read_marker(f.parent / ".workspace"))
+            for session_file in (state / "sessions").glob("*/%s.jsonl" % stem):
+                if (
+                    not (session_file.is_symlink() or session_file.parent.is_symlink())
+                    and session_file.is_file()
+                ):
+                    found.add(_read_marker(session_file.parent / ".workspace"))
         except OSError:
             return ""
         found.discard("")
         return found.pop() if len(found) == 1 else ""
 
     def _parse_webui(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = WEBUI_RX.match(artifact.rel)
-        assert m is not None  # parse() routes only matching paths here
-        stem = m.group("seg") or m.group("stem")
+        match = WEBUI_RX.match(artifact.rel)
+        assert match is not None  # parse() routes only matching paths here
+        stem = match.group("seg") or match.group("stem")
         fallback = stem
         if stem.startswith("websocket_"):
             fallback = WEBUI_PREFIX + stem[len("websocket_") :]
         projects: dict[str, str] = {}
         errors: list = []
 
-        def row(n: int, sid: str, ts: object, event: tuple[str, str, str, str]) -> Row:
+        def make_row(
+            source_line: int,
+            row_session_id: str,
+            timestamp: object,
+            event: tuple[str, str, str, str],
+        ) -> Row:
             turn_type, text, tool_name, tool_use_id = event
-            if sid not in projects:
-                projects[sid] = self._webui_workspace(artifact, sid)
-            r = self.base_row(artifact)
-            r.source_line = n
-            r.session_id = sid
-            r.project_path = projects[sid]
-            r.timestamp_utc = to_utc(ts)
-            r.turn_type = turn_type
-            r.tool_name = tool_name
-            r.tool_use_id = tool_use_id
-            r.text = compact(text)
-            return r
+            if row_session_id not in projects:
+                projects[row_session_id] = self._webui_workspace(artifact, row_session_id)
+            row = self.base_row(artifact)
+            row.source_line = source_line
+            row.session_id = row_session_id
+            row.project_path = projects[row_session_id]
+            row.timestamp_utc = to_utc(timestamp)
+            row.turn_type = turn_type
+            row.tool_name = tool_name
+            row.tool_use_id = tool_use_id
+            row.text = compact(text)
+            return row
 
-        sid = fallback
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            chat = rec.get("chat_id")
-            sid = WEBUI_PREFIX + chat if isinstance(chat, str) and chat else fallback
-            for event in self._webui_events(rec, opts):
-                yield row(n, sid, rec.get("created_at_ms"), event)
+        session_id = fallback
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            chat = record.get("chat_id")
+            session_id = WEBUI_PREFIX + chat if isinstance(chat, str) and chat else fallback
+            for event in self._webui_events(record, opts):
+                yield make_row(line_number, session_id, record.get("created_at_ms"), event)
         if errors:
-            if sid not in projects:
-                projects[sid] = self._webui_workspace(artifact, sid)
-            yield from error_rows(self, artifact, errors, sid, projects[sid])
+            if session_id not in projects:
+                projects[session_id] = self._webui_workspace(artifact, session_id)
+            yield from error_rows(self, artifact, errors, session_id, projects[session_id])
 
     @staticmethod
-    def _webui_events(rec: dict, opts: Options) -> Iterator[tuple[str, str, str, str]]:
+    def _webui_events(record: dict, opts: Options) -> Iterator[tuple[str, str, str, str]]:
         """(turn_type, text, tool_name, tool_use_id) per row of one WebUI
         record; the module docstring maps each event."""
-        event = rec.get("event")
-        text = rec.get("text") if isinstance(rec.get("text"), str) else ""
+        event = record.get("event")
+        text = record.get("text") if isinstance(record.get("text"), str) else ""
         if event == "user":
-            media = [str(p) for p in rec.get("media_paths") or [] if p]
-            yield "user", text or " ".join("[media: %s]" % p for p in media), "", ""
+            media = [
+                str(media_path) for media_path in record.get("media_paths") or [] if media_path
+            ]
+            yield (
+                "user",
+                text or " ".join("[media: %s]" % media_path for media_path in media),
+                "",
+                "",
+            )
         elif event == "message":
-            kind = rec.get("kind")
-            tool_events = [e for e in rec.get("tool_events") or [] if isinstance(e, dict)]
-            for e in tool_events:
-                name, call_id = str(e.get("name") or ""), str(e.get("call_id") or "")
-                if e.get("phase") == "start":
-                    yield "tool_use", tool_args_text(e.get("arguments")), name, call_id
-                elif e.get("phase") == "end":
-                    result = e.get("result")
+            kind = record.get("kind")
+            tool_events = [
+                item for item in record.get("tool_events") or [] if isinstance(item, dict)
+            ]
+            for entry in tool_events:
+                name, call_id = str(entry.get("name") or ""), str(entry.get("call_id") or "")
+                if entry.get("phase") == "start":
+                    yield "tool_use", tool_args_text(entry.get("arguments")), name, call_id
+                elif entry.get("phase") == "end":
+                    result = entry.get("result")
                     body = result if isinstance(result, str) else compact_json(result)
                     yield "tool_result", body, name, call_id
-                elif e.get("phase") == "error":
-                    yield "tool_result", str(e.get("error") or ""), name, call_id
+                elif entry.get("phase") == "error":
+                    yield "tool_result", str(entry.get("error") or ""), name, call_id
             if kind == "reasoning":
                 if opts.include_thinking and text:
                     yield "thinking", text, "", ""
@@ -838,31 +859,31 @@ class NanobotParser(Parser):
             elif text:
                 yield "assistant", text, "", ""
         elif event == "stream_end":
-            if text and not rec.get("merge_next"):
+            if text and not record.get("merge_next"):
                 yield "assistant", text, "", ""
         elif event == "reasoning_end":
             if opts.include_thinking and text:
                 yield "thinking", text, "", ""
         elif event == "file_edit":
-            for e in rec.get("edits") or []:
-                if isinstance(e, dict) and e.get("phase") != "start":
+            for entry in record.get("edits") or []:
+                if isinstance(entry, dict) and entry.get("phase") != "start":
                     yield (
                         "system",
                         "file edit: %s %s +%s -%s%s"
                         % (
-                            e.get("status") or e.get("phase") or "",
-                            e.get("absolute_path") or e.get("path") or "",
-                            e.get("added", 0),
-                            e.get("deleted", 0),
-                            " (%s)" % e["operation"] if e.get("operation") else "",
+                            entry.get("status") or entry.get("phase") or "",
+                            entry.get("absolute_path") or entry.get("path") or "",
+                            entry.get("added", 0),
+                            entry.get("deleted", 0),
+                            " (%s)" % entry["operation"] if entry.get("operation") else "",
                         ),
-                        str(e.get("tool") or ""),
-                        str(e.get("call_id") or ""),
+                        str(entry.get("tool") or ""),
+                        str(entry.get("call_id") or ""),
                     )
         elif event == "fork_marker":
             yield "system", "webui fork marker: the fork starts here", "", ""
         elif event == "context_compaction":
-            yield "system", "context compaction: %s" % (rec.get("phase") or ""), "", ""
+            yield "system", "context compaction: %s" % (record.get("phase") or ""), "", ""
         elif isinstance(event, str) and event and event not in WEBUI_SILENT:
             yield "system", "webui event: %s" % event, "", ""
 
@@ -871,23 +892,27 @@ class NanobotParser(Parser):
         `parser:` row that says why it could not be read."""
         try:
             value = json.loads(artifact.disk_path.read_text(encoding="utf-8", errors="replace"))
-        except OSError as e:
+        except OSError as error:
             return None, self._file_row(
-                artifact, "", "parser: unreadable %s: %s" % (what, error_reason(e))
+                artifact, "", "parser: unreadable %s: %s" % (what, error_reason(error))
             )
-        except ValueError as e:
-            return None, self._file_row(artifact, "", "parser: %s did not parse: %s" % (what, e))
+        except ValueError as error:
+            return None, self._file_row(
+                artifact, "", "parser: %s did not parse: %s" % (what, error)
+            )
         if not isinstance(value, dict):
             return None, self._file_row(artifact, "", "parser: %s is not a JSON object" % what)
         return value, None
 
-    def _setting_row(self, artifact: Artifact, ts: str, text: str, session_id: str = "") -> Row:
-        r = self.base_row(artifact)
-        r.timestamp_utc = ts
-        r.session_id = session_id
-        r.turn_type = "system"
-        r.text = compact(text)
-        return r
+    def _setting_row(
+        self, artifact: Artifact, timestamp: str, text: str, session_id: str = ""
+    ) -> Row:
+        row = self.base_row(artifact)
+        row.timestamp_utc = timestamp
+        row.session_id = session_id
+        row.turn_type = "system"
+        row.text = compact(text)
+        return row
 
     def _parse_config(self, artifact: Artifact) -> Iterator[Row]:
         """One `permission setting:` row per standing setting of
@@ -897,7 +922,7 @@ class NanobotParser(Parser):
         if data is None:
             yield from [problem] if problem else []
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         tail = " (from %s, file mtime)" % artifact.rel
         tools = data.get("tools")
         tools = tools if isinstance(tools, dict) else {}
@@ -906,22 +931,24 @@ class NanobotParser(Parser):
             hit = _first_key(tools, names)
             if hit:
                 settings.append(("tools.%s" % hit[0], hit[1]))
-        exec_cfg = tools.get("exec")
-        exec_cfg = exec_cfg if isinstance(exec_cfg, dict) else {}
+        exec_config = tools.get("exec")
+        exec_config = exec_config if isinstance(exec_config, dict) else {}
         for names in CONFIG_EXEC_KEYS:
-            hit = _first_key(exec_cfg, names)
+            hit = _first_key(exec_config, names)
             if hit:
                 settings.append(("tools.exec.%s" % hit[0], hit[1]))
         channels = data.get("channels")
-        for name, cfg in (channels if isinstance(channels, dict) else {}).items():
-            if isinstance(cfg, dict):
-                hit = _first_key(cfg, ("allowFrom", "allow_from"))
+        for name, config in (channels if isinstance(channels, dict) else {}).items():
+            if isinstance(config, dict):
+                hit = _first_key(config, ("allowFrom", "allow_from"))
                 if hit:
                     settings.append(("channels.%s.%s" % (name, hit[0]), hit[1]))
         for key, value in settings:
             for entry in value if isinstance(value, list) else [value]:
                 yield self._setting_row(
-                    artifact, ts, "permission setting: %s=%s%s" % (key, setting_value(entry), tail)
+                    artifact,
+                    timestamp,
+                    "permission setting: %s=%s%s" % (key, setting_value(entry), tail),
                 )
 
     def _parse_pairing(self, artifact: Artifact) -> Iterator[Row]:
@@ -932,13 +959,13 @@ class NanobotParser(Parser):
         if data is None:
             yield from [problem] if problem else []
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         approved = data.get("approved")
         for channel, senders in (approved if isinstance(approved, dict) else {}).items():
             for sender in senders if isinstance(senders, list) else []:
                 yield self._setting_row(
                     artifact,
-                    ts,
+                    timestamp,
                     "permission setting: pairing.approved.%s=%s (from %s, file mtime)"
                     % (channel, setting_value(sender), artifact.rel),
                 )
@@ -984,8 +1011,8 @@ class NanobotParser(Parser):
                 continue
             key = str(entry.get("key") or "")
             text = " ".join(
-                x
-                for x in (
+                part
+                for part in (
                     "webui sidebar entry: key=%s" % key,
                     "title=%s" % entry["title"] if entry.get("title") else "",
                     "preview=%s" % entry["preview"] if entry.get("preview") else "",
@@ -993,7 +1020,7 @@ class NanobotParser(Parser):
                     "updated_at=%s" % entry["updated_at"] if entry.get("updated_at") else "",
                     "(from .webui_session_index.json version %s)" % data.get("version", ""),
                 )
-                if x
+                if part
             )
             yield self._setting_row(artifact, to_utc(entry.get("created_at")), text, key)
         yield from error_rows(self, artifact, errors)
@@ -1002,71 +1029,73 @@ class NanobotParser(Parser):
         """A cron or trigger run record: the prompt as the session stored it
         (`user`), the reply (`assistant`) and a `system` row with the run's
         status; see the module docstring."""
-        m = RUN_RX.match(artifact.rel)
-        assert m is not None  # parse() routes only matching paths here
-        kind = m.group("kind")
+        match = RUN_RX.match(artifact.rel)
+        assert match is not None  # parse() routes only matching paths here
+        kind = match.group("kind")
         project = ""
-        if m.group("ws") or artifact.home.project:
-            om = ORIGINAL_RUN_RX.match(artifact.original or "")
-            project = om.group(1) if om else ""
-        rec, problem = self._load_object(artifact, "%s run record" % kind)
-        if rec is None:
+        if match.group("ws") or artifact.home.project:
+            original_match = ORIGINAL_RUN_RX.match(artifact.original or "")
+            project = original_match.group(1) if original_match else ""
+        record, problem = self._load_object(artifact, "%s run record" % kind)
+        if record is None:
             if problem:
                 problem.project_path = project
                 yield problem
             return
-        session_id = str(rec.get("session_key") or "")
-        end = to_utc(rec.get("updated_at_ms"))
+        session_id = str(record.get("session_key") or "")
+        end = to_utc(record.get("updated_at_ms"))
 
-        def row(ts: str, turn_type: str, text: str) -> Row:
-            r = self._setting_row(artifact, ts, text, session_id)
-            r.turn_type = turn_type
-            r.project_path = project
-            return r
+        def make_row(timestamp: str, turn_type: str, text: str) -> Row:
+            row = self._setting_row(artifact, timestamp, text, session_id)
+            row.turn_type = turn_type
+            row.project_path = project
+            return row
 
         if kind == "cron":
-            vars_ = rec.get("prompt_vars")
-            message = vars_.get("message") if isinstance(vars_, dict) else None
-            if rec.get("job_name") and isinstance(message, str):
-                prompt = "Scheduled cron job triggered: %s\n\n%s" % (rec["job_name"], message)
+            prompt_vars = record.get("prompt_vars")
+            message = prompt_vars.get("message") if isinstance(prompt_vars, dict) else None
+            if record.get("job_name") and isinstance(message, str):
+                prompt = "Scheduled cron job triggered: %s\n\n%s" % (record["job_name"], message)
             else:
-                prompt = str(rec.get("rendered_prompt") or "")
+                prompt = str(record.get("rendered_prompt") or "")
             # `run_id` is `<job id>:<epoch ms at the run's start>:<hex>`.
-            parts = str(rec.get("run_id") or "").rsplit(":", 2)
+            parts = str(record.get("run_id") or "").rsplit(":", 2)
             start = to_utc(int(parts[1])) if len(parts) == 3 and parts[1].isdigit() else end
             status = "cron run: job %s (%s) run %s status=%s" % (
-                rec.get("job_name") or "",
-                rec.get("job_id") or "",
-                rec.get("run_id") or "",
-                rec.get("status") or "",
+                record.get("job_name") or "",
+                record.get("job_id") or "",
+                record.get("run_id") or "",
+                record.get("status") or "",
             )
         else:
-            label = str(rec.get("trigger_name") or "").strip() or str(rec.get("trigger_id") or "")
-            prompt = "Local trigger received: %s\n\n%s" % (label, rec.get("content") or "")
-            start = to_utc(rec.get("created_at_ms")) or end
+            label = str(record.get("trigger_name") or "").strip() or str(
+                record.get("trigger_id") or ""
+            )
+            prompt = "Local trigger received: %s\n\n%s" % (label, record.get("content") or "")
+            start = to_utc(record.get("created_at_ms")) or end
             status = "trigger run: trigger %s (%s) delivery %s status=%s attempts=%s" % (
-                rec.get("trigger_name") or "",
-                rec.get("trigger_id") or "",
-                rec.get("delivery_id") or rec.get("run_id") or "",
-                rec.get("status") or "",
-                rec.get("attempts", ""),
+                record.get("trigger_name") or "",
+                record.get("trigger_id") or "",
+                record.get("delivery_id") or record.get("run_id") or "",
+                record.get("status") or "",
+                record.get("attempts", ""),
             )
         if prompt.strip():
-            yield row(start, "user", prompt)
-        if isinstance(rec.get("response"), str) and rec["response"]:
-            yield row(end, "assistant", rec["response"])
-        error = rec.get("error") or rec.get("last_error")
-        yield row(end, "system", status + (" error=%s" % error if error else ""))
+            yield make_row(start, "user", prompt)
+        if isinstance(record.get("response"), str) and record["response"]:
+            yield make_row(end, "assistant", record["response"])
+        error = record.get("error") or record.get("last_error")
+        yield make_row(end, "system", status + (" error=%s" % error if error else ""))
 
     def _parse_cli_history(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        for n, ts, text in read_input_history(artifact.disk_path, errors):
-            r = self.base_row(artifact)
-            r.source_line = n
-            r.timestamp_utc = to_utc(ts)
-            r.turn_type = "user"
-            r.text = compact(text)
-            yield r
+        for line_number, timestamp, text in read_input_history(artifact.disk_path, errors):
+            row = self.base_row(artifact)
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(timestamp)
+            row.turn_type = "user"
+            row.text = compact(text)
+            yield row
         yield from error_rows(self, artifact, errors)
 
 

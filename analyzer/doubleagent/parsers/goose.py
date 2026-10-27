@@ -245,16 +245,16 @@ def _stored_json(value, kind: type) -> tuple[object, str, str]:
     if not isinstance(value, str):
         return None, "not JSON text", str(value)
     try:
-        obj = json.loads(value)
-    except ValueError as e:
-        return None, str(e), value
-    if obj is not None and not isinstance(obj, kind):
+        decoded = json.loads(value)
+    except ValueError as error:
+        return None, str(error), value
+    if decoded is not None and not isinstance(decoded, kind):
         return None, "not a JSON %s" % ("array" if kind is list else "object"), value
-    return obj, "", value
+    return decoded, "", value
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    return " | ".join(part for part in parts if part)
 
 
 def gateway_text(session: dict) -> str:
@@ -265,8 +265,8 @@ def gateway_text(session: dict) -> str:
     id>`), `-` when it is the user id or absent."""
     if session.get("session_type") != "gateway":
         return ""
-    m = GATEWAY_DIR_RX.search(str(session.get("working_dir") or ""))
-    platform, user_id = m.groups() if m else ("", "")
+    match = GATEWAY_DIR_RX.search(str(session.get("working_dir") or ""))
+    platform, user_id = match.groups() if match else ("", "")
     name_platform, _, display = str(session.get("name") or "").partition("/")
     platform = platform or name_platform
     if display == user_id:
@@ -303,13 +303,13 @@ def unescape_history(line: str) -> str:
     out: list[str] = []
     i = 0
     while i < len(line):
-        c = line[i]
-        if c == "\\" and i + 1 < len(line):
-            nxt = line[i + 1]
-            out.append("\n" if nxt == "n" else nxt)
+        char = line[i]
+        if char == "\\" and i + 1 < len(line):
+            next_char = line[i + 1]
+            out.append("\n" if next_char == "n" else next_char)
             i += 2
             continue
-        out.append(c)
+        out.append(char)
         i += 1
     return "".join(out)
 
@@ -337,8 +337,8 @@ def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]
     that is not a category, a level or a list item under both is appended to
     `errors` as (line, message, raw), as `iter_jsonl` does for JSONL."""
     category = level = ""
-    with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
+    with open(path, "rb") as handle:
+        for line_number, raw in enumerate(handle, 1):
             text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             body = text.strip()
             if not body or body.startswith("#") or body in ("---", "{}"):
@@ -347,18 +347,22 @@ def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]
             if body.startswith("- ") or body == "-":
                 tool = _unquote(body[1:].strip())
                 if category and level and tool:
-                    yield n, category, level, tool
+                    yield line_number, category, level, tool
                     continue
             elif body.endswith(":") and indent == 0:
                 category, level = _unquote(body[:-1].strip()), ""
                 continue
             elif indent > 0 and category:
-                key, sep, value = body.partition(":")
-                if sep and value.strip() in ("", "[]") and key.strip():
+                key, separator, value = body.partition(":")
+                if separator and value.strip() in ("", "[]") and key.strip():
                     level = _unquote(key.strip())
                     continue
             errors.append(
-                (n, "unparseable line (not a category, level or list item)", line_text(raw))
+                (
+                    line_number,
+                    "unparseable line (not a category, level or list item)",
+                    line_text(raw),
+                )
             )
 
 
@@ -400,10 +404,10 @@ def schedule_text(job: dict, rel: str) -> str:
     job has any."""
 
     def value(key: str) -> str:
-        v = job.get(key)
-        return "-" if v is None or v == "" else setting_value(v)
+        stored = job.get(key)
+        return "-" if stored is None or stored == "" else setting_value(stored)
 
-    params = job.get("parameters")
+    parameters = job.get("parameters")
     return (
         "scheduled task: %s %s paused=%s running=%s source=%s last_run=%s"
         " current_session=%s recipe_base_dir=%s%s (from %s, file mtime)"
@@ -416,7 +420,7 @@ def schedule_text(job: dict, rel: str) -> str:
             to_utc(job.get("last_run")) or value("last_run"),
             value("current_session_id"),
             value("recipe_base_dir"),
-            " parameters=%s" % compact_json(params) if params else "",
+            " parameters=%s" % compact_json(parameters) if parameters else "",
             rel,
         )
     )
@@ -431,8 +435,8 @@ class GooseParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
+            pattern.match(rel)
+            for pattern in (
                 DB_RX,
                 LEGACY_RX,
                 LLM_RX,
@@ -475,14 +479,14 @@ class GooseParser(Parser):
         session_id: str = "",
         project_path: str = "",
         model: str = "",
-        ts: str = "",
+        timestamp: str = "",
     ) -> Row:
         row = self.base_row(artifact)
         row.source_line = line
         row.session_id = session_id
         row.project_path = project_path
         row.model = model
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
     @staticmethod
@@ -518,14 +522,14 @@ class GooseParser(Parser):
         if not isinstance(content, list):
             return
         text_type = role if role in ("user", "assistant") else "system"
-        for b in content:
-            if not isinstance(b, dict):
+        for block in content:
+            if not isinstance(block, dict):
                 continue
-            kind = b.get("type")
+            kind = block.get("type")
             row = Row(**base.__dict__)
             if kind == "text":
                 row.turn_type = text_type
-                text = b.get("text") or ""
+                text = block.get("text") or ""
                 if role not in ("user", "assistant"):
                     text = "%s: %s" % (role, text)
                 if not user_visible:
@@ -534,12 +538,12 @@ class GooseParser(Parser):
                 row.turn_type = text_type
                 text = "[%s] %s" % (
                     kind,
-                    _join(str(b.get("name") or ""), str(b.get("mimeType") or "")),
+                    _join(str(block.get("name") or ""), str(block.get("mimeType") or "")),
                 )
             elif kind == "toolRequest":
                 row.turn_type = "tool_use"
-                row.tool_use_id = str(b.get("id") or "")
-                call = b.get("toolCall") or {}
+                row.tool_use_id = str(block.get("id") or "")
+                call = block.get("toolCall") or {}
                 if call.get("status") == "error":
                     text = "[error] " + str(call.get("error") or "")
                 else:
@@ -549,41 +553,46 @@ class GooseParser(Parser):
                 tool_names[row.tool_use_id] = row.tool_name
             elif kind == "toolResponse":
                 row.turn_type = "tool_result"
-                row.tool_use_id = str(b.get("id") or "")
+                row.tool_use_id = str(block.get("id") or "")
                 row.tool_name = tool_names.get(row.tool_use_id, "")
-                text, is_error = result_text(b.get("toolResult"))
+                text, is_error = result_text(block.get("toolResult"))
                 if is_error:
                     text = "[error] " + text
             elif kind in ("thinking", "redactedThinking"):
                 if not opts.include_thinking:
                     continue
                 row.turn_type = "thinking"
-                text = (b.get("thinking") or "") if kind == "thinking" else "[redacted thinking]"
+                text = (
+                    (block.get("thinking") or "") if kind == "thinking" else "[redacted thinking]"
+                )
             elif kind == "toolConfirmationRequest":
                 row.turn_type = "system"
-                row.tool_name = str(b.get("toolName") or "")
-                row.tool_use_id = str(b.get("id") or "")
+                row.tool_name = str(block.get("toolName") or "")
+                row.tool_use_id = str(block.get("id") or "")
                 text = _join(
                     "confirmation requested: " + row.tool_name,
-                    str(b.get("prompt") or ""),
-                    compact_json(b.get("arguments") or {}),
+                    str(block.get("prompt") or ""),
+                    compact_json(block.get("arguments") or {}),
                 )
             elif kind == "systemNotification":
                 row.turn_type = "system"
-                text = "%s: %s" % (b.get("notificationType") or "notification", b.get("msg") or "")
+                text = "%s: %s" % (
+                    block.get("notificationType") or "notification",
+                    block.get("msg") or "",
+                )
             elif kind == "error":
                 row.turn_type = "system"
-                text = "error %s: %s" % (b.get("kind") or "", b.get("message") or "")
+                text = "error %s: %s" % (block.get("kind") or "", block.get("message") or "")
             elif kind == "actionRequired":
                 row.turn_type = "system"
-                text = self._action_text(row, b.get("data"), tool_names)
+                text = self._action_text(row, block.get("data"), tool_names)
             else:
                 row.turn_type = "system"
-                text = compact_json(b)
+                text = compact_json(block)
             row.text = compact(text)
             yield row
             if kind == "toolRequest" and answered is not None:
-                verdict = b.get("_meta")
+                verdict = block.get("_meta")
                 if (
                     isinstance(verdict, dict)
                     and verdict.get(TOOL_EXECUTABLE_KEY) is False
@@ -626,88 +635,101 @@ class GooseParser(Parser):
             yield row
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 if "messages" not in tables:
                     return
                 sessions: dict[str, dict] = {}
                 seen_model: dict[str, str] = {}
                 seen_mode: dict[str, str] = {}
                 if "sessions" in tables:
-                    for s in con.execute(
+                    for session in connection.execute(
                         "select rowid as _rowid, * from sessions order by created_at, rowid"
                     ):
-                        s = dict(s)
-                        cfg, reason, raw = _stored_json(s.get("model_config_json"), dict)
-                        cfg_errors = []
+                        session = dict(session)
+                        config, reason, raw = _stored_json(session.get("model_config_json"), dict)
+                        config_errors = []
                         if reason:
-                            cfg_errors.append(
+                            config_errors.append(
                                 (
-                                    s["_rowid"],
+                                    session["_rowid"],
                                     "unparseable record %d (sessions.model_config_json: %s)"
-                                    % (s["_rowid"], reason),
+                                    % (session["_rowid"], reason),
                                     raw,
                                 )
                             )
                         model_name = str(
-                            (cfg.get("model_name") if isinstance(cfg, dict) else "") or ""
+                            (config.get("model_name") if isinstance(config, dict) else "") or ""
                         )
-                        s["_model"] = _model(s.get("provider_name") or "", model_name)
-                        sid = str(s.get("id") or "")
-                        sessions[sid] = s
+                        session["_model"] = _model(session.get("provider_name") or "", model_name)
+                        session_id = str(session.get("id") or "")
+                        sessions[session_id] = session
                         row = self._row(
                             artifact,
-                            s["_rowid"],
-                            sid,
-                            s.get("working_dir") or "",
-                            s["_model"],
-                            to_utc(s.get("created_at")),
+                            session["_rowid"],
+                            session_id,
+                            session.get("working_dir") or "",
+                            session["_model"],
+                            to_utc(session.get("created_at")),
                         )
                         row.turn_type = "system"
                         row.text = compact(
                             _join(
                                 "session start",
-                                s.get("name") or "",
-                                s.get("description") or "",
-                                "type=%s" % s["session_type"] if s.get("session_type") else "",
-                                "parent=%s" % s["parent_session_id"]
-                                if s.get("parent_session_id")
+                                session.get("name") or "",
+                                session.get("description") or "",
+                                "type=%s" % session["session_type"]
+                                if session.get("session_type")
                                 else "",
-                                "schedule=%s" % s["schedule_id"] if s.get("schedule_id") else "",
-                                "archived=%s" % s["archived_at"] if s.get("archived_at") else "",
+                                "parent=%s" % session["parent_session_id"]
+                                if session.get("parent_session_id")
+                                else "",
+                                "schedule=%s" % session["schedule_id"]
+                                if session.get("schedule_id")
+                                else "",
+                                "archived=%s" % session["archived_at"]
+                                if session.get("archived_at")
+                                else "",
                             ),
                         )
                         yield row
                         yield from error_rows(
-                            self, artifact, cfg_errors, sid, s.get("working_dir") or ""
+                            self,
+                            artifact,
+                            config_errors,
+                            session_id,
+                            session.get("working_dir") or "",
                         )
-                        text = gateway_text(s)
+                        text = gateway_text(session)
                         if text:
                             yield self._system_copy(row, text)
-                        text = track_change("model", seen_model, sid, model_name)
+                        text = track_change("model", seen_model, session_id, model_name)
                         if text:
-                            if s.get("provider_name"):
-                                text += " provider=%s" % s["provider_name"]
+                            if session.get("provider_name"):
+                                text += " provider=%s" % session["provider_name"]
                             yield self._system_copy(row, text)
                         text = track_change(
-                            "permission mode", seen_mode, sid, str(s.get("goose_mode") or "")
+                            "permission mode",
+                            seen_mode,
+                            session_id,
+                            str(session.get("goose_mode") or ""),
                         )
                         if text:
                             yield self._system_copy(row, text)
-                answered = self._answered(con)
+                answered = self._answered(connection)
                 tool_names: dict[str, str] = {}
-                for m in con.execute(
+                for message in connection.execute(
                     "select * from messages order by session_id, created_timestamp, id"
                 ):
-                    m = dict(m)
-                    sid = str(m.get("session_id") or "")
-                    s = sessions.get(sid, {})
-                    project_path = s.get("working_dir") or ""
-                    record = m.get("id") or 0
-                    msg_errors: list = []
-                    meta, reason, raw = _stored_json(m.get("metadata_json"), dict)
+                    message = dict(message)
+                    session_id = str(message.get("session_id") or "")
+                    session = sessions.get(session_id, {})
+                    project_path = session.get("working_dir") or ""
+                    record = message.get("id") or 0
+                    message_errors: list = []
+                    meta, reason, raw = _stored_json(message.get("metadata_json"), dict)
                     if reason:
-                        msg_errors.append(
+                        message_errors.append(
                             (
                                 record,
                                 "unparseable record %s (messages.metadata_json: %s)"
@@ -716,30 +738,32 @@ class GooseParser(Parser):
                             )
                         )
                     meta = meta if isinstance(meta, dict) else {}
-                    inf = meta.get("inference") or {}
+                    inference = meta.get("inference") or {}
                     model = _model(
-                        inf.get("provider") or "",
-                        inf.get("resolvedModel") or inf.get("requestedModel") or "",
-                    ) or s.get("_model", "")
+                        inference.get("provider") or "",
+                        inference.get("resolvedModel") or inference.get("requestedModel") or "",
+                    ) or session.get("_model", "")
                     base = self._row(
                         artifact,
                         record,
-                        sid,
+                        session_id,
                         project_path,
                         model,
-                        epoch(m.get("created_timestamp")) or to_utc(m.get("timestamp")),
+                        epoch(message.get("created_timestamp")) or to_utc(message.get("timestamp")),
                     )
-                    resolved = str(inf.get("resolvedModel") or inf.get("requestedModel") or "")
-                    text = track_change("model", seen_model, sid, resolved)
+                    resolved = str(
+                        inference.get("resolvedModel") or inference.get("requestedModel") or ""
+                    )
+                    text = track_change("model", seen_model, session_id, resolved)
                     if text:
-                        if inf.get("provider"):
-                            text += " provider=%s" % inf["provider"]
-                        requested = str(inf.get("requestedModel") or "")
+                        if inference.get("provider"):
+                            text += " provider=%s" % inference["provider"]
+                        requested = str(inference.get("requestedModel") or "")
                         if requested and requested != resolved:
                             text += " requested=%s" % requested
                         yield self._system_copy(base, text)
-                    yield from error_rows(self, artifact, msg_errors, sid, project_path)
-                    content, reason, raw = _stored_json(m.get("content_json"), list)
+                    yield from error_rows(self, artifact, message_errors, session_id, project_path)
+                    content, reason, raw = _stored_json(message.get("content_json"), list)
                     if content is None and not reason:
                         reason = "not a JSON array" if raw else "empty"
                     if reason:
@@ -754,41 +778,41 @@ class GooseParser(Parser):
                                     raw,
                                 )
                             ],
-                            sid,
+                            session_id,
                             project_path,
                         )
                         continue
                     yield from self._block_rows(
                         artifact,
                         base,
-                        str(m.get("role") or ""),
+                        str(message.get("role") or ""),
                         content,
                         meta.get("userVisible", True) is not False,
                         tool_names,
                         opts,
-                        answered.get(sid, set()),
+                        answered.get(session_id, set()),
                     )
-        except sqlite3.DatabaseError as e:
+        except sqlite3.DatabaseError as error:
             row = self._row(artifact, 0)
             row.turn_type = "system"
-            row.text = "parser: SQLite error: %s" % e
+            row.text = "parser: SQLite error: %s" % error
             yield row
 
     @staticmethod
-    def _answered(con) -> dict[str, set[str]]:
+    def _answered(connection) -> dict[str, set[str]]:
         """Session id to the tool request ids its `toolConfirmationResponse`
         blocks answer. A pre-scan: a `content_json` that does not decode is
         skipped here and reported by the full read of the same row."""
         answered: dict[str, set[str]] = {}
-        for sid, stored in con.execute(
+        for session_id, stored in connection.execute(
             "select session_id, content_json from messages"
             " where content_json like '%toolConfirmationResponse%'"
         ):
             content, _, _ = _stored_json(stored, list)
-            for b in content if isinstance(content, list) else []:
-                data = b.get("data") if isinstance(b, dict) else None
+            for block in content if isinstance(content, list) else []:
+                data = block.get("data") if isinstance(block, dict) else None
                 if isinstance(data, dict) and data.get("actionType") == "toolConfirmationResponse":
-                    answered.setdefault(str(sid or ""), set()).add(str(data.get("id") or ""))
+                    answered.setdefault(str(session_id or ""), set()).add(str(data.get("id") or ""))
         return answered
 
     # -- legacy sessions/<YYYYMMDD_HHMMSS>.jsonl ------------------------------------------
@@ -797,32 +821,44 @@ class GooseParser(Parser):
         session_id = artifact.disk_path.name[: -len(".jsonl")]
         project_path = ""
         tool_names: dict[str, str] = {}
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            if "role" not in rec and "content" not in rec:
-                session_id = str(rec.get("id") or session_id)
-                project_path = str(rec.get("working_dir") or "")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            if "role" not in record and "content" not in record:
+                session_id = str(record.get("id") or session_id)
+                project_path = str(record.get("working_dir") or "")
                 row = self._row(
-                    artifact, n, session_id, project_path, ts=to_utc(rec.get("created_at"))
+                    artifact,
+                    line_number,
+                    session_id,
+                    project_path,
+                    timestamp=to_utc(record.get("created_at")),
                 )
                 row.turn_type = "system"
                 row.text = compact(
                     _join(
                         "session start (legacy)",
-                        str(rec.get("description") or ""),
-                        "%s messages" % rec["message_count"] if "message_count" in rec else "",
+                        str(record.get("description") or ""),
+                        "%s messages" % record["message_count"]
+                        if "message_count" in record
+                        else "",
                     ),
                 )
                 yield row
                 continue
-            meta = rec.get("metadata")
+            meta = record.get("metadata")
             if not isinstance(meta, dict):
                 meta = {}
-            base = self._row(artifact, n, session_id, project_path, ts=epoch(rec.get("created")))
+            base = self._row(
+                artifact,
+                line_number,
+                session_id,
+                project_path,
+                timestamp=epoch(record.get("created")),
+            )
             yield from self._block_rows(
                 artifact,
                 base,
-                str(rec.get("role") or ""),
-                rec.get("content"),
+                str(record.get("role") or ""),
+                record.get("content"),
                 meta.get("userVisible", True) is not False,
                 tool_names,
                 opts,
@@ -849,61 +885,63 @@ class GooseParser(Parser):
                 )
                 current = None
 
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            if "input" in rec or "model_config" in rec:
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            if "input" in record or "model_config" in record:
                 flush()
-                cfg = rec.get("model_config") or {}
-                inp = rec.get("input")
-                if not isinstance(inp, dict):
-                    inp = {}
-                model = str(cfg.get("model_name") or inp.get("model") or "")
-                msgs = inp.get("messages")
-                if not isinstance(msgs, list):
-                    msgs = []
+                config = record.get("model_config") or {}
+                request_input = record.get("input")
+                if not isinstance(request_input, dict):
+                    request_input = {}
+                model = str(config.get("model_name") or request_input.get("model") or "")
+                messages = request_input.get("messages")
+                if not isinstance(messages, list):
+                    messages = []
                 last_user = next(
                     (
-                        text_of(m.get("content"))
-                        for m in reversed(msgs)
-                        if isinstance(m, dict) and m.get("role") == "user"
+                        text_of(message.get("content"))
+                        for message in reversed(messages)
+                        if isinstance(message, dict) and message.get("role") == "user"
                     ),
                     "",
                 )
-                request = self._row(artifact, n, model=model)
+                request = self._row(artifact, line_number, model=model)
                 request.turn_type = "system"
                 request.text = compact(
                     _join(
                         "llm request",
-                        "%d messages" % len(msgs),
+                        "%d messages" % len(messages),
                         "last user: " + last_user if last_user else "",
                     ),
                 )
                 continue
-            data = rec.get("data")
+            data = record.get("data")
             if isinstance(data, dict) and "content" in data:
                 content = data.get("content")
                 if isinstance(content, str):
                     content = [{"type": "text", "text": content}]
                 if not isinstance(content, list) or not content:
                     continue  # a usage or metadata chunk adds no content
-                mid = str(data.get("id") or "")
-                if current is not None and mid and current[1] == mid:
+                message_id = str(data.get("id") or "")
+                if current is not None and message_id and current[1] == message_id:
                     merge_delta(current[3], content)
                     continue
                 flush()
-                base = self._row(artifact, n, model=model, ts=epoch(data.get("created")))
+                base = self._row(
+                    artifact, line_number, model=model, timestamp=epoch(data.get("created"))
+                )
                 if request is not None and not request.timestamp_utc:
                     request.timestamp_utc = base.timestamp_utc
-                current = (base, mid, str(data.get("role") or "assistant"), list(content))
-            elif rec.get("error"):
+                current = (base, message_id, str(data.get("role") or "assistant"), list(content))
+            elif record.get("error"):
                 flush()
-                row = self._row(artifact, n, model=model)
+                row = self._row(artifact, line_number, model=model)
                 row.turn_type = "system"
                 row.text = compact(
                     "llm error: "
                     + (
-                        rec["error"]
-                        if isinstance(rec["error"], str)
-                        else compact_json(rec["error"])
+                        record["error"]
+                        if isinstance(record["error"], str)
+                        else compact_json(record["error"])
                     ),
                 )
                 pending.append(row)
@@ -914,8 +952,8 @@ class GooseParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     # -- standing files: permission.yaml, roaming_trust.json, schedule.json -------------
-    def _standing_row(self, artifact: Artifact, line: int, ts: str, text: str) -> Row:
-        row = self._row(artifact, line, ts=ts)
+    def _standing_row(self, artifact: Artifact, line: int, timestamp: str, text: str) -> Row:
+        row = self._row(artifact, line, timestamp=timestamp)
         row.turn_type = "system"
         row.text = compact(text)
         return row
@@ -924,71 +962,71 @@ class GooseParser(Parser):
         """(document, error message) of a whole-file JSON store."""
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            return None, "unreadable %s (%s)" % (artifact.rel, e)
+        except OSError as error:
+            return None, "unreadable %s (%s)" % (artifact.rel, error)
         try:
             return json.loads(raw), ""
-        except ValueError as e:
-            return None, "%s is not JSON (%s)" % (artifact.rel, e)
+        except ValueError as error:
+            return None, "%s is not JSON (%s)" % (artifact.rel, error)
 
     def _parse_permission_yaml(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        ts = file_mtime(artifact)
-        for n, category, level, tool in permission_entries(artifact.disk_path, errors):
+        timestamp = file_mtime(artifact)
+        for line_number, category, level, tool in permission_entries(artifact.disk_path, errors):
             yield self._standing_row(
                 artifact,
-                n,
-                ts,
+                line_number,
+                timestamp,
                 "permission setting: %s.%s=%s (from %s, file mtime)"
                 % (category, level, tool, artifact.rel),
             )
         yield from error_rows(self, artifact, errors)
 
     def _parse_roaming_trust(self, artifact: Artifact) -> Iterator[Row]:
-        doc, message = self._read_json_file(artifact)
-        ts = file_mtime(artifact)
-        if not message and not isinstance(doc, dict):
+        document, message = self._read_json_file(artifact)
+        timestamp = file_mtime(artifact)
+        if not message and not isinstance(document, dict):
             message = "%s is not a JSON object" % artifact.rel
-        if message or not isinstance(doc, dict):
-            yield self._standing_row(artifact, 0, ts, "parser: " + message)
+        if message or not isinstance(document, dict):
+            yield self._standing_row(artifact, 0, timestamp, "parser: " + message)
             return
         for key in ("allowed", "revoked_keys"):
-            values = doc.get(key)
+            values = document.get(key)
             for peer in values if isinstance(values, list) else []:
                 yield self._standing_row(
                     artifact,
                     1,
-                    ts,
+                    timestamp,
                     "permission setting: roaming_trust.%s=%s (from %s, file mtime)"
                     % (key, setting_value(peer), artifact.rel),
                 )
 
     def _parse_schedule(self, artifact: Artifact) -> Iterator[Row]:
-        doc, message = self._read_json_file(artifact)
-        ts = file_mtime(artifact)
-        if not message and not isinstance(doc, list):
+        document, message = self._read_json_file(artifact)
+        timestamp = file_mtime(artifact)
+        if not message and not isinstance(document, list):
             message = "%s is not a JSON array" % artifact.rel
-        if message or not isinstance(doc, list):
-            yield self._standing_row(artifact, 0, ts, "parser: " + message)
+        if message or not isinstance(document, list):
+            yield self._standing_row(artifact, 0, timestamp, "parser: " + message)
             return
         errors: list = []
-        for i, job in enumerate(doc, 1):
+        for i, job in enumerate(document, 1):
             if not isinstance(job, dict):
                 errors.append(
                     (0, "unparseable record %d (not a JSON object)" % i, compact_json(job))
                 )
                 continue
-            yield self._standing_row(artifact, 1, ts, schedule_text(job, artifact.rel))
+            yield self._standing_row(artifact, 1, timestamp, schedule_text(job, artifact.rel))
         yield from error_rows(self, artifact, errors)
 
     # -- history.txt ------------------------------------------------------------------------
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-                if not line or (n == 1 and line.startswith("#V")):
+                if not line or (line_number == 1 and line.startswith("#V")):
                     continue
-                row = self._row(artifact, n)
+                row = self._row(artifact, line_number)
                 row.turn_type = "user"
                 row.text = compact(unescape_history(line))
                 yield row

@@ -168,25 +168,25 @@ LOGGED_EVENTS = ("context_compaction_installed", "run_retracted", "turn_task_die
 SUBAGENT_CONTROL = ("subagent.control.spawn_accepted", "subagent.control.start_attested")
 
 
-def _dict(v) -> dict:
-    return v if isinstance(v, dict) else {}
+def _dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
-def _str(v) -> str:
-    if v is None:
+def _str(value) -> str:
+    if value is None:
         return ""
-    return v if isinstance(v, str) else compact_json(v)
+    return value if isinstance(value, str) else compact_json(value)
 
 
-def _v(value) -> str:
+def _pair_value(value) -> str:
     """A field value in a `key=value` pair: `-` when missing or null."""
     return "-" if value in (None, "") else setting_value(value)
 
 
 def _fact(payload: dict) -> dict:
     """A fact record's fields: `payload.record`, falling back to `payload`."""
-    rec = payload.get("record")
-    return rec if isinstance(rec, dict) else payload
+    record = payload.get("record")
+    return record if isinstance(record, dict) else payload
 
 
 def micros_to_utc(value) -> str:
@@ -209,9 +209,9 @@ def args_summary(args) -> str:
         args = decoded
     if isinstance(args, dict):
         for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, ""):
-                return _str(v)
+            value = args.get(k)
+            if value not in (None, ""):
+                return _str(value)
         return compact_json(args)
     return _str(args)
 
@@ -222,12 +222,12 @@ def result_text(text) -> str:
         return _str(text)
     if text.startswith("{"):
         try:
-            obj = json.loads(text)
+            decoded = json.loads(text)
         except ValueError:
             return text
-        if isinstance(obj, dict) and "output" in obj:
-            out = _str(obj.get("output"))
-            code = obj.get("exit_code")
+        if isinstance(decoded, dict) and "output" in decoded:
+            out = _str(decoded.get("output"))
+            code = decoded.get("exit_code")
             if code not in (None, 0):
                 out = "[exit %s] %s" % (code, out)
             return out
@@ -238,51 +238,55 @@ def records(path, errors: list) -> Iterator[tuple[int, dict]]:
     """(line, envelope) for every envelope, frames unpacked in child order,
     markers dropped. Stops at once when the first record is not Muse."""
     first = True
-    for n, rec in iter_jsonl(path, errors):
+    for line_number, record in iter_jsonl(path, errors):
         if first:
             first = False
-            if "retained_frame" not in rec and not ("stream" in rec and "payload_type" in rec):
+            if "retained_frame" not in record and not (
+                "stream" in record and "payload_type" in record
+            ):
                 return
-        if "retained_marker" in rec:
+        if "retained_marker" in record:
             continue
-        if "retained_frame" in rec:
-            children = [c for c in rec.get("children") or [] if isinstance(c, dict)]
-            children.sort(key=lambda c: c.get("child_index") or 0)
-            for c in children:
-                child = c.get("record_json")
+        if "retained_frame" in record:
+            children = [item for item in record.get("children") or [] if isinstance(item, dict)]
+            children.sort(key=lambda item: item.get("child_index") or 0)
+            for entry in children:
+                child = entry.get("record_json")
                 try:
                     inner = json.loads(child or "")
-                except (TypeError, ValueError) as e:
+                except (TypeError, ValueError) as error:
                     raw = child if isinstance(child, str) else ""
-                    errors.append((n, "unparseable line (retained_frame child: %s)" % e, raw))
+                    errors.append(
+                        (line_number, "unparseable line (retained_frame child: %s)" % error, raw)
+                    )
                     continue
                 if isinstance(inner, dict):
-                    yield n, inner
+                    yield line_number, inner
             continue
-        yield n, rec
+        yield line_number, record
 
 
-def workspace(recs: Iterable[tuple[int, dict]], limit: int = 0) -> tuple[str, str]:
+def workspace(log_records: Iterable[tuple[int, dict]], limit: int = 0) -> tuple[str, str]:
     """(project path, branch) from a session log's records: the last
     metadata `workspace_root` (else `route_facts` `cwd`) and the last branch
     name. `limit` caps the lines read (0 reads them all)."""
     project = cwd = branch = ""
-    for n, rec in recs:
-        if limit and n > limit:
+    for line_number, record in log_records:
+        if limit and line_number > limit:
             break
-        ptype = rec.get("payload_type")
-        payload = _dict(rec.get("payload"))
+        payload_type = record.get("payload_type")
+        payload = _dict(record.get("payload"))
         fact = _fact(payload)
-        if ptype == "runtime.session.metadata":
-            ws = fact.get("workspace_root") or payload.get("workspace_root")
-            if ws:
-                project = str(ws)
-        elif ptype == "runtime.session.route_facts" and fact.get("cwd"):
+        if payload_type == "runtime.session.metadata":
+            workspace_root = fact.get("workspace_root") or payload.get("workspace_root")
+            if workspace_root:
+                project = str(workspace_root)
+        elif payload_type == "runtime.session.route_facts" and fact.get("cwd"):
             cwd = str(fact.get("cwd"))
-        elif ptype == "session.workspace_branch.observed":
-            ref = _dict(fact.get("reference"))
-            if ref.get("kind") == "branch" and ref.get("name"):
-                branch = str(ref.get("name"))
+        elif payload_type == "session.workspace_branch.observed":
+            reference = _dict(fact.get("reference"))
+            if reference.get("kind") == "branch" and reference.get("name"):
+                branch = str(reference.get("name"))
     return project or cwd, branch
 
 
@@ -313,10 +317,10 @@ class MuseCodeParser(Parser):
     def _parent_workspace(self, artifact: Artifact) -> tuple[str, str]:
         """Project and branch of the nearest ancestor log that has them,
         walking up through `subagent/<id>/` levels. Symlinks are not read."""
-        d = artifact.disk_path.parent
-        while d.parent.name == "subagent":
-            d = d.parent.parent
-            log = d / "session.jsonl"
+        directory = artifact.disk_path.parent
+        while directory.parent.name == "subagent":
+            directory = directory.parent.parent
+            log = directory / "session.jsonl"
             if log.is_symlink() or not log.is_file():
                 continue
             if log not in self._parent_cache:
@@ -328,8 +332,8 @@ class MuseCodeParser(Parser):
 
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        recs = list(records(artifact.disk_path, errors))
-        if not recs:
+        log_records = list(records(artifact.disk_path, errors))
+        if not log_records:
             yield from error_rows(self, artifact, errors)
             return
         is_subagent = "/subagent/" in artifact.rel
@@ -341,32 +345,36 @@ class MuseCodeParser(Parser):
         committed_summaries: set[str] = set()
         last_delta: dict[str, int] = {}
         session_model = ""
-        for i, (_, rec) in enumerate(recs):
-            ptype = rec.get("payload_type")
-            payload = _dict(rec.get("payload"))
+        for i, (_, record) in enumerate(log_records):
+            payload_type = record.get("payload_type")
+            payload = _dict(record.get("payload"))
             fact = _fact(payload)
-            if ptype == "run.model.configured":
-                rid = _dict(fact.get("run_stream")).get("id")
-                if rid and fact.get("model_id"):
-                    run_model[str(rid)] = str(fact.get("model_id"))
-            elif ptype == "runtime.session.metadata" and fact.get("model_id") and not session_model:
+            if payload_type == "run.model.configured":
+                run_key = _dict(fact.get("run_stream")).get("id")
+                if run_key and fact.get("model_id"):
+                    run_model[str(run_key)] = str(fact.get("model_id"))
+            elif (
+                payload_type == "runtime.session.metadata"
+                and fact.get("model_id")
+                and not session_model
+            ):
                 session_model = str(fact.get("model_id"))
-            elif ptype == "runtime.session" and payload.get("kind") == "run":
-                ev = _dict(payload.get("event"))
-                rid = str(payload.get("run_id") or "")
-                kind = ev.get("kind")
+            elif payload_type == "runtime.session" and payload.get("kind") == "run":
+                event = _dict(payload.get("event"))
+                run_key = str(payload.get("run_id") or "")
+                kind = event.get("kind")
                 if kind == "started":
-                    started_runs.add(rid)
-                elif kind == "model_completed" and ev.get("model"):
-                    run_completed_model.setdefault(rid, str(ev.get("model")))
+                    started_runs.add(run_key)
+                elif kind == "model_completed" and event.get("model"):
+                    run_completed_model.setdefault(run_key, str(event.get("model")))
                 elif kind == "reasoning_summary_committed":
-                    committed_summaries.add(str(ev.get("message_id") or ""))
+                    committed_summaries.add(str(event.get("message_id") or ""))
                 elif kind == "reasoning_summary_delta":
-                    last_delta[str(ev.get("message_id") or "")] = i
+                    last_delta[str(event.get("message_id") or "")] = i
 
         # Defaults for rows before the first metadata record; a subagent log
         # records no workspace of its own and takes its parent's.
-        project, branch = workspace(recs)
+        project, branch = workspace(log_records)
         if is_subagent and not project:
             project, branch = self._parent_workspace(artifact)
         session_id = ""
@@ -379,67 +387,69 @@ class MuseCodeParser(Parser):
         modes: dict = {}
         declared_format = ""
 
-        for i, (n, rec) in enumerate(recs):
-            ptype = rec.get("payload_type")
-            payload = _dict(rec.get("payload"))
+        for i, (line_number, record) in enumerate(log_records):
+            payload_type = record.get("payload_type")
+            payload = _dict(record.get("payload"))
             fact = _fact(payload)
-            sid = _dict(rec.get("stream")).get("id")
-            if sid and not session_id:
-                session_id = str(sid)
+            stream_id = _dict(record.get("stream")).get("id")
+            if stream_id and not session_id:
+                session_id = str(stream_id)
             run_id = str(payload.get("run_id") or "")
             model = run_model.get(run_id) or run_completed_model.get(run_id) or session_model
 
-            def row(
+            def make_row(
                 turn: str,
                 text: str,
                 tool_name: str = "",
                 tool_use_id: str = "",
-                n=n,
-                rec=rec,
+                source_line=line_number,
+                record=record,
                 model=model,
                 session_id=session_id,
                 project=project,
                 branch=branch,
             ) -> Row:
-                r = self.base_row(artifact)
-                r.source_line = n
-                r.timestamp_utc = micros_to_utc(rec.get("recorded_at"))
-                r.session_id = session_id
-                r.project_path = project
-                r.git_branch = branch
-                r.model = model
-                r.turn_type = turn
-                r.tool_name = tool_name
-                r.tool_use_id = tool_use_id
-                r.text = compact(text)
-                return r
+                row = self.base_row(artifact)
+                row.source_line = source_line
+                row.timestamp_utc = micros_to_utc(record.get("recorded_at"))
+                row.session_id = session_id
+                row.project_path = project
+                row.git_branch = branch
+                row.model = model
+                row.turn_type = turn
+                row.tool_name = tool_name
+                row.tool_use_id = tool_use_id
+                row.text = compact(text)
+                return row
 
-            if ptype == "runtime.session.metadata":
+            if payload_type == "runtime.session.metadata":
                 if fact.get("model_id"):
                     session_model = str(fact.get("model_id"))
-                    yield from self._model_row(row, models, session_id, session_model, fact)
-                ws = fact.get("workspace_root") or payload.get("workspace_root")
-                if ws:
-                    project = str(ws)
-            elif ptype == "run.model.configured" and fact.get("model_id"):
-                yield from self._model_row(row, models, session_id, str(fact["model_id"]), fact)
-            elif ptype == "runtime.session.permission_format_declared":
+                    yield from self._model_row(make_row, models, session_id, session_model, fact)
+                workspace_root = fact.get("workspace_root") or payload.get("workspace_root")
+                if workspace_root:
+                    project = str(workspace_root)
+            elif payload_type == "run.model.configured" and fact.get("model_id"):
+                yield from self._model_row(
+                    make_row, models, session_id, str(fact["model_id"]), fact
+                )
+            elif payload_type == "runtime.session.permission_format_declared":
                 declared_format = _str(fact.get("format"))
-            elif ptype == "runtime.session.permission_profile_committed":
-                snap = _dict(fact.get("resolved_snapshot"))
+            elif payload_type == "runtime.session.permission_profile_committed":
+                snapshot = _dict(fact.get("resolved_snapshot"))
                 value = "approval=%s reviewer=%s profile=%s" % (
-                    _v(snap.get("approval")),
-                    _v(snap.get("reviewer")),
-                    _v(_dict(fact.get("source")).get("id")),
+                    _pair_value(snapshot.get("approval")),
+                    _pair_value(snapshot.get("reviewer")),
+                    _pair_value(_dict(fact.get("source")).get("id")),
                 )
                 text = track_change("permission mode", modes, session_id, value)
                 if text:
                     if fact.get("cause") not in (None, ""):
-                        text += " cause=%s" % _v(fact.get("cause"))
+                        text += " cause=%s" % _pair_value(fact.get("cause"))
                     if declared_format:
                         text += " format=%s" % declared_format
-                    yield row("system", text)
-            elif ptype == "session.opened.observed" and fact.get("security_mode") not in (
+                    yield make_row("system", text)
+            elif payload_type == "session.opened.observed" and fact.get("security_mode") not in (
                 None,
                 "",
             ):
@@ -447,51 +457,59 @@ class MuseCodeParser(Parser):
                     "permission mode",
                     modes,
                     (session_id, "security_mode"),
-                    "security_mode=%s" % _v(fact.get("security_mode")),
+                    "security_mode=%s" % _pair_value(fact.get("security_mode")),
                 )
                 if text:
-                    yield row("system", text)
-            elif ptype == "session.workspace_branch.observed":
-                ref = _dict(fact.get("reference"))
-                branch = str(ref.get("name") or "") if ref.get("kind") == "branch" else ""
-            elif ptype == "session.name.changed":
-                yield row("system", "session name: %s" % _str(fact.get("new_name")))
-            elif ptype == "runtime.model_reconfigure.completed":
-                m = _str(_dict(fact.get("effective")).get("model_id"))
-                prev = _str(_dict(fact.get("previous")).get("model_id"))
-                if not m:
-                    yield row("system", "%s: %s" % (ptype, compact_json(fact)))
+                    yield make_row("system", text)
+            elif payload_type == "session.workspace_branch.observed":
+                reference = _dict(fact.get("reference"))
+                branch = (
+                    str(reference.get("name") or "") if reference.get("kind") == "branch" else ""
+                )
+            elif payload_type == "session.name.changed":
+                yield make_row("system", "session name: %s" % _str(fact.get("new_name")))
+            elif payload_type == "runtime.model_reconfigure.completed":
+                effective_model = _str(_dict(fact.get("effective")).get("model_id"))
+                previous = _str(_dict(fact.get("previous")).get("model_id"))
+                if not effective_model:
+                    yield make_row("system", "%s: %s" % (payload_type, compact_json(fact)))
                     continue
-                session_model = m
-                if prev and session_id not in models:
-                    yield row("system", track_change("model", models, session_id, prev), model=prev)
+                session_model = effective_model
+                if previous and session_id not in models:
+                    yield make_row(
+                        "system",
+                        track_change("model", models, session_id, previous),
+                        model=previous,
+                    )
                 # A `/model` the user typed keeps its row even when the model
                 # did not change.
-                text = track_change("model", models, session_id, m) or "model: %s -> %s" % (m, m)
+                text = track_change(
+                    "model", models, session_id, effective_model
+                ) or "model: %s -> %s" % (effective_model, effective_model)
                 if fact.get("apply_outcome") not in (None, ""):
-                    text += " apply_outcome=%s" % _v(fact.get("apply_outcome"))
-                yield row("system", text, model=m)
-            elif ptype == "runtime.user_intent.accepted":
+                    text += " apply_outcome=%s" % _pair_value(fact.get("apply_outcome"))
+                yield make_row("system", text, model=effective_model)
+            elif payload_type == "runtime.user_intent.accepted":
                 intent = str(payload.get("intent_id") or "")
                 if intent and intent not in started_runs:
                     parts = []
-                    for msg in payload.get("model_messages") or []:
-                        for c in _dict(msg).get("content") or []:
-                            t = _dict(c).get("text")
-                            if isinstance(t, str):
-                                parts.append(t)
+                    for message in payload.get("model_messages") or []:
+                        for block in _dict(message).get("content") or []:
+                            block_text = _dict(block).get("text")
+                            if isinstance(block_text, str):
+                                parts.append(block_text)
                     if parts:
-                        yield row(
+                        yield make_row(
                             "system" if is_subagent else "user",
                             "\n".join(parts),
                             model=run_model.get(intent) or model,
                         )
-            elif ptype == "user_shell.command":
-                cid = _str(fact.get("command_id"))
-                shell_ids.append(cid)
-                yield row("tool_use", _str(fact.get("command_text")), "user_shell", cid)
-            elif ptype == "user_shell.result":
-                cid = _str(fact.get("command_id")) or (shell_ids[-1] if shell_ids else "")
+            elif payload_type == "user_shell.command":
+                command_id = _str(fact.get("command_id"))
+                shell_ids.append(command_id)
+                yield make_row("tool_use", _str(fact.get("command_text")), "user_shell", command_id)
+            elif payload_type == "user_shell.result":
+                command_id = _str(fact.get("command_id")) or (shell_ids[-1] if shell_ids else "")
                 out = _str(fact.get("visible_output"))
                 notes = []
                 if fact.get("exit_code") not in (None, 0):
@@ -501,23 +519,25 @@ class MuseCodeParser(Parser):
                     notes.append(str(state))
                 if notes:
                     out = "[%s] %s" % (", ".join(notes), out)
-                yield row("tool_result", out, "user_shell", cid)
-            elif ptype in SUBAGENT_CONTROL:
-                yield row("system", "%s: %s" % (ptype, compact_json(fact)))
-            elif ptype == "runtime.session":
+                yield make_row("tool_result", out, "user_shell", command_id)
+            elif payload_type in SUBAGENT_CONTROL:
+                yield make_row("system", "%s: %s" % (payload_type, compact_json(fact)))
+            elif payload_type == "runtime.session":
                 kind = payload.get("kind")
-                ev = _dict(payload.get("event"))
+                event = _dict(payload.get("event"))
                 if kind == "run":
                     if (
-                        ev.get("kind") == "model_completed"
-                        and ev.get("model")
+                        event.get("kind") == "model_completed"
+                        and event.get("model")
                         and run_id not in run_model
                     ):
-                        yield from self._model_row(row, models, session_id, str(ev["model"]), {})
+                        yield from self._model_row(
+                            make_row, models, session_id, str(event["model"]), {}
+                        )
                     yield from self._run_event(
-                        ev,
+                        event,
                         i,
-                        row,
+                        make_row,
                         opts,
                         is_subagent,
                         calls,
@@ -526,53 +546,55 @@ class MuseCodeParser(Parser):
                         last_delta,
                     )
                 elif kind == "approval":
-                    ekind = ev.get("kind")
-                    if ekind == "requested":
-                        tname = _str(ev.get("tool_name"))
-                        tid = _str(ev.get("tool_call_id"))
-                        approvals[_str(ev.get("pending_action_id"))] = (tname, tid)
-                        last_request = (tname, tid)
-                        yield row(
+                    event_kind = event.get("kind")
+                    if event_kind == "requested":
+                        tool_name = _str(event.get("tool_name"))
+                        tool_id = _str(event.get("tool_call_id"))
+                        approvals[_str(event.get("pending_action_id"))] = (tool_name, tool_id)
+                        last_request = (tool_name, tool_id)
+                        yield make_row(
                             "system",
-                            "approval requested: %s" % _str(ev.get("raw_args")),
-                            tname,
-                            tid,
+                            "approval requested: %s" % _str(event.get("raw_args")),
+                            tool_name,
+                            tool_id,
                         )
-                    elif ekind == "automated_review_completed":
-                        a = _dict(ev.get("assessment"))
+                    elif event_kind == "automated_review_completed":
+                        assessment = _dict(event.get("assessment"))
                         text = (
                             "permission decision: %s kind=automated_review_completed "
                             "risk_level=%s user_authorization=%s status=%s"
                             % (
-                                _v(a.get("outcome")),
-                                _v(a.get("risk_level")),
-                                _v(a.get("user_authorization")),
-                                _v(ev.get("status")),
+                                _pair_value(assessment.get("outcome")),
+                                _pair_value(assessment.get("risk_level")),
+                                _pair_value(assessment.get("user_authorization")),
+                                _pair_value(event.get("status")),
                             )
                         )
-                        if a.get("rationale") not in (None, ""):
-                            text += " " + _str(a.get("rationale"))
-                        yield row("system", text, *last_request)
-                    elif ekind == "decision_applied":
-                        tname, tid = approvals.get(_str(ev.get("pending_action_id")), ("", ""))
-                        yield row(
+                        if assessment.get("rationale") not in (None, ""):
+                            text += " " + _str(assessment.get("rationale"))
+                        yield make_row("system", text, *last_request)
+                    elif event_kind == "decision_applied":
+                        tool_name, tool_id = approvals.get(
+                            _str(event.get("pending_action_id")), ("", "")
+                        )
+                        yield make_row(
                             "system",
                             "permission decision: %s source=%s policy_result=%s amendment=%s"
                             % (
-                                _v(ev.get("decision")),
-                                _v(_dict(ev.get("decision_source")).get("kind")),
-                                _v(ev.get("policy_result")),
-                                _v(ev.get("amendment")),
+                                _pair_value(event.get("decision")),
+                                _pair_value(_dict(event.get("decision_source")).get("kind")),
+                                _pair_value(event.get("policy_result")),
+                                _pair_value(event.get("amendment")),
                             ),
-                            tname,
-                            tid,
+                            tool_name,
+                            tool_id,
                         )
             # Task and effect records, telemetry, permission records and
             # unknown payload types are bookkeeping: no row.
 
-        for r in error_rows(self, artifact, errors, session_id, project):
-            r.git_branch = branch
-            yield r
+        for error_row in error_rows(self, artifact, errors, session_id, project):
+            error_row.git_branch = branch
+            yield error_row
 
     @staticmethod
     def _model_row(row, models: dict, session_id: str, model: str, fact: dict) -> Iterator[Row]:
@@ -581,7 +603,7 @@ class MuseCodeParser(Parser):
         text = track_change("model", models, session_id, model)
         if text:
             if fact.get("provider_id") not in (None, ""):
-                text += " provider=%s" % _v(fact.get("provider_id"))
+                text += " provider=%s" % _pair_value(fact.get("provider_id"))
             yield row("system", text, model=model)
 
     # -- trusted projects ---------------------------------------------------
@@ -589,39 +611,39 @@ class MuseCodeParser(Parser):
     def _parse_trust(self, artifact: Artifact) -> Iterator[Row]:
         """`~/.config/muse/trust.json`: one `permission setting:` row per
         `projects.<path>.decision`, at the file's modification time."""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         try:
-            doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
-            doc = None
-        if not isinstance(doc, dict):
-            r = self.base_row(artifact)
-            r.source_line = 1
-            r.turn_type = "system"
-            r.timestamp_utc = ts
-            r.text = "parser: trust.json is not a JSON object"
-            yield r
+            document = None
+        if not isinstance(document, dict):
+            row = self.base_row(artifact)
+            row.source_line = 1
+            row.turn_type = "system"
+            row.timestamp_utc = timestamp
+            row.text = "parser: trust.json is not a JSON object"
+            yield row
             return
-        projects = doc.get("projects")
+        projects = document.get("projects")
         if not isinstance(projects, dict):
             return
         for path, entry in projects.items():
             if not isinstance(entry, dict) or "decision" not in entry:
                 continue
-            r = self.base_row(artifact)
-            r.source_line = 1
-            r.turn_type = "system"
-            r.timestamp_utc = ts
-            r.project_path = str(path)
-            r.text = compact(
+            row = self.base_row(artifact)
+            row.source_line = 1
+            row.turn_type = "system"
+            row.timestamp_utc = timestamp
+            row.project_path = str(path)
+            row.text = compact(
                 "permission setting: projects.%s.decision=%s (from %s, file mtime)"
                 % (path, setting_value(entry["decision"]), artifact.rel)
             )
-            yield r
+            yield row
 
     def _run_event(
         self,
-        ev: dict,
+        event: dict,
         i: int,
         row,
         opts: Options,
@@ -631,68 +653,70 @@ class MuseCodeParser(Parser):
         committed_summaries: set[str],
         last_delta: dict[str, int],
     ) -> Iterator[Row]:
-        kind = ev.get("kind")
+        kind = event.get("kind")
         if kind == "started":
-            prompt = _str(ev.get("prompt"))
+            prompt = _str(event.get("prompt"))
             if is_subagent:
                 yield row("system", "subagent task: %s" % prompt)
             else:
                 yield row("user", prompt)
         elif kind == "inbox_item_queued":
-            src = _str(_dict(ev.get("source")).get("source"))
-            text = _str(_dict(ev.get("payload")).get("prompt")) or _str(ev.get("body"))
-            if src == "user_steer":
+            source = _str(_dict(event.get("source")).get("source"))
+            text = _str(_dict(event.get("payload")).get("prompt")) or _str(event.get("body"))
+            if source == "user_steer":
                 yield row("user", text)
             else:
-                yield row("system", "inbox %s: %s" % (src, text or _str(ev.get("summary"))))
+                yield row("system", "inbox %s: %s" % (source, text or _str(event.get("summary"))))
         elif kind == "assistant_message_committed":
-            text = _str(ev.get("text"))
+            text = _str(event.get("text"))
             if text:
                 yield row("assistant", text)
         elif kind in ("reasoning_summary_committed", "reasoning_committed"):
             # reasoning_committed text was empty in every observed record;
             # its content is the opaque encrypted_content.
-            if opts.include_thinking and ev.get("text"):
-                yield row("thinking", _str(ev.get("text")))
+            if opts.include_thinking and event.get("text"):
+                yield row("thinking", _str(event.get("text")))
         elif kind == "reasoning_summary_delta":
-            mid = _str(ev.get("message_id"))
-            if mid in committed_summaries:
+            message_id = _str(event.get("message_id"))
+            if message_id in committed_summaries:
                 return
-            deltas.setdefault(mid, []).append(_str(ev.get("text")))
-            if last_delta.get(mid) == i and opts.include_thinking:
-                yield row("thinking", "\n\n".join(t for t in deltas.pop(mid) if t))
+            deltas.setdefault(message_id, []).append(_str(event.get("text")))
+            if last_delta.get(message_id) == i and opts.include_thinking:
+                yield row(
+                    "thinking", "\n\n".join(delta for delta in deltas.pop(message_id) if delta)
+                )
         elif kind == "assistant_tool_calls_committed":
-            for call in ev.get("tool_calls") or []:
+            for call in event.get("tool_calls") or []:
                 call = _dict(call)
                 name = _str(call.get("name"))
-                cid = _str(call.get("call_id"))
-                calls[cid] = name
-                yield row("tool_use", args_summary(call.get("args")), name, cid)
+                call_id = _str(call.get("call_id"))
+                calls[call_id] = name
+                yield row("tool_use", args_summary(call.get("args")), name, call_id)
         elif kind in RESULT_EVENTS or kind == "tool_result":
-            results = ev.get("results")
-            items = results if isinstance(results, list) else [ev]
-            for res in items:
-                res = _dict(res)
-                cid = _str(res.get("tool_call_id") or res.get("call_id"))
-                raw = next((res[k] for k in RESULT_KEYS if res.get(k) is not None), "")
-                yield row("tool_result", result_text(raw), calls.get(cid, ""), cid)
+            results = event.get("results")
+            items = results if isinstance(results, list) else [event]
+            for result in items:
+                result = _dict(result)
+                call_id = _str(result.get("tool_call_id") or result.get("call_id"))
+                raw = next((result[k] for k in RESULT_KEYS if result.get(k) is not None), "")
+                yield row("tool_result", result_text(raw), calls.get(call_id, ""), call_id)
         elif kind == "provider_tool_call_completed":
-            cid = _str(ev.get("call_id"))
-            action = _dict(ev.get("action"))
+            call_id = _str(event.get("call_id"))
+            action = _dict(event.get("action"))
             name = _str(action.get("type")) or "provider_tool"
-            calls[cid] = name
-            yield row("tool_use", args_summary(action) if action else "", name, cid)
-            text = compact_json(ev.get("results")) if ev.get("results") is not None else ""
-            status = _str(ev.get("status"))
+            calls[call_id] = name
+            yield row("tool_use", args_summary(action) if action else "", name, call_id)
+            text = compact_json(event.get("results")) if event.get("results") is not None else ""
+            status = _str(event.get("status"))
             if status and status != "completed":
                 text = "[%s] %s" % (status, text)
-            yield row("tool_result", text, name, cid)
+            yield row("tool_result", text, name, call_id)
         elif kind == "terminal":
-            term = _str(ev.get("terminal"))
+            term = _str(event.get("terminal"))
             if term and term != "completed":
-                yield row("system", "run %s: %s" % (term, _str(ev.get("reason"))))
+                yield row("system", "run %s: %s" % (term, _str(event.get("reason"))))
         elif kind in LOGGED_EVENTS:
-            yield row("system", "%s: %s" % (kind, compact_json(ev)))
+            yield row("system", "%s: %s" % (kind, compact_json(event)))
 
     # -- prompt history -----------------------------------------------------
 
@@ -701,30 +725,30 @@ class MuseCodeParser(Parser):
         pending: tuple[int, str] | None = None
 
         def emit(line: int, text: str, meta: dict) -> Row:
-            r = self.base_row(artifact)
-            r.source_line = line
-            r.turn_type = "user"
-            r.session_id = _str(meta.get("session"))
-            r.project_path = _str(meta.get("project"))
-            r.text = compact(text)
-            return r
+            row = self.base_row(artifact)
+            row.source_line = line
+            row.turn_type = "user"
+            row.session_id = _str(meta.get("session"))
+            row.project_path = _str(meta.get("project"))
+            row.text = compact(text)
+            return row
 
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 stripped = raw.strip()
                 if not stripped:
                     continue
                 try:
-                    rec = json.loads(stripped.decode("utf-8", errors="replace"))
-                except ValueError as e:
-                    errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                    record = json.loads(stripped.decode("utf-8", errors="replace"))
+                except ValueError as error:
+                    errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                     continue
-                if isinstance(rec, str):
+                if isinstance(record, str):
                     if pending is not None:
                         yield emit(pending[0], pending[1], {})
-                    pending = (n, rec)
-                elif isinstance(rec, dict) and pending is not None:
-                    yield emit(pending[0], pending[1], rec)
+                    pending = (line_number, record)
+                elif isinstance(record, dict) and pending is not None:
+                    yield emit(pending[0], pending[1], record)
                     pending = None
         if pending is not None:
             yield emit(pending[0], pending[1], {})

@@ -108,10 +108,11 @@ SESSION_ID_RX = re.compile(r'"session_id"\s*:\s*"([^"\\]*)"')
 SAVED_AT_RX = re.compile(r'"saved_at"\s*:\s*"([^"\\]*)"')
 
 
-def _regular_files(d: Path) -> list[os.DirEntry]:
+def _regular_files(directory: Path) -> list[os.DirEntry]:
     try:
         return sorted(
-            (e for e in os.scandir(d) if e.is_file(follow_symlinks=False)), key=lambda e: e.name
+            (entry for entry in os.scandir(directory) if entry.is_file(follow_symlinks=False)),
+            key=lambda entry: entry.name,
         )
     except OSError:
         return []
@@ -121,15 +122,20 @@ def _session_header(home: Path, name: str) -> dict | None:
     sessions = home / ".pi/agent/sessions"
     if sessions.is_symlink() or not sessions.is_dir():
         return None
-    for d in sorted(sessions.iterdir()):
-        f = d / name
-        if not d.is_symlink() and d.is_dir() and not f.is_symlink() and f.is_file():
-            return read_session(f).header or None
+    for directory in sorted(sessions.iterdir()):
+        session_path = directory / name
+        if (
+            not directory.is_symlink()
+            and directory.is_dir()
+            and not session_path.is_symlink()
+            and session_path.is_file()
+        ):
+            return read_session(session_path).header or None
     return None
 
 
-def _dash(v) -> str:
-    return "-" if v in (None, "") else setting_value(v)
+def _dash(value) -> str:
+    return "-" if value in (None, "") else setting_value(value)
 
 
 class LittleCoderParser(Parser):
@@ -169,44 +175,47 @@ class LittleCoderParser(Parser):
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, v in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(v, str) or not v:
+        for position, prompt in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(prompt, str) or not prompt:
                 continue
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = position
             row.turn_type = "user"
-            row.text = compact(v)
+            row.text = compact(prompt)
             yield row
         yield from error_rows(self, artifact, errors)
 
     def _parse_checkpoints(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = CHECKPOINT_RX.match(artifact.rel)
-        assert m is not None  # wants() accepted only matching paths
-        set_name = m.group(1)
+        match = CHECKPOINT_RX.match(artifact.rel)
+        assert match is not None  # wants() accepted only matching paths
+        set_name = match.group(1)
         files = _regular_files(artifact.disk_path.parent)
         if not files or files[0].name != artifact.disk_path.name:
             return  # the set's row comes from its first file
         mtimes: list[float] = []
         names: list[tuple[str, bool]] = []
-        for e in files:
+        for entry in files:
             try:
-                mtimes.append(e.stat(follow_symlinks=False).st_mtime)
+                mtimes.append(entry.stat(follow_symlinks=False).st_mtime)
             except OSError:
                 pass
-            absent = e.name.endswith(".absent")
-            names.append((e.name[: -len(".absent")] if absent else e.name, absent))
-        m = SESSION_FILE_RX.search(set_name)
+            absent = entry.name.endswith(".absent")
+            names.append((entry.name[: -len(".absent")] if absent else entry.name, absent))
+        match = SESSION_FILE_RX.search(set_name)
         row = self.base_row(artifact)
         row.source_line = 0
         row.turn_type = "system"
-        row.session_id = m.group(1) if m else ""
-        header = _session_header(artifact.home.disk_path, set_name) if m else None
+        row.session_id = match.group(1) if match else ""
+        header = _session_header(artifact.home.disk_path, set_name) if match else None
         if header:
             row.session_id = str(header.get("id") or row.session_id)
             row.project_path = str(header.get("cwd") or "")
         row.timestamp_utc = to_utc(min(mtimes)) if mtimes else ""
-        listed = "; ".join(n + (" (did not exist)" if a else "") for n, a in names)
-        what = "pi session %s" % set_name if m else "no session file (%s)" % set_name
+        listed = "; ".join(
+            file_name + (" (did not exist)" if was_absent else "")
+            for file_name, was_absent in names
+        )
+        what = "pi session %s" % set_name if match else "no session file (%s)" % set_name
         row.text = compact(
             "little-coder checkpoints for %s: %d pre-edit file(s)%s: %s"
             % (what, len(names), "" if header else ", session file not collected", listed),
@@ -217,71 +226,75 @@ class LittleCoderParser(Parser):
 
     def _parse_input_history(self, artifact: Artifact) -> Iterator[Row]:
         """`input_history.txt`: one readline entry per line, no time."""
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 text = line_text(raw)
                 if not text.strip():
                     continue
                 row = self.base_row(artifact)
-                row.source_line, row.turn_type, row.text = n, "user", compact(text)
+                row.source_line, row.turn_type, row.text = line_number, "user", compact(text)
                 yield row
 
     def _parse_legacy_config(self, artifact: Artifact) -> Iterator[Row]:
         """`config.json`: the gist id, the Telegram chat id and the permission
         mode, never a token or a key."""
         try:
-            doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
-            doc = None
-        ts = file_mtime(artifact)
-        if not isinstance(doc, dict):
+            document = None
+        timestamp = file_mtime(artifact)
+        if not isinstance(document, dict):
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.text = "parser: %s is not a JSON object" % artifact.rel
             yield row
             return
-        src = "(from %s, file mtime)" % artifact.rel
+        source = "(from %s, file mtime)" % artifact.rel
         texts = []
-        if doc.get("cloudsave_last_gist_id") not in (None, ""):
-            texts.append("session synced: gist %s %s" % (_dash(doc["cloudsave_last_gist_id"]), src))
-        if doc.get("telegram_chat_id") not in (None, "", 0):
+        if document.get("cloudsave_last_gist_id") not in (None, ""):
             texts.append(
-                "session relayed: telegram chat %s %s" % (_dash(doc["telegram_chat_id"]), src)
+                "session synced: gist %s %s" % (_dash(document["cloudsave_last_gist_id"]), source)
             )
-        if doc.get("permission_mode") not in (None, ""):
+        if document.get("telegram_chat_id") not in (None, "", 0):
             texts.append(
-                "permission setting: permission_mode=%s %s" % (_dash(doc["permission_mode"]), src)
+                "session relayed: telegram chat %s %s"
+                % (_dash(document["telegram_chat_id"]), source)
+            )
+        if document.get("permission_mode") not in (None, ""):
+            texts.append(
+                "permission setting: permission_mode=%s %s"
+                % (_dash(document["permission_mode"]), source)
             )
         for text in texts:
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.text = compact(text)
             yield row
 
     def _parse_legacy_history(self, artifact: Artifact) -> Iterator[Row]:
         """`sessions/history.json`: every session saved at exit."""
         errors: list = []
-        s = read_text(artifact.disk_path)
-        doc = None
-        if s is not None:
+        text = read_text(artifact.disk_path)
+        document = None
+        if text is not None:
             try:
-                doc = json.loads(s)
+                document = json.loads(text)
             except ValueError:
-                doc = None
-        if isinstance(doc, dict) and isinstance(doc.get("sessions"), list):
-            sessions = enumerate(doc["sessions"], 1)
-        elif s is None:
+                document = None
+        if isinstance(document, dict) and isinstance(document.get("sessions"), list):
+            sessions = enumerate(document["sessions"], 1)
+        elif text is None:
             errors.append((0, "unreadable", ""))
             sessions = iter(())
         else:
             # Cut mid-write: walk the sessions array as far as it parses.
-            m = SESSIONS_KEY_RX.search(s)
-            if m:
-                sessions = iter_array_at(s, m.end(), errors)
+            match = SESSIONS_KEY_RX.search(text)
+            if match:
+                sessions = iter_array_at(text, match.end(), errors)
             else:
                 errors.append((0, "history.json has no sessions array", ""))
                 sessions = iter(())
-        for n, session in sessions:
+        for position, session in sessions:
             if not isinstance(session, dict):
                 continue
             yield from self._legacy_rows(
@@ -290,43 +303,43 @@ class LittleCoderParser(Parser):
                 enumerate(session.get("messages") or [], 1),
                 str(session.get("session_id") or ""),
                 str(session.get("saved_at") or ""),
-                n,
+                position,
             )
         yield from error_rows(self, artifact, errors)
 
     def _parse_legacy_session(self, artifact: Artifact) -> Iterator[Row]:
         """One saved session file (daily, `/save`, or `session_latest.json`)."""
         errors: list = []
-        s = read_text(artifact.disk_path)
-        doc = None
-        if s is not None:
+        text = read_text(artifact.disk_path)
+        document = None
+        if text is not None:
             try:
-                doc = json.loads(s)
+                document = json.loads(text)
             except ValueError:
-                doc = None
-        if isinstance(doc, dict):
+                document = None
+        if isinstance(document, dict):
             yield from self._legacy_rows(
                 artifact,
-                doc,
-                enumerate(doc.get("messages") or [], 1),
-                str(doc.get("session_id") or ""),
-                str(doc.get("saved_at") or ""),
+                document,
+                enumerate(document.get("messages") or [], 1),
+                str(document.get("session_id") or ""),
+                str(document.get("saved_at") or ""),
             )
-        elif s is None:
+        elif text is None:
             errors.append((0, "unreadable", ""))
         else:
             # Cut mid-write: the keys before `messages` and the messages
             # array as far as it parses.
-            m = MESSAGES_KEY_RX.search(s)
-            if m:
-                head = s[: m.start()]
-                sid = SESSION_ID_RX.search(head)
+            match = MESSAGES_KEY_RX.search(text)
+            if match:
+                head = text[: match.start()]
+                session_id = SESSION_ID_RX.search(head)
                 saved = SAVED_AT_RX.search(head)
                 yield from self._legacy_rows(
                     artifact,
                     {},
-                    iter_array_at(s, m.end(), errors),
-                    sid.group(1) if sid else "",
+                    iter_array_at(text, match.end(), errors),
+                    session_id.group(1) if session_id else "",
                     saved.group(1) if saved else "",
                 )
             else:
@@ -334,90 +347,100 @@ class LittleCoderParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _legacy_rows(
-        self, artifact: Artifact, session: dict, messages, sid: str, saved_at: str, pos: int = 0
+        self,
+        artifact: Artifact,
+        session: dict,
+        messages,
+        session_id: str,
+        saved_at: str,
+        session_position: int = 0,
     ) -> Iterator[Row]:
         """Rows for one v0.0.x session: a `session saved:` row, then each
         message at the session's `saved_at`. `pos` is the session's position
         in `history.json`, 0 for a session file."""
-        ts = to_utc(saved_at)
+        timestamp = to_utc(saved_at)
 
-        def row(n: int, turn: str, text: str, tool_name: str = "", tool_use_id: str = "") -> Row:
-            r = self.base_row(artifact)
-            r.source_line = pos or n
-            r.timestamp_utc = ts
-            r.session_id = sid
-            r.turn_type = turn
-            r.tool_name = tool_name
-            r.tool_use_id = tool_use_id
-            r.text = compact(text)
-            return r
+        def make_row(
+            source_line: int, turn: str, text: str, tool_name: str = "", tool_use_id: str = ""
+        ) -> Row:
+            row = self.base_row(artifact)
+            row.source_line = session_position or source_line
+            row.timestamp_utc = timestamp
+            row.session_id = session_id
+            row.turn_type = turn
+            row.tool_name = tool_name
+            row.tool_use_id = tool_use_id
+            row.text = compact(text)
+            return row
 
-        yield row(
+        yield make_row(
             0,
             "system",
             "session saved: little-coder v0.0.x session %s turn_count=%s input_tokens=%s "
             "output_tokens=%s (saved_at %s, host local time)"
             % (
-                _dash(sid),
+                _dash(session_id),
                 _dash(session.get("turn_count")),
                 _dash(session.get("total_input_tokens")),
                 _dash(session.get("total_output_tokens")),
                 _dash(saved_at),
             ),
         )
-        for n, msg in messages:
-            if not isinstance(msg, dict):
+        for position, message in messages:
+            if not isinstance(message, dict):
                 continue
-            role = msg.get("role")
-            text = text_of(msg.get("content"))
+            role = message.get("role")
+            text = text_of(message.get("content"))
             if role == "user":
-                if msg.get("images"):
-                    text = (text + "\n" if text else "") + "[%d image(s)]" % len(msg["images"])
+                if message.get("images"):
+                    text = (text + "\n" if text else "") + "[%d image(s)]" % len(message["images"])
                 if text:
-                    yield row(n, "user", text)
+                    yield make_row(position, "user", text)
             elif role == "assistant":
                 if text:
-                    yield row(n, "assistant", text)
-                calls = msg.get("tool_calls")
-                for tc in calls if isinstance(calls, list) else []:
-                    if isinstance(tc, dict):
-                        yield row(
-                            n,
+                    yield make_row(position, "assistant", text)
+                calls = message.get("tool_calls")
+                for tool_call in calls if isinstance(calls, list) else []:
+                    if isinstance(tool_call, dict):
+                        yield make_row(
+                            position,
                             "tool_use",
-                            args_summary(tc.get("input")),
-                            str(tc.get("name") or ""),
-                            str(tc.get("id") or ""),
+                            args_summary(tool_call.get("input")),
+                            str(tool_call.get("name") or ""),
+                            str(tool_call.get("id") or ""),
                         )
             elif role == "tool":
-                name = str(msg.get("name") or "")
-                call_id = str(msg.get("tool_call_id") or "")
-                yield row(n, "tool_result", text, name, call_id)
+                name = str(message.get("name") or "")
+                call_id = str(message.get("tool_call_id") or "")
+                yield make_row(position, "tool_result", text, name, call_id)
                 if text == LEGACY_DENIED:
-                    yield row(n, "system", "permission decision: denied (%s)" % text, name, call_id)
+                    yield make_row(
+                        position, "system", "permission decision: denied (%s)" % text, name, call_id
+                    )
 
     def _parse_legacy_snapshots(self, artifact: Artifact) -> Iterator[Row]:
         """`checkpoints/<id>/snapshots.json`: one row per snapshot."""
-        sid = artifact.rel.split("/")[2]
+        session_id = artifact.rel.split("/")[2]
         errors: list = []
-        for n, snap in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(snap, dict):
+        for position, snapshot in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(snapshot, dict):
                 continue
-            backups = snap.get("file_backups")
+            backups = snapshot.get("file_backups")
             files = []
-            for path, fb in (backups if isinstance(backups, dict) else {}).items():
-                name = fb.get("backup_filename") if isinstance(fb, dict) else None
+            for path, backup in (backups if isinstance(backups, dict) else {}).items():
+                name = backup.get("backup_filename") if isinstance(backup, dict) else None
                 files.append("%s (%s)" % (path, "backup %s" % name if name else "did not exist"))
             row = self.base_row(artifact)
-            row.source_line, row.turn_type = n, "system"
-            row.timestamp_utc = to_utc(snap.get("created_at"))
-            row.session_id = str(snap.get("session_id") or sid)
+            row.source_line, row.turn_type = position, "system"
+            row.timestamp_utc = to_utc(snapshot.get("created_at"))
+            row.session_id = str(snapshot.get("session_id") or session_id)
             row.text = compact(
                 "little-coder v0.0.x checkpoint %s: turn_count=%s prompt=%s files=%s "
                 "(created_at host local time)"
                 % (
-                    _dash(snap.get("id")),
-                    _dash(snap.get("turn_count")),
-                    _dash(snap.get("user_prompt_preview")),
+                    _dash(snapshot.get("id")),
+                    _dash(snapshot.get("turn_count")),
+                    _dash(snapshot.get("user_prompt_preview")),
                     "; ".join(files) or "-",
                 )
             )

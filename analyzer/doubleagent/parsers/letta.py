@@ -221,8 +221,8 @@ def decode_key(name: str) -> str:
 
 def sanitize(segment: str) -> str:
     """The transcript directory name Letta derives from an id."""
-    s = re.sub(r"[^a-zA-Z0-9._-]", "_", segment).strip()
-    return s or "unknown"
+    name = re.sub(r"[^a-zA-Z0-9._-]", "_", segment).strip()
+    return name or "unknown"
 
 
 def _args_text(args) -> str:
@@ -240,11 +240,11 @@ def read_settings(path) -> dict | None:
     """A Letta settings file as a dict, or None when it cannot be read or
     is not a JSON object."""
     try:
-        with open(path, "rb") as fh:
-            doc = json.loads(fh.read().decode("utf-8", errors="replace"))
+        with open(path, "rb") as handle:
+            document = json.loads(handle.read().decode("utf-8", errors="replace"))
     except (OSError, ValueError):
         return None
-    return doc if isinstance(doc, dict) else None
+    return document if isinstance(document, dict) else None
 
 
 def _val(value) -> str:
@@ -258,12 +258,15 @@ def _bare_messages(session: SessionFile) -> SessionFile:
     """Schema 1: every line a bare pi-ai message. Wrapped as entries."""
     out = SessionFile()
     out.errors = session.errors
-    for n, rec in session.entries:
-        meta = rec.get("metadata")
+    for line_number, record in session.entries:
+        meta = record.get("metadata")
         if not isinstance(meta, dict):
             meta = {}
         out.entries.append(
-            (n, {"type": "message", "timestamp": meta.get("created_at"), "message": rec})
+            (
+                line_number,
+                {"type": "message", "timestamp": meta.get("created_at"), "message": record},
+            )
         )
     return out
 
@@ -271,33 +274,33 @@ def _bare_messages(session: SessionFile) -> SessionFile:
 def _last_snapshots(session: SessionFile) -> SessionFile:
     """Keep only the last entry for each `message.id`."""
     last: dict[str, int] = {}
-    for i, (_, rec) in enumerate(session.entries):
-        msg = rec.get("message")
-        if isinstance(msg, dict) and msg.get("id"):
-            last[str(msg.get("id"))] = i
+    for i, (_, record) in enumerate(session.entries):
+        message = record.get("message")
+        if isinstance(message, dict) and message.get("id"):
+            last[str(message.get("id"))] = i
     out = SessionFile()
     out.header, out.header_line, out.errors = session.header, session.header_line, session.errors
-    for i, (n, rec) in enumerate(session.entries):
-        msg = rec.get("message")
-        if isinstance(msg, dict) and msg.get("id") and last[str(msg.get("id"))] != i:
+    for i, (line_number, record) in enumerate(session.entries):
+        message = record.get("message")
+        if isinstance(message, dict) and message.get("id") and last[str(message.get("id"))] != i:
             continue
-        out.entries.append((n, rec))
+        out.entries.append((line_number, record))
     return out
 
 
-def _session_project(sessions: list[tuple[str, str]], ts: str) -> str:
+def _session_project(sessions: list[tuple[str, str]], timestamp: str) -> str:
     """The project of a transcript line captured at `ts`: that of the
     agent's earliest `sessions.jsonl` line at or after `ts` (the exit line
     of the CLI session the turn belongs to), else, when no line is later (a
     session still running, or one that ended without `/exit`), that of the
     latest line before it."""
-    if not ts:
+    if not timestamp:
         return ""
     before = ""
-    for sts, sproj in sessions:
-        if sts >= ts:
-            return sproj
-        before = sproj
+    for session_time, project in sessions:
+        if session_time >= timestamp:
+            return project
+        before = project
     return before
 
 
@@ -345,25 +348,28 @@ class LettaParser(Parser):
         if route:
             yield from self._parse_routing(artifact, route.group(1))
             return
-        m = LOCAL_RX.match(artifact.rel)
-        if m:
-            yield from self._parse_local(artifact, m.group(1), opts)
+        match = LOCAL_RX.match(artifact.rel)
+        if match:
+            yield from self._parse_local(artifact, match.group(1), opts)
             return
-        m = TRANSCRIPT_RX.match(artifact.rel)
-        assert m is not None  # wants() accepted only matching paths
-        yield from self._parse_transcript(artifact, m.group(1), m.group(2), opts)
+        match = TRANSCRIPT_RX.match(artifact.rel)
+        assert match is not None  # wants() accepted only matching paths
+        yield from self._parse_transcript(artifact, match.group(1), match.group(2), opts)
 
     # -- local backend ----------------------------------------------------
 
     def _parse_local(self, artifact: Artifact, dirname: str, opts: Options) -> Iterator[Row]:
         session = read_session(artifact.disk_path)
         key = decode_key(dirname)
-        sid = str(session.header.get("id") or key.partition(":")[2])
+        session_id = str(session.header.get("id") or key.partition(":")[2])
         cwd = str(session.header.get("cwd") or "")
         if (
             not session.header
             and session.entries
-            and all("role" in rec and rec.get("type") != "message" for _, rec in session.entries)
+            and all(
+                "role" in record and record.get("type") != "message"
+                for _, record in session.entries
+            )
         ):
             session = _bare_messages(session)
         else:
@@ -372,28 +378,32 @@ class LettaParser(Parser):
             row = self.base_row(artifact)
             row.source_line = session.header_line
             row.timestamp_utc = to_utc(session.header.get("timestamp"))
-            row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
+            row.session_id, row.project_path, row.turn_type = session_id, cwd, "system"
             row.text = compact(
-                "letta local-backend conversation start: %s cwd=%s" % (key or sid, cwd),
+                "letta local-backend conversation start: %s cwd=%s" % (key or session_id, cwd),
             )
             yield row
-        yield from entry_rows(self, artifact, session, opts, sid, cwd)
-        yield from error_rows(self, artifact, session.errors, sid, cwd)
+        yield from entry_rows(self, artifact, session, opts, session_id, cwd)
+        yield from error_rows(self, artifact, session.errors, session_id, cwd)
 
     # -- reflection transcript ------------------------------------------
 
     def _sessions(self, artifact: Artifact, agent_dir: str) -> list[tuple[str, str]]:
         """(timestamp, project) of the sessions.jsonl lines for this agent,
         sorted by time."""
-        f = artifact.home.disk_path / SESSIONS_REL
-        if f.is_symlink() or not f.is_file() or (artifact.home.disk_path / ".letta").is_symlink():
+        sessions_path = artifact.home.disk_path / SESSIONS_REL
+        if (
+            sessions_path.is_symlink()
+            or not sessions_path.is_file()
+            or (artifact.home.disk_path / ".letta").is_symlink()
+        ):
             return []
         out = []
-        for _, rec in iter_jsonl(f, []):
-            if sanitize(str(rec.get("agent_id") or "")) == agent_dir and rec.get("project"):
-                ts = to_utc(rec.get("timestamp"))
-                if ts:
-                    out.append((ts, str(rec.get("project"))))
+        for _, record in iter_jsonl(sessions_path, []):
+            if sanitize(str(record.get("agent_id") or "")) == agent_dir and record.get("project"):
+                timestamp = to_utc(record.get("timestamp"))
+                if timestamp:
+                    out.append((timestamp, str(record.get("project"))))
         return sorted(out)
 
     @staticmethod
@@ -401,30 +411,34 @@ class LettaParser(Parser):
         """The server of a transcript's agent: the `baseUrl` of its
         `agents[]` entry in `~/.letta/settings.json`, `api.letta.com` when
         the entry has none, `-` when there is no entry or no file."""
-        f = artifact.home.disk_path / SETTINGS_REL
-        if f.is_symlink() or not f.is_file() or (artifact.home.disk_path / ".letta").is_symlink():
+        settings_path = artifact.home.disk_path / SETTINGS_REL
+        if (
+            settings_path.is_symlink()
+            or not settings_path.is_file()
+            or (artifact.home.disk_path / ".letta").is_symlink()
+        ):
             return "-"
-        agents = (read_settings(f) or {}).get("agents")
+        agents = (read_settings(settings_path) or {}).get("agents")
         for entry in agents if isinstance(agents, list) else []:
             if isinstance(entry, dict) and sanitize(str(entry.get("agentId") or "")) == agent_dir:
                 return str(entry.get("baseUrl") or LETTA_CLOUD)
         return "-"
 
     def _parse_transcript(
-        self, artifact: Artifact, agent_dir: str, conv_dir: str, opts: Options
+        self, artifact: Artifact, agent_dir: str, conversation_dir: str, opts: Options
     ) -> Iterator[Row]:
         sessions = self._sessions(artifact, agent_dir)
         server_side = not agent_dir.startswith(LOCAL_AGENT_PREFIX)
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            ts = to_utc(rec.get("captured_at"))
-            project = _session_project(sessions, ts)
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            timestamp = to_utc(record.get("captured_at"))
+            project = _session_project(sessions, timestamp)
 
             def base() -> Row:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
-                row.session_id = conv_dir
+                row.source_line = line_number
+                row.timestamp_utc = timestamp
+                row.session_id = conversation_dir
                 row.project_path = project
                 return row
 
@@ -435,12 +449,12 @@ class LettaParser(Parser):
                 row.text = compact(
                     "session synced: server conversation %s agent %s server %s "
                     "(from .letta/transcripts path, first captured_at)"
-                    % (conv_dir, agent_dir, self._server(artifact, agent_dir))
+                    % (conversation_dir, agent_dir, self._server(artifact, agent_dir))
                 )
                 yield row
 
-            kind = rec.get("kind")
-            text = str(rec.get("text") or "")
+            kind = record.get("kind")
+            text = str(record.get("text") or "")
             if kind in ("user", "assistant"):
                 row = base()
                 row.turn_type = kind
@@ -458,20 +472,20 @@ class LettaParser(Parser):
                 row.text = compact("error: " + text)
                 yield row
             elif kind == "tool_call":
-                name = str(rec.get("name") or "")
+                name = str(record.get("name") or "")
                 row = base()
                 row.turn_type, row.tool_name = "tool_use", name
-                row.text = compact(_args_text(rec.get("argsText")))
+                row.text = compact(_args_text(record.get("argsText")))
                 yield row
-                if "resultText" in rec or "resultOk" in rec:
-                    result = str(rec.get("resultText") or "")
-                    if rec.get("resultOk") is False:
+                if "resultText" in record or "resultOk" in record:
+                    result = str(record.get("resultText") or "")
+                    if record.get("resultOk") is False:
                         result = "[error] " + result
                     row = base()
                     row.turn_type, row.tool_name = "tool_result", name
                     row.text = compact(result)
                     yield row
-        yield from error_rows(self, artifact, errors, conv_dir)
+        yield from error_rows(self, artifact, errors, conversation_dir)
 
     # -- settings.json and settings.local.json ---------------------------
 
@@ -482,22 +496,22 @@ class LettaParser(Parser):
         row per entry of the `permissions` object, all at the file's
         modification time; one `parser:` row when the file is not a JSON
         object."""
-        doc = read_settings(artifact.disk_path)
+        document = read_settings(artifact.disk_path)
         project = artifact.home.original if artifact.home.project else ""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
 
         def base() -> Row:
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.project_path = project
             return row
 
-        if doc is None:
+        if document is None:
             row = base()
             row.text = "parser: %s is not a JSON object" % artifact.rel
             yield row
             return
-        servers = doc.get("sessionsByServer")
+        servers = document.get("sessionsByServer")
         if artifact.rel == LEGACY_SETTINGS_REL or not isinstance(servers, dict):
             servers = {}
         for key, entry in servers.items():
@@ -517,11 +531,11 @@ class LettaParser(Parser):
                 )
             )
             yield row
-        perms = doc.get("permissions")
-        if not isinstance(perms, dict):
-            perms = {}
+        permissions = document.get("permissions")
+        if not isinstance(permissions, dict):
+            permissions = {}
         for key in PERMISSION_KEYS:
-            value = perms.get(key)
+            value = permissions.get(key)
             entries = value if isinstance(value, list) else [] if value is None else [value]
             for entry in entries:
                 row = base()
@@ -536,8 +550,8 @@ class LettaParser(Parser):
     def _parse_routing(self, artifact: Artifact, channel: str) -> Iterator[Row]:
         """One `session relayed:` row per route, at its `createdAt`, or at
         the file's modification time when it has none."""
-        doc = read_settings(artifact.disk_path)
-        routes = doc.get("routes") if doc is not None else None
+        document = read_settings(artifact.disk_path)
+        routes = document.get("routes") if document is not None else None
         if not isinstance(routes, list):
             row = self.base_row(artifact)
             row.source_line, row.turn_type = 1, "system"
@@ -578,24 +592,24 @@ class LettaParser(Parser):
     def _parse_crons(self, artifact: Artifact) -> Iterator[Row]:
         """One `scheduled task:` row per task, at its `created_at`, or at
         the file's modification time when it has none."""
-        doc = read_settings(artifact.disk_path)
-        if doc is None:
+        document = read_settings(artifact.disk_path)
+        if document is None:
             row = self.base_row(artifact)
             row.source_line, row.turn_type = 1, "system"
             row.text = "parser: %s is not a JSON object" % artifact.rel
             yield row
             return
-        tasks = doc.get("tasks")
+        tasks = document.get("tasks")
         mtime = file_mtime(artifact)
         for task in tasks if isinstance(tasks, list) else ():
             if not isinstance(task, dict):
                 continue
             created = to_utc(task.get("created_at"))
-            conv = str(task.get("conversation_id") or "")
+            conversation = str(task.get("conversation_id") or "")
             row = self.base_row(artifact)
             row.source_line, row.turn_type = 1, "system"
             row.timestamp_utc = created or mtime
-            row.session_id = "" if conv == "new" else conv
+            row.session_id = "" if conversation == "new" else conversation
             row.text = compact(
                 "scheduled task: %s name=%s status=%s cron=%s timezone=%s recurring=%s "
                 "scheduled_for=%s agent=%s conversation=%s fire_count=%s last_fired=%s "
@@ -610,7 +624,7 @@ class LettaParser(Parser):
                     _val(task.get("recurring")),
                     _val(to_utc(task.get("scheduled_for"))),
                     _val(task.get("agent_id")),
-                    _val(conv),
+                    _val(conversation),
                     _val(task.get("fire_count")),
                     _val(to_utc(task.get("last_fired_at"))),
                     _val(to_utc(task.get("last_run_at"))),
@@ -629,29 +643,29 @@ class LettaParser(Parser):
     def _parse_runs(self, artifact: Artifact) -> Iterator[Row]:
         """One `scheduled task run:` row per line, at its `ts`."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line, row.turn_type = n, "system"
-            row.timestamp_utc = to_utc(rec.get("ts"))
-            row.session_id = str(rec.get("conversationId") or "")
+            row.source_line, row.turn_type = line_number, "system"
+            row.timestamp_utc = to_utc(record.get("ts"))
+            row.session_id = str(record.get("conversationId") or "")
             row.text = compact(
                 "scheduled task run: %s action=%s status=%s outcome=%s reason=%s agent=%s "
                 "conversation=%s run=%s scheduled_for=%s fired=%s missed=%s summary=%s "
                 "error=%s (from %s, ts)"
                 % (
-                    _val(rec.get("jobId")),
-                    _val(rec.get("action")),
-                    _val(rec.get("status")),
-                    _val(rec.get("outcome")),
-                    _val(rec.get("reason")),
-                    _val(rec.get("agentId")),
-                    _val(rec.get("conversationId")),
-                    _val(rec.get("runId")),
-                    _val(to_utc(rec.get("scheduledFor"))),
-                    _val(to_utc(rec.get("firedAt"))),
-                    _val(rec.get("missedCount")),
-                    _val(rec.get("summary")),
-                    _val(rec.get("error")),
+                    _val(record.get("jobId")),
+                    _val(record.get("action")),
+                    _val(record.get("status")),
+                    _val(record.get("outcome")),
+                    _val(record.get("reason")),
+                    _val(record.get("agentId")),
+                    _val(record.get("conversationId")),
+                    _val(record.get("runId")),
+                    _val(to_utc(record.get("scheduledFor"))),
+                    _val(to_utc(record.get("firedAt"))),
+                    _val(record.get("missedCount")),
+                    _val(record.get("summary")),
+                    _val(record.get("error")),
                     artifact.rel,
                 )
             )
@@ -666,43 +680,47 @@ class LettaParser(Parser):
         `ApprovalReturn`, with `approve`) or a `tool_result` row (a
         `ToolReturn`, with `status`), joined on `tool_call_id`; all at the
         file's modification time, since the record holds no time."""
-        doc = read_settings(artifact.disk_path)
-        ts = file_mtime(artifact)
-        if doc is None:
+        document = read_settings(artifact.disk_path)
+        timestamp = file_mtime(artifact)
+        if document is None:
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.text = "parser: %s is not a JSON object" % artifact.rel
             yield row
             return
-        sid = str(doc.get("conversationId") or "")
-        cwd = str(doc.get("workingDirectory") or "")
+        session_id = str(document.get("conversationId") or "")
+        cwd = str(document.get("workingDirectory") or "")
 
         def base() -> Row:
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
-            row.session_id, row.project_path = sid, cwd
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
+            row.session_id, row.project_path = session_id, cwd
             return row
 
         def ids(key: str) -> str:
-            value = doc.get(key)
-            items = [str(v) for v in value] if isinstance(value, list) else []
+            value = document.get(key)
+            items = [str(entry) for entry in value] if isinstance(value, list) else []
             return ",".join(items) or "-"
 
-        results = doc.get("results")
-        results = [r for r in results if isinstance(r, dict)] if isinstance(results, list) else []
+        results = document.get("results")
+        results = (
+            [entry for entry in results if isinstance(entry, dict)]
+            if isinstance(results, list)
+            else []
+        )
         row = base()
         row.text = compact(
             "interrupted turn: agent %s conversation %s run %s tool_calls=%s unstarted=%s "
             "results=%d working_directory=%s acting_user=%s (from %s, file mtime)"
             % (
-                _val(doc.get("agentId")),
-                _val(sid),
-                _val(doc.get("runId")),
+                _val(document.get("agentId")),
+                _val(session_id),
+                _val(document.get("runId")),
                 ids("toolCallIds"),
                 ids("unstartedToolCallIds"),
                 len(results),
                 _val(cwd),
-                _val(doc.get("actingUserId")),
+                _val(document.get("actingUserId")),
                 artifact.rel,
             )
         )
@@ -730,43 +748,45 @@ class LettaParser(Parser):
     def _parse_sessions(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
         seen: dict = {}  # the model per CLI session, for the `model:` rows
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.session_id = str(rec.get("session_id") or "")
-            row.project_path = str(rec.get("project") or "")
-            row.model = str(rec.get("model") or "")
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.session_id = str(record.get("session_id") or "")
+            row.project_path = str(record.get("project") or "")
+            row.model = str(record.get("model") or "")
             row.turn_type = "system"
-            dur = rec.get("duration")
-            if not isinstance(dur, dict):
-                dur = {}
-            if "exit_reason" in rec or "message_count" in rec:
+            duration = record.get("duration")
+            if not isinstance(duration, dict):
+                duration = {}
+            if "exit_reason" in record or "message_count" in record:
                 text = (
                     "letta session end: agent=%s exit_reason=%s messages=%s tool_calls=%s wall_ms=%s"
                     % (
-                        rec.get("agent_id") or "",
-                        rec.get("exit_reason") or "",
-                        rec.get("message_count", ""),
-                        rec.get("tool_call_count", ""),
-                        dur.get("wall_ms", ""),
+                        record.get("agent_id") or "",
+                        record.get("exit_reason") or "",
+                        record.get("message_count", ""),
+                        record.get("tool_call_count", ""),
+                        duration.get("wall_ms", ""),
                     )
                 )
             else:
                 text = "letta session start: agent=%s provider=%s model=%s project=%s" % (
-                    rec.get("agent_id") or "",
-                    rec.get("provider") or "",
+                    record.get("agent_id") or "",
+                    record.get("provider") or "",
                     row.model,
                     row.project_path,
                 )
             row.text = compact(text)
             yield row
-            mtext = model_text(seen, row.session_id, row.model, str(rec.get("provider") or ""))
-            if mtext:
-                mrow = self.base_row(artifact)
-                mrow.source_line, mrow.turn_type = n, "system"
-                mrow.timestamp_utc, mrow.session_id = row.timestamp_utc, row.session_id
-                mrow.project_path, mrow.model = row.project_path, row.model
-                mrow.text = compact(mtext)
-                yield mrow
+            model_message = model_text(
+                seen, row.session_id, row.model, str(record.get("provider") or "")
+            )
+            if model_message:
+                model_row = self.base_row(artifact)
+                model_row.source_line, model_row.turn_type = line_number, "system"
+                model_row.timestamp_utc, model_row.session_id = row.timestamp_utc, row.session_id
+                model_row.project_path, model_row.model = row.project_path, row.model
+                model_row.text = compact(model_message)
+                yield model_row
         yield from error_rows(self, artifact, errors)

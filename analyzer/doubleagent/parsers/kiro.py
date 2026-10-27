@@ -177,8 +177,8 @@ _HISTORY_RX = re.compile(r'"history"\s*:\s*\[')
 
 def _sniff_export(path) -> bool:
     try:
-        with open(path, "rb") as fh:
-            head = fh.read(SNIFF_BYTES)
+        with open(path, "rb") as handle:
+            head = handle.read(SNIFF_BYTES)
     except OSError:
         return False
     return head.lstrip()[:1] == b"{" and b'"conversation_id"' in head
@@ -193,33 +193,33 @@ def salvage(text: str) -> tuple[dict | None, str]:
         if isinstance(state, dict):
             return state, ""
         return None, "not a JSON object"
-    except ValueError as e:
-        err = str(e)
-    m = _HISTORY_RX.search(text)
-    if not m:
-        return None, err
+    except ValueError as error:
+        message = str(error)
+    match = _HISTORY_RX.search(text)
+    if not match:
+        return None, message
     state = {"history": []}
-    cid = _CONV_ID_RX.search(text, 0, m.start())
-    if cid:
+    conversation_match = _CONV_ID_RX.search(text, 0, match.start())
+    if conversation_match:
         try:
-            state["conversation_id"] = json.loads('"%s"' % cid.group(1))
+            state["conversation_id"] = json.loads('"%s"' % conversation_match.group(1))
         except ValueError:
             pass
-    dec = json.JSONDecoder()
-    i = m.end()
-    n = len(text)
-    while i < n:
-        while i < n and text[i] in " \t\r\n,":
+    decoder = json.JSONDecoder()
+    i = match.end()
+    length = len(text)
+    while i < length:
+        while i < length and text[i] in " \t\r\n,":
             i += 1
-        if i >= n or text[i] == "]":
+        if i >= length or text[i] == "]":
             break
         try:
-            entry, i = dec.raw_decode(text, i)
+            entry, i = decoder.raw_decode(text, i)
         except ValueError:
             break
         if isinstance(entry, dict):
             state["history"].append(entry)
-    return state, err
+    return state, message
 
 
 def _variant(value) -> tuple[str, dict]:
@@ -255,17 +255,17 @@ def unescape_history(line: str) -> str:
     keeps it."""
     out: list[str] = []
     i = 0
-    n = len(line)
-    while i < n:
-        c = line[i]
-        if c != "\\":
-            out.append(c)
+    length = len(line)
+    while i < length:
+        char = line[i]
+        if char != "\\":
+            out.append(char)
             i += 1
             continue
-        nxt = line[i + 1] if i + 1 < n else ""
-        if nxt == "n":
+        next_char = line[i + 1] if i + 1 < length else ""
+        if next_char == "n":
             out.append("\n")
-        elif nxt == "\\":
+        elif next_char == "\\":
             out.append("\\")
         else:
             return line
@@ -284,9 +284,9 @@ def decision_text(prompt) -> str:
         return "permission decision: denied by=n"
     if prompt == INTERRUPT_TEXT:
         return "permission decision: cancelled by=interrupt"
-    m = DENY_RULE_RX.match(prompt)
-    if m:
-        return "permission decision: denied by=deny-rule tool=%s" % m.group(1)
+    match = DENY_RULE_RX.match(prompt)
+    if match:
+        return "permission decision: denied by=deny-rule tool=%s" % match.group(1)
     return "permission decision: denied by=user-text"
 
 
@@ -335,24 +335,26 @@ class KiroParser(Parser):
         """One `user` row per entry, with no timestamp, session or project,
         since the file records none."""
         errors: list = []
-        v2 = False
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        multiline = False
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 try:
                     line = raw.decode("utf-8")
                 except UnicodeDecodeError:
-                    errors.append((n, "unparseable line (not valid UTF-8)", line_text(raw)))
+                    errors.append(
+                        (line_number, "unparseable line (not valid UTF-8)", line_text(raw))
+                    )
                     continue
                 line = line_text(raw)
-                if n == 1 and line == HISTORY_V2:
-                    v2 = True
+                if line_number == 1 and line == HISTORY_V2:
+                    multiline = True
                     continue
                 if not line:
                     continue
                 row = self.base_row(artifact)
-                row.source_line = n
+                row.source_line = line_number
                 row.turn_type = "user"
-                row.text = compact(unescape_history(line) if v2 else line)
+                row.text = compact(unescape_history(line) if multiline else line)
                 yield row
         yield from error_rows(self, artifact, errors)
 
@@ -360,11 +362,11 @@ class KiroParser(Parser):
     def _json_doc(self, artifact: Artifact, what: str) -> tuple[dict | None, Row | None]:
         """The file as a JSON object, or a `system` row saying it is not one."""
         try:
-            doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
-            doc = None
-        if isinstance(doc, dict):
-            return doc, None
+            document = None
+        if isinstance(document, dict):
+            return document, None
         row = self.base_row(artifact)
         row.source_line = 1
         row.turn_type = "system"
@@ -375,19 +377,19 @@ class KiroParser(Parser):
     def _parse_agent_config(self, artifact: Artifact) -> Iterator[Row]:
         """One `permission setting:` row per `allowedTools` entry and per key
         of each `toolsSettings` tool, at the file's modification time."""
-        doc, bad = self._json_doc(artifact, "agent configuration")
-        if doc is None:
+        document, bad = self._json_doc(artifact, "agent configuration")
+        if document is None:
             if bad is not None:
                 yield bad
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
 
         def setting(key: str, value) -> Row:
             row = self.base_row(artifact)
             row.source_line = 1
             row.turn_type = "system"
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.project_path = project
             row.text = compact(
                 "permission setting: %s=%s (from %s, file mtime)"
@@ -395,11 +397,11 @@ class KiroParser(Parser):
             )
             return row
 
-        allowed = doc.get("allowedTools")
+        allowed = document.get("allowedTools")
         if isinstance(allowed, list):
             for entry in allowed:
                 yield setting("allowedTools", entry)
-        tools = doc.get("toolsSettings")
+        tools = document.get("toolsSettings")
         if isinstance(tools, dict):
             for tool, conf in tools.items():
                 if isinstance(conf, dict):
@@ -412,86 +414,92 @@ class KiroParser(Parser):
     def _parse_delegate(self, artifact: Artifact) -> Iterator[Row]:
         """A `system` row at `launched_at` and, once the task ended, one at
         `completed_at` with its status, exit code, summary and output."""
-        doc, bad = self._json_doc(artifact, "delegate record")
-        if doc is None:
+        document, bad = self._json_doc(artifact, "delegate record")
+        if document is None:
             if bad is not None:
                 yield bad
             return
-        cwd = str(doc.get("cwd") or "")
+        cwd = str(document.get("cwd") or "")
         if not cwd or cwd == "Unknown":
             cwd = artifact.home.original if artifact.home.project else ""
-        agent = str(doc.get("agent") or "")
+        agent = str(document.get("agent") or "")
 
         def when(value) -> str:
-            ok = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
-            return to_utc(value) if ok else ""
+            valid = isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+            return to_utc(value) if valid else ""
 
-        def event(ts: str, text: str) -> Row:
+        def event(timestamp: str, text: str) -> Row:
             row = self.base_row(artifact)
             row.source_line = 1
             row.turn_type = "system"
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.project_path = cwd
             row.text = compact(text)
             return row
 
         trust = " trust_all_tools=true" if agent == DEFAULT_AGENT_NAME else ""
         yield event(
-            when(doc.get("launched_at")),
+            when(document.get("launched_at")),
             "delegate task launched: agent=%s pid=%s%s: %s"
-            % (agent, doc.get("pid", ""), trust, doc.get("task") or ""),
+            % (agent, document.get("pid", ""), trust, document.get("task") or ""),
         )
-        status = str(doc.get("status") or "")
-        completed = doc.get("completed_at")
+        status = str(document.get("status") or "")
+        completed = document.get("completed_at")
         if completed is None and status in ("", "running"):
             return
-        exit_code = doc.get("exit_code")
+        exit_code = document.get("exit_code")
         text = "delegate task %s: agent=%s exit_code=%s" % (
             status or "ended",
             agent,
             "" if exit_code is None else exit_code,
         )
-        if doc.get("summary"):
-            text += "\nsummary: %s" % doc["summary"]
-        if doc.get("output"):
-            text += "\noutput: %s" % doc["output"]
+        if document.get("summary"):
+            text += "\nsummary: %s" % document["summary"]
+        if document.get("output"):
+            text += "\noutput: %s" % document["output"]
         yield event(when(completed), text)
 
     # -- data.sqlite3 -------------------------------------------------------------
     def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
-        with open_copy(artifact.disk_path) as con:
-            tables = table_names(con)
+        with open_copy(artifact.disk_path) as connection:
+            tables = table_names(connection)
             if "conversations" in tables:
-                for n, r in enumerate(
-                    con.execute("select key, value from conversations order by rowid"), 1
+                for position, table_row in enumerate(
+                    connection.execute("select key, value from conversations order by rowid"), 1
                 ):
-                    value = r["value"]
+                    value = table_row["value"]
                     if isinstance(value, bytes):
                         value = value.decode("utf-8", errors="replace")
                     yield from self._conversation(
-                        artifact, opts, str(value or ""), str(r["key"] or ""), n
+                        artifact, opts, str(value or ""), str(table_row["key"] or ""), position
                     )
             if "history" in tables:
-                yield from self._shell_history(artifact, opts, con)
+                yield from self._shell_history(artifact, opts, connection)
 
-    def _shell_history(self, artifact: Artifact, opts: Options, con) -> Iterator[Row]:
-        for n, r in enumerate(con.execute("select * from history order by rowid"), 1):
-            r = dict(r)
+    def _shell_history(self, artifact: Artifact, opts: Options, connection) -> Iterator[Row]:
+        for position, history_row in enumerate(
+            connection.execute("select * from history order by rowid"), 1
+        ):
+            history_row = dict(history_row)
             row = self.base_row(artifact)
-            row.source_line = n
-            start = r.get("start_time") if "start_time" in r else r.get("time")
+            row.source_line = position
+            start = (
+                history_row.get("start_time")
+                if "start_time" in history_row
+                else history_row.get("time")
+            )
             row.timestamp_utc = to_utc(start)
-            row.session_id = str(r.get("session_id") or "")
-            row.project_path = str(r.get("cwd") or "")
+            row.session_id = str(history_row.get("session_id") or "")
+            row.project_path = str(history_row.get("cwd") or "")
             row.turn_type = "system"
             extras = [
-                "%s=%s" % (k, r[k])
+                "%s=%s" % (k, history_row[k])
                 for k in ("exit_code", "shell", "hostname", "duration")
-                if r.get(k) not in (None, "")
+                if history_row.get(k) not in (None, "")
             ]
-            text = "shell history: %s" % (r.get("command") or "")
+            text = "shell history: %s" % (history_row.get("command") or "")
             if extras:
                 text += " (%s)" % " ".join(extras)
             row.text = compact(text)
@@ -499,95 +507,95 @@ class KiroParser(Parser):
 
     # -- /save exports ------------------------------------------------------------
     def _parse_export(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        with open(artifact.disk_path, "rb") as fh:
-            text = fh.read().decode("utf-8", errors="replace")
+        with open(artifact.disk_path, "rb") as handle:
+            text = handle.read().decode("utf-8", errors="replace")
         yield from self._conversation(artifact, opts, text, "", 0)
 
     # -- ConversationState --------------------------------------------------------
     def _conversation(
         self, artifact: Artifact, opts: Options, text: str, key: str, line: int
     ) -> Iterator[Row]:
-        state, err = salvage(text)
+        state, problem = salvage(text)
         if state is None or not isinstance(state.get("history"), list):
-            if err:
+            if problem:
                 row = self.base_row(artifact)
                 row.source_line = line
                 row.project_path = key
                 row.turn_type = "system"
-                row.text = "parser: unparseable conversation: %s" % err
+                row.text = "parser: unparseable conversation: %s" % problem
                 yield row
             return
         session_id = str(state.get("conversation_id") or "")
         info = state.get("model_info")
-        conv_model = ""
-        conv_source = ""
+        state_model = ""
+        state_model_source = ""
         if isinstance(info, dict) and info.get("model_id"):
-            conv_model, conv_source = str(info["model_id"]), "model_info"
+            state_model, state_model_source = str(info["model_id"]), "model_info"
         elif isinstance(state.get("model"), str):
-            conv_model, conv_source = state["model"], "model"
+            state_model, state_model_source = state["model"], "model"
         project = key or self._first_cwd(state)
         names: dict[str, str] = {}
         seen_model: dict[str, str] = {}
-        last_ts = [""]
+        last_timestamp = [""]
 
-        def base(ts: str, model: str = "") -> Row:
+        def base(row_time: str, model: str = "") -> Row:
             row = self.base_row(artifact)
             row.source_line = line
-            if ts:
-                last_ts[0] = ts
-            row.timestamp_utc = ts or last_ts[0]
+            if row_time:
+                last_timestamp[0] = row_time
+            row.timestamp_utc = row_time or last_timestamp[0]
             row.session_id = session_id
             row.project_path = project
             row.model = model
             return row
 
-        def fill(row: Row, s: str) -> Row:
-            row.text = compact(s)
+        def fill(row: Row, content: str) -> Row:
+            row.text = compact(content)
             return row
 
         def entry_rows(entry: dict, seen_model: dict[str, str]) -> Iterator[Row]:
             meta = entry.get("request_metadata")
             meta = meta if isinstance(meta, dict) else {}
-            model = str(meta.get("model_id") or conv_model)
-            start_ts = to_utc(meta.get("request_start_timestamp_ms"))
-            end_ts = to_utc(meta.get("stream_end_timestamp_ms")) or start_ts
+            model = str(meta.get("model_id") or state_model)
+            start_time = to_utc(meta.get("request_start_timestamp_ms"))
+            end_time = to_utc(meta.get("stream_end_timestamp_ms")) or start_time
             user = entry.get("user")
-            user_ts = to_utc(user.get("timestamp")) if isinstance(user, dict) else ""
+            user_time = to_utc(user.get("timestamp")) if isinstance(user, dict) else ""
             text = track_change("model", seen_model, session_id, model)
             if text:
                 if not meta.get("model_id"):
-                    text += " source=%s" % conv_source
-                row = base(user_ts or start_ts or end_ts, model)
+                    text += " source=%s" % state_model_source
+                row = base(user_time or start_time or end_time, model)
                 row.turn_type = "system"
                 yield fill(row, text)
             if isinstance(user, dict):
-                user_ts = user_ts or start_ts
-                yield from self._user(user.get("content"), user_ts, model, names, base, fill)
+                user_time = user_time or start_time
+                yield from self._user(user.get("content"), user_time, model, names, base, fill)
             assistant = entry.get("assistant")
             tag, body = _variant(assistant)
             if tag in ("Response", "ToolUse"):
                 content = body.get("content")
                 if content:
-                    yield self._assistant(base(end_ts, model), content, fill)
+                    yield self._assistant(base(end_time, model), content, fill)
                 for use in body.get("tool_uses") or []:
                     if not isinstance(use, dict):
                         continue
-                    tid = str(use.get("id") or "")
-                    tname = str(use.get("name") or use.get("orig_name") or "")
-                    names[tid] = tname
-                    row = base(end_ts, model)
+                    tool_id = str(use.get("id") or "")
+                    tool_name = str(use.get("name") or use.get("orig_name") or "")
+                    names[tool_id] = tool_name
+                    row = base(end_time, model)
                     row.turn_type = "tool_use"
-                    row.tool_name = tname
-                    row.tool_use_id = tid
+                    row.tool_name = tool_name
+                    row.tool_use_id = tool_id
                     args = use.get("args")
-                    s = args if isinstance(args, str) else compact_json(args)
+                    arguments_text = args if isinstance(args, str) else compact_json(args)
                     orig = use.get("orig_name")
-                    if orig and orig != tname:
-                        s = "orig_name=%s %s" % (orig, s)
-                    yield fill(row, s)
+                    if orig and orig != tool_name:
+                        arguments_text = "orig_name=%s %s" % (orig, arguments_text)
+                    yield fill(row, arguments_text)
             tags = meta.get("message_meta_tags") or []
             if isinstance(tags, list) and "Compact" in tags:
-                row = base(end_ts, model)
+                row = base(end_time, model)
                 row.turn_type = "system"
                 yield fill(row, "compact: conversation history summarised")
 
@@ -602,7 +610,7 @@ class KiroParser(Parser):
         # conversation held aside in tangent mode. Only entries the history
         # no longer holds are yielded, marked recovered.
         seen_copy_model: dict[str, str] = {}
-        for head, tail, ts, entries in self._history_copies(state):
+        for head, tail, timestamp, entries in self._history_copies(state):
             fresh = []
             for entry in entries:
                 if isinstance(entry, dict) and _entry_key(entry) not in seen_entries:
@@ -610,7 +618,7 @@ class KiroParser(Parser):
                     fresh.append(entry)
             if not fresh:
                 continue
-            row = base(ts)
+            row = base(timestamp)
             row.turn_type = "system"
             yield fill(row, "%s recovered=%d entries%s" % (head, len(fresh), tail))
             for entry in fresh:
@@ -621,11 +629,11 @@ class KiroParser(Parser):
 
         summary = state.get("latest_summary")
         if isinstance(summary, list) and summary:
-            smeta = summary[1] if len(summary) > 1 and isinstance(summary[1], dict) else {}
-            ts = to_utc(smeta.get("stream_end_timestamp_ms")) or to_utc(
-                smeta.get("request_start_timestamp_ms")
+            summary_meta = summary[1] if len(summary) > 1 and isinstance(summary[1], dict) else {}
+            timestamp = to_utc(summary_meta.get("stream_end_timestamp_ms")) or to_utc(
+                summary_meta.get("request_start_timestamp_ms")
             )
-            row = base(ts, str(smeta.get("model_id") or ""))
+            row = base(timestamp, str(summary_meta.get("model_id") or ""))
             row.turn_type = "system"
             yield fill(
                 row,
@@ -644,7 +652,7 @@ class KiroParser(Parser):
                 "pending message (not sent): %s" % (prompt or compact_json(pending.get("content"))),
             )
 
-        if err:
+        if problem:
             row = self.base_row(artifact)
             row.source_line = line
             row.session_id = session_id
@@ -652,7 +660,7 @@ class KiroParser(Parser):
             row.turn_type = "system"
             row.text = "parser: truncated conversation, %d history entries recovered: %s" % (
                 len(state["history"]),
-                err,
+                problem,
             )
             yield row
 
@@ -669,54 +677,58 @@ class KiroParser(Parser):
         own (`tangent_start_time` is not read)."""
         manager = state.get("checkpoint_manager")
         checkpoints = manager.get("checkpoints") if isinstance(manager, dict) else None
-        for cp in checkpoints if isinstance(checkpoints, list) else []:
-            if not isinstance(cp, dict) or not isinstance(cp.get("history_snapshot"), list):
+        for checkpoint in checkpoints if isinstance(checkpoints, list) else []:
+            if not isinstance(checkpoint, dict) or not isinstance(
+                checkpoint.get("history_snapshot"), list
+            ):
                 continue
-            head = "checkpoint snapshot: tag=%s" % (cp.get("tag") or "")
-            if cp.get("tool_name"):
-                head += " tool=%s" % cp["tool_name"]
-            tail = ": %s" % cp["description"] if cp.get("description") else ""
-            yield head, tail, to_utc(cp.get("timestamp")), cp["history_snapshot"]
+            head = "checkpoint snapshot: tag=%s" % (checkpoint.get("tag") or "")
+            if checkpoint.get("tool_name"):
+                head += " tool=%s" % checkpoint["tool_name"]
+            tail = ": %s" % checkpoint["description"] if checkpoint.get("description") else ""
+            yield head, tail, to_utc(checkpoint.get("timestamp")), checkpoint["history_snapshot"]
         tangent = state.get("tangent_state")
         if isinstance(tangent, dict) and isinstance(tangent.get("main_history"), list):
             head = "tangent mode: main conversation held aside,"
             yield head, "", "", tangent["main_history"]
 
     @staticmethod
-    def _user(content, ts: str, model: str, names: dict[str, str], base, fill) -> Iterator[Row]:
+    def _user(
+        content, timestamp: str, model: str, names: dict[str, str], base, fill
+    ) -> Iterator[Row]:
         tag, body = _variant(content)
         prompt = body.get("prompt")
         if tag in ("Prompt", "CancelledToolUses") and prompt:
-            row = base(ts, model)
+            row = base(timestamp, model)
             row.turn_type = "user"
             yield fill(row, prompt)
         if tag == "Prompt" and isinstance(prompt, str):
-            m = DENY_RULE_RX.match(prompt)
-            if m:
+            match = DENY_RULE_RX.match(prompt)
+            if match:
                 # the rejection reached the model as a plain prompt: it names
                 # the tool but not the call
-                row = base(ts, model)
+                row = base(timestamp, model)
                 row.turn_type = "system"
-                row.tool_name = m.group(1)
+                row.tool_name = match.group(1)
                 yield fill(row, decision_text(prompt))
         if tag in ("ToolUseResults", "CancelledToolUses"):
             for result in body.get("tool_use_results") or []:
                 if not isinstance(result, dict):
                     continue
-                row = base(ts, model)
+                row = base(timestamp, model)
                 row.turn_type = "tool_result"
                 row.tool_use_id = str(result.get("tool_use_id") or "")
                 row.tool_name = names.get(row.tool_use_id, "")
-                s = result_text(result)
+                text = result_text(result)
                 if tag == "CancelledToolUses":
-                    s = "cancelled %s" % s if s else "cancelled"
-                yield fill(row, s)
+                    text = "cancelled %s" % text if text else "cancelled"
+                yield fill(row, text)
                 if tag == "CancelledToolUses":
-                    dec = base(ts, model)
-                    dec.turn_type = "system"
-                    dec.tool_use_id = row.tool_use_id
-                    dec.tool_name = row.tool_name
-                    yield fill(dec, decision_text(prompt))
+                    decision = base(timestamp, model)
+                    decision.turn_type = "system"
+                    decision.tool_use_id = row.tool_use_id
+                    decision.tool_name = row.tool_name
+                    yield fill(decision, decision_text(prompt))
 
     @staticmethod
     def _first_cwd(state: dict) -> str:

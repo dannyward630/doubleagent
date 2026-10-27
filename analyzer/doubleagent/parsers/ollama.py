@@ -134,9 +134,9 @@ def call_text(arguments) -> str:
         return str(arguments or "")
     if isinstance(args, dict):
         for key in ("url", "query"):
-            v = args.get(key)
-            if isinstance(v, str) and v:
-                return v
+            value = args.get(key)
+            if isinstance(value, str) and value:
+                return value
         return compact_json(args)
     return str(arguments or "") if isinstance(arguments, str) else compact_json(args)
 
@@ -158,7 +158,7 @@ class OllamaParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
-        return any(rx.match(rel) for rx in (DB_RX, HISTORY_RX, CONFIG_RX, PROFILE_RX))
+        return any(pattern.match(rel) for pattern in (DB_RX, HISTORY_RX, CONFIG_RX, PROFILE_RX))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if DB_RX.match(artifact.rel):
@@ -170,11 +170,11 @@ class OllamaParser(Parser):
         else:
             yield from self._parse_history(artifact)
 
-    def _row(self, artifact: Artifact, line: int, session_id: str = "", ts: str = "") -> Row:
+    def _row(self, artifact: Artifact, line: int, session_id: str = "", timestamp: str = "") -> Row:
         row = self.base_row(artifact)
         row.source_line = line
         row.session_id = session_id
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
     def _system(self, artifact: Artifact, text: str) -> Row:
@@ -189,102 +189,107 @@ class OllamaParser(Parser):
             yield self._system(artifact, "parser: not a SQLite database")
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                rows = list(self._db_rows(con, artifact, opts))
-        except sqlite3.DatabaseError as e:
-            yield self._system(artifact, "parser: SQLite error: %s" % e)
+            with open_copy(artifact.disk_path) as connection:
+                rows = list(self._db_rows(connection, artifact, opts))
+        except sqlite3.DatabaseError as error:
+            yield self._system(artifact, "parser: SQLite error: %s" % error)
             return
         yield from rows
 
-    def _db_rows(self, con: sqlite3.Connection, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        tables = table_names(con)
+    def _db_rows(
+        self, connection: sqlite3.Connection, artifact: Artifact, opts: Options
+    ) -> Iterator[Row]:
+        tables = table_names(connection)
         if "messages" not in tables:
             return
         calls: dict[int, list[dict]] = {}
         if "tool_calls" in tables:
-            for c in con.execute(
+            for call in connection.execute(
                 "select id, message_id, function_name, function_arguments"
                 " from tool_calls order by message_id, id"
             ):
-                calls.setdefault(c["message_id"], []).append(dict(c))
+                calls.setdefault(call["message_id"], []).append(dict(call))
         files: dict[int, list[tuple[str, int]]] = {}
         if "attachments" in tables:
-            for a in con.execute(
+            for attachment in connection.execute(
                 "select message_id, filename, length(data) as n from attachments"
                 " order by message_id, id"
             ):
-                files.setdefault(a["message_id"], []).append((a["filename"] or "", a["n"] or 0))
+                files.setdefault(attachment["message_id"], []).append(
+                    (attachment["filename"] or "", attachment["n"] or 0)
+                )
 
         chat = None
         seen_model: dict[str, str] = {}
         pending: list[dict] = []  # calls of the last assistant message with calls
         used = 0
-        for m in con.execute("select * from messages order by chat_id, id"):
-            m = dict(m)
-            mid = m.get("id") or 0
-            sid = str(m.get("chat_id") or "")
-            if sid != chat:
-                chat, pending, used = sid, [], 0
-            role = str(m.get("role") or "")
-            ts = to_utc(m.get("created_at"))
-            content = m.get("content") or ""
-            model = m.get("model_name") or ""
+        for message in connection.execute("select * from messages order by chat_id, id"):
+            message = dict(message)
+            message_id = message.get("id") or 0
+            session_id = str(message.get("chat_id") or "")
+            if session_id != chat:
+                chat, pending, used = session_id, [], 0
+            role = str(message.get("role") or "")
+            timestamp = to_utc(message.get("created_at"))
+            content = message.get("content") or ""
+            model = message.get("model_name") or ""
 
             if role == "user":
-                row = self._row(artifact, mid, sid, ts)
+                row = self._row(artifact, message_id, session_id, timestamp)
                 row.turn_type = "user"
                 parts = [content] + [
-                    "[attachment: %s, %d bytes]" % (f, n) for f, n in files.get(mid, [])
+                    "[attachment: %s, %d bytes]" % (filename, size)
+                    for filename, size in files.get(message_id, [])
                 ]
-                row.text = compact("\n".join(p for p in parts if p))
+                row.text = compact("\n".join(part for part in parts if part))
                 yield row
             elif role == "assistant":
-                thinking = m.get("thinking") or ""
-                if content or thinking or calls.get(mid):
-                    text = track_change("model", seen_model, sid, model)
+                thinking = message.get("thinking") or ""
+                if content or thinking or calls.get(message_id):
+                    text = track_change("model", seen_model, session_id, model)
                     if text:
-                        row = self._row(artifact, mid, sid, ts)
+                        row = self._row(artifact, message_id, session_id, timestamp)
                         row.turn_type = "system"
                         row.model = model
                         row.text = text
                         yield row
                 if thinking and opts.include_thinking:
-                    row = self._row(artifact, mid, sid, ts)
+                    row = self._row(artifact, message_id, session_id, timestamp)
                     row.turn_type = "thinking"
                     row.model = model
                     row.text = compact(thinking)
                     yield row
                 if content:
-                    row = self._row(artifact, mid, sid, ts)
+                    row = self._row(artifact, message_id, session_id, timestamp)
                     row.turn_type = "assistant"
                     row.model = model
                     row.text = compact(content)
                     yield row
-                mcalls = calls.get(mid, [])
-                if mcalls:
-                    pending, used = mcalls, 0
-                for c in mcalls:
-                    row = self._row(artifact, c["id"], sid, ts)
+                message_calls = calls.get(message_id, [])
+                if message_calls:
+                    pending, used = message_calls, 0
+                for call in message_calls:
+                    row = self._row(artifact, call["id"], session_id, timestamp)
                     row.turn_type = "tool_use"
                     row.model = model
-                    row.tool_name = c["function_name"] or ""
-                    row.tool_use_id = "%s:%s" % (sid, c["id"])
-                    row.text = compact(call_text(c["function_arguments"]))
+                    row.tool_name = call["function_name"] or ""
+                    row.tool_use_id = "%s:%s" % (session_id, call["id"])
+                    row.text = compact(call_text(call["function_arguments"]))
                     yield row
             elif role == "tool":
-                row = self._row(artifact, mid, sid, ts)
+                row = self._row(artifact, message_id, session_id, timestamp)
                 row.turn_type = "tool_result"
                 if used < len(pending):
-                    c = pending[used]
-                    row.tool_name = c["function_name"] or ""
-                    row.tool_use_id = "%s:%s" % (sid, c["id"])
+                    call = pending[used]
+                    row.tool_name = call["function_name"] or ""
+                    row.tool_use_id = "%s:%s" % (session_id, call["id"])
                 elif pending:
                     row.tool_name = pending[-1]["function_name"] or ""
                 used += 1
-                row.text = compact(content or _result_fallback(m.get("tool_result")))
+                row.text = compact(content or _result_fallback(message.get("tool_result")))
                 yield row
             else:
-                row = self._row(artifact, mid, sid, ts)
+                row = self._row(artifact, message_id, session_id, timestamp)
                 row.turn_type = "system"
                 row.text = compact(content if role == "system" else "%s: %s" % (role, content))
                 yield row
@@ -292,18 +297,18 @@ class OllamaParser(Parser):
     # -- .ollama/history ------------------------------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 if not raw.strip():
                     continue
                 try:
                     line = raw.decode("utf-8").strip()
-                except UnicodeDecodeError as e:
-                    errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                except UnicodeDecodeError as error:
+                    errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                     continue
                 if not line:
                     continue
-                row = self._row(artifact, n)
+                row = self._row(artifact, line_number)
                 if line.startswith("/"):
                     row.turn_type = "system"
                     row.text = "slash command: " + line
@@ -316,47 +321,47 @@ class OllamaParser(Parser):
     # -- standing permissions -------------------------------------------------------------
     def _read_object(self, artifact: Artifact) -> tuple[dict | None, str]:
         try:
-            doc = json.loads(artifact.disk_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, ValueError) as e:
-            return None, "parser: %s is not readable JSON (%s)" % (artifact.rel, e)
-        if not isinstance(doc, dict):
+            document = json.loads(artifact.disk_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as error:
+            return None, "parser: %s is not readable JSON (%s)" % (artifact.rel, error)
+        if not isinstance(document, dict):
             return None, "parser: %s is not a JSON object" % artifact.rel
-        return doc, ""
+        return document, ""
 
-    def _setting(self, artifact: Artifact, ts: str, text: str) -> Row:
-        row = self._row(artifact, 0, "", ts)
+    def _setting(self, artifact: Artifact, timestamp: str, text: str) -> Row:
+        row = self._row(artifact, 0, "", timestamp)
         row.turn_type = "system"
         row.text = text
         return row
 
     def _parse_config(self, artifact: Artifact) -> Iterator[Row]:
-        doc, problem = self._read_object(artifact)
-        if doc is None:
+        document, problem = self._read_object(artifact)
+        if document is None:
             yield self._system(artifact, problem)
             return
-        ts = file_mtime(artifact)
-        integrations = doc.get("integrations")
+        timestamp = file_mtime(artifact)
+        integrations = document.get("integrations")
         if not isinstance(integrations, dict):
             return
         for name, entry in integrations.items():
             if isinstance(entry, dict) and "automode" in entry:
                 yield self._setting(
                     artifact,
-                    ts,
+                    timestamp,
                     "permission setting: integrations.%s.automode=%s (from %s, file mtime)"
                     % (name, setting_value(entry["automode"]), artifact.rel),
                 )
 
     def _parse_profile(self, artifact: Artifact) -> Iterator[Row]:
-        doc, problem = self._read_object(artifact)
-        if doc is None:
+        document, problem = self._read_object(artifact)
+        if document is None:
             yield self._system(artifact, problem)
             return
-        if "autoModeEnabled" in doc:
+        if "autoModeEnabled" in document:
             yield self._setting(
                 artifact,
                 file_mtime(artifact),
                 "permission setting: autoModeEnabled=%s (set by Ollama's Claude Desktop"
                 " launcher, from %s, file mtime)"
-                % (setting_value(doc["autoModeEnabled"]), artifact.rel),
+                % (setting_value(document["autoModeEnabled"]), artifact.rel),
             )

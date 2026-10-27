@@ -171,37 +171,37 @@ def iter_json_array(raw: str, errors: list) -> list[object]:
     first character to the end of `raw`); a file that is not an array, an
     array cut off between records and data after the closing bracket are
     (position, message, "")."""
-    dec = json.JSONDecoder()
+    decoder = json.JSONDecoder()
     items: list[object] = []
     i = 0
-    n = len(raw)
+    length = len(raw)
 
     def skip(j: int) -> int:
-        while j < n and raw[j] in " \t\r\n":
+        while j < length and raw[j] in " \t\r\n":
             j += 1
         return j
 
     i = skip(i)
-    if i >= n or raw[i] != "[":
+    if i >= length or raw[i] != "[":
         errors.append((1, "not a JSON array", ""))
         return items
     i = skip(i + 1)
-    if i < n and raw[i] == "]":
+    if i < length and raw[i] == "]":
         return items
-    while i < n:
+    while i < length:
         k = len(items) + 1
         try:
-            obj, end = dec.raw_decode(raw, i)
-        except ValueError as e:
-            errors.append((k, "unparseable record %d (%s)" % (k, e), tail_text(raw, i)))
+            decoded, end = decoder.raw_decode(raw, i)
+        except ValueError as error:
+            errors.append((k, "unparseable record %d (%s)" % (k, error), tail_text(raw, i)))
             return items
-        items.append(obj)
+        items.append(decoded)
         i = skip(end)
-        if i < n and raw[i] == ",":
+        if i < length and raw[i] == ",":
             i = skip(i + 1)
             continue
-        if i < n and raw[i] == "]":
-            if skip(i + 1) < n:
+        if i < length and raw[i] == "]":
+            if skip(i + 1) < length:
                 errors.append((k + 1, "unexpected data after the array", ""))
             return items
         break
@@ -211,8 +211,8 @@ def iter_json_array(raw: str, errors: list) -> list[object]:
 
 def _read_json(path: Path):
     try:
-        with open(path, "rb") as fh:
-            return json.loads(fh.read().decode("utf-8", errors="replace"))
+        with open(path, "rb") as handle:
+            return json.loads(handle.read().decode("utf-8", errors="replace"))
     except (OSError, ValueError):
         return None
 
@@ -234,10 +234,10 @@ class KiloCodeParser(OpenCodeParser):
 
     def __init__(self) -> None:
         super().__init__()
-        dd = re.escape(self.data_dir)
-        self.share_rx = re.compile(r"^%s/storage/session_share/([^/]+)\.json$" % dd)
-        self.log_rx = re.compile(r"^%s/log/([^/]+\.log)$" % dd)
-        self.retention_rx = re.compile(r"^%s/retention/state\.json$" % dd)
+        data_dir = re.escape(self.data_dir)
+        self.share_rx = re.compile(r"^%s/storage/session_share/([^/]+)\.json$" % data_dir)
+        self.log_rx = re.compile(r"^%s/log/([^/]+\.log)$" % data_dir)
+        self.retention_rx = re.compile(r"^%s/retention/state\.json$" % data_dir)
 
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
@@ -253,11 +253,11 @@ class KiloCodeParser(OpenCodeParser):
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         rel = artifact.rel
-        m = self.share_rx.match(rel)
+        match = self.share_rx.match(rel)
         if TASK_RX.search(rel):
             yield from self._parse_task(artifact, opts)
-        elif m:
-            yield from self._parse_share(artifact, m.group(1))
+        elif match:
+            yield from self._parse_share(artifact, match.group(1))
         elif self.log_rx.match(rel):
             yield from self._parse_log(artifact)
         elif self.retention_rx.match(rel):
@@ -269,10 +269,12 @@ class KiloCodeParser(OpenCodeParser):
         else:
             yield from super().parse(artifact, opts)
 
-    def _setting_row(self, artifact: Artifact, ts: str, text: str, session_id: str = "") -> Row:
+    def _setting_row(
+        self, artifact: Artifact, timestamp: str, text: str, session_id: str = ""
+    ) -> Row:
         row = self.base_row(artifact)
         row.session_id, row.source_line, row.turn_type = session_id, 1, "system"
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.text = compact(text)
         return row
 
@@ -287,40 +289,44 @@ class KiloCodeParser(OpenCodeParser):
         here; `null` is Kilo's delete sentinel. A file that does not decode
         as JSONC is one `parser:` row; a file with no `permission` key yields
         nothing."""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         try:
-            doc = gemini_cli.parse_jsonc(artifact.disk_path.read_bytes())
-        except (OSError, ValueError) as e:
+            document = gemini_cli.parse_jsonc(artifact.disk_path.read_bytes())
+        except (OSError, ValueError) as error:
             yield self._setting_row(
-                artifact, ts, "parser: %s could not be decoded (%s)" % (artifact.rel, e)
+                artifact, timestamp, "parser: %s could not be decoded (%s)" % (artifact.rel, error)
             )
             return
-        if not isinstance(doc, dict):
-            yield self._setting_row(artifact, ts, "parser: %s is not a JSON object" % artifact.rel)
-            return
-        if "permission" not in doc:
-            return
-        src = "(from %s, file mtime)" % artifact.rel
-        perm = doc["permission"]
-        if not isinstance(perm, dict):
+        if not isinstance(document, dict):
             yield self._setting_row(
-                artifact, ts, "permission setting: permission=%s %s" % (setting_value(perm), src)
+                artifact, timestamp, "parser: %s is not a JSON object" % artifact.rel
             )
             return
-        for name, rule in perm.items():
+        if "permission" not in document:
+            return
+        source = "(from %s, file mtime)" % artifact.rel
+        permission = document["permission"]
+        if not isinstance(permission, dict):
+            yield self._setting_row(
+                artifact,
+                timestamp,
+                "permission setting: permission=%s %s" % (setting_value(permission), source),
+            )
+            return
+        for name, rule in permission.items():
             if isinstance(rule, dict):
                 for pattern, action in rule.items():
                     yield self._setting_row(
                         artifact,
-                        ts,
+                        timestamp,
                         "permission setting: permission.%s.%s=%s %s"
-                        % (name, pattern, setting_value(action), src),
+                        % (name, pattern, setting_value(action), source),
                     )
             else:
                 yield self._setting_row(
                     artifact,
-                    ts,
-                    "permission setting: permission.%s=%s %s" % (name, setting_value(rule), src),
+                    timestamp,
+                    "permission setting: permission.%s=%s %s" % (name, setting_value(rule), source),
                 )
 
     def _parse_sandbox(self, artifact: Artifact) -> Iterator[Row]:
@@ -333,29 +339,31 @@ class KiloCodeParser(OpenCodeParser):
         sandbox.enabled=<value>` row. Both at the file's modification time,
         with no `session_id`, since the file names are hashes. A file that
         is not the expected JSON is one `parser:` row."""
-        ts = file_mtime(artifact)
-        src = "(from %s, file mtime)" % artifact.rel
-        doc = _read_json(artifact.disk_path)
+        timestamp = file_mtime(artifact)
+        source = "(from %s, file mtime)" % artifact.rel
+        document = _read_json(artifact.disk_path)
         if SANDBOX_PREFERENCE_RX.match(artifact.rel):
-            if isinstance(doc, bool):
+            if isinstance(document, bool):
                 yield self._setting_row(
                     artifact,
-                    ts,
-                    "permission setting: sandbox.enabled=%s %s" % (setting_value(doc), src),
+                    timestamp,
+                    "permission setting: sandbox.enabled=%s %s" % (setting_value(document), source),
                 )
             else:
                 yield self._setting_row(
-                    artifact, ts, "parser: %s is not true or false" % artifact.rel
+                    artifact, timestamp, "parser: %s is not true or false" % artifact.rel
                 )
             return
-        if not isinstance(doc, dict):
-            yield self._setting_row(artifact, ts, "parser: %s is not a JSON object" % artifact.rel)
+        if not isinstance(document, dict):
+            yield self._setting_row(
+                artifact, timestamp, "parser: %s is not a JSON object" % artifact.rel
+            )
             return
-        for key, value in doc.items():
+        for key, value in document.items():
             yield self._setting_row(
                 artifact,
-                ts,
-                "permission setting: sandbox.%s=%s %s" % (key, setting_value(value), src),
+                timestamp,
+                "permission setting: sandbox.%s=%s %s" % (key, setting_value(value), source),
             )
 
     # -- deletion -------------------------------------------------------------------
@@ -367,24 +375,24 @@ class KiloCodeParser(OpenCodeParser):
         present and `-` for an absent count, then `(from retention/state.json,
         at)`, with no `session_id`, since the file names no session. A file
         that is not a JSON object is one `parser:` row."""
-        doc = _read_json(artifact.disk_path)
-        if not isinstance(doc, dict):
+        document = _read_json(artifact.disk_path)
+        if not isinstance(document, dict):
             yield self._setting_row(
                 artifact, file_mtime(artifact), "parser: retention/state.json is not a JSON object"
             )
             return
         parts = [
-            "%s=%s" % (k, setting_value(doc[k]) if doc.get(k) is not None else "-")
+            "%s=%s" % (k, setting_value(document[k]) if document.get(k) is not None else "-")
             for k in ("deleted", "scanned", "skippedActive", "failed", "durationMs")
         ]
         parts += [
-            "%s=%s" % (k, setting_value(doc[k]))
+            "%s=%s" % (k, setting_value(document[k]))
             for k in ("cancelled", "reclaimedBytes")
-            if doc.get(k) is not None
+            if document.get(k) is not None
         ]
         yield self._setting_row(
             artifact,
-            to_utc(doc.get("at")),
+            to_utc(document.get("at")),
             "sessions deleted by retention: %s (from retention/state.json, at)" % " ".join(parts),
         )
 
@@ -404,48 +412,53 @@ class KiloCodeParser(OpenCodeParser):
         row with the line in full; every other line is not read."""
         name = artifact.rel.rsplit("/", 1)[-1]
         errors: list = []
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 line = line_text(raw)
-                msg = next((m for m in REMOTE_MESSAGES if line.endswith(" " + m)), "")
-                if not msg:
+                message = next(
+                    (candidate for candidate in REMOTE_MESSAGES if line.endswith(" " + candidate)),
+                    "",
+                )
+                if not message:
                     continue
-                row = self._remote_row(artifact, name, n, line, msg)
+                row = self._remote_row(artifact, name, line_number, line, message)
                 if row is None:
-                    errors.append((n, "unparseable line (%s without its fields)" % msg, line))
+                    errors.append(
+                        (line_number, "unparseable line (%s without its fields)" % message, line)
+                    )
                 else:
                     yield row
         yield from error_rows(self, artifact, errors)
 
-    def _remote_row(self, artifact: Artifact, name: str, n: int, line: str, msg: str):
+    def _remote_row(self, artifact: Artifact, name: str, line_number: int, line: str, message: str):
         head = LOG_HEAD_RX.match(line)
-        fields = REMOTE_RX[msg].search(line) if head else None
+        fields = REMOTE_RX[message].search(line) if head else None
         if head is None or fields is None:
             return None
-        f = fields.groupdict()
+        groups = fields.groupdict()
         row = self.base_row(artifact)
-        row.source_line, row.turn_type = n, "system"
+        row.source_line, row.turn_type = line_number, "system"
         row.timestamp_utc = to_utc(head.group(1))
-        if msg == "remote connection enabled":
-            text = "connection enabled connected=%s" % f["connected"]
+        if message == "remote connection enabled":
+            text = "connection enabled connected=%s" % groups["connected"]
             basis = "line time"
-        elif msg == "remote connection disabled":
+        elif message == "remote connection disabled":
             text, basis = "connection disabled", "line time"
-        elif msg == "remote session started":
-            row.session_id = f["sid"]
-            row.project_path = f.get("directory") or ""
-            row.timestamp_utc = to_utc(f["started"]) or row.timestamp_utc
+        elif message == "remote session started":
+            row.session_id = groups["sid"]
+            row.project_path = groups.get("directory") or ""
+            row.timestamp_utc = to_utc(groups["started"]) or row.timestamp_utc
             text = "session started model=%s directory=%s" % (
-                f.get("model") or "-",
-                f.get("directory") or "-",
+                groups.get("model") or "-",
+                groups.get("directory") or "-",
             )
             basis = "startedAt"
         else:
-            row.session_id = f["sid"]
+            row.session_id = groups["sid"]
             text = "session ended reason=%s durationMs=%s startedAt=%s" % (
-                f["reason"],
-                f["duration"],
-                f["started"],
+                groups["reason"],
+                groups["duration"],
+                groups["started"],
             )
             basis = "line time"
         row.text = compact("remote control: %s (from log/%s, %s)" % (text, name, basis))
@@ -456,23 +469,23 @@ class KiloCodeParser(OpenCodeParser):
         """`storage/session_share/<sessionID>.json`: one sync row at the
         file's modification time, or one `parser:` row when the file is not
         a JSON object."""
-        doc = _read_json(artifact.disk_path)
+        document = _read_json(artifact.disk_path)
         row = self.base_row(artifact)
         row.session_id, row.source_line, row.turn_type = session_id, 1, "system"
         row.timestamp_utc = file_mtime(artifact)
         rel = "storage/session_share/%s.json" % session_id
-        if not isinstance(doc, dict):
+        if not isinstance(document, dict):
             row.text = "parser: %s is not a JSON object" % rel
             yield row
             return
 
-        def val(key: str) -> str:
-            v = doc.get(key)
-            return str(v) if v not in (None, "") else "-"
+        def value_text(key: str) -> str:
+            value = document.get(key)
+            return str(value) if value not in (None, "") else "-"
 
         row.text = compact(
             "session synced: kilo session %s ingest %s share %s (from %s, file mtime)"
-            % (val("id"), val("ingestPath"), val("url"), rel)
+            % (value_text("id"), value_text("ingestPath"), value_text("url"), rel)
         )
         yield row
 
@@ -480,16 +493,20 @@ class KiloCodeParser(OpenCodeParser):
     @staticmethod
     def _history_item(task_dir: Path, task_id: str) -> dict:
         item = None
-        f = task_dir / "history_item.json"
-        if f.is_file() and not f.is_symlink():
-            item = _read_json(f)
+        item_path = task_dir / "history_item.json"
+        if item_path.is_file() and not item_path.is_symlink():
+            item = _read_json(item_path)
         if not isinstance(item, dict):
-            idx = task_dir.parent / "_index.json"
-            data = _read_json(idx) if idx.is_file() and not idx.is_symlink() else None
+            index_path = task_dir.parent / "_index.json"
+            data = (
+                _read_json(index_path)
+                if index_path.is_file() and not index_path.is_symlink()
+                else None
+            )
             entries = data.get("entries") if isinstance(data, dict) else None
-            for e in entries if isinstance(entries, list) else []:
-                if isinstance(e, dict) and e.get("id") == task_id:
-                    item = e
+            for entry in entries if isinstance(entries, list) else []:
+                if isinstance(entry, dict) and entry.get("id") == task_id:
+                    item = entry
                     break
         return item if isinstance(item, dict) else {}
 
@@ -498,63 +515,63 @@ class KiloCodeParser(OpenCodeParser):
         task_id = task_dir.name
         item = self._history_item(task_dir, task_id)
         project = str(item.get("workspace") or "")
-        task_ts = to_utc(item.get("ts"))
-        if not task_ts and task_id.isdigit():
-            task_ts = to_utc(int(task_id))
+        task_time = to_utc(item.get("ts"))
+        if not task_time and task_id.isdigit():
+            task_time = to_utc(int(task_id))
 
-        def base(line: int, ts: str) -> Row:
+        def base(line: int, row_time: str) -> Row:
             row = self.base_row(artifact)
             row.source_line = line
             row.session_id = task_id
             row.project_path = project
-            row.timestamp_utc = ts
+            row.timestamp_utc = row_time
             return row
 
         if item:
-            row = base(0, task_ts)
+            row = base(0, task_time)
             row.turn_type = "system"
             row.text = compact(
                 " ".join(
-                    p
-                    for p in (
+                    part
+                    for part in (
                         "task:",
                         str(item.get("task") or ""),
                         "mode=%s" % item["mode"] if item.get("mode") else "",
                         "status=%s" % item["status"] if item.get("status") else "",
                         "parent=%s" % item["parentTaskId"] if item.get("parentTaskId") else "",
                     )
-                    if p
+                    if part
                 ),
             )
             yield row
 
-        with open(artifact.disk_path, "rb") as fh:
-            raw = fh.read().decode("utf-8", errors="replace")
+        with open(artifact.disk_path, "rb") as handle:
+            raw = handle.read().decode("utf-8", errors="replace")
         errors: list = []
         items = iter_json_array(raw, errors)
-        for n, msg in enumerate(items, 1):
-            if not isinstance(msg, dict):
+        for position, message in enumerate(items, 1):
+            if not isinstance(message, dict):
                 continue
-            ts = to_utc(msg.get("ts")) or task_ts
+            timestamp = to_utc(message.get("ts")) or task_time
 
-            def mk(turn: str, text) -> Row:
-                row = base(n, ts)
+            def make_row(turn: str, text) -> Row:
+                row = base(position, timestamp)
                 row.turn_type = turn
                 row.text = compact(text)
                 return row
 
-            if msg.get("type") == "reasoning":
+            if message.get("type") == "reasoning":
                 if opts.include_thinking:
-                    text = text_of(msg.get("summary")) or str(
-                        msg.get("reasoning_content") or msg.get("text") or ""
+                    text = text_of(message.get("summary")) or str(
+                        message.get("reasoning_content") or message.get("text") or ""
                     )
                     if text:
-                        yield mk("thinking", text)
+                        yield make_row("thinking", text)
                 continue
-            role = msg.get("role")
-            content = msg.get("content")
-            if msg.get("isSummary"):
-                yield mk("system", "summary: " + text_of(content))
+            role = message.get("role")
+            content = message.get("content")
+            if message.get("isSummary"):
+                yield make_row("system", "summary: " + text_of(content))
                 continue
             if isinstance(content, str):
                 content = [{"type": "text", "text": content}]
@@ -568,35 +585,39 @@ class KiloCodeParser(OpenCodeParser):
             for block in content:
                 if not isinstance(block, dict):
                     continue
-                btype = block.get("type")
-                if btype in ("text", "image"):
-                    t = "[image]" if btype == "image" else (block.get("text") or "")
-                    if t.lstrip().startswith("<environment_details>"):
-                        out.append(mk("system", t))
-                    elif t:
+                block_type = block.get("type")
+                if block_type in ("text", "image"):
+                    block_text = "[image]" if block_type == "image" else (block.get("text") or "")
+                    if block_text.lstrip().startswith("<environment_details>"):
+                        out.append(make_row("system", block_text))
+                    elif block_text:
                         if text_at < 0:
                             text_at = len(out)
-                        texts.append(t)
-                elif btype == "tool_use":
-                    row = mk("tool_use", tool_summary(block.get("input")))
+                        texts.append(block_text)
+                elif block_type == "tool_use":
+                    row = make_row("tool_use", tool_summary(block.get("input")))
                     row.tool_name = str(block.get("name") or "")
                     row.tool_use_id = str(block.get("id") or "")
                     out.append(row)
-                elif btype == "tool_result":
+                elif block_type == "tool_result":
                     text = text_of(block.get("content"))
-                    row = mk("tool_result", ("[error] " + text) if block.get("is_error") else text)
+                    row = make_row(
+                        "tool_result", ("[error] " + text) if block.get("is_error") else text
+                    )
                     row.tool_use_id = str(block.get("tool_use_id") or "")
                     out.append(row)
-                elif btype in ("thinking", "reasoning"):
-                    t = block.get("thinking") or block.get("text") or ""
-                    if opts.include_thinking and t:
-                        out.append(mk("thinking", t))
+                elif block_type in ("thinking", "reasoning"):
+                    block_text = block.get("thinking") or block.get("text") or ""
+                    if opts.include_thinking and block_text:
+                        out.append(make_row("thinking", block_text))
                 else:
-                    out.append(mk("system", "%s: %s" % (btype or "block", compact_json(block))))
+                    out.append(
+                        make_row("system", "%s: %s" % (block_type or "block", compact_json(block)))
+                    )
             if texts:
                 out.insert(
                     text_at,
-                    mk(
+                    make_row(
                         "user"
                         if role == "user"
                         else "assistant"

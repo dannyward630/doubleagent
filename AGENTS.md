@@ -1020,11 +1020,11 @@ another build is a new cell, never a confirmation of the old one.
      stop point: it is completed, with a throwaway account where one
      exists, not cancelled. A GUI agent is the person's to drive.
    - After each step the main session takes a listing of the agent's
-     directories (names, sizes, modes and mtimes only, by a script in the VM's lab
-     directory) and diffs it against the previous one before the next step;
-     the diffs are the Observed bullet's evidence. A round that ran every
-     task before the first listing says so in its document and gives the
-     modification times.
+     directories (names, sizes, modes and mtimes only, by a script in the
+     VM's lab directory) and diffs it against the previous one before the
+     next step; the diffs are the Observed bullet's evidence. A round that
+     ran every task before the first listing says so in its document and
+     gives the modification times.
    - Listing names sort in the order taken: zero-padded step numbers, an
      unplanned event taking the next number, never a letter.
    - The survey's roots are fixed before the baseline and include every
@@ -1039,9 +1039,7 @@ another build is a new cell, never a confirmation of the old one.
    it with `python3 -I`; write no ad-hoc script that prints values. Nothing
    from a real install goes into the repository, an issue or a report
    beyond file names, key names, types, sizes, file modes, modification
-   times, enum values, credential-store item names (an account or
-   attribute naming a person or login given as its class: `<os-user>`,
-   `<login>`, `<email>`) and log lines with ids redacted.
+   times, enum values and log lines with ids redacted.
 3. **Exercise every surface separately.** Each item is its own step with
    its own listing diff, run for every kind of task the surface offers.
    - Before the baseline, check the brief's step table against this list and
@@ -1053,8 +1051,9 @@ another build is a new cell, never a confirmation of the old one.
    - A prompt that needs a web search (a fact newer than the model can
      know, such as the latest release of a named package), so the round
      records how the agent stores a call of its own web search or fetch
-     tool and its results; a `curl` through the shell is a missed prompt
-     (see the last item of this list).
+     tool and its results. A `curl` through the shell is a missed prompt,
+     kept and repeated as the brief's rule below says; an agent without a
+     web tool records the step as not exercised.
    - A session with a tool call, a task that writes files, a scheduled or
      automated task, a plugin or MCP server, a resumed session, and a short
      and a long paste as prompts, each paste its own step.
@@ -1078,29 +1077,24 @@ another build is a new cell, never a confirmation of the old one.
      (a file, the editor's secret storage, the OS keychain, or server-side
      only), whether the repository list is cached, and whether
      repository-bound conversations are stored, cached or fetched.
-   - A source-host CLI the agent leans on (`gh`) is logged in before the
-     agent's own flow, its credentials recorded as the next item says. Log
-     `gh` in with
+   - A source-host CLI the agent leans on (`gh`) is logged in first, as its
+     own step, with a listing showing where its token landed (its
+     plaintext `hosts.yml` over SSH, the OS keychain from the GUI), then
+     the agent's own flow is completed. Log `gh` in with
      `gh auth login --expiring` (gh 2.103.0 or later), only for steps that
-     act on the public lab repository and the credential observation
+     act on the public lab repository and the one-time store observation
      below, and run `gh auth logout` before the VM is released; the logout
      removes only the local token, and the grant itself is revoked under
      the account's authorized OAuth apps.
-   - In every cell, each credential the agent or its source-host CLI
-     writes is recorded on each sign-in path the surface offers (over SSH
-     and from the VM's GUI for a CLI in a VM; the `lab/` sandbox has no
-     GUI), each sign-in its own step with a listing before and after: a
-     file by the listing's name, size and mode and by its key names and
-     types from `analyzer/tools/shape.py`; an OS credential-store item by
-     its item names (service and account on macOS, target on Windows,
-     attributes under the Secret Service on Linux), listed by a command
-     the brief names and first runs against a dummy item to show it prints
-     no secret. Over SSH an agent may not reach the OS store and write a
-     file fallback instead (Claude Code 2.1.310 on macOS:
-     `~/.claude/.credentials.json`, mode 0600); record it, then sign out
-     and have the person sign in from a terminal in the VM's GUI. That
-     sign-in comes after the last step driven over SSH, since an agent
-     started over SSH may then find neither store.
+   - An agent driven over SSH may not reach the OS credential store and
+     write a file fallback instead (Claude Code 2.1.310 on macOS:
+     `~/.claude/.credentials.json`, mode 0600). On every platform, record
+     where its credentials land over SSH, then sign out, as its own step
+     with a listing, and have the person sign in from a terminal in the
+     VM's GUI, with a listing before and after; that sign-in comes after
+     the last step driven over SSH. The same holds for any tool preferring
+     an OS credential store. Once per tool and platform; later cells cite
+     the research document.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to
      remove the synced copy, take it and record whether a local file still

@@ -50,157 +50,159 @@ TYPES = {
 }
 
 
-def _s(x: bytes) -> str:
-    return x.decode("utf-8", "replace")
+def _text(data: bytes) -> str:
+    return data.decode("utf-8", "replace")
 
 
-def parse_enum(b: bytes) -> dict:
-    e = {"name": "", "values": {}}
-    if not isinstance(b, bytes):
+def parse_enum(data: bytes) -> dict:
+    enum = {"name": "", "values": {}}
+    if not isinstance(data, bytes):
         raise ValueError("enum descriptor is not length-delimited")
-    for f, _wt, v in iter_fields(b):
-        if f == 1:
-            e["name"] = _s(v)
-        elif f == 2:
+    for field, _wt, value in iter_fields(data):
+        if field == 1:
+            enum["name"] = _text(value)
+        elif field == 2:
             name, num = "", None
-            for ff, _, vv in iter_fields(v):
-                if ff == 1:
-                    name = _s(vv)
-                elif ff == 2:
-                    num = vv
-            e["values"][str(num)] = name
-    return e
+            for sub_field, _, sub_value in iter_fields(value):
+                if sub_field == 1:
+                    name = _text(sub_value)
+                elif sub_field == 2:
+                    num = sub_value
+            enum["values"][str(num)] = name
+    return enum
 
 
-def parse_message(b: bytes) -> dict:
-    m = {"name": "", "fields": [], "nested": [], "enums": [], "oneofs": []}
-    if not isinstance(b, bytes):
+def parse_message(data: bytes) -> dict:
+    message = {"name": "", "fields": [], "nested": [], "enums": [], "oneofs": []}
+    if not isinstance(data, bytes):
         raise ValueError("message descriptor is not length-delimited")
-    for f, _wt, v in iter_fields(b):
-        if f == 1:
-            m["name"] = _s(v)
-        elif f == 2:
-            fd = {}
-            for ff, _, vv in iter_fields(v):
-                if ff == 1:
-                    fd["name"] = _s(vv)
-                elif ff == 3:
-                    fd["number"] = vv
-                elif ff == 4:
-                    fd["label"] = vv
-                elif ff == 5:
-                    fd["type"] = vv
-                elif ff == 6:
-                    fd["type_name"] = _s(vv)
-                elif ff == 9:
-                    fd["oneof_index"] = vv
-            m["fields"].append(fd)
-        elif f == 3:
-            m["nested"].append(parse_message(v))
-        elif f == 4:
-            m["enums"].append(parse_enum(v))
-        elif f == 8:
-            for ff, _, vv in iter_fields(v):
-                if ff == 1:
-                    m["oneofs"].append(_s(vv))
-    return m
+    for field, _wt, value in iter_fields(data):
+        if field == 1:
+            message["name"] = _text(value)
+        elif field == 2:
+            field_descriptor = {}
+            for sub_field, _, sub_value in iter_fields(value):
+                if sub_field == 1:
+                    field_descriptor["name"] = _text(sub_value)
+                elif sub_field == 3:
+                    field_descriptor["number"] = sub_value
+                elif sub_field == 4:
+                    field_descriptor["label"] = sub_value
+                elif sub_field == 5:
+                    field_descriptor["type"] = sub_value
+                elif sub_field == 6:
+                    field_descriptor["type_name"] = _text(sub_value)
+                elif sub_field == 9:
+                    field_descriptor["oneof_index"] = sub_value
+            message["fields"].append(field_descriptor)
+        elif field == 3:
+            message["nested"].append(parse_message(value))
+        elif field == 4:
+            message["enums"].append(parse_enum(value))
+        elif field == 8:
+            for sub_field, _, sub_value in iter_fields(value):
+                if sub_field == 1:
+                    message["oneofs"].append(_text(sub_value))
+    return message
 
 
 def parse_file_fields(data: bytes, start: int):
     """Parse FileDescriptorProto fields from `start` until the stream stops
     looking like one (a field outside 1..13 or a second `name`)."""
-    i, n = start, len(data)
+    i, end = start, len(data)
     seen_name = False
     fields = []
-    while i < n:
+    while i < end:
         try:
             tag, j = read_varint(data, i)
         except ValueError:
             break
-        f, wt = tag >> 3, tag & 7
-        if f < 1 or f > 13 or wt not in (0, 2):
+        field, wire_type = tag >> 3, tag & 7
+        if field < 1 or field > 13 or wire_type not in (0, 2):
             break
-        if f == 1 and seen_name:
+        if field == 1 and seen_name:
             break
-        if wt == 0:
-            v, j = read_varint(data, j)
-            fields.append((f, v))
+        if wire_type == 0:
+            value, j = read_varint(data, j)
+            fields.append((field, value))
             i = j
             continue
         try:
-            ln, j = read_varint(data, j)
+            length, j = read_varint(data, j)
         except ValueError:
             break
-        if ln > n - j or ln > 50_000_000:
+        if length > end - j or length > 50_000_000:
             break
-        chunk = data[j : j + ln]
-        if f == 1:
+        chunk = data[j : j + length]
+        if field == 1:
             if not chunk.endswith(b".proto"):
                 break
             seen_name = True
-        fields.append((f, chunk))
-        i = j + ln
+        fields.append((field, chunk))
+        i = j + length
     return fields
 
 
 def extract(binary: Path) -> dict:
     data = binary.read_bytes()
     results: dict = {}
-    for m in re.finditer(rb"\.proto", data):
-        end = m.end()
+    for match in re.finditer(rb"\.proto", data):
+        end = match.end()
         for back in range(7, 200):
-            st = end - back
-            if st < 2 or not re.fullmatch(rb"[A-Za-z0-9_./\-]+", data[st:end]):
+            start = end - back
+            if start < 2 or not re.fullmatch(rb"[A-Za-z0-9_./\-]+", data[start:end]):
                 break
-            for lb in (1, 2):
-                ls = st - lb
-                if ls < 1:
+            for prefix_size in (1, 2):
+                length_start = start - prefix_size
+                if length_start < 1:
                     continue
                 try:
-                    ln, _ = read_varint(data, ls)
+                    length, _ = read_varint(data, length_start)
                 except ValueError:
                     continue
-                if ln != end - st or data[ls - 1] != 0x0A:
+                if length != end - start or data[length_start - 1] != 0x0A:
                     continue
-                fields = parse_file_fields(data, ls - 1)
-                if not any(f == 4 for f, _ in fields):
+                fields = parse_file_fields(data, length_start - 1)
+                if not any(field == 4 for field, _ in fields):
                     continue
-                fd = {"name": "", "package": "", "messages": [], "enums": []}
+                descriptor = {"name": "", "package": "", "messages": [], "enums": []}
                 try:
-                    for f, v in fields:
-                        if f == 1:
-                            fd["name"] = _s(v)
-                        elif f == 2:
-                            fd["package"] = _s(v)
-                        elif f == 4:
-                            fd["messages"].append(parse_message(v))
-                        elif f == 5:
-                            fd["enums"].append(parse_enum(v))
+                    for field, value in fields:
+                        if field == 1:
+                            descriptor["name"] = _text(value)
+                        elif field == 2:
+                            descriptor["package"] = _text(value)
+                        elif field == 4:
+                            descriptor["messages"].append(parse_message(value))
+                        elif field == 5:
+                            descriptor["enums"].append(parse_enum(value))
                 except ValueError:
                     continue
-                key = fd["name"]
-                if key not in results or len(json.dumps(fd)) > len(json.dumps(results[key])):
-                    results[key] = fd
+                key = descriptor["name"]
+                if key not in results or len(json.dumps(descriptor)) > len(
+                    json.dumps(results[key])
+                ):
+                    results[key] = descriptor
     return results
 
 
 def build_index(desc: dict) -> dict:
     index = {}
 
-    def walk(prefix, m, fname):
-        full = prefix + m["name"]
-        index[full] = ("msg", m, fname)
-        for n in m["nested"]:
-            walk(full + ".", n, fname)
-        for e in m["enums"]:
-            index[full + "." + e["name"]] = ("enum", e, fname)
+    def walk(prefix, message, fname):
+        full = prefix + message["name"]
+        index[full] = ("msg", message, fname)
+        for nested in message["nested"]:
+            walk(full + ".", nested, fname)
+        for enum in message["enums"]:
+            index[full + "." + enum["name"]] = ("enum", enum, fname)
 
-    for fname, fd in desc.items():
-        pkg = fd["package"] + "." if fd["package"] else ""
-        for m in fd["messages"]:
-            walk(pkg, m, fname)
-        for e in fd["enums"]:
-            index[pkg + e["name"]] = ("enum", e, fname)
+    for fname, descriptor in desc.items():
+        pkg = descriptor["package"] + "." if descriptor["package"] else ""
+        for message in descriptor["messages"]:
+            walk(pkg, message, fname)
+        for enum in descriptor["enums"]:
+            index[pkg + enum["name"]] = ("enum", enum, fname)
     return index
 
 
@@ -208,15 +210,18 @@ def show(index: dict, name: str) -> None:
     kind, obj, fname = index[name]
     if kind == "enum":
         print("enum %s  [%s]" % (name, fname))
-        for num, nm in sorted(obj["values"].items(), key=lambda x: int(x[0])):
-            print("  %s = %s" % (num, nm))
+        for num, value_name in sorted(obj["values"].items(), key=lambda item: int(item[0])):
+            print("  %s = %s" % (num, value_name))
         return
     print("message %s  [%s]" % (name, fname))
-    for f in sorted(obj["fields"], key=lambda f: f.get("number", 0)):
-        label = {3: "repeated "}.get(f.get("label"), "")
-        tn = f.get("type_name", "").lstrip(".") or TYPES.get(f.get("type"), "?")
-        oo = " oneof#%d" % f["oneof_index"] if "oneof_index" in f else ""
-        print("  %4d %s%s: %s%s" % (f.get("number", 0), label, f.get("name"), tn, oo))
+    for field in sorted(obj["fields"], key=lambda field: field.get("number", 0)):
+        label = {3: "repeated "}.get(field.get("label"), "")
+        type_name = field.get("type_name", "").lstrip(".") or TYPES.get(field.get("type"), "?")
+        oneof = " oneof#%d" % field["oneof_index"] if "oneof_index" in field else ""
+        print(
+            "  %4d %s%s: %s%s"
+            % (field.get("number", 0), label, field.get("name"), type_name, oneof)
+        )
     if obj["oneofs"]:
         print("  oneofs: %s" % obj["oneofs"])
 
@@ -242,9 +247,9 @@ def main(argv) -> int:
             print()
         return 0
     if cmd == "find":
-        q = argv[3].lower()
+        query = argv[3].lower()
         for k in sorted(index):
-            if q in k.lower():
+            if query in k.lower():
                 print(k)
         return 0
     print(__doc__)

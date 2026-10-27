@@ -263,9 +263,11 @@ def enum_at(rec: object, path: str) -> str | None:
                 return None
             found = sorted(
                 {
-                    v
-                    for v in (enum_at(item, ".".join(parts[i + 1 :])) for item in node[part[:-2]])
-                    if v is not None
+                    value
+                    for value in (
+                        enum_at(item, ".".join(parts[i + 1 :])) for item in node[part[:-2]]
+                    )
+                    if value is not None
                 }
             )
             return "|".join(found) if found else None
@@ -324,10 +326,10 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
                 kind = enum_at(sub, "type") if name == "attachment" else None
                 nlabel = "%s %s%s keys" % (label, name, "[%s]" % kind if kind else "")
                 nested.setdefault(nlabel, set()).update(redact_key(str(k)) for k in sub)
-                inner = [v for v in sub.values() if isinstance(v, dict)]
+                inner = [member for member in sub.values() if isinstance(member, dict)]
                 if inner:  # a map of objects (`pastedContents`): the union of the inner keys
                     nested.setdefault(nlabel.replace(" keys", ".* keys"), set()).update(
-                        redact_key(str(k)) for v in inner for k in v
+                        redact_key(str(k)) for member in inner for k in member
                     )
         if rtype == "system":
             sub = rec.get("subtype")
@@ -346,11 +348,13 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
     for label in sorted(counts):
         out.append("%s%s: %d (%d bytes)" % (indent, label, counts[label], sizes[label]))
         out.append("%s  keys: %s" % (indent, ", ".join(sorted(keys[label]))))
-        for elabel in sorted(e for e in enums if e.startswith(label + " ")):
+        for elabel in sorted(enum for enum in enums if enum.startswith(label + " ")):
             values = enums[elabel]
-            shown = ", ".join("%s=%d" % (v, n) for v, n in sorted(values.items()))
+            shown = ", ".join("%s=%d" % (token, count) for token, count in sorted(values.items()))
             out.append("%s  %s: %s" % (indent, elabel[len(label) + 1 :], shown))
-        for nlabel in sorted(n for n in nested if n.startswith(label + " ")):
+        for nlabel in sorted(
+            nested_label for nested_label in nested if nested_label.startswith(label + " ")
+        ):
             out.append(
                 "%s  %s: %s" % (indent, nlabel[len(label) + 1 :], ", ".join(sorted(nested[nlabel])))
             )
@@ -385,8 +389,8 @@ def shape_file(path: str, size: int, args: argparse.Namespace) -> tuple[str, lis
     if size > args.max_size:
         return "%d bytes, skipped (large)" % size, []
     try:
-        with open(path, "rb") as fh:
-            data = fh.read()
+        with open(path, "rb") as handle:
+            data = handle.read()
     except OSError as exc:
         return "unreadable (%s)" % type(exc).__name__, []
     size = len(data)
@@ -493,39 +497,39 @@ def run(args: argparse.Namespace, out) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         prog="shape.py",
         description="Print key names, value types and JSONL line types of files, never values.",
     )
-    ap.add_argument("paths", nargs="+", metavar="PATH", help="file or directory to describe")
-    ap.add_argument(
+    parser.add_argument("paths", nargs="+", metavar="PATH", help="file or directory to describe")
+    parser.add_argument(
         "--max-size",
         type=int,
         default=1024 * 1024,
         metavar="BYTES",
         help="files larger than this print their size only (default 1 MiB)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--skip",
         action="append",
         metavar="NAME",
         help="directory name not to enter, repeatable; added to the Chromium cache "
         "directories, node_modules and .git",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--depth",
         type=int,
         default=6,
         metavar="N",
         help="object nesting depth to print; deeper objects print {...} (default 6)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--enums",
         action="store_true",
         help="print short lower-case strings ([a-z0-9_-], at most 16) as str=<value>, "
         "except under credential-like keys (token, secret, key, passw, cred, auth, cookie)",
     )
-    return ap.parse_args(argv)
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:

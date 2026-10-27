@@ -135,14 +135,14 @@ def strip_fences(text: str) -> str:
     out = []
     fence = ""
     for line in text.split("\n"):
-        m = FENCE.match(line)
+        match = FENCE.match(line)
         if fence:
-            closing = m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+            closing = match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence)
             if closing and not line.strip().lstrip(fence[0]):
                 fence = ""
             out.append("")
-        elif m:
-            fence = m.group(1)
+        elif match:
+            fence = match.group(1)
             out.append("")
         else:
             out.append(line)
@@ -151,24 +151,24 @@ def strip_fences(text: str) -> str:
 
 def blank_code_spans(text: str) -> str:
     """Replace each inline code span with spaces, keeping offsets and newlines."""
-    return CODE_SPAN.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    return CODE_SPAN.sub(lambda match: re.sub(r"[^\n]", " ", match.group(0)), text)
 
 
 def blank(text: str, spans: list[tuple[int, int]]) -> str:
     """Replace each span with spaces, keeping offsets and newlines."""
     chars = list(text)
-    for lo, hi in spans:
-        for i in range(lo, hi):
+    for start, end in spans:
+        for i in range(start, end):
             if chars[i] != "\n":
                 chars[i] = " "
     return "".join(chars)
 
 
 def anchor(heading: str) -> str:
-    h = LINK_IN_HEADING.sub(r"\1", heading)
-    h = h.replace("`", "").strip().lower()
-    h = re.sub(r"[^\w\- ]", "", h)
-    return h.replace(" ", "-")
+    text = LINK_IN_HEADING.sub(r"\1", heading)
+    text = text.replace("`", "").strip().lower()
+    text = re.sub(r"[^\w\- ]", "", text)
+    return text.replace(" ", "-")
 
 
 def heading_anchors(text: str) -> list[str]:
@@ -177,10 +177,10 @@ def heading_anchors(text: str) -> list[str]:
     seen: dict[str, int] = {}
     found: list[str] = []
     for i, line in enumerate(lines):
-        m = ATX.match(line)
+        match = ATX.match(line)
         heading = None
-        if m:
-            heading = m.group(2)
+        if match:
+            heading = match.group(2)
         elif (
             i > 0
             and SETEXT.match(line)
@@ -193,10 +193,10 @@ def heading_anchors(text: str) -> list[str]:
             heading = lines[i - 1]
         if heading is None:
             continue
-        a = anchor(heading)
-        n = seen.get(a, 0)
-        seen[a] = n + 1
-        found.append(a if n == 0 else "%s-%d" % (a, n))
+        slug = anchor(heading)
+        count = seen.get(slug, 0)
+        seen[slug] = count + 1
+        found.append(slug if count == 0 else "%s-%d" % (slug, count))
     return found
 
 
@@ -217,8 +217,8 @@ def markdown_files() -> list[pathlib.Path]:
         text=True,
         check=True,
     ).stdout
-    files = {ROOT / p for p in out.split("\0") if p.endswith(".md")}
-    return sorted(f for f in files if f.is_file())
+    files = {ROOT / path for path in out.split("\0") if path.endswith(".md")}
+    return sorted(path for path in files if path.is_file())
 
 
 def line_of(text: str, offset: int) -> int:
@@ -266,20 +266,20 @@ def term_problems(text: str, link_text: list[tuple[int, int]]) -> list[tuple[int
     headings = "\n".join(line for line in text.splitlines() if ATX.match(line))
     out: list[tuple[int, str]] = []
     for pattern, name in TERMS:
-        rx = re.compile(r"\b%s\b" % pattern, re.I)
-        if rx.search(headings):
+        term_pattern = re.compile(r"\b%s\b" % pattern, re.I)
+        if term_pattern.search(headings):
             continue
-        for m in rx.finditer(text):
-            lead = text[max(0, m.start() - 16) : m.end()].lower()
+        for match in term_pattern.finditer(text):
+            lead = text[max(0, match.start() - 16) : match.end()].lower()
             if any(lead.endswith(phrase) for phrase in TERM_PLAIN.get(name, ())):
                 continue
-            if any(lo <= m.start() and m.end() <= hi for lo, hi in link_text):
+            if any(start <= match.start() and match.end() <= end for start, end in link_text):
                 break
-            if re.match(r"[ \t]*\(", text[m.end() : m.end() + 3]):
+            if re.match(r"[ \t]*\(", text[match.end() : match.end() + 3]):
                 break
             out.append(
                 (
-                    m.start(),
+                    match.start(),
                     'term of art "%s" is not introduced: define it, link its definition, '
                     "or use plain words" % name,
                 )
@@ -289,54 +289,56 @@ def term_problems(text: str, link_text: list[tuple[int, int]]) -> list[tuple[int
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument("files", nargs="*", type=lambda s: pathlib.Path(s).resolve())
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser.add_argument("files", nargs="*", type=lambda argument: pathlib.Path(argument).resolve())
+    args = parser.parse_args()
     files = args.files or markdown_files()
     cache: dict[pathlib.Path, set[str]] = {}
     links = bad = 0
-    for f in files:
-        rel = display(f)
-        text = blank_code_spans(strip_fences(f.read_text(encoding="utf-8")))
+    for path in files:
+        rel = display(path)
+        text = blank_code_spans(strip_fences(path.read_text(encoding="utf-8")))
         link_text: list[tuple[int, int]] = []
         targets: list[tuple[int, str]] = []
         hidden: list[tuple[int, int]] = []
         # The link destinations, reference targets and autolinks alone: what
         # the term check blanks, since a word inside a target is not displayed.
         unseen: list[tuple[int, int]] = []
-        for m in INLINE_LINK.finditer(text):
-            link_text.append((m.start(1), m.end(1)))
-            targets.append((m.start(2), m.group(2)))
-            hidden.append((m.start(1), m.end(1)))
-            hidden.append((m.end(1), m.end(0)))
-            unseen.append((m.end(1), m.end(0)))
-            label = " ".join(m.group(1).split())
+        for match in INLINE_LINK.finditer(text):
+            link_text.append((match.start(1), match.end(1)))
+            targets.append((match.start(2), match.group(2)))
+            hidden.append((match.start(1), match.end(1)))
+            hidden.append((match.end(1), match.end(0)))
+            unseen.append((match.end(1), match.end(0)))
+            label = " ".join(match.group(1).split())
             if URL.search(label) or HOST_PATH.search(label):
-                print("%s:%d: link text is a URL: %s" % (rel, line_of(text, m.start(1)), label))
+                print("%s:%d: link text is a URL: %s" % (rel, line_of(text, match.start(1)), label))
                 bad += 1
-        for m in REF_DEF.finditer(text):
-            targets.append((m.start(1), m.group(1)))
-            hidden.append((m.start(1), m.end(1)))
-            unseen.append((m.start(1), m.end(1)))
-        for m in AUTOLINK.finditer(text):
-            hidden.append((m.start(), m.end()))
-            unseen.append((m.start(), m.end()))
+        for match in REF_DEF.finditer(text):
+            targets.append((match.start(1), match.group(1)))
+            hidden.append((match.start(1), match.end(1)))
+            unseen.append((match.start(1), match.end(1)))
+        for match in AUTOLINK.finditer(text):
+            hidden.append((match.start(), match.end()))
+            unseen.append((match.start(), match.end()))
         prose = blank(text, hidden)
         for pattern, what in ((URL, "URL"), (HOST_PATH, "host path")):
-            for m in pattern.finditer(prose):
+            for match in pattern.finditer(prose):
                 print(
                     "%s:%d: %s is not a link: %s"
-                    % (rel, line_of(prose, m.start()), what, m.group(0))
+                    % (rel, line_of(prose, match.start()), what, match.group(0))
                 )
                 bad += 1
-        for m in BARE_COMMIT.finditer(prose):
-            if m.group(1).isdigit():
+        for match in BARE_COMMIT.finditer(prose):
+            if match.group(1).isdigit():
                 continue
-            print("%s:%d: bare commit hash %s" % (rel, line_of(prose, m.start(1)), m.group(1)))
+            print(
+                "%s:%d: bare commit hash %s" % (rel, line_of(prose, match.start(1)), match.group(1))
+            )
             bad += 1
         for offset, target in sorted(targets):
             links += 1
-            msg = check_target(f, target, cache)
+            msg = check_target(path, target, cache)
             if msg:
                 print("%s:%d: %s" % (rel, line_of(text, offset), msg))
                 bad += 1
@@ -346,21 +348,22 @@ def main() -> int:
                     "not history: %s" % (rel, line_of(text, offset), target.strip("<>"))
                 )
                 bad += 1
-        for m in ISSUE.finditer(text):
-            if any(lo <= m.start() and m.end() <= hi for lo, hi in link_text):
+        for match in ISSUE.finditer(text):
+            if any(start <= match.start() and match.end() <= end for start, end in link_text):
                 continue
-            words = " ".join(m.group(0).split())
+            words = " ".join(match.group(0).split())
             print(
-                "%s:%d: issue reference is not a link: %s" % (rel, line_of(text, m.start()), words)
+                "%s:%d: issue reference is not a link: %s"
+                % (rel, line_of(text, match.start()), words)
             )
             bad += 1
-        for m in SECTION.finditer(text):
-            if any(lo <= m.start() and m.end() <= hi for lo, hi in link_text):
+        for match in SECTION.finditer(text):
+            if any(start <= match.start() and match.end() <= end for start, end in link_text):
                 continue
-            words = " ".join(m.group(0).split())
+            words = " ".join(match.group(0).split())
             print(
                 "%s:%d: section reference is not a link: %s"
-                % (rel, line_of(text, m.start()), words)
+                % (rel, line_of(text, match.start()), words)
             )
             bad += 1
         if rel not in TERM_EXEMPT_FILES and not rel.startswith(TERM_EXEMPT_DIRS):

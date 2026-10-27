@@ -349,7 +349,7 @@ The analyzer runs on the analyst's workstation, never on the host.
   loose input without a manifest infers them from paths, and the output
   says so. A row attributed to a project or session takes each value from
   that record alone, never a sibling's, and omits a value it lacks. A
-  record is placed on this host or on another machine by a marker the
+  record is attributed to this host or to another machine by a marker the
   format writes (a flag on the record, or its place relative to a flagged
   record), never by equality of a path, slug or name two machines can
   share.
@@ -358,10 +358,12 @@ The analyzer runs on the analyst's workstation, never on the host.
   direction. Whatever reserves a record for one claimant (a bound, a
   competitor set, an index) is derived from that predicate per record,
   never from a second grouping that approximates it. A widened window
-  names its cause in the docstring and extends only in the direction, and
-  between the stores, the cause explains. A match form removes only markup
-  the agent generates and collapses a whitespace run to one space; it never
-  deletes characters the user typed, so distinct events keep distinct keys.
+  extends only in the direction, and between the stores, its cause
+  explains: `secondary_tolerance()` is symmetric, `MATCH_TOLERANCES`
+  forward only. A match form maps the agent's own markup to the other
+  store's form and collapses each ASCII whitespace run to one space; it
+  never deletes characters the user typed, so distinct events keep distinct
+  keys.
   A pass over every row does per-row work independent of the row count (a
   sorted index and bisection, or one carrying pass), and builds a structure
   only some rows need only when such a row exists.
@@ -446,7 +448,8 @@ The analyzer runs on the analyst's workstation, never on the host.
   `DoubleAgentError(RuntimeError)` from `doubleagent/errors.py`, and an
   `except` that means one names it rather than a builtin base. An `except`
   names the exceptions it has a recovery for; a broad catch that keeps the
-  timeline going reports the error as a row, never returns a silent default.
+  timeline going reports the error as a `parser:` row or a `problem:` line,
+  never returns a silent default.
 - **Logging.** Only a module that logs has a module-level
   `logger = logging.getLogger(__name__)`; the `problem:` lines and the
   `parser:` rows are output, never log records.
@@ -467,10 +470,11 @@ The analyzer runs on the analyst's workstation, never on the host.
   parser has a fixture and a test class, every new input shape a detection
   test. A proximity join of two record kinds is bounded by the next record
   of the same kind and tested with two interleaved pairs (A, A's partner,
-  B, B's partner) and with each axis of its predicate and the inverse: the
-  earlier and the later claimant missing, equal-time copies across files, a
-  narrower and a broader scope, the same scope in another session, a
-  relocated project. A test named for an exclusive claim ("only", "never",
+  B, B's partner). A secondary-source join is tested with each axis of its
+  predicate and the inverse: the earlier and the later claimant missing,
+  equal-time copies across files, a narrower and a broader scope, the same
+  scope in another session, a relocated project. A test named for an
+  exclusive claim ("only", "never",
   "once") proves the negative half too. A regression test is run against
   the unfixed code and fails there. A test needing POSIX permissions or an
   unprivileged user skips with the `CAN_DENY` guard of
@@ -514,7 +518,7 @@ plan, and the parser is written from them.
    checked against every bullet below, and a parser newly setting
    `records_origin`, `records_sync`, `records_relay` or `has_secondary`
    updates every `sessions.jsonl` and inventory expectation, in
-   `test_cli.py` too.
+   `test_cli.py` too (the merge step's job when the work is delegated).
    - `tool_use` rows carry `tool_name` and `tool_use_id`; `tool_result`
      rows join on `tool_use_id`; `thinking` rows only when
      `opts.include_thinking` is set.
@@ -1099,9 +1103,9 @@ another build is a new cell, never a confirmation of the old one.
    document's. The brief's step table pairs each step with the claim it
    tests; the evidence row records settled, contradicted or new. A
    shape-tool change lands with its tests before the next listing. An ad
-   hoc check (a listing diff, a row count, a grep) fails on zero matches,
-   since a filter aimed at the wrong path returns an empty, passing-looking
-   result.
+   hoc check (a listing diff, a row count, a grep) expecting matches fails
+   on zero; one expecting none is first run against a known match, since a
+   filter aimed at the wrong path returns an empty, passing-looking result.
 5. **Write it down the same day.**
    - The Observed subsection gets a bullet per cell: version, build,
      date, what was exercised and what each surface wrote. A layout the
@@ -1205,7 +1209,9 @@ Windows PowerShell 5.1. From this WSL checkout that is:
 Without the privilege to create symlinks the test skips the symlink checks
 and says so. A pass under PowerShell 7 alone is not enough, and a pass
 under 5.1 through the WSL path is weaker than one on the CI runner. A change
-is done when every check on its pull request, CI and CodeQL, is green;
+is done when every check on its pull request, CI and CodeQL, is green and
+Copilot's review of the final commit has no unanswered finding, its
+suppressed and body-only findings included;
 watch them with `gh pr checks --watch` and fix what fails before reporting
 the pull request ready.
 
@@ -1324,10 +1330,9 @@ documentation-only change needs only the last two rows and markdownlint.
   same commit; when fixing one half of a contract (a flag and the summary
   it feeds, a docstring guarantee and its scope), grep for the other half.
   A second finding that is one more case of the same rule means rewriting
-  the rule, not the case: the rule becomes a sentence in the docstring, the
-  code follows it, and every axis is tested before the next push. A clean
-  Copilot pass on the final commit, its suppressed and body-only findings
-  answered, is part of done.
+  the rule, not the case: the rule becomes a sentence in the docstring or
+  function comment, the code is rewritten from it, and every axis is tested
+  before the next push.
 
 - Track outstanding work as GitHub issues; file one for anything out of
   scope rather than widening a change. Label `bug` behaviour that is wrong,
@@ -1358,8 +1363,9 @@ documentation-only change needs only the last two rows and markdownlint.
   against the code before committing, and say where the collectors or
   platforms differ and what happens without root or Administrator. Never
   write a sentence the code cannot verify. A path is "excluded" only when
-  an `EXCLUDES` glob matches it under a catalog line that reaches it, else
-  "not collected"; a manifest row is described by its independent facts,
+  an `EXCLUDES` glob matches it under a collection base a catalog table
+  reaches, giving a `skipped_excluded` row in a default run; otherwise it
+  is "not collected". A manifest row is described by its independent facts,
   the catalog agent it is attributed to and whether it is flagged
   `secret: true`, never as "collected as secret".
 - Document a feature with specifics (an option table row, a file-by-file or

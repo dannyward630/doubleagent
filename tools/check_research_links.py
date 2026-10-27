@@ -27,7 +27,7 @@ import urllib.parse
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PAT = re.compile(
+CITATION = re.compile(
     r"https://github\.com/([^/\s)]+/[^/\s)]+)/blob/([0-9a-f]{40})/([^\s)#]+)"
     r"(?:#L(\d+)(?:-L(\d+))?)?"
 )
@@ -86,7 +86,7 @@ def main() -> int:
     total = bad = 0
     for document in files:
         links = 0
-        for match in PAT.finditer(document.read_text(encoding="utf-8")):
+        for match in CITATION.finditer(document.read_text(encoding="utf-8")):
             repo, sha, path, first_line, last_line = match.groups()
             total += 1
             links += 1

@@ -200,13 +200,13 @@ def check_structure(path: pathlib.Path, text: str, width: int, link_check) -> li
     problems += check_outline(rel, owner, [head[2] for head in heads if head[1] == 2])
     problems += check_fixed(rel, owner, {head[2] for head in heads})
     lines = stripped.split("\n")
-    prev_blank = True
+    previous_blank = True
     section = ""
     for number, line in enumerate(lines, 1):
         if line.startswith("## "):
             section = line[3:].strip()
         in_prose = line.strip() and not line.lstrip().startswith(("|", "-", "*", ">", "#", "["))
-        if prev_blank and in_prose and BOLD_LEAD.match(line):
+        if previous_blank and in_prose and BOLD_LEAD.match(line):
             problems.append(
                 "%s:%d: bold label used as a heading; make it a heading" % (rel, number)
             )
@@ -223,7 +223,7 @@ def check_structure(path: pathlib.Path, text: str, width: int, link_check) -> li
         long = in_prose and not line.lstrip()[:2].rstrip(".").isdigit() and len(line) > width
         if long and not URL.search(line) and not ONLY_CODE_SPAN.match(line):
             problems.append("%s:%d: prose line longer than %d characters" % (rel, number, width))
-        prev_blank = not line.strip()
+        previous_blank = not line.strip()
     first_h2 = next((head[0] for head in heads if head[1] == 2), None)
     if first_h2 is not None and top_heads:
         intro = [line for line in lines[top_heads[0][0] : first_h2 - 1] if line.strip()]

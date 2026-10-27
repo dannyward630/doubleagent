@@ -18,26 +18,26 @@ PROMPT = "please refactor the billing module"
 
 
 def shape(*args):
-    res = subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-I", str(TOOL), *map(str, args)],
         capture_output=True,
         text=True,
         check=False,
     )
-    if res.returncode != 0:
-        raise AssertionError("shape.py exited %d: %s" % (res.returncode, res.stderr))
+    if result.returncode != 0:
+        raise AssertionError("shape.py exited %d: %s" % (result.returncode, result.stderr))
     # The `# <root>` header names the test's own temporary directory, whose random
     # name can contain a token a leak check looks for; it is not under test.
-    return "".join(line for line in res.stdout.splitlines(True) if not line.startswith("# "))
+    return "".join(line for line in result.stdout.splitlines(True) if not line.startswith("# "))
 
 
 class ShapeBase(unittest.TestCase):
     """A temporary root for the files a shape test writes."""
 
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name)
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
 
 
 class JsonTests(ShapeBase):

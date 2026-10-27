@@ -59,16 +59,16 @@ class InventoryTests(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def run_cli(self, argv, cwd=None):
-        out, err = io.StringIO(), io.StringIO()
+        out, error = io.StringIO(), io.StringIO()
         old = os.getcwd()
         if cwd:
             os.chdir(cwd)
         try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(error):
                 exit_code = cli.main(argv)
         finally:
             os.chdir(old)
-        return exit_code, out.getvalue(), err.getvalue()
+        return exit_code, out.getvalue(), error.getvalue()
 
     def read_csv(self, path):
         with open(path, newline="", encoding="utf-8") as handle:
@@ -136,11 +136,11 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual((docker[5], docker[11]), ("agent-zero", "*a0_usr"))
 
     def test_junk_lines_skipped_and_counted(self):
-        exit_code, _, err = self.run_cli(
+        exit_code, _, error = self.run_cli(
             ["inventory", "-o", str(self.tmp / "b.csv"), str(self.inputs / "ws02.txt")]
         )
         self.assertEqual(exit_code, 0)
-        self.assertIn("skipped 4 non-inventory lines in", err)
+        self.assertIn("skipped 4 non-inventory lines in", error)
         rows = self.read_csv(self.tmp / "b.csv")
         self.assertEqual([row[5] for row in rows[1:]], ["claude-code"])
         self.assertEqual(rows[1][0], "WS02")
@@ -183,11 +183,11 @@ class InventoryTests(unittest.TestCase):
         exit_code, _, _ = self.run_cli(["inventory", "-o", str(self.tmp / "j.csv"), str(path)])
         self.assertEqual(exit_code, 1)
         self.assertEqual(self.read_csv(self.tmp / "j.csv"), [inventory.INVENTORY_COLUMNS])
-        exit_code, _, err = self.run_cli(
+        exit_code, _, error = self.run_cli(
             ["inventory", "-o", str(self.tmp / "m.csv"), str(self.tmp / "missing")]
         )
         self.assertEqual(exit_code, 2)
-        self.assertIn("no such file or directory", err)
+        self.assertIn("no such file or directory", error)
 
     @unittest.skipUnless(shutil.which("sh"), "needs sh")
     def test_collector_inventory_end_to_end(self):
@@ -202,9 +202,9 @@ class InventoryTests(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, b"")
-        exit_code, _, err = self.run_cli(["inventory", "-o", str(self.tmp / "e2e.csv"), str(cap)])
+        exit_code, _, error = self.run_cli(["inventory", "-o", str(self.tmp / "e2e.csv"), str(cap)])
         self.assertEqual(exit_code, 0)
-        self.assertEqual(err, "")
+        self.assertEqual(error, "")
         rows = self.read_csv(self.tmp / "e2e.csv")
         pairs = {(row[4], row[5]) for row in rows[1:]}
         self.assertIn(("alice", "claude-code"), pairs)

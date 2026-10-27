@@ -12,10 +12,10 @@ from pathlib import Path
 from doubleagent import catalog, cli, model
 from doubleagent.inputs import open_input
 from fixtures import (
-    PROJ_GIT_CONFIG,
-    PROJ_GIT_HEAD,
-    PROJ_GIT_REMOTES,
     PROJ_REMOTE,
+    PROJECT_GIT_CONFIG,
+    PROJECT_GIT_HEAD,
+    PROJECT_GIT_REMOTES,
     build_home,
     build_image,
 )
@@ -319,13 +319,13 @@ class LooseDetectTests(unittest.TestCase):
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(
                 ["detect", str(home / ".codex"), "--json", "--user", "mallory", "--host", "h1"]
             )
         self.assertEqual(exit_code, 0)
-        out = json.loads(buf.getvalue())
+        out = json.loads(buffer.getvalue())
         self.assertEqual(out["kind"], "loose")
         self.assertEqual(out["host"], "h1")
         self.assertEqual(out["homes"][0]["user"], "mallory")
@@ -354,8 +354,8 @@ class GitDetectTests(unittest.TestCase):
         """
         root = self.tmp / "col"
         files = [
-            ("/srv/proj", ".git/config", PROJ_GIT_CONFIG),
-            ("/srv/proj", ".git/HEAD", PROJ_GIT_HEAD),
+            ("/srv/proj", ".git/config", PROJECT_GIT_CONFIG),
+            ("/srv/proj", ".git/HEAD", PROJECT_GIT_HEAD),
             ("/srv/plain", "AGENTS.md", "# x\n"),
             ("/home/alice", ".codex/history.jsonl", ""),
         ]
@@ -389,15 +389,17 @@ class GitDetectTests(unittest.TestCase):
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(["detect", str(self.collection()), "--json"])
-        self.assertEqual(exit_code, 0, buf.getvalue())
-        projects = {project["path"]: project for project in json.loads(buf.getvalue())["projects"]}
+        self.assertEqual(exit_code, 0, buffer.getvalue())
+        projects = {
+            project["path"]: project for project in json.loads(buffer.getvalue())["projects"]
+        }
         self.assertEqual(sorted(projects), ["/srv/plain", "/srv/proj"])
         for project in projects.values():
             self.assertEqual(list(project)[-2:], ["remotes", "head"])
-        self.assertEqual(projects["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        self.assertEqual(projects["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
         self.assertEqual(projects["/srv/proj"]["head"], "main")
         self.assertEqual(projects["/srv/plain"]["remotes"], [])
         self.assertEqual(projects["/srv/plain"]["head"], "")
@@ -467,10 +469,10 @@ class ArchiveTests(unittest.TestCase):
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
             exit_code = cli.main(["timeline", str(extracted), "-o", str(self.tmp / "tl")])
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         lines = (self.tmp / "tl" / "timeline.jsonl").read_text(encoding="utf-8").split("\n")
         self.assertEqual(lines[-1], "")
         rows = [json.loads(line) for line in lines[:-1]]
@@ -487,11 +489,11 @@ class ArchiveTests(unittest.TestCase):
         # The collector gathers /srv/proj's repository files, and the
         # agents' own records of its remote join them.
         inv = json.loads((self.tmp / "tl" / "inventory.json").read_text(encoding="utf-8"))
-        proj = inv["projects"]["/srv/proj"]
-        self.assertEqual(proj["status"], "collected")
+        project = inv["projects"]["/srv/proj"]
+        self.assertEqual(project["status"], "collected")
         self.assertEqual(
-            (proj["remotes"], proj["head"], proj["recorded_remotes"]),
-            (PROJ_GIT_REMOTES, "main", [PROJ_REMOTE]),
+            (project["remotes"], project["head"], project["recorded_remotes"]),
+            (PROJECT_GIT_REMOTES, "main", [PROJ_REMOTE]),
         )
 
 

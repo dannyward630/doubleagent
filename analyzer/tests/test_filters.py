@@ -158,8 +158,8 @@ class TimelineFilterCliTests(unittest.TestCase):
 
     def run_timeline(self, name, *extra):
         out = self.tmp / name
-        buf, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
+        buffer, error = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(error):
             exit_code = cli.main(["timeline", str(self.tmp / "home"), "-o", str(out), *extra])
         rows, sessions = [], []
         if (out / "timeline.jsonl").exists():
@@ -167,7 +167,7 @@ class TimelineFilterCliTests(unittest.TestCase):
                 rows = [json.loads(line) for line in handle]
             with open(out / "sessions.jsonl", encoding="utf-8") as handle:
                 sessions = [json.loads(line) for line in handle]
-        return exit_code, rows, sessions, buf.getvalue(), err.getvalue()
+        return exit_code, rows, sessions, buffer.getvalue(), error.getvalue()
 
     def test_day_window(self):
         exit_code, rows, sessions, out, _ = self.run_timeline(
@@ -209,9 +209,9 @@ class TimelineFilterCliTests(unittest.TestCase):
             ["--since", "2026-10-02", "--until", "2026-10-01"],
             ["--match", "("],
         ):
-            exit_code, _, _, _, err = self.run_timeline("bad", *extra)
+            exit_code, _, _, _, error = self.run_timeline("bad", *extra)
             self.assertEqual(exit_code, 2, extra)
-            self.assertTrue(err.startswith("error: "), err)
+            self.assertTrue(error.startswith("error: "), error)
             self.assertFalse((self.tmp / "bad").exists(), extra)
 
 

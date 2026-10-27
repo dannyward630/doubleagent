@@ -69,13 +69,13 @@ from fixtures import (
     OPENCODE_SHARED,
     PI_BUG_SESSION,
     PI_SESSION,
-    PROJ_GIT_CONFIG,
-    PROJ_GIT_HEAD,
-    PROJ_GIT_REMOTES,
-    PROJ_MIRROR,
-    PROJ_PUSH_URL,
     PROJ_REMOTE,
-    PROJ_UPSTREAM,
+    PROJECT_GIT_CONFIG,
+    PROJECT_GIT_HEAD,
+    PROJECT_GIT_REMOTES,
+    PROJECT_MIRROR,
+    PROJECT_PUSH_URL,
+    PROJECT_UPSTREAM,
     QWEN_ARCHIVED,
     QWEN_DAEMON_SESSION,
     QWEN_SESSION,
@@ -113,10 +113,10 @@ REPO_KEYS = ["remotes", "head", "recorded_remotes"]
 
 
 def run_timeline(root: Path, out: Path) -> tuple[int, str]:
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
         exit_code = cli.main(["timeline", str(root), "-o", str(out), "--host", "h1"])
-    return exit_code, buf.getvalue()
+    return exit_code, buffer.getvalue()
 
 
 def agents_line(stdout: str) -> str:
@@ -239,8 +239,8 @@ class AgentsSummaryTests(unittest.TestCase):
     def test_agent_left_out_by_filter_is_not_no_rows(self):
         self.claude_history()
         self.write(".gemini/antigravity-cli/conversation_summaries.db", "")
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
             exit_code = cli.main(
                 [
                     "timeline",
@@ -251,9 +251,9 @@ class AgentsSummaryTests(unittest.TestCase):
                     "claude-code",
                 ]
             )
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         self.assertEqual(
-            agents_line(buf.getvalue()),
+            agents_line(buffer.getvalue()),
             "agents:    parsed: claude-code; detected but not parsed: none",
         )
 
@@ -282,10 +282,10 @@ class InventoryJsonTests(unittest.TestCase):
 
     def timeline(self, root: Path, *extra: str) -> tuple[int, str, Path]:
         out = self.tmp / "out"
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
             exit_code = cli.main(["timeline", str(root), "-o", str(out), "--host", "h1", *extra])
-        return exit_code, buf.getvalue(), out
+        return exit_code, buffer.getvalue(), out
 
     def check_totals(self, out: Path) -> dict:
         inv = json.loads((out / "inventory.json").read_text(encoding="utf-8"))
@@ -742,11 +742,11 @@ class SyncedSessionTests(unittest.TestCase):
         # session, whose cwd is a scratch directory.
         (unsynced.parent / "events.jsonl").write_text("", encoding="utf-8")
         # A Goose gateway session, relayed through Telegram.
-        con = sqlite3.connect(str(home / ".local/share/goose/sessions/sessions.db"))
+        connection = sqlite3.connect(str(home / ".local/share/goose/sessions/sessions.db"))
         for sql in goose_gateway_records():
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -1284,12 +1284,12 @@ class DeduplicationTimelineTests(unittest.TestCase):
 
     def timeline(self, *extra: str) -> tuple[str, list[dict], dict]:
         out = self.tmp / "out"
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
             exit_code = cli.main(["timeline", str(self.tmp / "home"), "-o", str(out), *extra])
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         inv = json.loads((out / "inventory.json").read_text(encoding="utf-8"))
-        return buf.getvalue(), read_jsonl(out / "timeline.jsonl"), inv
+        return buffer.getvalue(), read_jsonl(out / "timeline.jsonl"), inv
 
     def test_history_line_dropped(self):
         stdout, rows, inv = self.timeline()
@@ -1501,10 +1501,10 @@ class WindowsProjectPathTests(unittest.TestCase):
 
 
 def run_detect(root: Path, *extra: str) -> tuple[int, str]:
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
         exit_code = cli.main(["detect", str(root), *extra])
-    return exit_code, buf.getvalue()
+    return exit_code, buffer.getvalue()
 
 
 AIDER_HISTORY = "# 2026-10-01\n+ hi\n"
@@ -1531,13 +1531,13 @@ GONE_REMOTE = "https://example.com/team/gone.git"
 
 def gone_rollout() -> str:
     """The fixture rollout as a thread of `/srv/gone` whose session_meta names `GONE_REMOTE`."""
-    recs = codex_rollout_records(cwd="/srv/gone")
-    recs[0]["payload"]["id"] = GONE_SESSION
-    recs[0]["payload"]["git"]["repository_url"] = GONE_REMOTE
-    for rec in recs[1:]:
-        if rec["type"] == "turn_context":
-            rec["payload"]["cwd"] = "/srv/gone"
-    return "".join(json.dumps(record) + "\n" for record in recs)
+    records = codex_rollout_records(cwd="/srv/gone")
+    records[0]["payload"]["id"] = GONE_SESSION
+    records[0]["payload"]["git"]["repository_url"] = GONE_REMOTE
+    for entry in records[1:]:
+        if entry["type"] == "turn_context":
+            entry["payload"]["cwd"] = "/srv/gone"
+    return "".join(json.dumps(record) + "\n" for record in records)
 
 
 class GitRemotesTests(unittest.TestCase):
@@ -1570,8 +1570,8 @@ class GitRemotesTests(unittest.TestCase):
             sessions + "rollout-2026-10-02T10-00-00-%s.jsonl" % GONE_SESSION,
             gone_rollout(),
         )
-        collected.add("alice", "/srv/proj", "project", ".git/config", PROJ_GIT_CONFIG)
-        collected.add("alice", "/srv/proj", "project", ".git/HEAD", PROJ_GIT_HEAD)
+        collected.add("alice", "/srv/proj", "project", ".git/config", PROJECT_GIT_CONFIG)
+        collected.add("alice", "/srv/proj", "project", ".git/HEAD", PROJECT_GIT_HEAD)
         collected.add("alice", "/srv/bare", "project", "AGENTS.md", "# x\n")
         return collected.write()
 
@@ -1581,7 +1581,7 @@ class GitRemotesTests(unittest.TestCase):
         projects = {project["path"]: project for project in json.loads(out)["projects"]}
         for project in projects.values():
             self.assertEqual(list(project)[-2:], ["remotes", "head"])
-        self.assertEqual(projects["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        self.assertEqual(projects["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
         self.assertEqual(projects["/srv/proj"]["head"], "main")
         # The .git files are shared files, never an agent.
         self.assertEqual(projects["/srv/proj"]["agents"], [])
@@ -1600,9 +1600,9 @@ class GitRemotesTests(unittest.TestCase):
                 "  remotes: origin %s %s (push %s), upstream %s"
                 % (
                     PROJ_REMOTE,
-                    PROJ_MIRROR,
-                    PROJ_PUSH_URL,
-                    PROJ_UPSTREAM,
+                    PROJECT_MIRROR,
+                    PROJECT_PUSH_URL,
+                    PROJECT_UPSTREAM,
                 )
             ],
         )
@@ -1616,10 +1616,10 @@ class GitRemotesTests(unittest.TestCase):
         self.assertEqual(sorted(projects), ["/srv/bare", "/srv/gone", "/srv/proj"])
         for path, entry in projects.items():
             self.assertEqual(list(entry)[-3:], REPO_KEYS, path)
-        proj, gone, bare = projects["/srv/proj"], projects["/srv/gone"], projects["/srv/bare"]
+        project, gone, bare = projects["/srv/proj"], projects["/srv/gone"], projects["/srv/bare"]
         self.assertEqual(
-            (proj["remotes"], proj["head"], proj["recorded_remotes"]),
-            (PROJ_GIT_REMOTES, "main", [PROJ_REMOTE]),
+            (project["remotes"], project["head"], project["recorded_remotes"]),
+            (PROJECT_GIT_REMOTES, "main", [PROJ_REMOTE]),
         )
         # A referenced project: no repository files, but the remote the
         # agent recorded survives the directory.
@@ -1676,15 +1676,15 @@ class GitRemotesTests(unittest.TestCase):
 
     def test_recorded_remotes_follow_the_filters(self):
         out = self.tmp / "out"
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(io.StringIO()):
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(io.StringIO()):
             exit_code = cli.main(
                 ["timeline", str(self.build()), "-o", str(out), "--match", "list the home"]
             )
-        self.assertEqual(exit_code, 0, buf.getvalue())
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         inv = json.loads((out / "inventory.json").read_text(encoding="utf-8"))
         self.assertEqual(inv["projects"]["/srv/proj"]["recorded_remotes"], [])
-        self.assertEqual(inv["projects"]["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        self.assertEqual(inv["projects"]["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
 
 
 class ProjectAgentsTests(unittest.TestCase):
@@ -1938,10 +1938,10 @@ class ProjectAgentsTests(unittest.TestCase):
         )
         self.assertFalse((self.tmp / "out" / "detect.json").exists())
 
-    def timeline_inventory(self, root: Path, want_rc: int = 0) -> dict:
+    def timeline_inventory(self, root: Path, want_exit_code: int = 0) -> dict:
         out = self.tmp / "out"
         exit_code, stdout = run_timeline(root, out)
-        self.assertEqual(exit_code, want_rc, stdout)
+        self.assertEqual(exit_code, want_exit_code, stdout)
         return json.loads((out / "inventory.json").read_text(encoding="utf-8"))
 
     def test_inventory(self):
@@ -2008,10 +2008,10 @@ class ProjectAgentsTests(unittest.TestCase):
                 ],
                 path,
             )
-        proj = projects["/srv/proj"]
+        project = projects["/srv/proj"]
         # Rows and no files; files and no rows.
         self.assertEqual(
-            proj["agents"]["claude-code"],
+            project["agents"]["claude-code"],
             {
                 "rows": 1,
                 "sessions": 0,
@@ -2021,7 +2021,7 @@ class ProjectAgentsTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            proj["agents"]["windsurf"],
+            project["agents"]["windsurf"],
             {
                 "rows": 0,
                 "sessions": 0,
@@ -2030,7 +2030,7 @@ class ProjectAgentsTests(unittest.TestCase):
                 "bytes": 2,
             },
         )
-        self.assertEqual(proj["shared_files"], 1)
+        self.assertEqual(project["shared_files"], 1)
         self.assertEqual(
             projects["/srv/gone"],
             {
@@ -2113,7 +2113,7 @@ class ProjectAgentsTests(unittest.TestCase):
         }
         (collected.root / "collection.json").write_text(json.dumps(summary), encoding="utf-8")
         collected.add("alice", "/mnt/image/srv/proj", "windsurf", ".windsurf/rules/x.md", "x\n")
-        inv = self.timeline_inventory(collected.write(), want_rc=1)  # no rows
+        inv = self.timeline_inventory(collected.write(), want_exit_code=1)  # no rows
         self.assertEqual(list(inv["projects"]), ["/srv/proj"])
         self.assertEqual(
             inv["projects"]["/srv/proj"]["agents"]["windsurf"],
@@ -2160,11 +2160,12 @@ SCRATCH_ENTRY_KEYS = [
 ]
 
 
-def pool_workspace(sid: str, cwd: str) -> str:
+def pool_workspace(session_id: str, cwd: str) -> str:
     """A Copilot Desktop pool session's workspace.yaml: never prompted."""
     return (
         "id: %s\ncwd: %s\nclient_name: github/autopilot\nuser_named: false\n"
-        "summary_count: 0\nfork_count: 0\ncreated_at: 2026-10-17T10:00:00.000Z\n" % (sid, cwd)
+        "summary_count: 0\nfork_count: 0\ncreated_at: 2026-10-17T10:00:00.000Z\n"
+        % (session_id, cwd)
     )
 
 

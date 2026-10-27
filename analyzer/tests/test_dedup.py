@@ -20,7 +20,7 @@ from fixtures import (
     write_bad_line,
 )
 
-SID = "11111111-2222-4333-8444-555555555555"
+SESSION_ID = "11111111-2222-4333-8444-555555555555"
 BACKUP_A = "/home/alice/.app/backups/1/history.jsonl"
 BACKUP_B = "/home/alice/.app/backups/2/history.jsonl"
 BACKUP_C = "/home/alice/.app/backups/3/history.jsonl"
@@ -32,11 +32,11 @@ def row(timestamp="2026-10-01T10:00:00.000Z", **fields) -> Row:
         host="h1",
         user="alice",
         agent="claude-code",
-        session_id=SID,
+        session_id=SESSION_ID,
         project_path="/srv/proj",
         turn_type="user",
         text="delete the logs",
-        source_file="/home/alice/.claude/projects/-srv-proj/%s.jsonl" % SID,
+        source_file="/home/alice/.claude/projects/-srv-proj/%s.jsonl" % SESSION_ID,
         source_line=2,
     )
     for key, value in fields.items():
@@ -437,9 +437,9 @@ class ParserRowTests(unittest.TestCase):
         self.assertEqual(dropped, Counter({"claude-code": 1}))
 
     def test_rollout_and_history_with_same_bad_line(self):
-        tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        home = tmp / "home" / "alice"
+        temporary = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
+        self.addCleanup(shutil.rmtree, temporary, ignore_errors=True)
+        home = temporary / "home" / "alice"
         rollout = (
             home
             / ".codex/sessions/2026/10/02"
@@ -447,8 +447,8 @@ class ParserRowTests(unittest.TestCase):
         )
         history = home / ".codex/history.jsonl"
         # The source_file of a loose input is the path under its root.
-        rollout_src = "/" + str(rollout.relative_to(tmp / "home"))
-        history_src = "/" + str(history.relative_to(tmp / "home"))
+        rollout_source = "/" + str(rollout.relative_to(temporary / "home"))
+        history_source = "/" + str(history.relative_to(temporary / "home"))
         for path, records in (
             (rollout, codex_rollout_records()),
             (history, codex_history_records()),
@@ -458,12 +458,12 @@ class ParserRowTests(unittest.TestCase):
                 "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
             )
             write_bad_line(path)
-        col = open_input(tmp / "home", catalog.load(), host="h1")
+        col = open_input(temporary / "home", catalog.load(), host="h1")
         rows, _, problems, dropped = cli.collect_rows(col, Options(), ["codex-cli"])
         self.assertEqual(problems, [])
         bad = [parsed for parsed in rows if parsed.text == bad_line_text()]
         self.assertEqual(
-            sorted(parsed.source_file for parsed in bad), sorted([history_src, rollout_src])
+            sorted(parsed.source_file for parsed in bad), sorted([history_source, rollout_source])
         )
         # The history's one prompt repeats the rollout's and is still dropped.
         self.assertEqual(dropped, Counter({"codex-cli": 1}))
@@ -474,5 +474,5 @@ class ParserRowTests(unittest.TestCase):
                 for parsed in rows
                 if parsed.turn_type == "user" and parsed.text == prompt
             ],
-            [rollout_src],
+            [rollout_source],
         )

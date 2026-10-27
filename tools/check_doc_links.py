@@ -193,8 +193,10 @@ def line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def check_target(src: pathlib.Path, target: str, cache: dict[pathlib.Path, set[str]]) -> str | None:
-    """Return the problem of a link `target` in the file `src`, or None when it resolves."""
+def check_target(
+    source: pathlib.Path, target: str, cache: dict[pathlib.Path, set[str]]
+) -> str | None:
+    """Return the problem of a link `target` in the file `source`, or None when it resolves."""
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1]
     if SCHEME.match(target):
@@ -202,11 +204,11 @@ def check_target(src: pathlib.Path, target: str, cache: dict[pathlib.Path, set[s
     path_part, _, fragment = target.partition("#")
     path_part = urllib.parse.unquote(path_part)
     if not path_part:
-        dest = src
+        dest = source
     elif path_part.startswith("/"):
         dest = ROOT / path_part.lstrip("/")
     else:
-        dest = src.parent / path_part
+        dest = source.parent / path_part
     if not dest.exists():
         return "link target does not exist: %s" % target
     if (
@@ -310,9 +312,9 @@ def main() -> int:
             bad += 1
         for offset, target in sorted(targets):
             links += 1
-            msg = check_target(path, target, cache)
-            if msg:
-                print("%s:%d: %s" % (rel, line_of(text, offset), msg))
+            problem = check_target(path, target, cache)
+            if problem:
+                print("%s:%d: %s" % (rel, line_of(text, offset), problem))
                 bad += 1
             if rel in NO_PROVENANCE_FILES and PROVENANCE_LINK.match(target):
                 print(
@@ -339,8 +341,8 @@ def main() -> int:
             )
             bad += 1
         if rel not in TERM_EXEMPT_FILES and not rel.startswith(TERM_EXEMPT_DIRS):
-            for offset, msg in term_problems(blank(text, unseen), link_text):
-                print("%s:%d: %s" % (rel, line_of(text, offset), msg))
+            for offset, problem in term_problems(blank(text, unseen), link_text):
+                print("%s:%d: %s" % (rel, line_of(text, offset), problem))
                 bad += 1
     if bad:
         print("%d problems in %d links checked in %d files" % (bad, links, len(files)))

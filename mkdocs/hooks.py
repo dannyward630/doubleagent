@@ -65,13 +65,13 @@ LINK_CHECK = _load_link_check()
 # Set by on_files: the destination path of every file the site publishes,
 # and the source path of every excluded file by its would-be URL.
 _published: set[str] = set()
-_excluded_src: dict[str, str] = {}
+_excluded_source: dict[str, str] = {}
 
 
 def on_files(files: Any, config: Any) -> Any:
     """Publish docs/index.md as the home page and each README.md under its own URL."""
     _published.clear()
-    _excluded_src.clear()
+    _excluded_source.clear()
     for file in files:
         dest = None
         if file.src_uri == HOME_PAGE:
@@ -83,7 +83,7 @@ def on_files(files: Any, config: Any) -> Any:
             file.url = dest
             file.__dict__.pop("abs_dest_path", None)
         if file.inclusion.is_excluded():
-            _excluded_src[file.dest_uri] = file.src_uri
+            _excluded_source[file.dest_uri] = file.src_uri
         else:
             _published.add(file.dest_uri)
     return files
@@ -202,7 +202,7 @@ def _source_link(match: re.Match[str], page_dir: str, docs_dir: str) -> str:
     target = posixpath.normpath(posixpath.join(page_dir, urllib.parse.unquote(path)))
     if target in _published:
         return match.group(0)
-    rel = _excluded_src.get(target, target)
+    rel = _excluded_source.get(target, target)
     kind = "tree" if os.path.isdir(os.path.join(docs_dir, rel)) else "blob"
     return "%s%s/%s/main/%s%s" % (start, SOURCE_URL, kind, urllib.parse.quote(rel), rest)
 

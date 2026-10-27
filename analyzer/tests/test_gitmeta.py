@@ -8,14 +8,14 @@ from pathlib import Path
 
 from doubleagent import gitmeta
 from doubleagent.inputs import Artifact, Home
-from fixtures import PROJ_GIT_CONFIG, PROJ_GIT_HEAD, PROJ_GIT_REMOTES
+from fixtures import PROJECT_GIT_CONFIG, PROJECT_GIT_HEAD, PROJECT_GIT_REMOTES
 
 
 class ParseRemotesTests(unittest.TestCase):
     """`parse_remotes` reads a repository config as git does."""
 
     def test_fixture_config(self):
-        self.assertEqual(gitmeta.parse_remotes(PROJ_GIT_CONFIG), PROJ_GIT_REMOTES)
+        self.assertEqual(gitmeta.parse_remotes(PROJECT_GIT_CONFIG), PROJECT_GIT_REMOTES)
 
     def test_pushurl_is_what_the_file_says(self):
         # git falls back to `url` for pushes; the file has no pushurl, so none.
@@ -282,7 +282,7 @@ class ParseHeadTests(unittest.TestCase):
         self.assertEqual(gitmeta.parse_head("\n  ref: refs/heads/second \t\n"), "second")
 
     def test_branch(self):
-        self.assertEqual(gitmeta.parse_head(PROJ_GIT_HEAD), "main")
+        self.assertEqual(gitmeta.parse_head(PROJECT_GIT_HEAD), "main")
         self.assertEqual(gitmeta.parse_head("ref: refs/heads/feature/x"), "feature/x")
 
     def test_detached(self):
@@ -330,32 +330,34 @@ class ProjectGitTests(unittest.TestCase):
         return Artifact(disk, home.original + "/" + rel, rel, "project", home)
 
     def test_project_git(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         bare = Home(self.tmp / "srv/bare", "/srv/bare", "alice", project=True)
         home = Home(self.tmp / "home/alice", "/home/alice", "alice")
         arts = [
-            self.artifact(proj, ".git/config", PROJ_GIT_CONFIG),
-            self.artifact(proj, ".git/HEAD", PROJ_GIT_HEAD),
+            self.artifact(project, ".git/config", PROJECT_GIT_CONFIG),
+            self.artifact(project, ".git/HEAD", PROJECT_GIT_HEAD),
             self.artifact(bare, "AGENTS.md", "# x\n"),
             # A home's .git is not a project's: never read.
-            self.artifact(home, ".git/config", PROJ_GIT_CONFIG),
+            self.artifact(home, ".git/config", PROJECT_GIT_CONFIG),
         ]
         self.assertEqual(
             gitmeta.project_git(arts),
-            {"/srv/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"}},
+            {"/srv/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"}},
         )
 
     def test_unterminated_quote_is_a_problem(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
-        config = self.artifact(proj, ".git/config", PROJ_GIT_CONFIG + '[remote "cut"]\n\turl = "x')
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        config = self.artifact(
+            project, ".git/config", PROJECT_GIT_CONFIG + '[remote "cut"]\n\turl = "x'
+        )
         problems: list[str] = []
         got = gitmeta.project_git([config], problems)
-        self.assertEqual(got["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        self.assertEqual(got["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
         self.assertEqual(
             problems,
             [
                 "/srv/proj/.git/config: line %d: unterminated quoted value"
-                % (PROJ_GIT_CONFIG.count("\n") + 2)
+                % (PROJECT_GIT_CONFIG.count("\n") + 2)
             ],
         )
 
@@ -369,42 +371,42 @@ class ProjectGitTests(unittest.TestCase):
         mac = Home(self.tmp / "Users/alice/proj", "/Users/alice/proj", "alice", project=True)
         both = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         arts = [
-            self.artifact(win, ".GIT/CONFIG", PROJ_GIT_CONFIG),
-            self.artifact(win, ".git/head", PROJ_GIT_HEAD),
-            self.artifact(mac, ".GIT/config", PROJ_GIT_CONFIG),
-            self.artifact(mac, ".git/HEAD", PROJ_GIT_HEAD),
+            self.artifact(win, ".GIT/CONFIG", PROJECT_GIT_CONFIG),
+            self.artifact(win, ".git/head", PROJECT_GIT_HEAD),
+            self.artifact(mac, ".GIT/config", PROJECT_GIT_CONFIG),
+            self.artifact(mac, ".git/HEAD", PROJECT_GIT_HEAD),
             # Case-insensitive spelling first, exact second, and the reverse.
             # The variants' copies live apart on disk, since on a
             # case-insensitive volume (this Mac) the two spellings would be
             # one file and the later write would replace the earlier.
             self.aside(both, ".git/head", "ref: refs/heads/other\n"),
-            self.artifact(both, ".git/HEAD", PROJ_GIT_HEAD),
-            self.artifact(both, ".git/config", PROJ_GIT_CONFIG),
+            self.artifact(both, ".git/HEAD", PROJECT_GIT_HEAD),
+            self.artifact(both, ".git/config", PROJECT_GIT_CONFIG),
             self.aside(both, ".GIT/CONFIG", '[remote "x"]\n\turl = https://h/x.git\n'),
         ]
         self.assertEqual(
             gitmeta.project_git(arts),
             {
-                "C:\\proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
-                "/Users/alice/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
-                "/srv/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
+                "C:\\proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
+                "/Users/alice/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
+                "/srv/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
             },
         )
 
     def test_missing_unreadable_and_symlinked_files(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         # A collected row whose file is gone reads as empty.
-        missing = self.artifact(proj, ".git/HEAD", None)
+        missing = self.artifact(project, ".git/HEAD", None)
         self.assertEqual(gitmeta.project_git([missing]), {"/srv/proj": {"remotes": [], "head": ""}})
         # A symlink is never followed.
         target = self.tmp / "elsewhere"
-        target.write_text(PROJ_GIT_CONFIG, encoding="utf-8")
+        target.write_text(PROJECT_GIT_CONFIG, encoding="utf-8")
         link = self.tmp / "srv/proj/.git/config"
         try:
             os.symlink(target, link)
         except (OSError, NotImplementedError):
             self.skipTest("symlinks not available")
-        config = Artifact(link, "/srv/proj/.git/config", ".git/config", "project", proj)
+        config = Artifact(link, "/srv/proj/.git/config", ".git/config", "project", project)
         self.assertEqual(gitmeta.read_text(link), ("", "not a regular file"))
         problems: list[str] = []
         self.assertEqual(gitmeta.project_git([config], problems)["/srv/proj"]["remotes"], [])
@@ -415,10 +417,10 @@ class ProjectGitTests(unittest.TestCase):
         # the other project is still read.
         if os.name == "nt" or not hasattr(os, "geteuid") or os.geteuid() == 0:
             self.skipTest("chmod does not deny access as root or on Windows")
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         other = Home(self.tmp / "srv/other", "/srv/other", "alice", project=True)
-        config = self.artifact(proj, ".git/config", PROJ_GIT_CONFIG)
-        head = self.artifact(other, ".git/HEAD", PROJ_GIT_HEAD)
+        config = self.artifact(project, ".git/config", PROJECT_GIT_CONFIG)
+        head = self.artifact(other, ".git/HEAD", PROJECT_GIT_HEAD)
         os.chmod(config.disk_path, 0)
         try:
             problems: list[str] = []
@@ -440,11 +442,11 @@ class ProjectGitTests(unittest.TestCase):
 
     def test_whole_file_is_read(self):
         # No size cap: a remote past the first MiB is read in full.
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         text = (
             "# " + "x" * (1 << 20) + '\n[remote "far"]\n\turl = https://host/team/repository.git\n'
         )
-        config = self.artifact(proj, ".git/config", text)
+        config = self.artifact(project, ".git/config", text)
         self.assertEqual(
             gitmeta.project_git([config])["/srv/proj"]["remotes"],
             [{"name": "far", "urls": ["https://host/team/repository.git"], "pushurls": []}],

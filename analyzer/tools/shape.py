@@ -152,8 +152,8 @@ class Shaper:
         if isinstance(value, list):
             if not value:
                 return "[]", None
-            inner, obj = self.inline(value[0], level, guard)
-            return "[%d x %s]" % (len(value), inner), obj
+            inner, node = self.inline(value[0], level, guard)
+            return "[%d x %s]" % (len(value), inner), node
         if isinstance(value, bool):
             return "bool", None
         if isinstance(value, (int, float)):
@@ -164,10 +164,10 @@ class Shaper:
             return str_class(value, self.enums and not guard), None
         return type(value).__name__, None
 
-    def lines(self, obj: dict, level: int, indent: str, guard: bool = False) -> list[str]:
-        """Return one line per redacted key of `obj`, and its children's lines below it."""
+    def lines(self, node: dict, level: int, indent: str, guard: bool = False) -> list[str]:
+        """Return one line per redacted key of `node`, and its children's lines below it."""
         groups: dict[str, list[object]] = {}
-        for key, value in obj.items():
+        for key, value in node.items():
             groups.setdefault(redact_key(str(key)), []).append(value)
         out: list[str] = []
         for key in sorted(groups):
@@ -234,13 +234,13 @@ NESTED_KEYS: tuple[str, ...] = (
 )
 
 
-def enum_at(rec: object, path: str) -> str | None:
-    """Return the enum-like value at a dotted path of `rec`, or None.
+def enum_at(record: object, path: str) -> str | None:
+    """Return the enum-like value at a dotted path of `record`, or None.
 
     A boolean is `true` or `false`, a `[]` segment joins its elements' values with `|`, and a
     value that is absent or not enum-like is None.
     """
-    node: object = rec
+    node: object = record
     parts = path.split(".")
     for i, part in enumerate(parts):
         if part.endswith("[]"):
@@ -284,18 +284,18 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
             continue
         total += 1
         try:
-            rec = json.loads(raw)
+            record = json.loads(raw)
         except ValueError:
             bad += 1
             continue
-        if not isinstance(rec, dict):
+        if not isinstance(record, dict):
             non_object += 1
             continue
-        top = {redact_key(str(k)) for k in rec}
-        rtype = rec.get("type")
+        top = {redact_key(str(k)) for k in record}
+        rtype = record.get("type")
         if isinstance(rtype, str):
             label = "type=%s" % redact_key(rtype)
-        elif "type" in rec:
+        elif "type" in record:
             label = "type=<%s>" % type(rtype).__name__
         else:
             label = "keys{%s}" % ",".join(sorted(top))
@@ -303,11 +303,11 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
         sizes[label] += len(raw)
         keys.setdefault(label, set()).update(top)
         for path in ENUM_PATHS:
-            value = enum_at(rec, path)
+            value = enum_at(record, path)
             if value is not None:
                 enums.setdefault("%s %s" % (label, path), Counter())[value] += 1
         for name in NESTED_KEYS:
-            sub = rec.get(name)
+            sub = record.get(name)
             if isinstance(sub, dict):
                 kind = enum_at(sub, "type") if name == "attachment" else None
                 nlabel = "%s %s%s keys" % (label, name, "[%s]" % kind if kind else "")
@@ -318,13 +318,13 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
                         redact_key(str(k)) for member in inner for k in member
                     )
         if rtype == "system":
-            sub = rec.get("subtype")
+            sub = record.get("subtype")
             slabel = "subtype=%s" % redact_key(sub) if isinstance(sub, str) else "no subtype"
             sub_counts[slabel] += 1
             sub_keys.setdefault(slabel, set()).update(top)
         if rtype in ("user", "assistant"):
-            msg = rec.get("message")
-            content = msg.get("content") if isinstance(msg, dict) else None
+            message = record.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
             if isinstance(content, list):
                 found = blocks.setdefault(label, set())
                 for block in content:

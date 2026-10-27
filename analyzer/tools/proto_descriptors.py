@@ -62,13 +62,13 @@ def parse_enum(data: bytes) -> dict:
         if field == 1:
             enum["name"] = _text(value)
         elif field == 2:
-            name, num = "", None
+            name, number = "", None
             for sub_field, _, sub_value in iter_fields(value):
                 if sub_field == 1:
                     name = _text(sub_value)
                 elif sub_field == 2:
-                    num = sub_value
-            enum["values"][str(num)] = name
+                    number = sub_value
+            enum["values"][str(number)] = name
     return enum
 
 
@@ -191,7 +191,7 @@ def extract(binary: Path) -> dict:
     return results
 
 
-def build_index(desc: dict) -> dict:
+def build_index(descriptors: dict) -> dict:
     """Map every message and enum's full name to (kind, descriptor, file name)."""
     index = {}
 
@@ -203,7 +203,7 @@ def build_index(desc: dict) -> dict:
         for enum in message["enums"]:
             index[full + "." + enum["name"]] = ("enum", enum, fname)
 
-    for fname, descriptor in desc.items():
+    for fname, descriptor in descriptors.items():
         pkg = descriptor["package"] + "." if descriptor["package"] else ""
         for message in descriptor["messages"]:
             walk(pkg, message, fname)
@@ -214,14 +214,16 @@ def build_index(desc: dict) -> dict:
 
 def show(index: dict, name: str) -> None:
     """Print the fields of a message or the values of an enum."""
-    kind, obj, fname = index[name]
+    kind, descriptor, fname = index[name]
     if kind == "enum":
         print("enum %s  [%s]" % (name, fname))
-        for num, value_name in sorted(obj["values"].items(), key=lambda item: int(item[0])):
-            print("  %s = %s" % (num, value_name))
+        for number, value_name in sorted(
+            descriptor["values"].items(), key=lambda item: int(item[0])
+        ):
+            print("  %s = %s" % (number, value_name))
         return
     print("message %s  [%s]" % (name, fname))
-    for field in sorted(obj["fields"], key=lambda field: field.get("number", 0)):
+    for field in sorted(descriptor["fields"], key=lambda field: field.get("number", 0)):
         label = {3: "repeated "}.get(field.get("label"), "")
         type_name = field.get("type_name", "").lstrip(".") or TYPES.get(field.get("type"), "?")
         oneof = " oneof#%d" % field["oneof_index"] if "oneof_index" in field else ""
@@ -229,8 +231,8 @@ def show(index: dict, name: str) -> None:
             "  %4d %s%s: %s%s"
             % (field.get("number", 0), label, field.get("name"), type_name, oneof)
         )
-    if obj["oneofs"]:
-        print("  oneofs: %s" % obj["oneofs"])
+    if descriptor["oneofs"]:
+        print("  oneofs: %s" % descriptor["oneofs"])
 
 
 def main(argv) -> int:
@@ -238,15 +240,15 @@ def main(argv) -> int:
     if len(argv) < 3:
         print(__doc__)
         return 1
-    cmd = argv[1]
-    if cmd == "extract":
-        desc = extract(Path(argv[2]))
-        Path(argv[3]).write_text(json.dumps(desc))
-        print("%d descriptor files" % len(desc))
+    command = argv[1]
+    if command == "extract":
+        descriptors = extract(Path(argv[2]))
+        Path(argv[3]).write_text(json.dumps(descriptors))
+        print("%d descriptor files" % len(descriptors))
         return 0
-    desc = json.loads(Path(argv[2]).read_text())
-    index = build_index(desc)
-    if cmd == "show":
+    descriptors = json.loads(Path(argv[2]).read_text())
+    index = build_index(descriptors)
+    if command == "show":
         for name in argv[3:]:
             if name in index:
                 show(index, name)
@@ -254,7 +256,7 @@ def main(argv) -> int:
                 print("not found: %s" % name)
             print()
         return 0
-    if cmd == "find":
+    if command == "find":
         query = argv[3].lower()
         for k in sorted(index):
             if query in k.lower():

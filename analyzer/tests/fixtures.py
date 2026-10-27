@@ -1,6 +1,8 @@
 """Synthetic agent state in the shapes the parsers were validated against.
-Content is invented; field names and nesting match real Claude Code and Codex
-CLI files as of October 2026 (see the parser module docstrings)."""
+
+Content is invented; field names and nesting follow the record shapes each
+parser's module docstring cites.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +25,9 @@ CLAUDE_WORK_SESSION = "11111111-2222-4333-8444-666666666666"
 # process in the registry fixture is bound to (no transcript).
 CLAUDE_295_SESSION = "11111111-2222-4333-8444-777777777777"
 CLAUDE_BRIDGE_SESSION = "11111111-2222-4333-8444-888888888888"
-# A 2.1.296 session with permission mode and model changes (issue 93).
+# A 2.1.296 session with permission mode and model changes.
 CLAUDE_296_SESSION = "11111111-2222-4333-8444-999999999999"
-# A 2.1.309 session of the Windows round (issue 256), the session-daemon
+# A 2.1.309 session in the key set of a Windows install, the session-daemon
 # worker it was handed to, its scratchpad, its Remote Control bridge and its
 # persisted tool output.
 CLAUDE_309_SESSION = "11111111-2222-4333-8444-aaaaaaaaaaaa"
@@ -35,11 +37,11 @@ CLAUDE_309_BRIDGE = "cse_0a1b2c3d4e5f6a7b"
 CLAUDE_309_BRIDGE_URL = "https://claude.ai/code/session_0a1b2c3d4e5f6a7b"
 CLAUDE_309_TOOL_RESULT = "k3j9x2m1q.txt"
 CLAUDE_309_PERSISTED = "first line of the listing\nsecond line of the listing"
-# A 2.1.310 session of the Linux round (issue 256) and a VS Code extension
+# A 2.1.310 session in the key set of a Linux install and a VS Code extension
 # session of the same build; neither is written by build_home.
 CLAUDE_310_SESSION = "11111111-2222-4333-8444-dddddddddddd"
 CLAUDE_310_VSCODE_SESSION = "11111111-2222-4333-8444-eeeeeeeeeeee"
-# Sessions of the macOS round of 2.1.310 (issue 256): a terminal session, a
+# 2.1.310 sessions in the key set of a macOS install: a terminal session, a
 # Remote Control spawn and a teleported cloud session; none is written by
 # build_home.
 CLAUDE_MAC_SESSION = "11111111-2222-4333-8444-ffffffffffff"
@@ -54,11 +56,11 @@ CLAUDE_MAC_LOCAL_SCRATCH = "/private/tmp/claude-501/-srv-proj/%s/scratchpad" % (
 )
 CLAUDE_MAC_PASTE_HASH = "0f1e2d3c4b5a6978"
 CLAUDE_MAC_LONG_PASTE = "alpha\nbeta\ngamma\ndelta\nepsilon"
-# Modification time given to the settings fixtures: 2026-10-01T09:00:00Z.
+# Modification time given to the settings fixtures: 1 October 09:00:00 UTC.
 CLAUDE_SETTINGS_MTIME = 1790845200
 CLAUDE_REGISTRY_KEY = "4242." + "ab" * 32 + ".key"
 CODEX_SESSION = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-# The `/srv/proj` repository's remotes (issue 253): `origin`, which the
+# The `/srv/proj` repository's remotes: `origin`, which the
 # Codex rollout, the Codex state database, the Zed thread blob and the
 # OpenClaw projects table record, with a push URL that embeds a token, and
 # `upstream`. `origin` has a second `url`, a mirror every push also goes
@@ -92,7 +94,7 @@ CODEX_SUBAGENT = "aaaaaaaa-bbbb-4ccc-8ddd-000000000002"
 CODEX_FORK = "aaaaaaaa-bbbb-4ccc-8ddd-000000000003"
 CODEX_LEGACY = "aaaaaaaa-bbbb-4ccc-8ddd-000000000004"
 CODEX_REVERT_ROLLOUT = "aaaaaaaa-bbbb-4ccc-8ddd-000000000005"
-# Synthetic ChatGPT ids of the shapes Codex Desktop writes in session_meta (#118):
+# Synthetic ChatGPT ids of the shapes Codex Desktop writes in session_meta:
 # a 36-character uuid account id and a 29-character user id.
 CODEX_ACCOUNT = "11111111-2222-4333-8444-555555555555"
 CODEX_USER = "user-AbCdEfGhIjKlMnOpQrStUvWx"
@@ -446,8 +448,11 @@ def claude_subagent_records():
 
 
 def claude_fork_records():
-    """A forked subagent: a copy of the forking agent's context, then the task
-    in a `<fork-boilerplate>` block beside the fork call's result."""
+    """A forked subagent.
+
+    A copy of the forking agent's context, then the task in a `<fork-boilerplate>` block beside the
+    fork call's result.
+    """
     common = _claude_common("/srv/proj", "main", agentId="fork1")
     common["isSidechain"] = True
     return [
@@ -504,9 +509,11 @@ def claude_work_history_records():
 
 
 def claude_295_records():
-    """A Claude Code 2.1.295 session: the state lines and keys that version
-    writes (research/claude-code.md, Record schema and Other stores). Line numbers are what
-    ClaudeCode295Tests asserts."""
+    """A Claude Code 2.1.295 session.
+
+    The state lines and keys that version writes (research/claude-code.md, Record schema and Other
+    stores). Line numbers are what ClaudeCode295Tests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=CLAUDE_295_SESSION, version="2.1.295", entrypoint="claude-desktop")
     sid = CLAUDE_295_SESSION
@@ -631,10 +638,12 @@ def claude_295_records():
 
 
 def claude_296_records():
-    """A Claude Code 2.1.296 session: the `permission-mode` record and the
-    prompt key `permissionMode` changing, and a `/model` switch with the
-    command output text of that version (research/claude-code.md, section
-    8). Line numbers are what ClaudeCode296Tests asserts."""
+    """A Claude Code 2.1.296 session.
+
+    The `permission-mode` record and the prompt key `permissionMode` changing, and a `/model` switch
+    with the command output text of that version (research/claude-code.md, section 8). Line numbers
+    are what ClaudeCode296Tests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=CLAUDE_296_SESSION, version="2.1.296")
     sid = CLAUDE_296_SESSION
@@ -694,13 +703,15 @@ def claude_296_records():
 
 
 def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
-    """A Claude Code 2.1.309 session with the line types and keys of the
-    Windows round (issue 256; research/claude-code.md, Record schema): the
-    environment attachment's scratchpad, the request-capture lines, a
-    one-time approval with `grantScope`/`reasonCode` and a persisted output
-    named by `toolUseResult.persistedOutputPath`, a denial, a Remote
-    Control bridge, prompts that were not typed, and the daemon handover.
-    Values are invented. Line numbers are what ClaudeCode309Tests asserts."""
+    """A Claude Code 2.1.309 session in the key set of a Windows install.
+
+    The line types and keys
+    (research/claude-code.md, Record schema): the environment attachment's scratchpad, the
+    request-capture lines, a one-time approval with `grantScope`/`reasonCode` and a persisted output
+    named by `toolUseResult.persistedOutputPath`, a denial, a Remote Control bridge, prompts that
+    were not typed, and the daemon handover. Values are invented. Line numbers are what
+    ClaudeCode309Tests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=session, version="2.1.309", entrypoint=entrypoint)
     sid = session
@@ -951,8 +962,11 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
 
 
 def claude_309_history_records():
-    """`history.jsonl` lines of 2.1.309: a long paste is named by its hash in
-    `pastedContents`, its text kept in `paste-cache/<contentHash>.txt`."""
+    """`history.jsonl` lines of 2.1.309.
+
+    A long paste is named by its hash in `pastedContents`, its text kept in
+    `paste-cache/<contentHash>.txt`.
+    """
     return [
         {
             "display": "[Pasted text #1 +40 lines] Summarise the text above in one sentence",
@@ -965,14 +979,15 @@ def claude_309_history_records():
 
 
 def claude_310_records():
-    """A Claude Code 2.1.310 session with the line types and keys of the
-    Linux round (issue 256; research/claude-code.md, Record schema): the
-    rule-miss `reasonCode` on a one-time approval, a denial and an
-    allow-always answer, a compaction that re-emits the session-state
-    records, the attachments a compaction re-injects, a prompt on a
-    detached head, and the 2.1.310 keys the parser does not read. Values
-    are invented; the session-state records carry only the keys the
-    parser reads. Line numbers are what ClaudeCode310Tests asserts."""
+    """A Claude Code 2.1.310 session in the key set of a Linux install.
+
+    The line types and keys
+    (research/claude-code.md, Record schema): the rule-miss `reasonCode` on a one-time approval, a
+    denial and an allow-always answer, a compaction that re-emits the session-state records, the
+    attachments a compaction re-injects, a prompt on a detached head, and the 2.1.310 keys the
+    parser does not read. Values are invented; the session-state records carry only the keys the
+    parser reads. Line numbers are what ClaudeCode310Tests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(
         sessionId=CLAUDE_310_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round"
@@ -1192,10 +1207,12 @@ def claude_310_records():
 
 
 def claude_310_vscode_records():
-    """A 2.1.310 VS Code extension session file: `entrypoint` claude-vscode,
-    no `mode` or `permission-mode` lines, `queue-operation` lines without
-    `content` and a `cost-state` line (research/claude-code.md, Record
-    schema). Line numbers are what ClaudeCode310Tests asserts."""
+    """A 2.1.310 VS Code extension session file.
+
+    `entrypoint` claude-vscode, no `mode` or `permission-mode` lines, `queue-operation` lines
+    without `content` and a `cost-state` line (research/claude-code.md, Record schema). Line numbers
+    are what ClaudeCode310Tests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(
         sessionId=CLAUDE_310_VSCODE_SESSION, version="2.1.310", entrypoint="claude-vscode"
@@ -1242,16 +1259,19 @@ def claude_310_vscode_records():
 
 
 def claude_310_user_settings():
-    """`~/.claude/settings.json` as 2.1.310 left it on Linux after the
-    retention steps: no `permissions`, the model alias, the phone's push
-    opt-in and a one-day retention period."""
+    """`~/.claude/settings.json` as 2.1.310 left it on Linux after the retention steps.
+
+    No `permissions`, the model alias, the phone's push opt-in and a one-day retention period.
+    """
     return {"theme": "dark", "model": "opus", "agentPushNotifEnabled": True, "cleanupPeriodDays": 1}
 
 
 def claude_310_global_config():
-    """`~/.claude.json` of 2.1.310 after `/install-github-app`: the GitHub
-    connection cache, whose UUIDs must never be printed, beside the
-    project entry and `githubRepoPaths`, which is not read."""
+    """`~/.claude.json` of 2.1.310 after `/install-github-app`.
+
+    The GitHub connection cache, whose UUIDs must never be printed, beside the project entry and
+    `githubRepoPaths`, which is not read.
+    """
     return {
         "oauthAccount": {"emailAddress": "user@example.invalid"},
         "projects": {"/srv/proj": {"allowedTools": [], "hasTrustDialogAccepted": True}},
@@ -1273,16 +1293,14 @@ def _claude_command(name, args=""):
 
 
 def claude_mac_records():
-    """A 2.1.310 terminal session of the macOS round (issue 256;
-    research/claude-code.md, Record schema): a `No` at the permission
-    dialog and a declined plan, each a result line with `toolDenialKind`
-    and no `permissionDecision`; `/model` twice and `/rename` in tag form;
-    a short and a long paste expanded in the prompt; a `/loop` firing (a
-    `scheduled_task_fire` record and a `turnOrigin` `scheduled` prompt); the
-    `auto_mode`, `auto_mode_exit` and `command_permissions` attachments; and
-    `cost-state`. Values are invented. Line numbers are what
-    ClaudeCodeMacTests asserts; `claude_mac_history_records` gives the
-    history lines of the same events."""
+    """A 2.1.310 terminal session in the key set of a macOS install.
+
+    The line types follow research/claude-code.md, Record schema: a `No` at the permission dialog
+    and a declined plan, each a result line with `toolDenialKind`; `/model` twice and `/rename` in
+    tag form; a short and a long paste; a `/loop` firing; the `auto_mode`, `auto_mode_exit` and
+    `command_permissions` attachments; and `cost-state`. Values are invented. Line numbers are what
+    ClaudeCodeMacTests asserts; `claude_mac_history_records` gives the same events' history lines.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(
         sessionId=CLAUDE_MAC_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round"
@@ -1425,7 +1443,7 @@ def claude_mac_records():
             + "\n</pasted_content> Summarise again.",
         ),  # 17: a long paste
         # 18: a second /model, recorded 27 s after its history line, when
-        # the picker closed (rows 10 and 27a of the round)
+        # the picker closed
         prompt("u18", "50", _claude_command("model")),
         dict(
             type="cost-state",
@@ -1449,9 +1467,10 @@ def claude_mac_records():
 
 
 def claude_mac_cleared_records():
-    """The file a `/clear` in `claude_mac_records`'s session opens
-    (2.1.310 macOS, row 24a): its first lines are the `/clear` command in
-    tag form and its output, under the new session's id."""
+    """The file a `/clear` in `claude_mac_records`'s session opens (2.1.310 macOS, row 24a).
+
+    Its first lines are the `/clear` command in tag form and its output, under the new session's id.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=CLAUDE_MAC_CLEARED_SESSION, version="2.1.310", entrypoint="cli")
     return [
@@ -1467,20 +1486,21 @@ def claude_mac_cleared_records():
 
 
 def claude_mac_history_records():
-    """`history.jsonl` lines of the events of `claude_mac_records`: the
-    commands as typed, the short paste inline and the long one by hash
-    (`paste-cache/<CLAUDE_MAC_PASTE_HASH>.txt`, written by the test), and
-    the three lines no transcript record matches: `/clear` under the ended
-    session's id (its record is in `claude_mac_cleared_records`' file),
-    `/logout` (the process ends before any line) and `/exit` typed while a
-    turn ran (no line written)."""
+    """`history.jsonl` lines of the events of `claude_mac_records`.
+
+    The commands as typed, the short paste inline and the long one by hash
+    (`paste-cache/<CLAUDE_MAC_PASTE_HASH>.txt`, written by the test), and the three lines no
+    transcript record matches: `/clear` under the ended session's id (its record is in
+    `claude_mac_cleared_records`' file), `/logout` (the process ends before any line) and `/exit`
+    typed while a turn ran (no line written).
+    """
     sid = CLAUDE_MAC_SESSION
 
     def line(second, display, **pasted):
         return {
             "display": display,
             "pastedContents": pasted,
-            # 2026-10-01T11:00:<t>Z in epoch milliseconds.
+            # 1 October 11:00:<t> UTC in epoch milliseconds.
             "timestamp": 1790852400000 + int(second) * 1000,
             "project": "/srv/proj",
             "sessionId": sid,
@@ -1509,11 +1529,12 @@ def claude_mac_history_records():
 
 
 def claude_mac_spawn_records():
-    """A Remote Control spawn's transcript (2.1.310 macOS, issue 256): the
-    prompt from claude.ai arrives through the queue, every line has
-    `entrypoint` sdk-cli, the prompt `promptSource` sdk and
-    `permissionMode` default, and the file ends with `cost-state` when the
-    bridge stops. Line numbers are what ClaudeCodeMacTests asserts."""
+    """A Remote Control spawn's transcript (2.1.310 macOS).
+
+    The prompt from claude.ai arrives through the queue, every line has `entrypoint` sdk-cli, the
+    prompt `promptSource` sdk and `permissionMode` default, and the file ends with `cost-state` when
+    the bridge stops. Line numbers are what ClaudeCodeMacTests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=CLAUDE_MAC_SPAWN_SESSION, version="2.1.310", entrypoint="sdk-cli")
     sid = CLAUDE_MAC_SPAWN_SESSION
@@ -1566,14 +1587,14 @@ def claude_mac_spawn_records():
 
 
 def claude_mac_teleport_records():
-    """A teleported cloud session's local file (2.1.310 macOS, issue 256):
-    the cloud turn replayed with `remoteSourced` on its `user` and
-    `assistant` lines, the cloud machine's `environment` attachment (its
-    scratchpad under `/tmp/claude-0/-home-user-repo/`), a cloud decision
-    by rule (`ruleSource` cliArg), the `stop_hook_summary` and
-    `informational` system lines, then the local environment and one local
-    prompt. `entrypoint` is cli throughout. Line numbers are what
-    ClaudeCodeMacTests asserts."""
+    """A teleported cloud session's local file (2.1.310 macOS).
+
+    The cloud turn replayed with `remoteSourced` on its `user` and `assistant` lines, the cloud
+    machine's `environment` attachment (its scratchpad under `/tmp/claude-0/-home-user-repo/`), a
+    cloud decision by rule (`ruleSource` cliArg), the `stop_hook_summary` and `informational` system
+    lines, then the local environment and one local prompt. `entrypoint` is cli throughout. Line
+    numbers are what ClaudeCodeMacTests asserts.
+    """
     common = _claude_common("/srv/proj", "main")
     common.update(sessionId=CLAUDE_MAC_TELEPORT_SESSION, version="2.1.310", entrypoint="cli")
 
@@ -1670,9 +1691,10 @@ def claude_mac_teleport_records():
 
 
 def claude_mac_global_config():
-    """`~/.claude.json` of 2.1.310 after Remote Control and a cloud session
-    (macOS round): the machine id (never printed), the project's spawn
-    mode and `hasRemoteEnvironment`."""
+    """`~/.claude.json` of 2.1.310 after Remote Control and a cloud session (macOS).
+
+    The machine id (never printed), the project's spawn mode and `hasRemoteEnvironment`.
+    """
     return {
         "remoteControlMachineId": "00000000-0000-4000-8000-0000000000cc",
         "hasRemoteEnvironment": True,
@@ -1686,8 +1708,11 @@ def claude_mac_global_config():
 
 
 def claude_user_settings():
-    """`~/.claude/settings.json` with every `permissions` key the parser
-    reads, and keys it must never print (`env`, `apiKeyHelper`)."""
+    """`~/.claude/settings.json` with every `permissions` key the parser reads.
+
+    `~/.claude/settings.json` with every `permissions` key the parser reads, and keys it must never
+    print (`env`, `apiKeyHelper`).
+    """
     return {
         "permissions": {
             "allow": ["Bash(npm test:*)", "Read(~/notes/**)"],
@@ -1709,8 +1734,11 @@ def claude_project_local_settings():
 
 
 def claude_global_config():
-    """`~/.claude.json` with one project entry; `oauthAccount` and the MCP
-    server headers must never be printed."""
+    """`~/.claude.json` with one project entry.
+
+    `~/.claude.json` with one project entry; `oauthAccount` and the MCP server headers must never be
+    printed.
+    """
     return {
         "numStartups": 3,
         "oauthAccount": {"emailAddress": "user@example.invalid"},
@@ -1731,8 +1759,10 @@ def claude_global_config():
 
 
 def claude_registry_records():
-    """`.claude/sessions/<pid>.json` (2.1.295 key set, the research document's Other stores):
-    a Code-tab process, and a process under Remote Control."""
+    """`.claude/sessions/<pid>.json` (2.1.295 key set, the research document's Other stores).
+
+    A Code-tab process, and a process under Remote Control.
+    """
     base = {
         "procStart": "Thu Oct  1 11:00:00 2026",
         "version": "2.1.295",
@@ -1791,8 +1821,10 @@ def claude_history_records():
 
 
 def codex_rollout_records(cwd="/srv/proj"):
-    """Paginated shape (research/codex-cli.md, Parser plan): content
-    kinds on user messages, item_completed turn items, ordinals."""
+    """Paginated shape (research/codex-cli.md, Parser plan).
+
+    Content kinds on user messages, item_completed turn items, ordinals.
+    """
     timestamp_format = "2026-10-02T09:00:0%d.000Z"
     recs = [
         {
@@ -2066,8 +2098,8 @@ def codex_rollout_records(cwd="/srv/proj"):
     return recs
 
 
-# The ChatGPT desktop app's scheduled automation (#119): the key set observed
-# on Windows, 2026-10-15, with synthetic values. The directory is a slug of
+# The ChatGPT desktop app's scheduled automation: the key set a Windows
+# install wrote, with synthetic values. The directory is a slug of
 # the name the user typed.
 CODEX_AUTOMATION_REL = ".codex/automations/check-the-nightly-build/automation.toml"
 CODEX_AUTOMATION_TOML = (
@@ -2088,8 +2120,11 @@ CODEX_AUTOMATION_MTIME = 1791991552
 
 
 def build_codex_automation(home: Path) -> None:
-    """`.codex/automations/<slug>/automation.toml` and the directory's
-    `.run-jitter-salt`, which the parser must not want."""
+    """Write a Codex automation and its jitter salt file.
+
+    `.codex/automations/<slug>/automation.toml` and the directory's `.run-jitter-salt`, which the
+    parser must not want.
+    """
     path = home / CODEX_AUTOMATION_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(CODEX_AUTOMATION_TOML, encoding="utf-8")
@@ -2097,7 +2132,7 @@ def build_codex_automation(home: Path) -> None:
     (home / ".codex/automations/.run-jitter-salt").write_text("c2FsdA==\n", encoding="utf-8")
 
 
-# Codex's SQLite projections (#122): `state_5.sqlite` `threads` and
+# Codex's SQLite projections: `state_5.sqlite` `threads` and
 # `thread_history_1.sqlite` (research/codex-cli.md, Other stores, migrations at
 # 3e23877). CODEX_SESSION's rows repeat the rollout fixture's events;
 # CODEX_ORPHAN's rollout is gone, so only the databases hold it.
@@ -2137,8 +2172,11 @@ THREAD_ITEMS_LIFECYCLE = ",\n  started_at_ms integer, completed_at_ms integer"
 
 
 def codex_thread_rows(rollout_dir="/home/alice/.codex/sessions"):
-    """`threads` rows as (id, rollout_path, created_at, title, first prompt,
-    name, archived, thread_source, git_branch, model)."""
+    """The `threads` rows of the Codex state database.
+
+    `threads` rows as (id, rollout_path, created_at, title, first prompt, name, archived,
+    thread_source, git_branch, model).
+    """
     return [
         (
             CODEX_SESSION,
@@ -2168,9 +2206,11 @@ def codex_thread_rows(rollout_dir="/home/alice/.codex/sessions"):
 
 
 def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> None:
-    """A `state_5.sqlite` with one `threads` row per entry of `threads`;
-    `origins` maps a thread id to its `git_origin_url` (by default the
-    fixture session's is `PROJ_REMOTE`)."""
+    """Write a `state_5.sqlite` with one `threads` row per entry of `threads`.
+
+    A `state_5.sqlite` with one `threads` row per entry of `threads`; `origins` maps a thread id to
+    its `git_origin_url` (by default the fixture session's is `PROJ_REMOTE`).
+    """
     origins = {CODEX_SESSION: PROJ_REMOTE} if origins is None else origins
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(path))
@@ -2207,10 +2247,12 @@ def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> Non
 
 
 def codex_thread_history():
-    """(turns, items) of the projection. A turn is (thread, turn, ordinal,
-    end ordinal, status, started_at s, completed_at s, duration_ms); an item
-    (thread, turn, ordinal, created ms, started ms, completed ms, item). The
-    CODEX_SESSION items repeat the rollout fixture's events at its times."""
+    """(turns, items) of the projection.
+
+    A turn is (thread, turn, ordinal, end ordinal, status, started_at s, completed_at s,
+    duration_ms); an item (thread, turn, ordinal, created ms, started ms, completed ms, item). The
+    CODEX_SESSION items repeat the rollout fixture's events at its times.
+    """
     turns = [
         (CODEX_SESSION, "t1", 2, 16, "completed", 1790931601, 1790931607, 7000),
         (CODEX_ORPHAN, "t1", 1, 9, "completed", 1790841601, 1790841610, 9000),
@@ -2272,8 +2314,11 @@ def codex_thread_history():
 
 
 def write_thread_history(path: Path, turns, items, lifecycle: bool = True) -> None:
-    """A `thread_history_1.sqlite`; without `lifecycle`, in the schema before
-    migration 0007 (no `started_at_ms`, `completed_at_ms`)."""
+    """Write a `thread_history_1.sqlite`.
+
+    A `thread_history_1.sqlite`; without `lifecycle`, in the schema before migration 0007 (no
+    `started_at_ms`, `completed_at_ms`).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(path))
     con.executescript(THREAD_TURNS_SCHEMA)
@@ -2298,14 +2343,13 @@ def write_thread_history(path: Path, turns, items, lifecycle: bool = True) -> No
 
 
 def build_codex_stores(home: Path) -> None:
-    """`.codex/state_5.sqlite`, `.codex/thread_history_1.sqlite` and
-    `.codex/logs_2.sqlite` (#153)."""
+    """`.codex/state_5.sqlite`, `.codex/thread_history_1.sqlite` and `.codex/logs_2.sqlite`."""
     write_codex_state(home / ".codex/state_5.sqlite", codex_thread_rows())
     write_thread_history(home / ".codex/thread_history_1.sqlite", *codex_thread_history())
     write_codex_logs(home / ".codex/logs_2.sqlite", codex_log_rows(CODEX_SESSION))
 
 
-# `logs_2.sqlite` `logs` (codex state/logs_migrations/0002 at 3e23877), #153.
+# `logs_2.sqlite` `logs` (codex state/logs_migrations/0002 at 3e23877).
 CODEX_LOGS_SCHEMA = """
 CREATE TABLE logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, ts_nanos INTEGER NOT NULL,
@@ -2314,15 +2358,17 @@ CREATE TABLE logs (
     estimated_bytes INTEGER NOT NULL DEFAULT 0
 );
 """
-CODEX_FEEDBACK_TS = 1791367200  # 2026-10-07T10:00:00Z
+CODEX_FEEDBACK_TS = 1791367200  # 7 October 10:00:00 UTC
 CODEX_NO_THREAD = "no-active-thread-0199b0c0-0000-7000-8000-00000000000f"
 
 
 def codex_log_rows(thread_id: str):
-    """(ts, ts_nanos, level, target, feedback_log_body, thread_id) rows: a
-    diagnostics line, an attachment failure under `codex_feedback` (not an
-    upload), a sent report for `thread_id` with its fields in tracing's
-    order and one with no thread open, its fields reordered."""
+    """(ts, ts_nanos, level, target, feedback_log_body, thread_id) rows.
+
+    A diagnostics line, an attachment failure under `codex_feedback` (not an upload), a sent report
+    for `thread_id` with its fields in tracing's order and one with no thread open, its fields
+    reordered.
+    """
     return [
         (CODEX_FEEDBACK_TS - 5, 0, "INFO", "codex_core::codex", "turn started", thread_id),
         (
@@ -2367,9 +2413,9 @@ def write_codex_logs(path: Path, rows) -> None:
     con.close()
 
 
-# The ChatGPT desktop app's Codex threads (#160): key names, enum values and
+# The ChatGPT desktop app's Codex threads: key names, enum values and
 # formats seen with Codex Desktop 0.163.0-alpha.10.2 inside ChatGPT
-# 26.1013.40934 on macOS, 2026-10-18; every id and value is invented.
+# 26.1013.40934 on macOS; every id and value is invented.
 # CODEX_DESKTOP is a user thread, CODEX_GUARDIAN the guardian review thread
 # the app spawned for one of its calls, CODEX_DELETED a thread deleted with
 # the app's own command, whose rollout is gone and whose traces survive in
@@ -2381,7 +2427,7 @@ CODEX_DECLINED_ITEM = "exec-0d0d0d0d-1111-4222-8333-0000000000e1"
 CODEX_REVIEWED_ITEM = "exec-0d0d0d0d-1111-4222-8333-0000000000e2"
 CODEX_DESKTOP_ROLLOUT = ".codex/sessions/2026/10/18/rollout-2026-10-18T17-20-00-%s.jsonl"
 CODEX_GLOBAL_STATE_REL = ".codex/.codex-global-state.json"
-CODEX_GLOBAL_STATE_MTIME = 1792370000  # 2026-10-19T00:33:20Z
+CODEX_GLOBAL_STATE_MTIME = 1792370000  # 19 October 00:33:20 UTC
 CODEX_VERDICT = {
     "risk_level": "low",
     "user_authorization": "high",
@@ -2420,12 +2466,13 @@ MANAGED = {"type": "managed", "file_system": {"type": "restricted"}, "network": 
 
 
 def codex_desktop_records(cwd="/srv/proj"):
-    """A Codex Desktop thread: a settings event before the first turn, a
-    composer turn whose shell call the user declined, a model switch and the
-    switch to "Approve for me" (`approvals_reviewer` `auto_review`) with no
-    turn, a resume's reduced settings event that changes nothing, a turn
-    sent from a paired phone whose file write a guardian review allowed,
-    and the switch to full access after it."""
+    """A Codex Desktop thread.
+
+    A settings event before the first turn, a composer turn whose shell call the user declined, a
+    model switch and the switch to "Approve for me" (`approvals_reviewer` `auto_review`) with no
+    turn, a resume's reduced settings event that changes nothing, a turn sent from a paired phone
+    whose file write a guardian review allowed, and the switch to full access after it.
+    """
     return [
         _desk(
             "20:00",
@@ -2572,8 +2619,10 @@ def codex_desktop_records(cwd="/srv/proj"):
 
 
 def codex_guardian_records(cwd="/srv/proj"):
-    """The guardian review thread of CODEX_DESKTOP's file write: its verdict
-    is the JSON text of the final agent message."""
+    """The guardian review thread of CODEX_DESKTOP's file write.
+
+    Its verdict is the JSON text of the final agent message.
+    """
     verdict = json.dumps(CODEX_VERDICT)
     return [
         _desk(
@@ -2628,10 +2677,12 @@ def codex_guardian_records(cwd="/srv/proj"):
 
 
 def codex_desktop_log_rows():
-    """`logs_2.sqlite` rows (ts, ts_nanos, level, target, body, thread_id)
-    of the desktop app: the core's record of the user's decline and the app
-    server's response that repeats it, a response with no core record
-    beside it, and a model-manager line inside the guardian review span."""
+    """`logs_2.sqlite` rows (ts, ts_nanos, level, target, body, thread_id) of the desktop app.
+
+    The core's record of the user's decline and the app server's response that repeats it, a
+    response with no core record beside it, and a model-manager line inside the guardian review
+    span.
+    """
     return [
         (
             1792358405,
@@ -2674,12 +2725,13 @@ def codex_desktop_log_rows():
 
 
 def codex_global_state(cwd="/srv/proj"):
-    """`.codex-global-state.json`: the persisted atoms hold the prompt
-    history (a `global` list and one per thread, CODEX_DELETED's too), a
-    description and an activity time for CODEX_DELETED and its deletion
-    marker, CODEX_DESKTOP's standing permissions and the host's agent mode;
-    the top level the deleted thread's output directory and the remote
-    control flags."""
+    """`.codex-global-state.json`.
+
+    The persisted atoms hold the prompt history (a `global` list and one per thread, CODEX_DELETED's
+    too), a description and an activity time for CODEX_DELETED and its deletion marker,
+    CODEX_DESKTOP's standing permissions and the host's agent mode; the top level the deleted
+    thread's output directory and the remote control flags.
+    """
 
     def prompt(text):
         para = {"type": "paragraph", "content": [{"type": "text", "text": text}]}
@@ -2729,9 +2781,11 @@ def codex_global_state(cwd="/srv/proj"):
 
 
 def build_codex_desktop(home: Path) -> None:
-    """The desktop app's thread and guardian rollouts, its approval and
-    guardian log rows added to `.codex/logs_2.sqlite` (which
-    `build_codex_stores` writes first) and `.codex-global-state.json`."""
+    """Write the ChatGPT desktop app's Codex threads, log rows and global state.
+
+    The desktop app's thread and guardian rollouts, its approval and guardian log rows added to
+    `.codex/logs_2.sqlite` (which `build_codex_stores` writes first) and `.codex-global-state.json`.
+    """
     for sid, records in (
         (CODEX_DESKTOP, codex_desktop_records()),
         (CODEX_GUARDIAN, codex_guardian_records()),
@@ -2781,10 +2835,10 @@ def write_codex_enrollment(path: Path, enabled: int = 1) -> None:
 
 
 # Codex standing grants, failed guardian reviews, memories, goals and
-# database backups (#200), in the shapes of codex source at 4e7b9e2
+# database backups, in the shapes of codex source at 4e7b9e2
 # (research/codex-cli.md, Standing grants and approval records and Other
 # past-use stores); not seen on a real install, every value invented.
-CODEX_STANDING_MTIME = 1792400000  # 2026-10-19T08:53:20Z
+CODEX_STANDING_MTIME = 1792400000  # 19 October 08:53:20 UTC
 CODEX_CONFIG_TOML = (
     """model = "gpt-5.5-codex"
 approval_policy = "on-request"
@@ -2865,11 +2919,13 @@ def codex_memory_summary(thread_id: str) -> str:
 
 
 def build_codex_standing(home: Path) -> None:
-    """`.codex/config.toml` (replacing the noise file `build_home` writes),
-    `.codex/rules/default.rules`, a rollout summary under
-    `.codex/memories/` beside `raw_memories.md` and `MEMORY.md` (not
-    wanted), a `db-backups/` copy of `state_5.sqlite` with its log database
-    beside it (not wanted), all at CODEX_STANDING_MTIME."""
+    """Write the Codex standing grants, memories and database backups.
+
+    `.codex/config.toml` (replacing the noise file `build_home` writes),
+    `.codex/rules/default.rules`, a rollout summary under `.codex/memories/` beside
+    `raw_memories.md` and `MEMORY.md` (not wanted), a `db-backups/` copy of `state_5.sqlite` with
+    its log database beside it (not wanted), all at CODEX_STANDING_MTIME.
+    """
     files = {
         ".codex/config.toml": CODEX_CONFIG_TOML,
         ".codex/rules/default.rules": CODEX_RULES,
@@ -2910,9 +2966,11 @@ def uuid7(milliseconds: int, tail: int) -> str:
 
 
 def codex_guardian_feedback():
-    """(id, thread_id, record bytes) rows: a denied review whose decision is
-    the reviewer's JSON verdict, a review that timed out with no decision,
-    and a record cut off mid-write."""
+    """(id, thread_id, record bytes) rows.
+
+    A denied review whose decision is the reviewer's JSON verdict, a review that timed out with no
+    decision, and a record cut off mid-write.
+    """
     denied = {
         "reviewed_thread_id": CODEX_DESKTOP,
         "reviewed_turn_id": "t3",
@@ -2981,9 +3039,12 @@ def _codex_line(timestamp: str, rtype: str, payload: dict, **extra) -> dict:
 
 
 def codex_subagent_records(cwd="/srv/proj"):
-    """A spawned subagent's rollout: `parent_thread_id`, the root `session_id`,
-    a message copied from the parent (`inherited_user_message`), the task as
-    an `agent_message` response item, and a later message to the parent."""
+    """A spawned subagent's rollout.
+
+    `parent_thread_id`, the root `session_id`, a message copied from the parent
+    (`inherited_user_message`), the task as an `agent_message` response item, and a later message to
+    the parent.
+    """
     return [
         _codex_line(
             "00:00",
@@ -3071,8 +3132,11 @@ def codex_subagent_records(cwd="/srv/proj"):
 
 
 def codex_fork_records(cwd="/srv/proj"):
-    """A copied fork: the child's own `session_meta`, then the parent's
-    records re-appended, including the parent's `session_meta`."""
+    """A copied fork.
+
+    The child's own `session_meta`, then the parent's records re-appended, including the parent's
+    `session_meta`.
+    """
     return [
         _codex_line(
             "10:00",
@@ -3117,11 +3181,12 @@ def codex_fork_records(cwd="/srv/proj"):
 
 
 def codex_legacy_records(cwd="/srv/proj"):
-    """Legacy-mode records and the types the parser used to skip: a user
-    message without content kinds, `compacted`, a legacy
-    `inter_agent_communication` line, image generation, tool search,
-    realtime items, aborted and rolled-back turns, turn items with no
-    response_item, and an empty reasoning summary."""
+    """Legacy-mode records and the types the parser used to skip.
+
+    A user message without content kinds, `compacted`, a legacy `inter_agent_communication` line,
+    image generation, tool search, realtime items, aborted and rolled-back turns, turn items with no
+    response_item, and an empty reasoning summary.
+    """
     return [
         _codex_line(
             "20:00",
@@ -3452,9 +3517,11 @@ def build_home(home: Path, with_noise: bool = True) -> Path:
 
 
 def build_git_repo(proj: Path) -> None:
-    """The repository files of a project: `.git/config` (`PROJ_GIT_CONFIG`)
-    and `.git/HEAD` (`PROJ_GIT_HEAD`), which `gitmeta` reads, and an
-    object, which no catalog line collects."""
+    """The repository files of a project.
+
+    `.git/config` (`PROJ_GIT_CONFIG`) and `.git/HEAD` (`PROJ_GIT_HEAD`), which `gitmeta` reads, and
+    an object, which no catalog line collects.
+    """
     repo = proj / ".git"
     (repo / "objects/ab").mkdir(parents=True, exist_ok=True)
     (repo / "config").write_text(PROJ_GIT_CONFIG, encoding="utf-8")
@@ -3463,8 +3530,11 @@ def build_git_repo(proj: Path) -> None:
 
 
 def build_image(root: Path) -> Path:
-    """A fake disk image: two Linux users and a Windows profile tree, and
-    the `/srv/proj` repository the agents' state names."""
+    """A fake disk image.
+
+    Two Linux users and a Windows profile tree, and the `/srv/proj` repository the agents' state
+    names.
+    """
     build_git_repo(root / "srv/proj")
     build_home(root / "home/alice")
     build_home(root / "home/bob", with_noise=False)
@@ -3481,19 +3551,21 @@ BAD_LINE = '{"type": "user", "truncated": tr'
 
 
 def write_bad_line(path: Path) -> None:
-    """Append `BAD_LINE` to `path`, with no line terminator before or after
-    it: after a file that ends in a newline it is a last line cut off
-    mid-write, after one that does not it joins the last line. The row
-    `error_rows` yields for it is `bad_line_text()`."""
+    """Append `BAD_LINE` to `path`, with no line terminator before or after it.
+
+    After a file that ends in a newline it is a last line cut off mid-write, after one that does not
+    it joins the last line. The row `error_rows` yields for it is `bad_line_text()`.
+    """
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(BAD_LINE)
 
 
 def bad_line_text(line: str = BAD_LINE) -> str:
-    """The `text` of the `system` row `error_rows` yields for the JSONL line
-    `line` (issue 136): `parser: unparseable line (<reason>): <line>`, with
-    the reason the running Python's json module gives, since its wording
-    differs between versions."""
+    """The `text` of the `system` row `error_rows` yields for the JSONL line `line`.
+
+    `parser: unparseable line (<reason>): <line>`, with the reason the running Python's json module
+    gives, since its wording differs between versions.
+    """
     try:
         json.loads(line)
     except ValueError as error:
@@ -3502,12 +3574,12 @@ def bad_line_text(line: str = BAD_LINE) -> str:
 
 
 AGY_CONVERSATION = "799062d5-0000-4000-8000-000000000099"
-AGY_T0 = 1790848800  # 2026-10-01T10:00:00Z
+AGY_T0 = 1790848800  # 1 October 10:00:00 UTC
 AGY_APP_CONVERSATION = "a1b2c3d4-0000-4000-8000-0000000000a2"
 AGY_ORPHAN = "0d1e2f3a-0000-4000-8000-0000000000b3"  # brain mirror only
 AGY_APP_PROJECT = "5e1d7c2a-0000-4000-8000-0000000000a1"
-AGY_APP_T0 = AGY_T0 + 3600  # 2026-10-01T11:00:00Z
-AGY_CONFIG_MTIME = AGY_T0 + 7200  # 2026-10-01T12:00:00Z, the standing files' mtime
+AGY_APP_T0 = AGY_T0 + 3600  # 1 October 11:00:00 UTC
+AGY_CONFIG_MTIME = AGY_T0 + 7200  # 1 October 12:00:00 UTC, the standing files' mtime
 AGY_SIDECAR = "weekly-check"
 
 
@@ -3530,8 +3602,10 @@ def _step(
 
 
 def antigravity_steps() -> list[tuple[int, int, dict]]:
-    """(step_type, status, Step dict) in the shapes seen on a real install:
-    user_input, planner_response with tool calls, generic and typed tool steps."""
+    """(step_type, status, Step dict) in the shapes seen on a real install.
+
+    User_input, planner_response with tool calls, generic and typed tool steps.
+    """
     tc1 = {
         "id": "call_1",
         "name": "view_file",
@@ -3680,8 +3754,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
             3,
             dict(_step("checkpoint", {"conversation_title": "Clean logs"}, start + 13), type=23),
         ),
-        # A later planner step on another model (#96), a run_command and an
-        # mcp_tool call the user rejected, and a sandboxed run_command (#97).
+        # A later planner step on another model, a run_command and an
+        # mcp_tool call the user rejected, and a sandboxed run_command.
         (
             15,
             3,
@@ -3772,9 +3846,11 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
 
 
 def antigravity_app_steps() -> list[tuple[int, int, dict]]:
-    """Steps of a desktop-app conversation: the kinds the macOS real install
-    of app 2.23.0 showed (user_input, planner_response, generic) plus a
-    system_message (101) and an error_message (17) step, both seen there."""
+    """Steps of a desktop-app conversation.
+
+    The kinds the macOS real install of app 2.23.0 showed (user_input, planner_response, generic)
+    plus a system_message (101) and an error_message (17) step, both seen there.
+    """
     tool_call = {
         "id": "call_7",
         "name": "run_command",
@@ -3827,7 +3903,7 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
                     tool_call=tool_call,
                 ),
                 type=132,
-                # steps.permissions (#92): one grant and one file access entry.
+                # steps.permissions: one grant and one file access entry.
                 permissions={
                     "permission_grants": [
                         {
@@ -3881,7 +3957,7 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
             ),
         ),
         # A code_action that deletes a file: ActionSpecDeleteFile keeps its
-        # path in field 1 (#88).
+        # path in field 1.
         (
             15,
             3,
@@ -3918,10 +3994,12 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
 
 
 def build_antigravity_app(base: Path) -> None:
-    """The desktop app's data directory, ~/.gemini/antigravity: the same
-    stores as the CLI's with source 1 and app_data_dir `antigravity`, no
-    history.jsonl, noise the parser must not want (the gdocs plugin's
-    OAuth token), and the brain mirror's shortened transcript.jsonl alone."""
+    """The desktop app's data directory, ~/.gemini/antigravity.
+
+    The same stores as the CLI's with source 1 and app_data_dir `antigravity`, no history.jsonl,
+    noise the parser must not want (the gdocs plugin's OAuth token), and the brain mirror's
+    shortened transcript.jsonl alone.
+    """
     build_antigravity(
         base,
         conversation=AGY_APP_CONVERSATION,
@@ -3939,7 +4017,7 @@ def build_antigravity_app(base: Path) -> None:
     token.write_text(
         json.dumps({"client_id": "x", "token": {"access_token": "y"}}), encoding="utf-8"
     )
-    # The brain mirror's shortened twin alone (#87, #122): read because no
+    # The brain mirror's shortened twin alone: read because no
     # transcript_full.jsonl or chunk sits beside it.
     _jsonl(
         base / "brain" / AGY_APP_CONVERSATION / ".system_generated/logs/transcript.jsonl",
@@ -3962,10 +4040,12 @@ def _brain_line(idx: int, kind: str, timestamp: str, content: str = "", **extra)
 
 
 def antigravity_brain_records() -> list[dict]:
-    """The CLI conversation's brain transcript_full.jsonl (#87): the lines of
-    database steps 0-3, 7 and 8, each at the step's created_at, so every row
-    pairs with the database's (the assistant, tool_use and tool_result rows
-    there carry completed_at, one to two seconds later)."""
+    """The CLI conversation's brain transcript_full.jsonl.
+
+    The lines of database steps 0-3, 7 and 8, each at the step's created_at, so every row pairs with
+    the database's (the assistant, tool_use and tool_result rows there carry completed_at, one to
+    two seconds later).
+    """
     return [
         _brain_line(0, "USER_INPUT", "2026-10-01T10:00:00Z", "clean the logs"),
         _brain_line(
@@ -4009,8 +4089,10 @@ def antigravity_brain_records() -> list[dict]:
 
 
 def antigravity_app_brain_records() -> list[dict]:
-    """The desktop-app conversation's shortened transcript.jsonl: the lines of
-    database steps 0-4, the tool output shortened (`truncated_fields`)."""
+    """The desktop-app conversation's shortened transcript.jsonl.
+
+    The lines of database steps 0-4, the tool output shortened (`truncated_fields`).
+    """
     return [
         _brain_line(0, "USER_INPUT", "2026-10-01T11:00:00Z", "which packages are outdated?"),
         _brain_line(
@@ -4073,13 +4155,14 @@ def antigravity_orphan_brain_records() -> list[dict]:
 
 
 def build_antigravity_brain(gemini: Path) -> None:
-    """The CLI's brain mirror (#87, #122). For the fixture conversation:
-    transcript_full.jsonl (the copy read), a shortened transcript.jsonl and a
-    transcript_full chunk with different text (copies not read), and a
-    tool output file the parser must not want. For AGY_ORPHAN, whose
-    conversation database is gone: two transcript_full chunks, the second
-    line cut across the boundary, and a shortened transcript.jsonl that is
-    not read."""
+    """The CLI's brain mirror.
+
+    For the fixture conversation: transcript_full.jsonl (the copy read), a shortened
+    transcript.jsonl and a transcript_full chunk with different text (copies not read), and a tool
+    output file the parser must not want. For AGY_ORPHAN, whose conversation database is gone: two
+    transcript_full chunks, the second line cut across the boundary, and a shortened
+    transcript.jsonl that is not read.
+    """
     logs = gemini / "antigravity-cli/brain" / AGY_CONVERSATION / ".system_generated/logs"
     _jsonl(logs / "transcript_full.jsonl", antigravity_brain_records())
     short = [dict(record, content="(not read)") for record in antigravity_brain_records()]
@@ -4113,9 +4196,11 @@ def build_antigravity(
     models: dict[str, list[int]] | None = None,
     cli: bool = True,
 ) -> None:
-    """One Antigravity data directory: a conversation database, the
-    summaries database and, for the CLI (`cli`), history.jsonl and the
-    OAuth token file."""
+    """One Antigravity data directory.
+
+    A conversation database, the summaries database and, for the CLI (`cli`), history.jsonl and the
+    OAuth token file.
+    """
     steps = antigravity_steps() if steps is None else steps
     if models is None:
         models = {"gemini-3.8-flash": [1, 3, 5, 8], "gemini-3.8-pro": [10, 12, 14]}
@@ -4200,7 +4285,7 @@ def build_antigravity(
         base / "history.jsonl",
         [
             {"display": "clean the logs", "timestamp": start * 1000, "workspace": "/home/u/proj"},
-            # CLI 1.3.x adds conversationId on some lines (#89).
+            # CLI 1.3.x adds conversationId on some lines.
             {
                 "conversationId": conversation,
                 "display": "now the tests",
@@ -4213,11 +4298,13 @@ def build_antigravity(
 
 
 def build_antigravity_config(gemini: Path) -> None:
-    """The standing permission files Antigravity keeps (#92), in the key
-    shapes of the macOS and Ubuntu real installs: `.gemini/config/config.json`,
-    a project file, a sidecar, the CLI's `settings.json`; plus files the
-    parser must not want (`mcp_config.json`, a plugin manifest). Every file's
-    mtime is AGY_CONFIG_MTIME."""
+    """Write the standing permission files Antigravity keeps.
+
+    The standing permission files Antigravity keeps, in the key shapes of the macOS and Ubuntu real
+    installs: `.gemini/config/config.json`, a project file, a sidecar, the CLI's `settings.json`;
+    plus files the parser must not want (`mcp_config.json`, a plugin manifest). Every file's mtime
+    is AGY_CONFIG_MTIME.
+    """
     files = {
         "config/config.json": {
             "plugins": {
@@ -4287,7 +4374,7 @@ def _utc_text(epoch: int) -> str:
 QWEN_SESSION = "e5f6a7b8-4444-4000-8000-000000000011"
 QWEN_ARCHIVED = "0a0b0c0d-4444-4000-8000-000000000022"
 QWEN_TMP = "3f0a9c" + "0" * 58  # sha256(cwd) directory name
-QWEN_TRUST_MTIME = 1790856000  # 2026-10-01T12:00:00Z, trustedFolders.json's mtime
+QWEN_TRUST_MTIME = 1790856000  # 1 October 12:00:00 UTC, trustedFolders.json's mtime
 
 
 def qwen_session_records(cwd="/srv/proj", branch="main"):
@@ -4519,13 +4606,13 @@ def build_qwen(home: Path) -> None:
     os.utime(trust, (QWEN_TRUST_MTIME, QWEN_TRUST_MTIME))
 
 
-# Channel routes (#153), the `PersistedEntry` shape of
+# Channel routes, the `PersistedEntry` shape of
 # packages/channels/base/src/SessionRouter.ts:25-36 at 2c591ecc:
 # QWEN_SESSION was driven from a Telegram chat; QWEN_DAEMON_SESSION by the
 # daemon from a GitHub thread, with no `startedAt`.
 QWEN_DAEMON_SESSION = "e5f6a7b8-4444-4000-8000-000000000033"
 QWEN_DAEMON_HASH = "9c1d" + "0" * 12
-QWEN_ROUTES_MTIME = 1791367200  # 2026-10-07T10:00:00Z
+QWEN_ROUTES_MTIME = 1791367200  # 7 October 10:00:00 UTC
 
 
 def build_qwen_channels(home: Path) -> None:
@@ -4565,7 +4652,7 @@ def build_qwen_channels(home: Path) -> None:
     (channels / "1791367200000-4242-ab12.tmp").write_text("{", encoding="utf-8")
 
 
-# Injected `type: "user"` records (#172), shapes from QwenLM/qwen-code at
+# Injected `type: "user"` records, shapes from QwenLM/qwen-code at
 # 5dcf7c7cb162e825d95d531081f67ee60da3c0e1 (0.25.3): createNotificationRecord
 # (cron, notification; provenance "system") and recordExternalAgentRecordStrict
 # (agent_mention, agent_message; provenance "external_agent", or "real_user"
@@ -4665,7 +4752,7 @@ def build_qwen_injected(home: Path) -> None:
     _jsonl(home / QWEN_INJECTED_REL, qwen_injected_records())
 
 
-# Permission, approval-mode and usage records (#187), shapes from
+# Permission, approval-mode and usage records, shapes from
 # QwenLM/qwen-code at 5dcf7c7cb162e825d95d531081f67ee60da3c0e1 (0.25.3):
 # ChatRecord.executionContext (chatRecordingService.ts:475-479),
 # SessionApprovalModeRecordPayload (749-754), the `ui_telemetry` record of
@@ -4683,7 +4770,7 @@ QWEN_USAGE_REL = ".qwen/usage_record.jsonl"
 # the `qwen-code.tool_call` that logToolCall records at 5dcf7c7.
 QWEN_BARE_SESSION = "e5f6a7b8-4444-4000-8000-000000000066"
 QWEN_BARE_REL = ".qwen/projects/-srv-proj/chats/%s.jsonl" % QWEN_BARE_SESSION
-QWEN_SETTINGS_MTIME = 1790863200  # 2026-10-01T14:00:00Z
+QWEN_SETTINGS_MTIME = 1790863200  # 1 October 14:00:00 UTC
 
 
 def qwen_permission_records():
@@ -4895,10 +4982,12 @@ def _kiro_meta(number, start_ms, end_ms, kind="NotToolUse", tools=(), tags=()):
 
 
 def kiro_conversation_records():
-    """The ConversationState from research/kiro.md, Parser plan, with
-    the project moved to /srv/proj. The research sample's user timestamp was
-    six hours off its own request metadata; it is corrected here so the
-    turns are in order."""
+    """The ConversationState of research/kiro.md, Parser plan.
+
+    The ConversationState from research/kiro.md, Parser plan, with the project moved to /srv/proj.
+    The research sample's user timestamp was six hours off its own request metadata; it is corrected
+    here so the turns are in order.
+    """
     return {
         "conversation_id": KIRO_SESSION,
         "next_message": None,
@@ -4966,10 +5055,11 @@ def kiro_conversation_records():
 
 
 def kiro_export_records():
-    """A /save export exercising the less common variants: an MCP tool whose
-    name differs from orig_name, a Json result, a cancelled tool use, a
-    Compact tag, latest_summary, a pending next_message and the legacy
-    `model` field instead of model_info."""
+    """A /save export exercising the less common variants.
+
+    An MCP tool whose name differs from orig_name, a Json result, a cancelled tool use, a Compact
+    tag, latest_summary, a pending next_message and the legacy `model` field instead of model_info.
+    """
     return {
         "conversation_id": KIRO_EXPORT_SESSION,
         "next_message": _kiro_user(
@@ -5107,11 +5197,12 @@ def _kiro_cancelled(prompt, tool_id):
 
 
 def kiro_denial_records():
-    """A /save export for the 2026-10-21 rows (issue 212), from the Amazon Q
-    source at 15cc8f3: a bare `n` denial, a deny-rule rejection as a
-    CancelledToolUses prompt and as a plain Prompt, an interrupt, a
-    checkpoint whose snapshot keeps a turn a restore discarded, and a tangent
-    held-aside main history."""
+    """A /save export for the denial and checkpoint rows, from the Amazon Q source at 15cc8f3.
+
+    A bare `n` denial, a deny-rule rejection as a CancelledToolUses prompt and as a plain Prompt, an
+    interrupt, a checkpoint whose snapshot keeps a turn a restore discarded, and a tangent
+    held-aside main history.
+    """
     first = _kiro_tool_entry(
         20,
         {"Prompt": {"prompt": "clean the build"}},
@@ -5210,10 +5301,12 @@ def kiro_denial_records():
 
 
 def kiro_delegate_records():
-    """The delegate tool's `.amazonq/.subagents/<agent>.json` records, which
-    the CLI writes in the working directory, so a test places them in a
-    project: one finished task of the default agent and one still running
-    with the `Unknown` cwd default (issue 212)."""
+    """The delegate tool's `.amazonq/.subagents/<agent>.json` records.
+
+    The delegate tool's `.amazonq/.subagents/<agent>.json` records, which the CLI writes in the
+    working directory, so a test places them in a project: one finished task of the default agent
+    and one still running with the `Unknown` cwd default.
+    """
     return {
         "q_cli_default.json": {
             "agent": "q_cli_default",
@@ -5247,7 +5340,7 @@ def kiro_delegate_records():
 # The chat prompt's rustyline history: the #V2 header, a prompt the
 # conversation also holds, a slash command, an entry with an escaped line
 # feed and one with an escaped backslash, then a line that is not UTF-8 and
-# one after it (issue 212).
+# one after it.
 KIRO_PROMPT_HISTORY = (
     b"#V2\nlist the files here\n/clear\nfix the\\nbuild\npath C:\\\\tmp\n"
     b"\xff\xfe not utf-8\nafter the cut\n"
@@ -5354,8 +5447,10 @@ GEMINI_REL = ".gemini/tmp/proj/chats/session-2026-10-01T09-00-a1b2c3d4.jsonl"
 
 
 def gemini_session_records():
-    """Session JSONL in the chatRecordingTypes.ts shapes: a re-appended
-    message, $set, $rewindTo, $patch and a $set.sessionId from a resume."""
+    """Session JSONL in the chatRecordingTypes.ts shapes.
+
+    A re-appended message, $set, $rewindTo, $patch and a $set.sessionId from a resume.
+    """
     timestamp_format = "2026-10-01T09:00:%s.000Z"
     ls_call = {
         "id": "list_directory-1759309207000",
@@ -5563,12 +5658,15 @@ def gemini_logs_records():
     ]
 
 
-GEMINI_TRUST_MTIME = 1790856000  # 2026-10-01T12:00:00Z, trustedFolders.json's mtime
+GEMINI_TRUST_MTIME = 1790856000  # 1 October 12:00:00 UTC, trustedFolders.json's mtime
 
 
 def build_gemini_cli(base: Path) -> None:
-    """~/.gemini with a slug directory (marker file), a legacy hash directory
-    resolved through projects.json, a subagent session and noise."""
+    """Write a `~/.gemini` with slug and hash directories, a subagent and noise.
+
+    ~/.gemini with a slug directory (marker file), a legacy hash directory resolved through
+    projects.json, a subagent session and noise.
+    """
     slug = base / "tmp/proj"
     _jsonl(base / GEMINI_REL[len(".gemini/") :], gemini_session_records())
     _jsonl(
@@ -5609,20 +5707,23 @@ def build_gemini_cli(base: Path) -> None:
 
 
 # Standing permission files and past-use copies of Gemini CLI, in the shapes
-# of google-gemini/gemini-cli at 3be3d44 (issues 155 and 186): settingsSchema.ts,
+# of google-gemini/gemini-cli at 3be3d44: settingsSchema.ts,
 # policy/config.ts (createTomlRule), hooks/trustedHooks.ts,
 # agents/acknowledgedAgents.ts, useShellHistory.ts, core/logger.ts
 # (saveCheckpoint) and bugCommand.ts with historyExportUtils.ts. Not wired
 # into build_home, so the shared timeline counts stay as they are.
-GEMINI_SOURCES_MTIME = 1790859600  # 2026-10-01T13:00:00Z
-GEMINI_BUG_MS = 1790856000000  # 2026-10-01T12:00:00Z, in the file name
+GEMINI_SOURCES_MTIME = 1790859600  # 1 October 13:00:00 UTC
+GEMINI_BUG_MS = 1790856000000  # 1 October 12:00:00 UTC, in the file name
 GEMINI_CHECKPOINT_REL = ".gemini/tmp/proj/checkpoint-my%20tag.json"
 GEMINI_BUG_REL = ".gemini/tmp/proj/bug-report-history-%d.json" % GEMINI_BUG_MS
 
 
 def gemini_settings():
-    """`settings.json` with the permission, sandbox and retention keys, and
-    an MCP server environment the parser must not read."""
+    """`settings.json` with the permission, sandbox and retention keys.
+
+    `settings.json` with the permission, sandbox and retention keys, and an MCP server environment
+    the parser must not read.
+    """
     return {
         "general": {
             "defaultApprovalMode": "auto_edit",
@@ -5660,9 +5761,11 @@ modes = [ "autoEdit" ]
 
 
 def gemini_history_contents():
-    """`Content[]` as chat.getHistory() returns it: a prompt, a reply with a
-    function call, its response, a prompt the session rewound, and a reply
-    with a thought part."""
+    """`Content[]` as chat.getHistory() returns it.
+
+    A prompt, a reply with a function call, its response, a prompt the session rewound, and a reply
+    with a thought part.
+    """
     return [
         {"role": "user", "parts": [{"text": "list files in src"}]},
         {
@@ -5696,8 +5799,11 @@ def gemini_history_contents():
 
 
 def build_gemini_cli_sources(base: Path) -> None:
-    """The standing permission files and the past-use copies under the
-    `.gemini` directory `base`, with noise the parser must not want."""
+    """Write the Gemini CLI standing permission files and past-use copies.
+
+    The standing permission files and the past-use copies under the `.gemini` directory `base`, with
+    noise the parser must not want.
+    """
     (base / "settings.json").write_text(json.dumps(gemini_settings()), encoding="utf-8")
     (base / "policies").mkdir(parents=True, exist_ok=True)
     (base / "policies/auto-saved.toml").write_text(GEMINI_POLICY_TOML, encoding="utf-8")
@@ -5736,7 +5842,7 @@ def build_gemini_cli_sources(base: Path) -> None:
 
 
 # A trustedFolders.json that Qwen Code's `parseJsoncObject` accepts and
-# `json.loads` does not (#173): a byte-order mark, a comment and trailing
+# `json.loads` does not: a byte-order mark, a comment and trailing
 # commas (QwenLM/qwen-code at 5dcf7c7cb162e825d95d531081f67ee60da3c0e1,
 # packages/cli/src/utils/jsonc-editor.ts lines 24 and 92-107). The comma
 # inside the string value must survive.
@@ -5749,10 +5855,12 @@ TRUST_JSONC = (
 
 
 def _wal_db(path: Path, script: str, inserts) -> None:
-    """Build a WAL-mode SQLite file whose schema is checkpointed into the main
-    file and whose rows live only in the -wal sidecar, as on a host where the
-    agent is still running. The files are copied out while the writer is
-    still open, so closing it cannot checkpoint the copy."""
+    """Build a WAL-mode SQLite file whose rows live only in the -wal sidecar.
+
+    Build a WAL-mode SQLite file whose schema is checkpointed into the main file and whose rows live
+    only in the -wal sidecar, as on a host where the agent is still running. The files are copied
+    out while the writer is still open, so closing it cannot checkpoint the copy.
+    """
     import shutil
     import tempfile
 
@@ -5798,9 +5906,12 @@ CREATE TABLE mcp_enabled_servers (name TEXT PRIMARY KEY);
 
 
 def crush_records():
-    """The INSERT statements of research/crush.md, Parser plan, plus a final
-    assistant message with reasoning, text and an abnormal finish, answered
-    by another provider's model so the session has a model change."""
+    """The INSERT statements of research/crush.md, Parser plan, and a model change.
+
+    The INSERT statements of research/crush.md, Parser plan, plus a final assistant message with
+    reasoning, text and an abnormal finish, answered by another provider's model so the session has
+    a model change.
+    """
     return [
         "INSERT INTO sessions(id,title,message_count,prompt_tokens,completion_tokens,cost,updated_at,created_at) "
         "VALUES('6f1c0001','Fix bug',3,10,5,0.01,1760000005,1760000001)",
@@ -5814,8 +5925,11 @@ def crush_records():
 
 
 def build_crush(home: Path) -> None:
-    """Crush run in the home directory, so its per-project store is
-    ~/.crush/crush.db, plus the global project registry and config noise."""
+    """Write Crush's per-project store, project registry and config noise.
+
+    Crush run in the home directory, so its per-project store is ~/.crush/crush.db, plus the global
+    project registry and config noise.
+    """
     _wal_db(home / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
     (home / ".crush/crush.json").write_text(
         '{"providers":{"anthropic":{"api_key":"sk-test"}}}', encoding="utf-8"
@@ -5848,15 +5962,16 @@ CRUSH_HYPER_SESSION = "6f1c0002"
 
 
 def crush_hyper_records():
-    """A session routed through Hyper's Prism router (issue 167): the
-    assistant messages request `prism-auto` from provider `hyper` and record
-    the model that served each step in `prism_model_id`, the column of
-    migration 20260902000000 at crush 7f799fb (internal/agent/agent.go
-    1085 and 1914-1929). The user message stores no model, as
-    createUserMessage writes it. The third step has no Prism headers, so
-    its `prism_model_id` is NULL. The requested id `prism-auto` is invented;
-    no real install has shown a Hyper turn. The Crush tests apply these on
-    top of `crush_records()` so the default session's rows stay as they are."""
+    """A session routed through Hyper's Prism router.
+
+    The assistant messages request `prism-auto` from provider `hyper` and record the model that
+    served each step in `prism_model_id`, the column of migration 20260902000000 at crush 7f799fb
+    (internal/agent/agent.go 1085 and 1914-1929). The user message stores no model, as
+    createUserMessage writes it. The third step has no Prism headers, so its `prism_model_id` is
+    NULL. The requested id `prism-auto` is invented; no real install has shown a Hyper turn. The
+    Crush tests apply these on top of `crush_records()` so the default session's rows stay as they
+    are.
+    """
     cols = (
         "id,session_id,role,parts,model,provider,created_at,updated_at,finished_at,"
         "prism_model_id,prism_model_name"
@@ -5878,18 +5993,16 @@ CRUSH_CHANNEL_SESSION = "6f1c0004"
 
 
 def crush_permission_records():
-    """Records for the permission, relay, deletion and file rows (issue 195),
-    from research/crush.md at crush 7f799fb: a user denial (`User denied
-    permission`, internal/agent/tools/tools.go 78-84), a hook denial and a
-    hook approval carrying `metadata.hook` (internal/agent/hooked_tool.go
-    62-140, internal/hooks/hooks.go 26-40), a session bound to a Signal-like
-    MCP channel with a pushed `<channel>` user message
-    (internal/agent/tools/mcp/channel.go 124-150, coordinator.go 436-465),
-    a sub-agent session whose parent was deleted (session.go 116-168), a
-    `files` snapshot, a `read_files` entry and one per-project MCP override
-    of each kind. Hook names, reasons, the channel server and its meta
-    values are invented; no real install has shown them. The Crush tests
-    apply these on top of `crush_records()`."""
+    """Records for the Crush permission, relay, deletion and file rows.
+
+    From research/crush.md at crush 7f799fb: a user denial (internal/agent/tools/tools.go 78-84), a
+    hook denial and a hook approval carrying `metadata.hook` (internal/agent/hooked_tool.go 62-140,
+    internal/hooks/hooks.go 26-40), a session bound to an MCP channel with a pushed `<channel>` user
+    message (internal/agent/tools/mcp/channel.go 124-150), a sub-agent session whose parent was
+    deleted (session.go 116-168), a `files` snapshot, a `read_files` entry and per-project MCP
+    overrides. Hook names, reasons and the channel are invented. The tests add these to
+    `crush_records()`.
+    """
     hook_deny = json.dumps(
         {
             "hook": {
@@ -6014,8 +6127,11 @@ CREATE TABLE usage_ledger (
 
 
 def goose_records(cwd="/srv/proj"):
-    """The INSERT statements of research/goose.md, Parser plan, with the
-    working directory moved to the shared project path."""
+    """The INSERT statements of research/goose.md, Parser plan.
+
+    The INSERT statements of research/goose.md, Parser plan, with the working directory moved to the
+    shared project path.
+    """
     return [
         "INSERT INTO schema_version(version) VALUES (16)",
         "INSERT INTO sessions(id,name,session_type,working_dir,created_at,updated_at,extension_data,provider_name,model_config_json,goose_mode) "
@@ -6033,7 +6149,7 @@ def goose_records(cwd="/srv/proj"):
     ]
 
 
-# Session sync (issue 153): a gateway session, created when a Telegram user
+# Session sync: a gateway session, created when a Telegram user
 # pairs (crates/goose/src/gateway/handler.rs:304-326 at aaif-goose/goose
 # bfcc6ee): name `<platform>/<display name or user id>`, working_dir
 # `<config>/gateway/<platform>/<user_id>`. Kept out of build_home so the
@@ -6107,7 +6223,7 @@ def build_goose(home: Path) -> None:
     )
 
 
-# Bad stored JSON in sessions.db (issue 183). Column shapes from
+# Bad stored JSON in sessions.db. Column shapes from
 # session_manager.rs at block/goose 591edd4 (research/goose.md, Record schema):
 # content_json is a JSON array, metadata_json and model_config_json JSON
 # objects. Kept out of build_home, as the gateway session is, so the shared
@@ -6119,9 +6235,11 @@ GOOSE_BAD_CONTENT = '[{"type":"text","te'
 
 
 def goose_bad_json_records():
-    """A session whose model_config_json is cut off, then four messages:
-    a good one, one with a cut-off metadata_json, one with a cut-off
-    content_json, and a good one after it."""
+    """A session whose model_config_json is cut off, then four messages.
+
+    A good one, one with a cut-off metadata_json, one with a cut-off content_json, and a good one
+    after it.
+    """
 
     def quote(text: str) -> str:
         return text.replace("'", "''")
@@ -6179,7 +6297,7 @@ def goose_bad_json_records():
     ]
 
 
-# Tool confirmations (issue 209), shapes from aaif-goose/goose fb9e3c8
+# Tool confirmations, shapes from aaif-goose/goose fb9e3c8
 # (research/goose.md, Tool confirmations and permission mode): the question
 # is an `assistant` message holding an `actionRequired` block of
 # `actionType` `toolConfirmation`, the answer a `user` message holding one
@@ -6307,14 +6425,14 @@ def goose_permission_records():
     ]
 
 
-# Standing permission and scheduler files (issue 209), shapes from
+# Standing permission and scheduler files, shapes from
 # aaif-goose/goose fb9e3c8: permission.yaml as serde_yaml writes the map of
 # `PermissionConfig` (config/permission.rs:13-44, 260-262), roaming_trust.json
 # the `TrustBook` (goose-roaming/src/trust.rs:19-26) and schedule.json a list
 # of `ScheduledJob` (scheduler/common.rs:167-187). The peer keys and ids are
 # invented. Kept out of build_home so the shared timeline stays as the CLI
 # tests expect.
-GOOSE_STANDING_MTIME = 1792656000  # 2026-10-22T08:00:00Z
+GOOSE_STANDING_MTIME = 1792656000  # 22 October 08:00:00 UTC
 GOOSE_PERMISSION_YAML = """user:
   always_allow:
   - developer__shell
@@ -6353,8 +6471,11 @@ GOOSE_SCHEDULE = [
 
 
 def build_goose_standing(home: Path) -> None:
-    """The standing files beside two noise files the parser must not want
-    (`permission.yaml.lock`, `roaming_peers.json`)."""
+    """Write the Goose standing files beside two noise files.
+
+    The standing files beside two noise files the parser must not want (`permission.yaml.lock`,
+    `roaming_peers.json`).
+    """
     cfg = home / ".config/goose"
     data = home / ".local/share/goose"
     cfg.mkdir(parents=True, exist_ok=True)
@@ -6371,7 +6492,7 @@ def build_goose_standing(home: Path) -> None:
         os.utime(path, (GOOSE_STANDING_MTIME, GOOSE_STANDING_MTIME))
 
 
-# A streamed request log (issue 126): the response lines are chunks of one
+# A streamed request log: the response lines are chunks of one
 # message (`id` msg_s1) as the providers log them, two text deltas and a
 # tool request, which `Conversation::push` assembles into the message
 # sessions.db stores (goose-provider-types/src/conversation.rs:75-119 at
@@ -6416,7 +6537,7 @@ def goose_streamed_llm_records():
 
 CONTINUE_SESSION = "0f1e"
 CONTINUE_CREATED = (
-    "1790935200000"  # 2026-10-02T10:00:00Z, a millisecond epoch string as sessions.json stores it
+    "1790935200000"  # 2 October 10:00:00 UTC, a millisecond epoch string as sessions.json stores it
 )
 
 
@@ -6503,7 +6624,7 @@ def continue_session():
                         "toolCall": term,
                         "status": "canceled",
                         "parsedArgs": {"command": "rm -rf build"},
-                        # the CLI's refusal at the prompt (#198)
+                        # the CLI's refusal at the prompt
                         "output": [
                             {
                                 "content": "Permission denied by user",
@@ -6599,7 +6720,7 @@ def build_continue(home: Path) -> None:
 
 # The CLI's standing tool grants as policyWriter.ts:57-66 writes them at
 # 5522c6f (a header comment, then YAML.stringify of the three lists), with
-# a quoted rule and a trailing comment a hand edit can add (#198).
+# a quoted rule and a trailing comment a hand edit can add.
 CONTINUE_PERMISSIONS = (
     "# Continue CLI Permissions Configuration\n"
     "# This file is managed by the Continue CLI and should not be edited manually.\n"
@@ -6616,16 +6737,18 @@ CONTINUE_PERMISSIONS = (
 # extensions/cli/src/util/inputHistory.ts:53-72 at 5522c6f: newest first,
 # `timestamp` in epoch milliseconds, written with JSON.stringify(_, null, 2).
 CONTINUE_INPUT_HISTORY = [
-    {"text": "/model", "timestamp": 1790935260000},  # 2026-10-02T10:01:00Z
-    {"text": "rename foo", "timestamp": 1790935201000},  # 2026-10-02T10:00:01Z
+    {"text": "/model", "timestamp": 1790935260000},  # 2 October 10:01:00 UTC
+    {"text": "rename foo", "timestamp": 1790935201000},  # 2 October 10:00:01 UTC
 ]
 
 
 def continue_dev_data_more() -> dict[str, list[dict]]:
-    """The `chatFeedback`, `editInteraction` and `editOutcome` lines of
-    dev_data 0.2.0 (packages/config-yaml/src/schemas/data/ at 5522c6f): the
-    rating of the fixture's chatInteraction reply, and one edit request the
-    user rejected (#198)."""
+    """The `chatFeedback`, `editInteraction` and `editOutcome` dev_data lines.
+
+    The `chatFeedback`, `editInteraction` and `editOutcome` lines of dev_data 0.2.0
+    (packages/config-yaml/src/schemas/data/ at 5522c6f): the rating of the fixture's chatInteraction
+    reply, and one edit request the user rejected.
+    """
     base = {
         "schema": "0.2.0",
         "userId": "",
@@ -6670,7 +6793,7 @@ def continue_dev_data_more() -> dict[str, list[dict]]:
     return {"chatFeedback": [feedback], "editInteraction": [edit], "editOutcome": [outcome]}
 
 
-# The `cn` CLI's winston log in `cn serve --id` mode (#153), in the line
+# The `cn` CLI's winston log in `cn serve --id` mode, in the line
 # format of extensions/cli/src/util/logger.ts:74-95 and the `[metadata]`
 # lines of extensions/cli/src/util/metadata.ts:125-181 at 5522c6f. Two
 # processes (a1b2c3d4, 0e0f1a2b) post for the same agent; the second's
@@ -6722,7 +6845,7 @@ def build_continue_log(home: Path) -> None:
     (logs / "prompt.log").write_text("==========================\nprompt\n", encoding="utf-8")
 
 
-# A sessions.json cut mid-write (#170). The index is one JSON array that
+# A sessions.json cut mid-write. The index is one JSON array that
 # core/util/history.ts at 5522c6f rewrites whole on every save, so a crash
 # or a partial copy leaves the entries before the cut and a broken last
 # one. The added entry names a session with no file of its own.
@@ -6730,10 +6853,12 @@ CONTINUE_LOST_SESSION = "1a2b"
 
 
 def continue_index_cut(entries: list) -> tuple[str, str]:
-    """`entries` plus one more, serialised as `sessions.json` is and cut
-    inside the added entry's title. Returns the file text and the text from
-    the broken entry's first character to the end, which the parser's row
-    must carry in full. The PearAI fork's index has the same shape."""
+    """Return a `sessions.json` cut inside an added entry's title.
+
+    `entries` plus one more, serialised as `sessions.json` is and cut inside the added entry's
+    title. Returns the file text and the text from the broken entry's first character to the end,
+    which the parser's row must carry in full. The PearAI fork's index has the same shape.
+    """
     lost = {
         "sessionId": CONTINUE_LOST_SESSION,
         "title": "Lost entry",
@@ -7014,11 +7139,13 @@ def build_zed(home: Path) -> None:
 
 
 def build_zed_db_stores(con: sqlite3.Connection) -> None:
-    """The other db.sqlite stores of research/zed.md (Other db.sqlite
-    tables, Permission settings and project trust), as zed-industries/zed
-    at 9cd14da creates them: a draft thread and its prompt, an orphan draft,
-    a thread run in a Zed-created worktree that was archived, the worktree
-    registry, project trust and a sidebar terminal."""
+    """Write the other db.sqlite stores of research/zed.md.
+
+    The other db.sqlite stores of research/zed.md (Other db.sqlite tables, Permission settings and
+    project trust), as zed-industries/zed at 9cd14da creates them: a draft thread and its prompt, an
+    orphan draft, a thread run in a Zed-created worktree that was archived, the worktree registry,
+    project trust and a sidebar terminal.
+    """
     con.executescript("""
     CREATE TABLE trusted_worktrees (trust_id INTEGER PRIMARY KEY AUTOINCREMENT,
       absolute_path TEXT, user_name TEXT, host_name TEXT) STRICT;
@@ -7128,15 +7255,15 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
 
 
 def zed_unknown_variants_record():
-    """A version 0.3.0 thread blob (issue 168) whose known messages follow
-    the `UserMessage`, `AgentMessage` and `Message` enums of
-    zed-industries/zed at a84689073d29 (crates/agent/src/thread.rs:202-208,
-    287-301, 743-759; research/zed.md, Record schema), with items no
-    release writes today mixed in: a message variant, a `Compaction`
-    variant, an `Agent` content variant, a content item and a
-    `tool_results` entry that are not objects, and a legacy segment type.
-    Each must become its own `parser:` row while the messages around them
-    still yield theirs."""
+    """A version 0.3.0 Zed thread blob with unknown items mixed in.
+
+    A version 0.3.0 thread blob whose known messages follow the `UserMessage`, `AgentMessage` and
+    `Message` enums of zed-industries/zed at a84689073d29 (crates/agent/src/thread.rs:202-208,
+    287-301, 743-759; research/zed.md, Record schema), with items no release writes today mixed in:
+    a message variant, a `Compaction` variant, an `Agent` content variant, a content item and a
+    `tool_results` entry that are not objects, and a legacy segment type. Each must become its own
+    `parser:` row while the messages around them still yield theirs.
+    """
     return {
         "version": "0.3.0",
         "title": "Unknown variants",
@@ -7163,14 +7290,16 @@ def zed_unknown_variants_record():
 
 VSCODE_SESSION = "9ab0c1d2-0000-4000-8000-00000000c0de"
 VSCODE_LEGACY_SESSION = "9ab0c1d2-0000-4000-8000-0000000001d0"
-VSCODE_T0 = 1791025200000  # 2026-10-03T11:00:00Z, ms
+VSCODE_T0 = 1791025200000  # 3 October 11:00:00 UTC, ms
 VSCODE_WS = ".config/Code/User/workspaceStorage/abc123"
 
 
 def vscode_log_records(cwd="/srv/proj"):
     """A `chatSessions/<id>.jsonl` mutation log, as in research/vscode.md.
-    The modelId, agent id and responder strings come from the closed Copilot
-    extension and are invented."""
+
+    The modelId, agent id and responder strings come from the closed Copilot extension and are
+    invented.
+    """
     start = VSCODE_T0
     return [
         {
@@ -7348,14 +7477,14 @@ def build_vscode(home: Path) -> None:
     build_vscode_grants(home)
 
 
-# Standing grants, settings, the GitHub account and the chat editing state
-# (issue 210), source-derived from microsoft/vscode at 4d22f4f
+# Standing grants, settings, the GitHub account and the chat editing state,
+# source-derived from microsoft/vscode at 4d22f4f
 # (research/vscode.md, Standing permission grants and Chat editing
 # sessions). The ids, labels and the login are invented.
 VSCODE_WS_STATE_REL = VSCODE_WS + "/state.vscdb"
 VSCODE_PROFILE_SETTINGS_REL = ".config/Code/User/profiles/-5f3a1b2c/settings.json"
 VSCODE_EDITING_REL = VSCODE_WS + "/chatEditingSessions/%s/state.json" % VSCODE_SESSION
-VSCODE_GRANTS_MTIME = 1791025300  # 2026-10-03T11:01:40Z
+VSCODE_GRANTS_MTIME = 1791025300  # 3 October 11:01:40 UTC
 
 
 def vscode_editing_state(cwd="/srv/proj"):
@@ -7449,12 +7578,12 @@ def build_vscode_grants(home: Path) -> None:
         os.utime(home / rel, (VSCODE_GRANTS_MTIME, VSCODE_GRANTS_MTIME))
 
 
-# Session sync (issue 153): Copilot Chat's cloudSessions.json, naming the
+# Session sync: Copilot Chat's cloudSessions.json, naming the
 # fixture session and one uploaded from another machine, and the
 # extension's global state with its cloud agent tasks, in an Insiders data
 # directory (research/vscode.md, Other stores).
 VSCODE_CLOUD_SESSIONS_REL = ".config/Code/User/globalStorage/github.copilot-chat/cloudSessions.json"
-VSCODE_CLOUD_SESSIONS_MTIME = 1759400100  # 2025-10-02T10:15:00Z
+VSCODE_CLOUD_SESSIONS_MTIME = 1759400100  # a year before VSCODE_T0, 2 October 10:15:00 UTC
 VSCODE_OTHER_MACHINE_SESSION = "9ab0c1d2-0000-4000-8000-00000000a1b2"
 VSCODE_STATE_REL = ".config/Code - Insiders/User/globalStorage/state.vscdb"
 VSCODE_CLOUD_TASK = "1234567"
@@ -7492,7 +7621,7 @@ def build_vscode_sync(home: Path) -> None:
     )
 
 
-# Agents window and multi-root workspaces (issue 185). The Agents window
+# Agents window and multi-root workspaces. The Agents window
 # opens the workspace file `User/agent-sessions.code-workspace` in the
 # editor's own data directory (microsoft/vscode at 4d22f4f,
 # src/vs/platform/environment/common/environmentService.ts:280-281), so
@@ -7530,10 +7659,10 @@ def build_vscode_agents_window(home: Path) -> None:
 OPENCODE_SESSION = "ses_01OC"
 OPENCODE_V2_SESSION = "ses_02OCV2"
 OPENCODE_LEGACY_SESSION = "ses_00LEGACY"
-OPENCODE_T0 = 1791018000000  # 2026-10-03T09:00:00Z, ms
+OPENCODE_T0 = 1791018000000  # 3 October 09:00:00 UTC, ms
 KILO_SESSION = "ses_01JAX"
 KILO_TASK = "8f1c2b7e-1"
-KILO_T0 = 1791021600000  # 2026-10-03T10:00:00Z, ms
+KILO_T0 = 1791021600000  # 3 October 10:00:00 UTC, ms
 
 OPENCODE_SCHEMA = """
 CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text, name text, icon_url text, icon_color text,
@@ -7906,7 +8035,7 @@ def build_opencode(home: Path) -> None:
     build_opencode_next_db(data / OPENCODE_NEXT_DB_NAME)
 
 
-# Session sync (issue 153): a channel database with the share records of
+# Session sync: a channel database with the share records of
 # research/opencode.md, Other stores: the `session_share` table and the
 # `session.updated.1` events. One session is shared now, one was shared
 # and then unshared (its share row is gone, its events stay), one never.
@@ -7915,7 +8044,7 @@ OPENCODE_SHARED = "ses_05SHARE"
 OPENCODE_UNSHARED = "ses_06UNSHARE"
 OPENCODE_PRIVATE = "ses_07PRIVATE"
 OPENCODE_SHARE_SECRET = "fixture-share-secret-not-real"
-OPENCODE_SHARE_T0 = OPENCODE_T0 + 3600000  # 2026-10-03T10:00:00Z
+OPENCODE_SHARE_T0 = OPENCODE_T0 + 3600000  # 3 October 10:00:00 UTC
 OPENCODE_SHARE_SCHEMA = """
 CREATE TABLE session_share (session_id text PRIMARY KEY, id text NOT NULL, secret text NOT NULL,
   url text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL);
@@ -7926,8 +8055,10 @@ CREATE TABLE event (id text PRIMARY KEY, aggregate_id text NOT NULL, seq integer
 
 
 def opencode_session_event(sid: str, seq: int, updated: int, share_url: str = "") -> tuple:
-    """An `event` row of type `session.updated.1`: `data` is `{sessionID,
-    info}`, the session's info with `share.url` while it is shared."""
+    """An `event` row of type `session.updated.1`.
+
+    `data` is `{sessionID, info}`, the session's info with `share.url` while it is shared.
+    """
     info: dict = {
         "id": sid,
         "slug": "s",
@@ -7988,7 +8119,7 @@ def build_opencode_share_db(database: Path, start: int = OPENCODE_SHARE_T0) -> N
     con.close()
 
 
-# OpenCode 2.0 (issue 165), source-derived, not observed on any real install:
+# OpenCode 2.0, source-derived, not observed on any real install:
 # anomalyco/opencode at cb07c555d4d1ca34430b7857b52f104c3d95e09e (CLI 2.0.32).
 # `session_v2` from packages/core/src/session/sql.ts:22-68; `session_message`
 # `data` without `type` and `id` (sql.ts:20, :79-91), shapes from
@@ -8004,7 +8135,7 @@ OPENCODE_MIGRATED = "ses_10MIGRATED"
 OPENCODE_DELETED = "ses_11DELETED"
 OPENCODE_V2_ONLY = "ses_12NEW"
 OPENCODE_NEXT_ONLY = "ses_13NEXTONLY"
-OPENCODE_V2_T0 = OPENCODE_T0 + 7200000  # 2026-10-03T11:00:00Z
+OPENCODE_V2_T0 = OPENCODE_T0 + 7200000  # 3 October 11:00:00 UTC
 OPENCODE_SESSION_V2_COLUMNS = """(id text PRIMARY KEY, project_id text NOT NULL, workspace_id text,
   parent_id text, fork_session_id text, fork_boundary text, slug text NOT NULL, directory text NOT NULL,
   path text, title text, version text NOT NULL, share_url text, summary_additions integer,
@@ -8190,8 +8321,11 @@ def build_opencode_v2_db(database: Path, start: int = OPENCODE_V2_T0) -> None:
 
 
 def build_opencode_next_db(database: Path, start: int = OPENCODE_V2_T0) -> None:
-    """The pre-release 2.0 database: the 2.0-only session's first turns,
-    imported into the main database, and one session found nowhere else."""
+    """The pre-release 2.0 database.
+
+    The 2.0-only session's first turns, imported into the main database, and one session found
+    nowhere else.
+    """
     database.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(database))
     con.executescript(
@@ -8421,10 +8555,10 @@ def build_kilo(home: Path) -> None:
     build_kilo_share(home)
 
 
-# Session sync (issue 153): Kilo's cloud session marker,
+# Session sync: Kilo's cloud session marker,
 # storage/session_share/<sessionID>.json (research/kilo-code.md, Other stores).
 KILO_SHARE_REL = ".local/share/kilo/storage/session_share/%s.json" % KILO_SESSION
-KILO_SHARE_MTIME = 1791022000  # 2026-10-03T10:06:40Z
+KILO_SHARE_MTIME = 1791022000  # 3 October 10:06:40 UTC
 
 
 def build_kilo_share(home: Path) -> None:
@@ -8439,8 +8573,8 @@ def build_kilo_share(home: Path) -> None:
     os.utime(home / KILO_SHARE_REL, (KILO_SHARE_MTIME, KILO_SHARE_MTIME))
 
 
-# Standing state, past use, scratch directories and deletion (issues 194,
-# 192, 221), source-derived, not observed on any real install: anomalyco/
+# Standing state, past use, scratch directories and deletion,
+# source-derived, not observed on any real install: anomalyco/
 # opencode at cb07c555d4d1ca34430b7857b52f104c3d95e09e and Kilo-Org/kilocode
 # at 87cc35ce6904465a0eed507a8c75c79185863a22. Built by the tests that read
 # them, not by `build_home`, so the other tests' session and dedup counts
@@ -8448,8 +8582,8 @@ def build_kilo_share(home: Path) -> None:
 OPENCODE_STATE_DB_NAME = "opencode-state.db"
 OPENCODE_ARCHIVED = "ses_20ARCHIVED"
 OPENCODE_PINNED_GONE = "ses_21PINNEDGONE"
-OPENCODE_STATE_T0 = OPENCODE_T0 + 10800000  # 2026-10-03T12:00:00Z
-OPENCODE_STATE_MTIME = 1791043200  # 2026-10-03T16:00:00Z
+OPENCODE_STATE_T0 = OPENCODE_T0 + 10800000  # 3 October 12:00:00 UTC
+OPENCODE_STATE_MTIME = 1791043200  # 3 October 16:00:00 UTC
 OPENCODE_WORKTREE = "/home/alice/.local/share/opencode/worktree/proj_a/brave-otter"
 KILO_LOG_NAME = "2026-10-03T100000.log"
 KILO_SANDBOX_SESSION_HASH = "a" * 64
@@ -8457,12 +8591,13 @@ KILO_SANDBOX_DIR_HASH = "b" * 64
 
 
 def build_opencode_state_db(database: Path, start: int = OPENCODE_STATE_T0) -> None:
-    """A 2.0 database with standing state: the `permission` table
-    (packages/core/src/permission/sql.ts:7-20), the `worktree` table
-    (worktree/sql.ts:6-20) and the deprecated `project_directory`
-    (project/sql.ts:31-47), an archived session with a rule list
-    (`session_v2.time_archived`, `permission`), and a tool call refused by a
-    deny rule (`error.type` `permission.rejected`, to-session-error.ts:61)."""
+    """A 2.0 database with standing state.
+
+    The `permission` table (packages/core/src/permission/sql.ts:7-20), the `worktree` table
+    (worktree/sql.ts:6-20) and the deprecated `project_directory` (project/sql.ts:31-47), an
+    archived session with a rule list (`session_v2.time_archived`, `permission`), and a tool call
+    refused by a deny rule (`error.type` `permission.rejected`, to-session-error.ts:61).
+    """
     database.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(database))
     con.executescript(
@@ -8536,11 +8671,12 @@ def build_opencode_state_db(database: Path, start: int = OPENCODE_STATE_T0) -> N
 
 
 def build_opencode_state(home: Path) -> None:
-    """OpenCode's terminal UI state at the 2.0 shapes
-    (packages/tui/src/prompt/history.tsx:20-23, stash.tsx:9-12,
-    context/local.tsx:517-530), a 1.x stash line (`input`), the database
-    above, and `kv.json` and `service.json` beside them, which the parser
-    must not want."""
+    """Write OpenCode's terminal UI state files at the 2.0 shapes.
+
+    OpenCode's terminal UI state at the 2.0 shapes (packages/tui/src/prompt/history.tsx:20-23,
+    stash.tsx:9-12, context/local.tsx:517-530), a 1.x stash line (`input`), the database above, and
+    `kv.json` and `service.json` beside them, which the parser must not want.
+    """
     state = home / ".local/state/opencode"
     _jsonl(
         state / "prompt-history.jsonl",
@@ -8589,14 +8725,16 @@ def build_opencode_state(home: Path) -> None:
 
 
 def build_kilo_state(home: Path) -> None:
-    """Kilo Code's standing state, past use and remote control at 87cc35c:
-    the TUI history and stash in the 1.x shapes (packages/tui/src/prompt/
-    history.tsx:9-25, stash.tsx:9-13), the global config's `permission` key
-    (packages/core/src/v1/config/permission.ts:5-56), a sandbox policy and
-    preference (kilocode/sandbox/store.ts:11-17, preference.ts:10-29), the
-    retention state (kilocode/session/retention.ts:45-54) and a log with the
-    remote control lines (kilo-sessions/remote-session-log.ts:37-61,
-    kilo-sessions.ts:1220, :1259; core/src/util/log.ts:162-189)."""
+    """Kilo Code's standing state, past use and remote control at 87cc35c.
+
+    The TUI history and stash in the 1.x shapes (packages/tui/src/prompt/ history.tsx:9-25,
+    stash.tsx:9-13), the global config's `permission` key
+    (packages/core/src/v1/config/permission.ts:5-56), a sandbox policy and preference
+    (kilocode/sandbox/store.ts:11-17, preference.ts:10-29), the retention state
+    (kilocode/session/retention.ts:45-54) and a log with the remote control lines
+    (kilo-sessions/remote-session-log.ts:37-61, kilo-sessions.ts:1220, :1259;
+    core/src/util/log.ts:162-189).
+    """
     state = home / ".local/state/kilo"
     _jsonl(
         state / "prompt-history.jsonl",
@@ -8671,7 +8809,7 @@ def build_kilo_state(home: Path) -> None:
 
 # ---- Cline and Roo Code (research/cline.md, research/roo-code.md) ----------------
 
-CLINE_TASK = "1791021600000"  # 2026-10-03T10:00:00Z, a Date.now() id
+CLINE_TASK = "1791021600000"  # 3 October 10:00:00 UTC, a Date.now() id
 CLINE_CLI_TASK = "1791021300000"  # API history only, no ui_messages.json
 CLINE_SESSION = "1791021700000_k3x9q"
 CLINE_OLD_SESSION = "1791000000000_old01"
@@ -8983,10 +9121,12 @@ def build_cline(home: Path) -> None:
 
 
 def cline_search_text(message: dict) -> str:
-    """A message as session-search.db indexes it: every string value under
-    `content`, skipping the `data`, `image`, `images`, `reasoning`,
-    `thinking` and `metadata` keys, joined with line breaks
-    (session-history-search.ts:54-95 at 39ff2359)."""
+    """A message as session-search.db indexes it.
+
+    Every string value under `content`, skipping the `data`, `image`, `images`, `reasoning`,
+    `thinking` and `metadata` keys, joined with line breaks (session-history-search.ts:54-95 at
+    39ff2359).
+    """
     parts: list[str] = []
 
     def walk(value) -> None:
@@ -9006,9 +9146,11 @@ def cline_search_text(message: dict) -> str:
 
 
 def cline_session_search_sessions():
-    """(session id, started_at, workspace_root, title, prompt, messages) per
-    indexed session: the fixture's SDK session, whose transcript is on disk,
-    and the older session whose manifest and transcript are gone."""
+    """(session id, started_at, workspace_root, title, prompt, messages) per indexed session.
+
+    The fixture's SDK session, whose transcript is on disk, and the older session whose manifest and
+    transcript are gone.
+    """
     return [
         (
             CLINE_SESSION,
@@ -9043,9 +9185,11 @@ CLINE_SEARCH_FTS = (
 
 
 def build_cline_session_search(home: Path) -> None:
-    """`~/.cline/data/db/session-search.db` as the SDK hub writes it
-    (session-history-search.ts:120-154 and 402-465 at 39ff2359), and
-    `cron.db` beside it, which the parser must not want."""
+    """Write `~/.cline/data/db/session-search.db` and `cron.db` beside it.
+
+    `~/.cline/data/db/session-search.db` as the SDK hub writes it (session-history-search.ts:120-154
+    and 402-465 at 39ff2359), and `cron.db` beside it, which the parser must not want.
+    """
     database_dir = home / ".cline/data/db"
     database_dir.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(str(database_dir / "session-search.db"))
@@ -9092,14 +9236,16 @@ def build_cline_session_search(home: Path) -> None:
 
 
 def build_cline_input_history(home: Path) -> None:
-    """The CLI's `~/.cline/data/cache/user_input_history.jsonl`
-    (apps/cli/src/utils/input-history.ts:54-72 at 39ff2359): every line
-    stamped with the last rewrite's time. "fix tests" repeats the SDK
-    session's prompt; "list the open ports" has no transcript. A model
-    cache beside it is noise the parser must not want."""
+    """Write the Cline CLI's `user_input_history.jsonl` and a model cache.
+
+    The CLI's `~/.cline/data/cache/user_input_history.jsonl`
+    (apps/cli/src/utils/input-history.ts:54-72 at 39ff2359): every line stamped with the last
+    rewrite's time. "fix tests" repeats the SDK session's prompt; "list the open ports" has no
+    transcript. A model cache beside it is noise the parser must not want.
+    """
     cache = home / ".cline/data/cache"
     cache.mkdir(parents=True, exist_ok=True)
-    rewrite = CLINE_T0 + 300000  # 2026-10-03T10:05:00Z
+    rewrite = CLINE_T0 + 300000  # 3 October 10:05:00 UTC
     lines = [{"prompt": prompt, "ts": rewrite} for prompt in ("fix tests", "list the open ports")]
     (cache / "user_input_history.jsonl").write_text(
         "".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8"
@@ -9107,7 +9253,7 @@ def build_cline_input_history(home: Path) -> None:
     _json(cache / "openrouter_models.json", {"anthropic/claude-sonnet-4-5": {}})
 
 
-# Enterprise prompt upload (#153): `metadata["enterprise.blobUpload"]`
+# Enterprise prompt upload: `metadata["enterprise.blobUpload"]`
 # (sdk/packages/shared/src/remote-config/blob-storage.ts:56-57, 129-160 at
 # 39ff2359). CLINE_BLOB_SESSION's manifest has the VS Code host's form, with
 # `userDistinctId`; CLINE_BLOB_DELETED survives only as a sessions.db row
@@ -9168,7 +9314,7 @@ def build_cline_blob_upload(home: Path) -> None:
     con.close()
 
 
-# The VS Code extension's enterprise prompt upload queue (#153), the
+# The VS Code extension's enterprise prompt upload queue, the
 # `SyncQueueItem` shape of apps/vscode/src/shared/services/worker/queue.ts:9-31
 # at 39ff2359, one item of each status: CLINE_TASK's transcript uploaded,
 # CLINE_QUEUE_PENDING's waiting and CLINE_QUEUE_FAILED's failing. The two
@@ -9199,17 +9345,15 @@ def build_cline_sync_queue(home: Path) -> None:
     _json(home / CLINE_SYNC_QUEUE, {"items": items})
 
 
-# Source review of 2026-10-21 (#190), from cline/cline at 41e75efc: the hook
-# audit log (sdk/packages/core/src/hooks/hook-file-hooks.ts:234-254,
-# 629-756), the standing permission settings (apps/vscode/src/shared/
-# AutoApprovalSettings.ts:1-44, sdk/packages/core/src/services/
-# global-settings.ts:61-74, apps/vscode/src/services/mcp/schemas.ts:10-28),
-# the Cline Cloud state (apps/vscode/src/shared/cloud/cloud-sessions.ts:15-52,
-# apps/vscode/src/sdk/cloud-pending-starts.ts:5-12), a rejected and a blocked
-# SDK call (sdk/packages/agents/src/agent-runtime.ts:2469-2512) and an
-# imported session (sdk/packages/core/src/services/session-import/
-# service.ts:20-28). Not part of `build_home`: the tests that need them add
-# them, so the session counts of the other Cline tests stay.
+# From cline/cline at 41e75efc: the hook audit log
+# (sdk/packages/core/src/hooks/hook-file-hooks.ts:234-254, 629-756), the
+# standing permission settings (apps/vscode/src/shared/AutoApprovalSettings.ts:1-44,
+# sdk/packages/core/src/services/global-settings.ts:61-74,
+# apps/vscode/src/services/mcp/schemas.ts:10-28), the Cline Cloud state
+# (apps/vscode/src/shared/cloud/cloud-sessions.ts:15-52, cloud-pending-starts.ts:5-12),
+# a rejected and a blocked SDK call (sdk/packages/agents/src/agent-runtime.ts:2469-2512)
+# and an imported session (sdk/packages/core/src/services/session-import/service.ts:20-28).
+# Not part of `build_home`, so the session counts of the other Cline tests stay.
 CLINE_HOOKS_LOG = ".cline/data/logs/hooks.jsonl"
 CLINE_GLOBAL_STATE = ".cline/data/globalState.json"
 CLINE_GLOBAL_SETTINGS = ".cline/data/settings/global-settings.json"
@@ -9219,7 +9363,7 @@ CLINE_PENDING_SESSION = "ses-01JCLOUDWAIT"
 CLINE_PENDING_START = (
     ".cline/data/cloud-pending-starts/4242-0b6f2c1e-6a1d-4c51-9a7e-2f3d1c0e9b8a.json"
 )
-CLINE_SETTINGS_MTIME = 1791022200  # 2026-10-03T10:10:00Z
+CLINE_SETTINGS_MTIME = 1791022200  # 3 October 10:10:00 UTC
 CLINE_DENIED_SESSION = "1791022100000_den1a"
 CLINE_IMPORTED_SESSION = "1791022300000_imp0r"
 CLINE_REJECTION_SUFFIX = " -- NOT a tool or system failure. Clarify with user before proceeding."
@@ -9242,9 +9386,11 @@ def _hook_line(hook: str, timestamp: str, session: str, **extra) -> dict:
 
 
 def cline_hook_lines():
-    """CLINE_SESSION's turns as the audit log repeats them, then the tool call
-    and abort of CLINE_OLD_SESSION, whose transcript is gone, and a stale
-    session's shutdown line."""
+    """The Cline hook audit log lines of two sessions and a stale one.
+
+    CLINE_SESSION's turns as the audit log repeats them, then the tool call and abort of
+    CLINE_OLD_SESSION, whose transcript is gone, and a stale session's shutdown line.
+    """
     session, old = CLINE_SESSION, CLINE_OLD_SESSION
     call = {"id": "call_1", "name": "bash", "input": {"command": "pytest -q"}}
     return [
@@ -9368,8 +9514,11 @@ def cline_global_state() -> dict:
 
 
 def build_cline_settings_and_cloud(home: Path) -> None:
-    """globalState.json, global-settings.json, the MCP settings file and one
-    pending-start file, each with `CLINE_SETTINGS_MTIME` as its mtime."""
+    """Write the Cline settings files and a pending-start file.
+
+    globalState.json, global-settings.json, the MCP settings file and one pending-start file, each
+    with `CLINE_SETTINGS_MTIME` as its mtime.
+    """
     _json(home / CLINE_GLOBAL_STATE, cline_global_state())
     _json(
         home / CLINE_GLOBAL_SETTINGS,
@@ -9411,8 +9560,11 @@ def build_cline_settings_and_cloud(home: Path) -> None:
 
 
 def build_cline_denied_and_imported(home: Path) -> None:
-    """An SDK session with one call the user rejected (with feedback) and one
-    the policy blocked, and a session imported from Claude Code."""
+    """Write a Cline SDK session with refused calls and an imported one.
+
+    An SDK session with one call the user rejected (with feedback) and one the policy blocked, and a
+    session imported from Claude Code.
+    """
     sessions = home / ".cline/data/sessions"
     manifest = dict(
         cline_sdk_manifest(),
@@ -9652,7 +9804,7 @@ def roo_history_item(task_id, timestamp, task, workspace="/srv/proj"):
     }
 
 
-# The Roo CLI's input history (`.roo/cli-history.json`, issue 122): text
+# The Roo CLI's input history (`.roo/cli-history.json`): text
 # only, so "rename the helper" and the follow-up "yes" pair with the task's
 # own user rows on text alone (any task: the file names none); "/new" (a
 # CLI command that never reaches a task) and "summarise the open issues"
@@ -9765,9 +9917,11 @@ def roo_global_state():
 
 
 def roo_retry_queue():
-    """One queued Task Message upload (RetryQueue.ts:73-95 and
-    TelemetryClient.ts:102-153 at Roo-Code v3.53.0); its headers and body
-    must never reach a row."""
+    """One queued Roo Code Task Message upload.
+
+    One queued Task Message upload (RetryQueue.ts:73-95 and TelemetryClient.ts:102-153 at Roo-Code
+    v3.53.0); its headers and body must never reach a row.
+    """
     message = {"ts": CLINE_T0 + 200000, "type": "say", "say": "text", "text": "rename the helper"}
     return [
         {
@@ -9893,9 +10047,12 @@ TABBY_SELECT_PAYLOAD = (
 
 
 def tabby_records():
-    """The INSERT statements of research/tabby.md, Parser plan, with the
-    research's single fixture token replaced by one per secret column, and a
-    user_events row whose payload is the pretty JSON event_logger.rs writes."""
+    """The INSERT statements of research/tabby.md, Parser plan, with one token each.
+
+    The INSERT statements of research/tabby.md, Parser plan, with the research's single fixture
+    token replaced by one per secret column, and a user_events row whose payload is the pretty JSON
+    event_logger.rs writes.
+    """
     return [
         *tabby_secret_records(),
         "INSERT INTO threads(id,is_ephemeral,user_id,created_at,updated_at,relevant_questions) "
@@ -9906,10 +10063,10 @@ def tabby_records():
         "INSERT INTO user_events(id,user_id,kind,created_at,payload) VALUES(1,1,'select','2026-10-01 10:00:01',"
         "'%s')" % TABBY_SELECT_PAYLOAD,
         # The event log's completion line as the database logger stores it
-        # (event_logger.rs:79-109): `ts` truncated to the second (#122).
+        # (event_logger.rs:79-109): `ts` truncated to the second.
         "INSERT INTO user_events(id,user_id,kind,created_at,payload) "
         "VALUES(2,1,'completion','2025-10-01 10:00:00','%s')" % TABBY_COMPLETION_PAYLOAD,
-        # An AI-written page made from thread 7 (page.rs:92-133; schema.sql:267-288, #211).
+        # An AI-written page made from thread 7 (page.rs:92-133; schema.sql:267-288).
         "INSERT INTO pages(id,author_id,title,content,created_at,updated_at,code_source_id) "
         "VALUES(4,1,'Cache invalidation','How the cache is cleared.','2026-10-01 11:00:00',"
         "'2026-10-01 11:00:30','acme-app')",
@@ -9947,8 +10104,11 @@ def tabby_backup_records():
 
 
 def tabby_event_records():
-    """The two event log lines of research/tabby.md, Parser plan, plus a
-    chat_completion event, whose body is empty (routes/chat.rs:83)."""
+    """The event log lines of research/tabby.md, Parser plan, and one more.
+
+    The two event log lines of research/tabby.md, Parser plan, plus a chat_completion event, whose
+    body is empty (routes/chat.rs:83).
+    """
     return [
         {
             "user": "1",
@@ -9989,8 +10149,10 @@ TABBY_COMPLETION_PAYLOAD = json.dumps(tabby_event_records()[0]["event"], indent=
 
 
 def tabby_backup2_records():
-    """A later backup in the current schema (#122): the ephemeral thread of
-    the first backup, copied again, and the live database's thread 7."""
+    """A later backup in the current schema.
+
+    The ephemeral thread of the first backup, copied again, and the live database's thread 7.
+    """
     count = len(tabby_secret_records())
     return [
         *tabby_secret_records(),
@@ -10005,7 +10167,7 @@ def tabby_backup2_records():
 
 
 TABBY_CONFIG_REL = ".tabby/config.toml"
-# config.rs:259-342: an http chat model with its key, and a local completion model (#211).
+# config.rs:259-342: an http chat model with its key, and a local completion model.
 TABBY_CONFIG = """[model.chat.http]
 kind = "openai/chat"
 model_name = "gpt-4o"
@@ -10041,10 +10203,11 @@ TABBY_VSCDB_REL = "AppData/Roaming/Code/User/globalStorage/state.vscdb"
 
 
 def tabby_vscode_state() -> dict:
-    """The extension's global state (Config.ts:41-66, 139-145): server
-    records with an endpoint token, and `edit.recentlyCommand`, newest first,
-    each entry `JSON.stringify({command, context})` (quickPick.ts:344-351),
-    the last one a bare string."""
+    """The extension's global state (Config.ts:41-66, 139-145).
+
+    Server records with an endpoint token, and `edit.recentlyCommand`, newest first, each entry
+    `JSON.stringify({command, context})` (quickPick.ts:344-351), the last one a bare string.
+    """
     return {
         "server.serverRecords": {"http://localhost:8080": {"token": TABBY_ENDPOINT_TOKEN}},
         "edit.recentlyCommand": [
@@ -10070,9 +10233,11 @@ def tabby_vscode_state() -> dict:
 
 
 def build_tabby(home: Path) -> None:
-    """A Tabby server's home: the live WAL database, a pre-migration backup
-    and a later one holding copies of the same threads, one day of the event
-    log, and the config file as noise."""
+    """A Tabby server's home.
+
+    The live WAL database, a pre-migration backup and a later one holding copies of the same
+    threads, one day of the event log, and the config file as noise.
+    """
     _wal_db(home / TABBY_REL, TABBY_SCHEMA, tabby_records())
     for rel, schema, records in (
         (TABBY_BACKUP_REL, TABBY_BACKUP_SCHEMA, tabby_backup_records()),
@@ -10101,7 +10266,7 @@ def build_tabby(home: Path) -> None:
     _vscdb(home / TABBY_VSCDB_REL, {"TabbyML.vscode-tabby": tabby_vscode_state()})
 
 
-# A Tabby server root in a Docker named volume (#124): the catalog's
+# A Tabby server root in a Docker named volume: the catalog's
 # `tabby|*tabby*` DOCKER_VOLUMES line collects the volume whole with its
 # `_data` directory as the base (user `docker`), and the images set
 # TABBY_ROOT=/data (docker/Dockerfile.cuda:88 at 21b2904), so a volume
@@ -10119,9 +10284,11 @@ TABBY_VOLUME_FILES = (
 
 
 def build_tabby_volume(root: Path) -> None:
-    """A collector output directory (collection.json, manifest.jsonl and
-    fs/) holding only the Tabby volume: the main fixture's server root with
-    `.tabby/` stripped, and the telemetry id as noise."""
+    """Write a collector output directory holding only the Tabby volume.
+
+    A collector output directory (collection.json, manifest.jsonl and fs/) holding only the Tabby
+    volume: the main fixture's server root with `.tabby/` stripped, and the telemetry id as noise.
+    """
     import shutil
 
     base = root / ("fs" + TABBY_VOLUME_HOME)
@@ -10293,8 +10460,11 @@ OPENHANDS_PROJECT_HASH = "6b9af143446a411aefa3edb76e4693799bd7513e7ed8d919962d67
 
 
 def openhands_wt_meta():
-    """meta.json of a conversation started with worktree isolation, so its
-    working directory is under the Agent Server's default worktree root."""
+    """`meta.json` of an OpenHands conversation started with worktree isolation.
+
+    meta.json of a conversation started with worktree isolation, so its working directory is under
+    the Agent Server's default worktree root.
+    """
     meta = openhands_meta(OPENHANDS_WT_DIR)
     meta.update(
         id="0f0e0d0c-1111-4000-8000-000000000003",
@@ -10306,9 +10476,12 @@ def openhands_wt_meta():
 
 
 def openhands_wt_base_state():
-    """base_state.json with the standing permission fields, a model set over
-    REST after the last response, and per-response token usage (SDK 33d8aa2
-    `conversation/state.py` and `llm/utils/metrics.py`)."""
+    """`base_state.json` with standing permissions, a model and token usage.
+
+    base_state.json with the standing permission fields, a model set over REST after the last
+    response, and per-response token usage (SDK 33d8aa2 `conversation/state.py` and
+    `llm/utils/metrics.py`).
+    """
     state = openhands_base_state(OPENHANDS_WT_CONV, OPENHANDS_WT_DIR)
     state["agent"]["llm"]["model"] = "litellm_proxy/claude-opus-4-1"
     state["confirmation_policy"] = {
@@ -10346,8 +10519,11 @@ def openhands_wt_base_state():
 
 
 def openhands_wt_events(prefix="8a2f0c1d-0000-4000-8000-00000000000", day="2026-10-03T11:00:"):
-    """A security analyzer's verdicts, the agent's own model switch and a
-    hook block (SDK 33d8aa2 `event/security.py`, `tool/builtins/switch_llm.py`)."""
+    """OpenHands security verdicts, a model switch and a hook block.
+
+    A security analyzer's verdicts, the agent's own model switch and a hook block (SDK 33d8aa2
+    `event/security.py`, `tool/builtins/switch_llm.py`).
+    """
 
     def action(number, sec, tool, call, command, response):
         return {
@@ -10442,10 +10618,11 @@ def openhands_wt_events(prefix="8a2f0c1d-0000-4000-8000-00000000000", day="2026-
 
 
 def openhands_prompt_history():
-    """The CLI's prompt_history.json (OpenHands-CLI 0403f1a
-    `stores/prompt_history.py`): a JSON array, oldest first, naive local
-    times. The first entry repeats the CLI conversation's prompt; the second
-    is in no conversation."""
+    """The CLI's prompt_history.json (OpenHands-CLI 0403f1a `stores/prompt_history.py`).
+
+    A JSON array, oldest first, naive local times. The first entry repeats the CLI conversation's
+    prompt; the second is in no conversation.
+    """
     return [
         {"text": "list the files", "timestamp": "2026-10-02T08:30:01.000000"},
         {"text": "and the hidden files?", "timestamp": "2026-10-02T08:45:00.000000"},
@@ -10613,7 +10790,7 @@ LC_SESSION = "0b9e2f4c-1111-4000-8000-000000000001"
 LC_FILE = "2026-10-01T11-00-00-000Z_%s.jsonl" % LC_SESSION
 PI_EXPERIMENTAL = "exp-session-1"
 PI_TRUST = ".pi/agent/trust.json"
-PI_TRUST_MTIME = 1790852000  # 2026-10-01T10:53:20Z
+PI_TRUST_MTIME = 1790852000  # 1 October 10:53:20 UTC
 LETTA_LOCAL_CONV = "local-conv-1"
 LETTA_LOCAL_DIR = "Y29udmVyc2F0aW9uOmxvY2FsLWNvbnYtMQ"  # base64url("conversation:local-conv-1")
 LETTA_AGENT = "agent-1a2b"
@@ -10845,7 +11022,7 @@ def little_coder_session_records(cwd="/srv/proj"):
                 "timestamp": 1790852412000,
             },
         },
-        # The permission gate refuses an edit in manual mode (issue 201).
+        # The permission gate refuses an edit in manual mode.
         {
             "type": "message",
             "id": "a6",
@@ -10906,8 +11083,7 @@ def build_pi(home: Path) -> None:
     _json(home / PI_CRASHES, pi_crash_records())
 
 
-# Secondary and past-use sources beside the sessions (issue 201,
-# research/pi.md, Debug log and crash log): the `/debug` snapshot of the
+# Secondary and past-use sources beside the sessions (research/pi.md, Debug log and crash log): the `/debug` snapshot of the
 # open session's messages and the recent-crash log.
 PI_SETTINGS = ".pi/agent/settings.json"
 PI_DEBUG_LOG = ".pi/agent/pi-debug.log"
@@ -10977,7 +11153,7 @@ def pi_crash_records():
     ]
 
 
-# Session sync (issue 153): a session reported with `/bug` twice, once
+# Session sync: a session reported with `/bug` twice, once
 # uploaded and once exported to a zip (research/pi.md, Record schema).
 PI_BUG_SESSION = "0199a1b2-7c3d-7e4f-8a5b-6c7d8e9f0b3d"
 PI_BUG_FILE = "2026-10-01T13-00-00-000Z_%s.jsonl" % PI_BUG_SESSION
@@ -11065,8 +11241,8 @@ def build_little_coder(home: Path) -> None:
     build_little_coder_legacy(home)
 
 
-# The retired v0.0.x Python layout under ~/.little-coder (issue 157,
-# research/little-coder.md, The v0.0.x layout).
+# The retired v0.0.x Python layout under ~/.little-coder (research/little-coder.md,
+# The v0.0.x layout).
 LC_LEGACY = ".little-coder/"
 LC_LEGACY_SESSION = "a1b2c3d4"
 LC_LEGACY_OLD_SESSION = "e1f2a3b4"
@@ -11078,7 +11254,7 @@ LC_LEGACY_CONFIG = LC_LEGACY + "config.json"
 LC_LEGACY_CKPT = "c0ffee12"
 LC_LEGACY_SNAPSHOTS = LC_LEGACY + "checkpoints/%s/snapshots.json" % LC_LEGACY_CKPT
 LC_LEGACY_GIST = "aa11bb22cc33dd44ee55ff6677889900"
-LC_LEGACY_CONFIG_MTIME = 1790503200  # 2026-09-27T10:00:00Z
+LC_LEGACY_CONFIG_MTIME = 1790503200  # 27 September 10:00:00 UTC
 
 
 def little_coder_legacy_session(session_id=LC_LEGACY_SESSION, saved_at="2026-09-20 10:15:00"):
@@ -11209,9 +11385,11 @@ def letta_transcript_records():
 
 
 def letta_twin_transcript_records():
-    """The local-backend conversation's transcript: the turn its
-    messages.jsonl also holds, captured at the turn's end, then a turn
-    messages.jsonl no longer has (issue 122)."""
+    """The local-backend conversation's transcript.
+
+    The turn its messages.jsonl also holds, captured at the turn's end, then a turn messages.jsonl
+    no longer has.
+    """
     return [
         *letta_transcript_records(),
         {
@@ -11330,7 +11508,7 @@ def letta_sessions_records(project="/srv/proj"):
         "reasoning_tokens": 0,
         "steps": 0,
     }
-    # Only recordSessionEnd writes the file (issue 158): one line per CLI
+    # Only recordSessionEnd writes the file: one line per CLI
     # session that ended with /exit or /logout, at the time of exit.
     end = {
         "agent_id": LETTA_AGENT,
@@ -11376,12 +11554,12 @@ def build_letta(home: Path) -> None:
     build_letta_stores(home)
 
 
-# Issue 202: the stores of the Parser plan of research/letta.md read since
-# the 2026-10-21 review of letta-code 2a46615d (permissions, channel
-# routing, scheduled tasks and their runs, an interrupted listener turn),
-# all on the server conversation LETTA_CONV so they add no session.
-LETTA_LEGACY_SETTINGS_MTIME = 1790856060  # 2026-10-01T12:01:00Z
-LETTA_LISTENER_MTIME = 1790856240  # 2026-10-01T12:04:00Z
+# The stores of the Parser plan of research/letta.md at letta-code 2a46615d
+# (permissions, channel routing, scheduled tasks and their runs, an
+# interrupted listener turn), all on the server conversation LETTA_CONV so
+# they add no session.
+LETTA_LEGACY_SETTINGS_MTIME = 1790856060  # 1 October 12:01:00 UTC
+LETTA_LISTENER_MTIME = 1790856240  # 1 October 12:04:00 UTC
 LETTA_TASK = "a1b2c3d4"
 LETTA_LISTENER_HASH = "0123456789abcdef01234567"
 LETTA_LISTENER_FILE = "%s_%s.json" % (LETTA_AGENT, LETTA_CONV)
@@ -11423,7 +11601,7 @@ def letta_run_records():
     return [
         dict(
             base,
-            ts=1790906400000,  # 2026-10-02T02:00:00Z
+            ts=1790906400000,  # 2 October 02:00:00 UTC
             status="ok",
             outcome="queued",
             reason="scheduled_time_matched",
@@ -11434,7 +11612,7 @@ def letta_run_records():
         ),
         dict(
             base,
-            ts=1790992800000,  # 2026-10-03T02:00:00Z
+            ts=1790992800000,  # 3 October 02:00:00 UTC
             status="skipped",
             outcome="missed",
             reason="scheduler_inactive",
@@ -11530,13 +11708,13 @@ def build_letta_stores(home: Path) -> None:
     _json(state / (LETTA_LISTENER_FILE + ".recovery-" + "ab" * 12), {})
 
 
-# Session sync (issue 153): the server-side session markers of
+# Session sync: the server-side session markers of
 # research/letta.md, Transcript stores. settings.json is rewritten with
 # `sessionsByServer` and `agents[]` beside the credential the parser must
 # never print, and a local-backend agent's transcript, which is not
 # server state. A project's settings.local.json is built by its test.
-LETTA_SETTINGS_MTIME = 1790856120  # 2026-10-01T12:02:00Z
-LETTA_LOCAL_SETTINGS_MTIME = 1790856180  # 2026-10-01T12:03:00Z
+LETTA_SETTINGS_MTIME = 1790856120  # 1 October 12:02:00 UTC
+LETTA_LOCAL_SETTINGS_MTIME = 1790856180  # 1 October 12:03:00 UTC
 LETTA_LOCAL_AGENT = "agent-local-77"
 LETTA_LOCAL_AGENT_CONV = "local-conv-2"
 
@@ -11571,8 +11749,10 @@ def build_letta_sync(home: Path) -> None:
 
 
 def letta_project_settings():
-    """A project's `.letta/settings.local.json`, which a test places in a
-    discovered project directory."""
+    """A project's `.letta/settings.local.json`.
+
+    A project's `.letta/settings.local.json`, which a test places in a discovered project directory.
+    """
     return {
         "permissions": {"allow": ["Bash(ls)"]},
         "sessionsByServer": {
@@ -11605,9 +11785,12 @@ CREATE TABLE session_model_usage (session_id TEXT NOT NULL, model TEXT NOT NULL,
 
 
 def hermes_records(cwd="/srv/proj"):
-    """The INSERT statements of research/hermes.md, Parser plan, with the shared
-    project path, plus a rewound turn kept as active=0, a multimodal user
-    message behind the NUL json prefix, and a subagent child session."""
+    """The INSERT statements of research/hermes.md, Parser plan, and three more.
+
+    The INSERT statements of research/hermes.md, Parser plan, with the shared project path, plus a
+    rewound turn kept as active=0, a multimodal user message behind the NUL json prefix, and a
+    subagent child session.
+    """
     return [
         "INSERT INTO schema_version VALUES (31)",
         "INSERT INTO sessions VALUES ('%s','cli','anthropic/claude-sonnet-4',NULL,1790856000.0,NULL,NULL,"
@@ -11643,8 +11826,11 @@ def hermes_records(cwd="/srv/proj"):
 
 
 def hermes_diverted_records():
-    """sessions/<id>.jsonl: message dicts appended while state.db was
-    replaced under a running process (hermes_state.py:429-444)."""
+    """sessions/<id>.jsonl.
+
+    Message dicts appended while state.db was replaced under a running process
+    (hermes_state.py:429-444).
+    """
     return [
         {"role": "user", "content": "show the env", "timestamp": 1790859600.0},
         {
@@ -11681,8 +11867,10 @@ HERMES_SESSION_JSONL_REL = ".hermes/sessions/%s.jsonl" % HERMES_SESSION
 
 
 def hermes_pruned_records(cwd="/srv/proj"):
-    """A session the live state.db no longer holds (pruned or deleted), as
-    the quick snapshots keep it."""
+    """A Hermes session the live state.db no longer holds.
+
+    A session the live state.db no longer holds (pruned or deleted), as the quick snapshots keep it.
+    """
     return [
         "INSERT INTO sessions VALUES ('%s','cli','anthropic/claude-sonnet-4',NULL,1789894800.0,"
         "1789894860.0,'user_exit','%s','main','%s','Audit logs')" % (HERMES_PRUNED, cwd, cwd),
@@ -11694,9 +11882,11 @@ def hermes_pruned_records(cwd="/srv/proj"):
 
 
 def hermes_snapshot_records(cwd="/srv/proj"):
-    """state-snapshots/<id>/state.db (hermes_cli/backup.py:1214-1420): the
-    live database as it was at 12:00:04, the main session's first four
-    messages and its first model, plus the pruned session."""
+    """state-snapshots/<id>/state.db (hermes_cli/backup.py:1214-1420).
+
+    The live database as it was at 12:00:04, the main session's first four messages and its first
+    model, plus the pruned session.
+    """
     live = hermes_records(cwd)
     return [
         live[0],
@@ -11711,9 +11901,11 @@ def hermes_snapshot_records(cwd="/srv/proj"):
 
 
 def hermes_session_jsonl_records():
-    """sessions/<main session>.jsonl: a divert of the main session, one
-    message the live state.db also holds (list content, not the NUL json
-    form) and one it lacks."""
+    """sessions/<main session>.jsonl.
+
+    A divert of the main session, one message the live state.db also holds (list content, not the
+    NUL json form) and one it lacks.
+    """
     return [
         {
             "role": "user",
@@ -11777,7 +11969,7 @@ def _a0_message(mid, from_ai, content, metadata=None):
     }
 
 
-# Session sync (issue 153): pastes/pending.json, the paste.rs links of
+# Session sync: pastes/pending.json, the paste.rs links of
 # `hermes debug share` uploads (hermes_cli/debug.py:38-39 at hermes-agent
 # 8b66a51, research/hermes.md, Other stores): expire_at is upload + 21600 s.
 HERMES_PASTES_REL = ".hermes/pastes/pending.json"
@@ -11796,7 +11988,7 @@ def build_hermes_pastes(home: Path) -> None:
     path.write_text(json.dumps(hermes_pastes_records()), encoding="utf-8")
 
 
-# Model-switch markers (issue 180) and malformed tool_calls (issue 182), in a
+# Model-switch markers and malformed tool_calls, in a
 # database of their own so the main fixture's rows stay as they are. Shapes
 # from hermes-agent 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872: the TUI
 # gateway appends a `role = 'user'` row with `display_kind = 'model_switch'`
@@ -11824,12 +12016,13 @@ HERMES_BAD_CALLS_ENTRY = (
 
 
 def hermes_switch_records():
-    """A TUI session (sessions.model rewritten to the last switch's model)
-    whose first API calls used claude-sonnet-4, then two switches: the first
-    marker, superseded, has active=0; the second names no provider, and a
-    third marker's text has an unknown form. Between them three assistant
-    messages whose tool_calls do not decode, with plain user turns before
-    and after."""
+    """A Hermes TUI session with two model switches and undecodable calls.
+
+    A TUI session (sessions.model rewritten to the last switch's model) whose first API calls used
+    claude-sonnet-4, then two switches: the first marker, superseded, has active=0; the second names
+    no provider, and a third marker's text has an unknown form. Between them three assistant
+    messages whose tool_calls do not decode, with plain user turns before and after.
+    """
     sid = HERMES_SWITCH
     marker = HERMES_SWITCH_MARKER
 
@@ -11886,10 +12079,9 @@ def build_hermes_switch(path: Path) -> None:
     _wal_db(path, HERMES_SWITCH_SCHEMA, hermes_switch_records())
 
 
-# Issue 208, source-derived from hermes-agent
-# 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872 (research/hermes.md, Parser plan);
-# no real install has shown any of these shapes. A gateway state.db of its
-# own: a Telegram session (sessions columns of gateway/session.py and
+# Source-derived from hermes-agent 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872
+# (research/hermes.md, Parser plan); no real install has shown these shapes.
+# A gateway state.db of its own: a Telegram session (sessions columns of gateway/session.py and
 # hermes_state_gateway.py:236-292, its /yolo flag in model_config) with the
 # three terminal approval outcomes (tools/terminal_tool.py:1062-1087), a
 # session imported from Claude Code (hermes_cli/foreign_sessions.py:254-260),
@@ -12292,7 +12484,7 @@ def hermes_trajectory_records():
     ]
 
 
-# A Hermes home in a Docker named volume (issue 181): the catalog's
+# A Hermes home in a Docker named volume: the catalog's
 # `hermes|*hermes*` DOCKER_VOLUMES line collects the volume whole with its
 # `_data` directory as the base (user `docker`). The container's Hermes home
 # is /opt/data (docker-compose.yml:36-37 at hermes-agent 8b66a51 mounts
@@ -12310,10 +12502,12 @@ HERMES_VOLUME_FILES = (
 
 
 def build_hermes_volume(root: Path, cwd="/opt/data/workspace") -> None:
-    """A collector output directory (collection.json, manifest.jsonl and
-    fs/) holding only the Hermes volume: the main fixture's state.db with
-    `cwd` as the project path, its divert, the debug-share list and a
-    config.yaml with no command_allowlist, which gives no rows."""
+    """Write a collector output directory holding only the Hermes volume.
+
+    A collector output directory (collection.json, manifest.jsonl and fs/) holding only the Hermes
+    volume: the main fixture's state.db with `cwd` as the project path, its divert, the debug-share
+    list and a config.yaml with no command_allowlist, which gives no rows.
+    """
     base = root / ("fs" + HERMES_VOLUME_HOME)
     _wal_db(base / "state.db", HERMES_SCHEMA, hermes_records(cwd))
     _jsonl(base / "sessions" / ("%s.jsonl" % HERMES_DIVERTED), hermes_diverted_records())
@@ -12339,11 +12533,13 @@ def build_hermes_volume(root: Path, cwd="/opt/data/workspace") -> None:
 
 
 def agent_zero_history():
-    """Agent 0's history from research/agent-zero.md, Parser plan, with the
-    assistant message carrying the id of the `agent` log item that streamed
-    it (agent.py:529-534) and its provider model, a second tool result
-    long enough to be saved to messages/1.txt, and a later assistant message
-    from another provider model (a model change)."""
+    """Agent Zero's history of research/agent-zero.md, Parser plan, extended.
+
+    Agent 0's history from research/agent-zero.md, Parser plan, with the assistant message carrying
+    the id of the `agent` log item that streamed it (agent.py:529-534) and its provider model, a
+    second tool result long enough to be saved to messages/1.txt, and a later assistant message from
+    another provider model (a model change).
+    """
     ai_reply = json.dumps(
         {
             "thoughts": ["list"],
@@ -12520,8 +12716,11 @@ def agent_zero_chat(logs=None, history=None):
 
 
 def build_agent_zero(home: Path) -> None:
-    """A docker-compose style install in ~/agent-zero, with the long tool
-    result file, and settings and secrets noise."""
+    """Write a docker-compose style Agent Zero install in `~/agent-zero`.
+
+    A docker-compose style install in ~/agent-zero, with the long tool result file, and settings and
+    secrets noise.
+    """
     usr = home / "agent-zero/usr"
     chat = usr / "chats" / AGENT_ZERO_CHAT
     chat.mkdir(parents=True, exist_ok=True)
@@ -12538,7 +12737,7 @@ def build_agent_zero(home: Path) -> None:
     )
 
 
-# Scheduler tasks (issue 204): `usr/scheduler/tasks.json` as the scheduler
+# Scheduler tasks: `usr/scheduler/tasks.json` as the scheduler
 # writes it, `{"tasks": [...]}` (agent0ai/agent-zero ff2a5b9
 # helpers/task_scheduler.py:163-175, 512-519, 584). The scheduled task is
 # bound to AGENT_ZERO_CHAT and its last result repeats the chat's response;
@@ -12588,18 +12787,16 @@ def agent_zero_tasks():
     ]
 
 
-# Standing settings, editor sessions and the connector (issue 204), built
-# only by AgentZeroTests. Shapes from agent0ai/agent-zero ff2a5b9
-# (plugins/_a0_acp/api/session.py:12-20, 131-150;
+# Standing settings, editor sessions and the connector, built only by
+# AgentZeroTests; source-derived, not observed on any real install. Shapes from
+# agent0ai/agent-zero ff2a5b9 (plugins/_a0_acp/api/session.py:12-20, 131-150;
 # plugins/_model_config/api/model_override.py:58;
 # plugins/_a0_connector/api/v1/model_switcher.py:27-46, 211;
-# plugins/_tool_access/default_config.yaml:1-5;
-# plugins/_orchestrator/default_config.yaml:7-37; helpers/plugins.py:60-61;
-# plugins/_telegram_integration/helpers/handler.py:57-64; agent.py:1325-1346;
-# helpers/tool_policy.py:197-208;
-# plugins/_infection_check/helpers/checker.py:180-197) and
-# agent0ai/a0-connector 3741c88 (src/agent_zero_cli/config.py:13-14).
-# Source-derived, not observed on any real install.
+# plugins/_tool_access/default_config.yaml:1-5; plugins/_orchestrator/default_config.yaml:7-37;
+# helpers/plugins.py:60-61; plugins/_telegram_integration/helpers/handler.py:57-64;
+# agent.py:1325-1346; helpers/tool_policy.py:197-208;
+# plugins/_infection_check/helpers/checker.py:180-197) and agent0ai/a0-connector
+# 3741c88 (src/agent_zero_cli/config.py:13-14).
 AGENT_ZERO_ACP_CHAT = "AcpChat1"
 AGENT_ZERO_ACP_REL = "agent-zero/usr/chats/%s/chat.json" % AGENT_ZERO_ACP_CHAT
 AGENT_ZERO_TG_DELETED = "GoneTg01"
@@ -12719,7 +12916,7 @@ def build_agent_zero_extras(home: Path) -> None:
     assert usr.is_dir()
 
 
-# Session sync (issue 153): a Telegram chat whose main agent chained a turn
+# Session sync: a Telegram chat whose main agent chained a turn
 # on a provider-stored response, and a subordinate agent in local mode
 # (ids recorded, nothing stored). Keys from research/agent-zero.md, Record schema
 # (agent.py:1062-1082, plugins/_telegram_integration/helpers/constants.py:5-15
@@ -12796,7 +12993,7 @@ def build_agent_zero_relayed(home: Path) -> None:
     path.write_text(json.dumps(agent_zero_relayed_chat()), encoding="utf-8")
 
 
-# Docker volume layout (issue 175): the README's `docker run -v a0_usr:/a0/usr`
+# Docker volume layout: the README's `docker run -v a0_usr:/a0/usr`
 # (Compose names it `<project>_a0_usr`) and the A0 Launcher's
 # `a0-launcher-<slug>-usr` volume are mounted at /a0/usr, and the collector
 # takes each volume's `_data` as the home, so the chats sit at `chats/` with
@@ -12823,9 +13020,11 @@ def agent_zero_legacy_chat():
 
 
 def build_agent_zero_volume(root: Path) -> Path:
-    """A collected (manifest) input of two Agent Zero volumes under `root`,
-    attributed as the collector writes volume rows (user `docker`, home the
-    volume's `_data`); returns `root`."""
+    """Write a collected input of two Agent Zero volumes under `root`.
+
+    A collected (manifest) input of two Agent Zero volumes under `root`, attributed as the collector
+    writes volume rows (user `docker`, home the volume's `_data`); returns `root`.
+    """
     files = {
         (AGENT_ZERO_VOLUME, AGENT_ZERO_VOLUME_REL): json.dumps(
             agent_zero_chat(), ensure_ascii=False
@@ -12869,8 +13068,11 @@ OI_ARCHIVED = (
 
 
 def open_interpreter_rollout_records(cwd="/srv/proj"):
-    """research/open-interpreter.md, Parser plan, with a reasoning item and a
-    task_complete event added."""
+    """The Open Interpreter records of its research document.
+
+    research/open-interpreter.md, Parser plan, with a reasoning item and a task_complete event
+    added.
+    """
     return [
         {
             "timestamp": "2026-10-01T10:00:00.000Z",
@@ -13023,7 +13225,7 @@ def build_open_interpreter(home: Path) -> None:
     build_open_interpreter_stores(home)
 
 
-# The fork's SQLite set (#122): OI_SESSION's thread row repeats its first
+# The fork's SQLite set: OI_SESSION's thread row repeats its first
 # prompt; OI_ORPHAN's rollout is gone and only the projection, in the
 # fork's schema without item lifecycle times, holds its turn.
 OI_ORPHAN = "0199a1b2-0000-7000-8000-000000000003"
@@ -13090,7 +13292,7 @@ def build_open_interpreter_stores(home: Path) -> None:
         ],
         lifecycle=False,
     )
-    # The fork's tracing log with a sent `/feedback` report for OI_SESSION (#153).
+    # The fork's tracing log with a sent `/feedback` report for OI_SESSION.
     write_codex_logs(interpreter / "logs_2.sqlite", codex_log_rows(OI_SESSION))
 
 
@@ -13273,7 +13475,7 @@ def openclaw_legacy_records(session_id=OPENCLAW_LEGACY):
     ]
 
 
-# Session sync (issue 153): session_nodes (src/state/openclaw-agent-schema.sql:16-49
+# Session sync: session_nodes (src/state/openclaw-agent-schema.sql:16-49
 # at 3b16db7, the columns the parser reads) with a `publicShare` grant
 # (src/config/sessions/types.ts:627-628) on the live session and none on the
 # reset one, and state/openclaw.sqlite backup_runs
@@ -13287,7 +13489,7 @@ OPENCLAW_NODES_SCHEMA = """
 CREATE TABLE session_nodes (session_key TEXT NOT NULL PRIMARY KEY, current_session_id TEXT NOT NULL,
   entry_json TEXT NOT NULL, updated_at INTEGER NOT NULL, created_via TEXT, label TEXT);
 """
-# Relay, past-use and deletion tables (issue 206): src/state/openclaw-agent-schema.sql
+# Relay, past-use and deletion tables: src/state/openclaw-agent-schema.sql
 # at 146284a, the columns the parser reads. The full-text index is read from the FTS5
 # content table `session_transcript_fts_content` (`id`, then `c0` to `c4` in the
 # column order of lines 809-816) as a plain table.
@@ -13345,12 +13547,14 @@ OPENCLAW_FTS_ONLY = "prompt only the search index still holds"
 
 
 def openclaw_past_use_inserts():
-    """A Telegram conversation linked to the live session and a Control UI
-    one linked to the reset session; a delivery with a reply; a cancelled
-    prompt that never reached the transcript, one consumed by a transcript
-    entry the database holds and one consumed by an entry it lost; two
-    full-text index rows, one of an entry the transcript holds; and a
-    memory tombstone for the deleted session."""
+    """The OpenClaw past-use rows: channels, deliveries and tombstones.
+
+    A Telegram conversation linked to the live session and a Control UI one linked to the reset
+    session; a delivery with a reply; a cancelled prompt that never reached the transcript, one
+    consumed by a transcript entry the database holds and one consumed by an entry it lost; two
+    full-text index rows, one of an entry the transcript holds; and a memory tombstone for the
+    deleted session.
+    """
 
     def prompt(text):
         return json.dumps({"role": "user", "content": [{"type": "text", "text": text}]})
@@ -13385,10 +13589,12 @@ def openclaw_past_use_inserts():
 
 
 def openclaw_state_inserts():
-    """Permission records of state/openclaw.sqlite (src/state/openclaw-state-schema.sql
-    at 146284a, lines 356-475, 512-529 and 794-801) and one inbound channel
-    message (lines 1273-1294); the exec approvals file keeps the socket token,
-    which the parser never reads."""
+    """Permission records of OpenClaw's `state/openclaw.sqlite`.
+
+    Permission records of state/openclaw.sqlite (src/state/openclaw-state-schema.sql at 146284a,
+    lines 356-475, 512-529 and 794-801) and one inbound channel message (lines 1273-1294); the exec
+    approvals file keeps the socket token, which the parser never reads.
+    """
     raw = {
         "version": 1,
         "socket": {"path": "/home/alice/.openclaw/exec.sock", "token": OPENCLAW_SOCKET_TOKEN},
@@ -13480,9 +13686,11 @@ def openclaw_node_inserts():
 
 
 def openclaw_backup_runs():
-    """(id, created_at, archive_path, status, manifest): an offsite archive
-    upload and a pushed Git backup, which yield rows, and a Git backup whose
-    push failed, a local archive and a failed upload, which do not."""
+    """(id, created_at, archive_path, status, manifest).
+
+    An offsite archive upload and a pushed Git backup, which yield rows, and a Git backup whose push
+    failed, a local archive and a failed upload, which do not.
+    """
     location = {
         "name": "r2-offsite",
         "provider": "cloudflare-r2",
@@ -13649,7 +13857,7 @@ def build_openclaw(home: Path) -> None:
     )
     name = OPENCLAW_DELETED + ".jsonl.deleted.2026-10-02T08-00-00.000Z"
     (sessions / (name + ".zst")).write_bytes(_openclaw_zstd(deleted))
-    # Secondary copies (issue 122): a pre-compaction checkpoint holds the
+    # Secondary copies: a pre-compaction checkpoint holds the
     # entries before the compaction; a pre-doctor branch-repair backup holds
     # the whole file before the repair, with an abandoned branch the
     # repaired file dropped.
@@ -13690,8 +13898,11 @@ NANOBOT_HISTORY_REL = ".nanobot/workspace/memory/history.jsonl"
 
 
 def nanobot_records():
-    """The research document's sample file (Parser plan), plus a hidden-history
-    message and a provider_state line."""
+    """The nanobot research sample file and two more lines.
+
+    The research document's sample file (Parser plan), plus a hidden-history message and a
+    provider_state line.
+    """
     return [
         {
             "_type": "metadata",
@@ -13790,7 +14001,7 @@ def build_nanobot(home: Path) -> None:
     build_nanobot_sweep(home)
 
 
-# nanobot permission, relay, model and run-record sources (issue 207), from
+# nanobot permission, relay, model and run-record sources, from
 # HKUDS/nanobot at 909b277: config/schema.py:428-458,
 # agent/tools/shell_config.py:11-28, channels/base.py:244-257,
 # pairing/store.py:73-85 and 130-160, command/builtin.py:405-448,
@@ -13818,8 +14029,11 @@ NANOBOT_SWEEP_RELS = {
 
 
 def nanobot_config():
-    """`config.json` with the permission settings the parser reads, a channel
-    without `allowFrom`, and a provider key it must never show."""
+    """The nanobot `config.json` fixture.
+
+    `config.json` with the permission settings the parser reads, a channel without `allowFrom`, and
+    a provider key it must never show.
+    """
     return {
         "providers": {"openai": {"apiKey": NANOBOT_TOKEN}},
         "tools": {
@@ -13841,10 +14055,12 @@ def nanobot_config():
 
 
 def build_nanobot_sweep(home: Path) -> None:
-    """A `unified:default` session answering through Telegram with two
-    `/model` switches, `pairing.json`, a cron and a trigger run record of a
-    Slack session that is gone, the noise beside them, and the WebUI sidebar
-    cache."""
+    """Write a nanobot Telegram session with model switches and its stores.
+
+    A `unified:default` session answering through Telegram with two `/model` switches,
+    `pairing.json`, a cron and a trigger run record of a Slack session that is gone, the noise
+    beside them, and the WebUI sidebar cache.
+    """
     switch = "Switched model preset to `%s`.\n- Scope: current session\n- Model: `%s`\n"
     _jsonl(
         home / NANOBOT_UNIFIED_REL,
@@ -13983,7 +14199,7 @@ def build_nanobot_sweep(home: Path) -> None:
     )
 
 
-# nanobot WebUI mirror and CLI history (issue 122). The host is taken to be
+# nanobot WebUI mirror and CLI history. The host is taken to be
 # at UTC+2: the session file's local times read two hours later than the
 # WebUI's true-UTC created_at_ms.
 NANOBOT_WEBUI_KEY = "websocket:chat-1"
@@ -14074,10 +14290,12 @@ def nanobot_webui_records():
 
 
 def build_nanobot_webui(home: Path) -> None:
-    """A WebUI chat whose session file holds only the second turn (a `/new`
-    emptied the first), its WebUI mirror (the first turn rotated into a
-    segment), and the CLI history with one prompt of the legacy cli:direct
-    session and one whose session is gone."""
+    """Write a nanobot WebUI chat, its mirror and the CLI history.
+
+    A WebUI chat whose session file holds only the second turn (a `/new` emptied the first), its
+    WebUI mirror (the first turn rotated into a segment), and the CLI history with one prompt of the
+    legacy cli:direct session and one whose session is gone.
+    """
     _jsonl(
         home / NANOBOT_WEBUI_SESSION_REL,
         [
@@ -14146,7 +14364,7 @@ def build_nanobot_webui(home: Path) -> None:
     )
 
 
-# nanobot's SQLite session store (issue 178), from the schema and import of
+# nanobot's SQLite session store, from the schema and import of
 # HKUDS/nanobot at 909b277 (nanobot/session/sqlite_store.py:44-73, 185-200;
 # nanobot/session/jsonl_migration.py:155-197, 221-232); source-derived, no
 # real install. A second namespace holds the database, the frozen JSONL of
@@ -14186,8 +14404,7 @@ CREATE INDEX sessions_updated ON sessions(updated_at DESC);
 
 
 def nanobot_db_messages():
-    """The discord:555 messages in `position` order; the first four are the
-    frozen JSONL's."""
+    """The discord:555 messages in `position` order; the first four are the frozen JSONL's."""
     return [
         {"role": "user", "content": "rotate the api key", "timestamp": "2026-10-03T11:00:01"},
         {
@@ -14316,8 +14533,7 @@ CODY_TOKEN = "sgp_cody_secret_not_real"
 
 
 def cody_records():
-    """The JetBrains AccountKeyedChatHistory: the research fixture chat and
-    its agentic variant."""
+    """The JetBrains AccountKeyedChatHistory: the research fixture chat and its agentic variant."""
     chat = {
         "id": CODY_CHAT,
         "chatTitle": "Fix flaky test",
@@ -14457,7 +14673,7 @@ def build_cody(home: Path) -> None:
     )
 
 
-# Deep Cody terminal confirmations (issue 169), from sourcegraph/cody-public-snapshot
+# Deep Cody terminal confirmations, from sourcegraph/cody-public-snapshot
 # at 8e20ac6c1460c08b0db581c0204658112a246eda: `CodyTool.ts:166-181` adds one
 # `confirmation` step per command (id `<tool tag>-<uuid>`, title the tool's title,
 # content the command); `ProcessManager.ts:51-61` completes a refused one with
@@ -14523,7 +14739,7 @@ def cody_deep_records():
     return {CODY_ACCOUNT: {"chat": {CODY_DEEP_CHAT: chat}}}
 
 
-# Settings, model preferences and the legacy JetBrains history (issue 197),
+# Settings, model preferences and the legacy JetBrains history,
 # from sourcegraph/cody-public-snapshot at 8e20ac6c1460c08b0db581c0204658112a246eda:
 # the settings keys from `vscode/package.json:1136-1140` and `1176-1213` and the MCP
 # server schema `MCPManager.ts:20-45`; `cody-model-preferences` from
@@ -14629,9 +14845,12 @@ CODY_LEGACY_XML = """<project version="4">
 
 
 def build_cody_settings(home: Path) -> None:
-    """Write the editor settings, the JetBrains model preferences and the
-    VS Code row's preferences; not part of `build_home`, a test adds them.
-    A keybindings file beside settings.json is noise the parser skips."""
+    """Write the Cody editor settings and model preferences.
+
+    Write the editor settings, the JetBrains model preferences and the VS Code row's preferences;
+    not part of `build_home`, a test adds them. A keybindings file beside settings.json is noise the
+    parser skips.
+    """
     path = home / CODY_SETTINGS_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(CODY_SETTINGS_TEXT, encoding="utf-8")
@@ -14659,8 +14878,10 @@ TWINNY_VSCDB_REL = ".vscode-server/data/User/globalStorage/state.vscdb"
 
 
 def twinny_records():
-    """The `rjmacarthy.twinny` global state value: the research fixture plus
-    an unsaved active conversation, a failed tool step and provider keys."""
+    """The `rjmacarthy.twinny` global state value.
+
+    The research fixture plus an unsaved active conversation, a failed tool step and provider keys.
+    """
     return {
         "twinny.conversations": {
             TWINNY_CONVERSATION: {
@@ -14778,12 +14999,13 @@ TWINNY_SAID_REL = ".config/Code/User/globalStorage/state.vscdb"
 
 
 def twinny_said_records():
-    """A 4.3.15 conversation with a message the user sent mid-reply. Since
-    4.3.5 such a message is saved among the reply's `toolSteps[]` as a step
-    `{id: "said.<id>", name: "said", summary: <text>, status: "done",
-    said: true}` (src/extension/chat/tool-steps.ts:101-104 and
-    src/common/types.ts:129-133 at twinnydotdev/twinny 0337b265). The second
-    `said` step has no summary, the third a non-string one."""
+    """A 4.3.15 conversation with a message the user sent mid-reply.
+
+    Since 4.3.5 such a message is saved among the reply's `toolSteps[]` as a step `{id: "said.<id>",
+    name: "said", summary: <text>, status: "done", said: true}`
+    (src/extension/chat/tool-steps.ts:101-104 and src/common/types.ts:129-133 at twinnydotdev/twinny
+    0337b265). The second `said` step has no summary, the third a non-string one.
+    """
     return {
         "twinny.conversations": {
             TWINNY_SAID_CONVERSATION: {
@@ -14839,13 +15061,15 @@ def twinny_said_records():
 
 
 def build_twinny_said(home: Path) -> None:
-    """Write `twinny_said_records()` to a plain state.vscdb in a home of its
-    own (not `build_home`'s), so the main Twinny fixture's rows and the
-    shared homes' session counts are unchanged."""
+    """Write `twinny_said_records()` to a state.vscdb in a home of its own.
+
+    Write `twinny_said_records()` to a plain state.vscdb in a home of its own (not `build_home`'s),
+    so the main Twinny fixture's rows and the shared homes' session counts are unchanged.
+    """
     _vscdb(home / TWINNY_SAID_REL, {"rjmacarthy.twinny": twinny_said_records()})
 
 
-# Twinny 4.3.15 records beside the conversations (#154, #199), from
+# Twinny 4.3.15 records beside the conversations, from
 # research/twinny.md (twinnydotdev/twinny at 0337b265): the standing grants
 # and team policy in the global state value, the per-reply agent-changes
 # record, the Twinny log channel and the review tab's repository in the
@@ -14862,7 +15086,7 @@ TWINNY_415_CHANGES_REL = (
 TWINNY_415_LOG_DIR = ".config/Code/logs/20261003T120000/window1/exthost/rjmacarthy.twinny"
 TWINNY_415_LOG_REL = TWINNY_415_LOG_DIR + "/Twinny.log"
 TWINNY_415_LOG_OLD_REL = TWINNY_415_LOG_DIR + "/Twinny.log_1"
-TWINNY_415_MTIME = 1791029400  # 2026-10-03T12:10:00Z, the state files' mtime
+TWINNY_415_MTIME = 1791029400  # 3 October 12:10:00 UTC, the state files' mtime
 TWINNY_415_EMAIL = "dev@example.invalid"
 # Two entries and a Debug block, in VS Code's file log format
 # (src/vs/platform/log/common/fileLog.ts:62-101 at microsoft/vscode 4d22f4f9)
@@ -14881,9 +15105,11 @@ TWINNY_415_LOG = (
 
 
 def twinny_415_records():
-    """The global state value: one conversation whose reply changed two
-    files, the standing grants, a team policy and the ChatGPT plan profile
-    (an identity the parser must never emit)."""
+    """The global state value.
+
+    One conversation whose reply changed two files, the standing grants, a team policy and the
+    ChatGPT plan profile (an identity the parser must never emit).
+    """
     return {
         "twinny.conversations": {
             TWINNY_415_CONVERSATION: {
@@ -14942,8 +15168,10 @@ def twinny_415_records():
 
 
 def twinny_415_change_record():
-    """The agent-changes record of the reply above (reply-changes.ts:35-47):
-    `src/a.ts` since put back, so `undone`."""
+    """The agent-changes record of the reply above (reply-changes.ts:35-47).
+
+    `src/a.ts` since put back, so `undone`.
+    """
     return {
         "id": TWINNY_415_CHANGE,
         "root": "/srv/proj",
@@ -14972,9 +15200,11 @@ def twinny_415_change_record():
 
 
 def build_twinny_415(home: Path) -> None:
-    """Write the 4.3.15 stores to a home of their own, plus a noise file the
-    parser must not want (the workspace's workspace.json and the extension
-    host's own log)."""
+    """Write the Twinny 4.3.15 stores to a home of their own.
+
+    Write the 4.3.15 stores to a home of their own, plus a noise file the parser must not want (the
+    workspace's workspace.json and the extension host's own log).
+    """
     _vscdb(home / TWINNY_415_REL, {"rjmacarthy.twinny": twinny_415_records()})
     _vscdb(
         home / TWINNY_415_WS_DB_REL,
@@ -15147,9 +15377,12 @@ def pearai_api_records(start=1791036000000):
 
 
 def pearai_permission_records(start):
-    """Three Roo 3.15.3 approval exchanges (PearAI-Roo-Code at 0b6df736,
-    src/core/prompts/responses.ts:8-14, src/core/Cline.ts:1342-1386): a
-    denial with feedback, a bare denial and an approval with a note."""
+    """Three Roo 3.15.3 approval exchanges of PearAI.
+
+    Three Roo 3.15.3 approval exchanges (PearAI-Roo-Code at 0b6df736,
+    src/core/prompts/responses.ts:8-14, src/core/Cline.ts:1342-1386): a denial with feedback, a bare
+    denial and an approval with a note.
+    """
 
     def call(timestamp, body):
         return {"role": "assistant", "content": [{"type": "text", "text": body}], "ts": timestamp}
@@ -15193,8 +15426,10 @@ def pearai_permission_records(start):
 
 
 def pearai_permission_ui_asks(start):
-    """The ui_messages.json asks of the same three calls, each before the API
-    message that answers it."""
+    """The ui_messages.json asks of the three PearAI calls.
+
+    The ui_messages.json asks of the same three calls, each before the API message that answers it.
+    """
     return [
         {"ts": start + 1000, "type": "ask", "ask": "tool", "text": '{"tool":"newFileCreated"}'},
         {"ts": start + 4000, "type": "ask", "ask": "command", "text": "rm -rf build"},
@@ -15226,8 +15461,11 @@ def pearai_log_completion(text):
 
 
 def pearai_output_log():
-    """Three requests: a turn of the fixture session, a turn whose session is
-    gone, and an autocomplete request with another model."""
+    """Three requests.
+
+    A turn of the fixture session, a turn whose session is gone, and an autocomplete request with
+    another model.
+    """
     return "".join(
         (
             pearai_log_settings(
@@ -15361,7 +15599,7 @@ MUSE_DIR = ".local/share/muse/sessions/2026/10/01/%s/" % MUSE_SESSION
 MUSE_REL = MUSE_DIR + "session.jsonl"
 MUSE_CHILD_REL = MUSE_DIR + "subagent/%s/session.jsonl" % MUSE_CHILD
 MUSE_HISTORY_REL = ".local/share/muse/tui-history.jsonl"
-MUSE_T0 = 1790845200000000  # 2026-10-01T09:00:00Z in microseconds
+MUSE_T0 = 1790845200000000  # 1 October 09:00:00 UTC in microseconds
 
 
 def _muse_env(sid, seq, t_us, ptype, payload, version=1, cause=None, group="8000"):
@@ -15463,13 +15701,14 @@ def _muse_model(sid, seq, t_us, run_id, group="8000"):
 
 
 def muse_session_records():
-    """The main fixture of research/muse-code.md, Parser plan, less the cut
-    line (tests append one with `write_bad_line`), plus a
-    `session.opened.observed` record with a `security_mode`, an automated
-    review verdict between the approval request and its decision, and a
-    `/model` change after the run (issues 96 and 97). The `security_mode`,
-    `outcome`, `risk_level` and `user_authorization` values are synthetic:
-    the research records the keys, not their values."""
+    """The main Muse fixture of research/muse-code.md, Parser plan, extended.
+
+    The main fixture of research/muse-code.md, Parser plan, less the cut line (tests append one with
+    `write_bad_line`), plus a `session.opened.observed` record with a `security_mode`, an automated
+    review verdict between the approval request and its decision, and a `/model` change after the
+    run. The `security_mode`, `outcome`, `risk_level` and `user_authorization` values are synthetic:
+    the research records the keys, not their values.
+    """
     session, run, start = MUSE_SESSION, MUSE_RUN, MUSE_T0
     bash = {
         "chunk_id": "exec-1-1",
@@ -16104,7 +16343,7 @@ def build_ollama(home: Path) -> None:
     ollama.mkdir(parents=True, exist_ok=True)
     (ollama / "history").write_text("why is the sky blue\n/set nohistory\n/bye\n", encoding="utf-8")
     # The launch configuration: the claude-desktop integration's automode key
-    # is a standing permission setting (issue 188; research/ollama.md,
+    # is a standing permission setting (research/ollama.md,
     # Permission rows), the claude integration has none.
     (ollama / "config.json").write_text(OLLAMA_CONFIG, encoding="utf-8")
     # The Claude Desktop third-party profile the launcher writes, under a
@@ -16172,7 +16411,7 @@ CD_SCHED_REL = "%s/scheduled-tasks.json" % CD_COWORK_ORG
 CD_WORKTREES_REL = "%s/git-worktrees.json" % CD_BASE
 CD_SPACES_REL = "%s/remote-session-spaces.json" % CD_COWORK_ORG
 CD_REMOTE_SESSION = "0123456789abcdef0123456789abcdef"
-CD_SPACES_MTIME = 1790848800  # 2026-10-01T10:00:00Z
+CD_SPACES_MTIME = 1790848800  # 1 October 10:00:00 UTC
 
 
 def claude_desktop_record():
@@ -16192,7 +16431,7 @@ def claude_desktop_record():
         "initialMessage": "why does the test fail?",
         "sessionType": "agent",
         "emailAddress": "user@example.invalid",
-        # Cowork grants (issue 97): "arrays and objects" in the bundle, the
+        # Cowork grants: "arrays and objects" in the bundle, the
         # type of each key not determined; these values are fixture only.
         "approvedToolNames": ["Bash", "WebFetch"],
         "webFetchAllowedUrls": ["https://example.invalid/docs"],
@@ -16204,8 +16443,10 @@ def claude_desktop_record():
 
 
 def claude_desktop_transcript_records():
-    """The claude-code fixture as the Cowork VM's CLI writes it: guest cwd,
-    `entrypoint` local-agent and the record's `cliSessionId`."""
+    """The claude-code fixture as the Cowork VM's CLI writes it.
+
+    Guest cwd, `entrypoint` local-agent and the record's `cliSessionId`.
+    """
     out = []
     for record in claude_session_records(cwd=CD_GUEST_CWD):
         record = dict(record)
@@ -16222,11 +16463,12 @@ def _cd_hmac(number: int) -> str:
 
 
 def claude_desktop_audit_records():
-    """The research document's Parser plan, verbatim (HMAC values and tool ids are
-    placeholders). Line 1's prompt has no transcript twin; line 8's and the
-    `init` model repeat the transcript's rows (issue 122). The `npm test`
-    call is not the transcript's, so its id is not the transcript's
-    `toolu_01`: tool rows pair on their id."""
+    """The research document's Parser plan, verbatim (HMAC values and tool ids are placeholders).
+
+    Line 1's prompt has no transcript twin; line 8's and the `init` model repeat the transcript's
+    rows. The `npm test` call is not the transcript's, so its id is not the transcript's `toolu_01`:
+    tool rows pair on their id.
+    """
     sid = CD_CLI_SESSION
     return [
         {
@@ -16337,7 +16579,9 @@ def claude_desktop_audit_records():
 
 def claude_desktop_fallback_records():
     """An audit log whose session dir has no transcript: every line counts.
-    Line numbers are what ClaudeDesktopTests.test_audit_fallback asserts."""
+
+    Line numbers are what ClaudeDesktopTests.test_audit_fallback asserts.
+    """
     sid = CD_FALLBACK_CLI
 
     def line(number, second, **rec):
@@ -16470,7 +16714,7 @@ def claude_desktop_code_record():
         "isArchived": False,
         "title": "Fix the failing test",
         "permissionMode": "default",
-        # Per-session grants (issue 93): the entries' inner shape is not
+        # Per-session grants: the entries' inner shape is not
         # determined (real installs showed both lists empty); fixture only.
         "effort": "high",
         "alwaysAllowedReasons": ["Bash(npm test)"],
@@ -16561,8 +16805,10 @@ def claude_desktop_worktrees():
 
 
 def claude_desktop_remote_spaces():
-    """The research document's Record schema: `entries[]` with `sessionId` (32 hex) and
-    `folders[]`; observed shape, fixture values."""
+    """The research document's Record schema.
+
+    `entries[]` with `sessionId` (32 hex) and `folders[]`; observed shape, fixture values.
+    """
     return {"entries": [{"sessionId": CD_REMOTE_SESSION, "folders": ["/srv/proj", "/srv/docs"]}]}
 
 
@@ -16598,10 +16844,10 @@ def build_claude_desktop(home: Path) -> None:
     )
 
 
-# GitHub Copilot CLI (issue 50): the sample records of
+# GitHub Copilot CLI: the sample records of
 # research/copilot-cli.md, Parser plan, verbatim, plus the `/model` switch to
-# Auto of the Linux round (2026-10-16): a `model_picker` change and its two
-# `session.info` lines (issue 133). The last line is cut mid-write, as a log
+# Auto seen on a Linux install: a `model_picker` change and its two
+# `session.info` lines. The last line is cut mid-write, as a log
 # whose session was still running.
 COPILOT_SESSION = "5e55a0a1-0000-4000-8000-000000000001"
 COPILOT_DIR = ".copilot/session-state/%s/" % COPILOT_SESSION
@@ -16617,7 +16863,7 @@ COPILOT_SIDEBAR_REL = (
     "6b9af143446a411aefa3edb76e4693799bd7513e7ed8d919962d6713d3d3b972.json"
 )
 COPILOT_LOG_REL = ".copilot/logs/process-1790845199000-4242.log"
-COPILOT_SETTINGS_MTIME = 1790856000  # 2026-10-01T12:00:00Z
+COPILOT_SETTINGS_MTIME = 1790856000  # 1 October 12:00:00 UTC
 
 COPILOT_EVENT_LINES = [
     '{"id":"e0000000-0000-4000-8000-000000000001","parentId":null,"timestamp":"2026-10-01T09:00:00.000Z","type":"session.start","data":{"sessionId":"5e55a0a1-0000-4000-8000-000000000001","version":1,"producer":"copilot-agent","copilotVersion":"1.0.98","startTime":"2026-10-01T08:59:59.000Z","context":{"cwd":"/srv/proj","gitRoot":"/srv/proj","branch":"main"},"alreadyInUse":false,"remoteSteerable":false,"contextTier":null}}',
@@ -16697,7 +16943,7 @@ COPILOT_STORE_ROWS = [
 COPILOT_MC_TASK = "1c1c1c1c-0000-4000-8000-000000000001"
 COPILOT_MC_SESSION = "2d2d2d2d-0000-4000-8000-000000000001"
 COPILOT_MC_LAST_EVENT = "3e3e3e3e-0000-4000-8000-000000000001"
-COPILOT_WORKSPACE_MTIME = 1790845290  # 2026-10-01T09:01:30Z
+COPILOT_WORKSPACE_MTIME = 1790845290  # 1 October 09:01:30 UTC
 COPILOT_WORKSPACE_YAML = """\
 id: 5e55a0a1-0000-4000-8000-000000000001
 cwd: /srv/proj
@@ -16729,10 +16975,12 @@ COPILOT_LOG = """\
 
 
 def copilot_snapshot_index() -> dict:
-    """`rewind-file-snapshots/index.json` with the snapshot taken before the
-    first prompt (its `eventId` is that `user.message` line's `id`), in the
-    key layout of research/copilot-cli.md, Other stores; the file key is a
-    synthetic hex digest and the images are left out."""
+    """Copilot CLI's `rewind-file-snapshots/index.json`.
+
+    `rewind-file-snapshots/index.json` with the snapshot taken before the first prompt (its
+    `eventId` is that `user.message` line's `id`), in the key layout of research/copilot-cli.md,
+    Other stores; the file key is a synthetic hex digest and the images are left out.
+    """
     return {
         "schema": 1,
         "snapshots": [
@@ -16804,7 +17052,7 @@ def build_copilot_cli(home: Path) -> None:
     )
 
 
-# GitHub Copilot Desktop (issue 147): the app's own store `.copilot/data.db`,
+# GitHub Copilot Desktop: the app's own store `.copilot/data.db`,
 # with the table and column names of research/copilot-desktop.md, Record schema
 # (a subset of each table's columns, names exact). The project session's id
 # is the Copilot CLI fixture's session, since the app's sessions are the
@@ -16816,18 +17064,18 @@ COPILOT_DESKTOP_DB_REL = ".copilot/data.db"
 COPILOT_DESKTOP_CHAT = "5d404e14-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_FORK = "9f9f9f9f-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_WORKTREE = "/home/alice/.copilot/repos/copilot-worktrees/proj/octo-user-happy-otter"
-COPILOT_DESKTOP_MTIME = 1790850600  # 2026-10-01T10:30:00Z
-# Checkpoint refs in the app's clone of the project (issue 147): one well
+COPILOT_DESKTOP_MTIME = 1790850600  # 1 October 10:30:00 UTC
+# Checkpoint refs in the app's clone of the project: one well
 # formed, at the project session's checkpoint, and one malformed.
 COPILOT_DESKTOP_REF_DIR = ".copilot/repos/proj/.git/refs/copilot/checkpoints/" + COPILOT_SESSION
 COPILOT_DESKTOP_REF_REL = (
     COPILOT_DESKTOP_REF_DIR + "/00000000000000000001/e0000000-0000-4000-8000-000000000004"
 )
-COPILOT_DESKTOP_REF_MTIME = 1790845201  # 2026-10-01T09:00:01Z
+COPILOT_DESKTOP_REF_MTIME = 1790845201  # 1 October 09:00:01 UTC
 COPILOT_DESKTOP_BAD_REF_REL = (
     COPILOT_DESKTOP_REF_DIR + "/00000000000000000002/e0000000-0000-4000-8000-000000000020"
 )
-COPILOT_DESKTOP_BAD_REF_MTIME = 1790845230  # 2026-10-01T09:00:30Z
+COPILOT_DESKTOP_BAD_REF_MTIME = 1790845230  # 1 October 09:00:30 UTC
 COPILOT_DESKTOP_HEAD_REF_REL = ".copilot/repos/proj/.git/refs/heads/main"
 
 COPILOT_DESKTOP_SCHEMA = """
@@ -16903,8 +17151,11 @@ CREATE TABLE session_deletion_intents (session_id TEXT PRIMARY KEY NOT NULL, cre
 
 
 def copilot_desktop_records() -> list[str]:
-    """The INSERTs of the fixture `data.db`, in the order the parser reads
-    the tables; `build_copilot_desktop` writes them to the -wal sidecar."""
+    """The INSERTs of the Copilot Desktop fixture `data.db`.
+
+    The INSERTs of the fixture `data.db`, in the order the parser reads the tables;
+    `build_copilot_desktop` writes them to the -wal sidecar.
+    """
     session, chat, fork = COPILOT_SESSION, COPILOT_DESKTOP_CHAT, COPILOT_DESKTOP_FORK
     return [
         "INSERT INTO accounts VALUES ('acc1', 'octo-user', 'Octo User', 1, 'github.com',"
@@ -16993,8 +17244,8 @@ def build_copilot_desktop(home: Path) -> None:
             os.utime(ref, (mtime, mtime))
 
 
-# The ChatGPT desktop app's `.codex/sqlite/codex-dev.db` (issue 49): the
-# `local_thread_catalog` column names seen on the macOS install of 2026-10-18
+# The ChatGPT desktop app's `.codex/sqlite/codex-dev.db`: the
+# `local_thread_catalog` column names seen on a macOS install
 # (`pragma table_info`, research/chatgpt-desktop.md, Record schema; the column
 # types other than the REAL times were not recorded) and its
 # hosts table. The rows live only in the -wal sidecar, as on a running app.
@@ -17015,21 +17266,23 @@ CREATE TABLE local_thread_catalog_hosts (host_id TEXT PRIMARY KEY, host_kind TEX
 
 
 def chatgpt_desktop_records() -> list[str]:
-    """The INSERTs of the fixture `codex-dev.db`: the app's Codex thread
-    (a `vscode` row, which the parser skips), then two account
-    conversations, one with a title and an empty origin, one with no
-    title and origin `tpp`. Times are REAL epoch seconds with a fraction."""
+    """The INSERTs of the fixture `codex-dev.db`.
+
+    The app's Codex thread (a `vscode` row, which the parser skips), then two account conversations,
+    one with a title and an empty origin, one with no title and origin `tpp`. Times are REAL epoch
+    seconds with a fraction.
+    """
     return [
         "INSERT INTO local_thread_catalog_hosts VALUES ('local', 'local')",
         "INSERT INTO local_thread_catalog_hosts VALUES ('%s', 'chatgpt')" % CHATGPT_HOST,
         "INSERT INTO local_thread_catalog VALUES ('local', '%s', 'Fix the tests',"
         " 1791367200.0, 1791367260.0, '/srv/proj', 'vscode', NULL, 'openai', NULL, 5, 0,"
         " 'user', 1791367260.0, NULL, NULL, NULL, NULL, NULL)" % CODEX_SESSION,
-        # 2026-10-01T10:00:00.250Z and 2026-10-01T11:00:00.500Z.
+        # 1 October 10:00:00.250 UTC and 1 October 11:00:00.500 UTC.
         "INSERT INTO local_thread_catalog VALUES ('%s', '%s', 'Plan a trip',"
         " 1790848800.25, 1790852400.5, NULL, 'chatgpt', NULL, NULL, NULL, 1, 0, NULL,"
         " 1790852400.5, NULL, NULL, '', NULL, NULL)" % (CHATGPT_HOST, CHATGPT_CONVERSATION),
-        # 2026-10-01T09:00:00.000Z and 2026-10-01T09:30:00.000Z.
+        # 1 October 09:00:00.000 UTC and 1 October 09:30:00.000 UTC.
         "INSERT INTO local_thread_catalog VALUES ('%s', '%s', NULL,"
         " 1790845200.0, 1790847000.0, NULL, 'chatgpt', NULL, NULL, NULL, 1, 0, NULL,"
         " 1790847000.0, NULL, NULL, 'tpp', NULL, NULL)" % (CHATGPT_HOST, CHATGPT_TPP_CONVERSATION),
@@ -17045,12 +17298,12 @@ def build_chatgpt_desktop(home: Path) -> None:
     prefs.write_bytes(b"bplist00not a real plist")
 
 
-# Cursor IDE (issue 51, research/cursor.md, Fixtures). Composer ids are
+# Cursor IDE (research/cursor.md, Fixtures). Composer ids are
 # invented UUIDs: a live conversation with the 3.25.9 inline header list,
 # an archived one with 3.26.13 header chunks, a deleted one that only its
 # header row, an agentKv blob, its transcript and ai-tracking row still
 # name, a draft with an unsent message and a header-only draft. Two cloud
-# agents (`bc-<uuid>`, Windows 3.26.13, issue 236): one with a cached
+# agents (`bc-<uuid>`, Windows 3.26.13): one with a cached
 # conversation in conversation-search.db, one in the agent list only.
 CURSOR_LIVE = "c0000001-0000-4000-8000-000000000001"
 CURSOR_CLOUD = "bc-e0000001-0000-4000-8000-000000000001"
@@ -17066,8 +17319,8 @@ CURSOR_DELETED = "c0000003-0000-4000-8000-000000000003"
 CURSOR_DRAFT = "d0000001-0000-4000-8000-000000000001"
 CURSOR_EMPTY_HEAD = "d0000002-0000-4000-8000-000000000002"
 CURSOR_WORKSPACE = "0123456789abcdef0123456789abcdef"
-CURSOR_T0 = 1790848800000  # 2026-10-01T10:00:00Z, epoch ms
-CURSOR_MTIME = 1790863200  # 2026-10-01T14:00:00Z, the settings files' mtime
+CURSOR_T0 = 1790848800000  # 1 October 10:00:00 UTC, epoch ms
+CURSOR_MTIME = 1790863200  # 1 October 14:00:00 UTC, the settings files' mtime
 CURSOR_STATE_REL = "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
 CURSOR_SEARCH_REL = "Library/Application Support/Cursor/User/globalStorage/conversation-search.db"
 CURSOR_TRANSCRIPT_REL = ".cursor/projects/srv-proj/agent-transcripts/%s/%s.jsonl" % (
@@ -17093,8 +17346,11 @@ CREATE TABLE composerHeaders (composerId TEXT PRIMARY KEY, workspaceId TEXT, cre
 
 
 def _cursor_iso(offset_ms: int) -> str:
-    """ISO 8601 with milliseconds and a Z, as bubbles and header entries
-    write `createdAt`, `offset_ms` after `CURSOR_T0`."""
+    """Return the ISO 8601 time `offset_ms` after `CURSOR_T0`.
+
+    ISO 8601 with milliseconds and a Z, as bubbles and header entries write `createdAt`, `offset_ms`
+    after `CURSOR_T0`.
+    """
     moment = datetime.datetime.fromtimestamp((CURSOR_T0 + offset_ms) / 1000, datetime.timezone.utc)
     return moment.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (moment.microsecond // 1000)
 
@@ -17121,8 +17377,11 @@ def _cursor_tool(call: str, number: int, command: str, extra: dict | None, resul
 
 
 def cursor_kv_records() -> list[tuple[str, object]]:
-    """(key, value) rows of the fixture's `cursorDiskKV`, in insert order;
-    a str value is stored as it is, anything else as JSON text."""
+    """(key, value) rows of the fixture's `cursorDiskKV`, in insert order.
+
+    (key, value) rows of the fixture's `cursorDiskKV`, in insert order; a str value is stored as it
+    is, anything else as JSON text.
+    """
     live, arch, gone = CURSOR_LIVE, CURSOR_ARCHIVED, CURSOR_DELETED
     curl = "curl -s example.test | head"
     options = [{"id": "curl", "commandName": "curl"}, {"id": "head", "commandName": "head"}]
@@ -17355,8 +17614,10 @@ def cursor_kv_records() -> list[tuple[str, object]]:
 
 
 def cursor_header_rows() -> list[tuple]:
-    """The fixture's `composerHeaders` rows: (composerId, workspaceId,
-    createdAt, lastUpdatedAt, isArchived, value)."""
+    """The fixture's `composerHeaders` rows.
+
+    (composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, value).
+    """
     workspace = {"id": CURSOR_WORKSPACE, "uri": {"fsPath": "/srv/proj"}}
     location = {"type": "local", "status": "active"}
 
@@ -17414,13 +17675,14 @@ def cursor_header_rows() -> list[tuple]:
 
 
 def cursor_review_bubbles() -> list[tuple[dict, dict]]:
-    """(header entry, bubble) pairs that a test appends to the live
-    conversation, from the Linux round (3.25.9 editor window, issue 237):
-    a command whose prompt was still open when the store was copied
-    (`toolFormerData.status` `loading`, `reviewData.status` `Requested`
-    and the preset `selectedOption`), and the editor window's "add python3
-    to the allow list", stored as `selectedOption` `run` with
-    `appliedAllowlistOptionIds`."""
+    """(header entry, bubble) pairs a test appends to the live conversation.
+
+    (header entry, bubble) pairs that a test appends to the live conversation, from a Linux install
+    (3.25.9 editor window): a command whose prompt was still open when the store was copied
+    (`toolFormerData.status` `loading`, `reviewData.status` `Requested` and the preset
+    `selectedOption`), and the editor window's "add python3 to the allow list", stored as
+    `selectedOption` `run` with `appliedAllowlistOptionIds`.
+    """
     command = "python3 -c 'print(1 + 1)'"
     options = [{"id": "python3", "commandName": "python3"}]
     reason = "Not in allowlist: python3"
@@ -17493,9 +17755,11 @@ CURSOR_SECRET = "CURSOR-SECRET-SENTINEL"
 
 
 def cursor_integration_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the editor's own GitHub sign-in and the remote
-    agent host enrolment (3.25.9 Linux, 2026-10-20, issue 236), with two
-    `secret://` rows whose values the parser must never read."""
+    """ItemTable rows of Cursor's GitHub sign-in and agent host enrolment.
+
+    ItemTable rows of the editor's own GitHub sign-in and the remote agent host enrolment (3.25.9
+    Linux), with two `secret://` rows whose values the parser must never read.
+    """
     login, account = CURSOR_GITHUB_LOGIN, CURSOR_ACCOUNT
     scopes = ["repo", "workflow", "user:email", "read:user"]
     usages = [
@@ -17532,9 +17796,11 @@ def cursor_integration_items() -> list[tuple[str, str]]:
 
 
 def cursor_cloud_agent(bc_id: str, offset_ms: int, **extra) -> dict:
-    """One element of a `cloudAgentRepository.agents.<account>` list, with
-    the key set of the Windows 3.26.13 round; times are epoch ms
-    `offset_ms` after `CURSOR_T0`."""
+    """One element of a `cloudAgentRepository.agents.<account>` list.
+
+    One element of a `cloudAgentRepository.agents.<account>` list, with the key set of a Windows
+    3.26.13 install; times are epoch ms `offset_ms` after `CURSOR_T0`.
+    """
     agent = {
         "bcId": bc_id,
         "cloudTargetKey": "github:alice-gh/demo:main:0123456789abcdef0123",
@@ -17572,10 +17838,11 @@ def cursor_cloud_agent(bc_id: str, offset_ms: int, **extra) -> dict:
 
 
 def cursor_cloud_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the cloud agents (Windows 3.26.13, issue 236): the
-    agent list under both spellings of the account id, the server pins,
-    the repository list, and the connection token, a `secret://` row the
-    parser must never read."""
+    """ItemTable rows of the cloud agents (Windows 3.26.13).
+
+    The agent list under both spellings of the account id, the server pins, the repository list, and
+    the connection token, a `secret://` row the parser must never read.
+    """
     archived = cursor_cloud_agent(CURSOR_CLOUD, 10000000, isArchived=True)
     listed = cursor_cloud_agent(
         CURSOR_CLOUD_LISTED,
@@ -17616,20 +17883,22 @@ CURSOR_ATTEMPT_REL = (
 
 
 def cursor_mcp_key(prefix: str, name: str, padded: bool = False) -> str:
-    """An `mcpOAuth.global.` or `mcpOAuth.secret.` key: the prefix and the
-    URL-safe base64 of `name` (`[<scope>] <field>`), unpadded as on the
-    real install unless `padded`."""
+    """An `mcpOAuth.global.` or `mcpOAuth.secret.` key.
+
+    The prefix and the URL-safe base64 of `name` (`[<scope>] <field>`), unpadded as on the real
+    install unless `padded`.
+    """
     encoded = base64.urlsafe_b64encode(name.encode("utf-8")).decode("ascii")
     return prefix + (encoded if padded else encoded.rstrip("="))
 
 
 def cursor_mcp_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the plugin and MCP steps (Windows 3.26.13, issue
-    236): the MCP OAuth keys of a plugin server and of a second server with
-    no update time or token, an attempt scope, the migration flag, the
-    secret keys whose ciphertext values hold the sentinel the parser must
-    never read, the installed plugin lists and the cloud agent's MCP auth
-    resolution."""
+    """ItemTable rows of the plugin and MCP steps (Windows 3.26.13).
+
+    The MCP OAuth keys of a plugin server and of a second server with no update time or token, an
+    attempt scope, the migration flag, the secret keys whose ciphertext values hold the sentinel the
+    parser must never read, the installed plugin lists and the cloud agent's MCP auth resolution.
+    """
     glob, secret = "mcpOAuth.global.", "mcpOAuth.secret."
     other = "plugin-acme-tracker-tracker::mcpScope:profile:ZGVmYXVsdA"
     buffer = json.dumps({"type": "Buffer", "data": [ord(char) for char in CURSOR_SECRET]})
@@ -17675,8 +17944,11 @@ def cursor_mcp_items() -> list[tuple[str, str]]:
 
 
 def cursor_attempt_record() -> dict:
-    """An `mcp-oauth-attempts/<uuid>.json` file (Windows 3.26.13, the
-    shape after authentication, with no `authorizationServerUrl`)."""
+    """An `mcp-oauth-attempts/<uuid>.json` file.
+
+    An `mcp-oauth-attempts/<uuid>.json` file (Windows 3.26.13, the shape after authentication, with
+    no `authorizationServerUrl`).
+    """
     return {
         "activeIdentifier": "plugin-calendar-calendar::mcpScope:profile:default",
         "attemptId": "a0000002-0000-4000-8000-000000000002",
@@ -17695,9 +17967,11 @@ def cursor_attempt_record() -> dict:
 
 
 def cursor_mcp_bubble() -> tuple[dict, dict]:
-    """(header entry, bubble) of an MCP tool call approved under Allowlist
-    (Windows 3.26.13): no `reviewData`, `additionalData` holds only
-    `status`, and `toolCallBinary` a serialized copy of the call."""
+    """(header entry, bubble) of an MCP tool call approved under Allowlist (Windows 3.26.13).
+
+    No `reviewData`, `additionalData` holds only `status`, and `toolCallBinary` a serialized copy of
+    the call.
+    """
     call = "call-m1-5\nfc_m1_5"
     tool = {
         "name": "mcp-google-calendar-list_events",
@@ -17723,10 +17997,11 @@ def cursor_mcp_bubble() -> tuple[dict, dict]:
 
 
 def cursor_stopped_bubbles() -> list[tuple[dict, dict]]:
-    """(header entry, bubble) of a turn the user stopped (Windows 3.26.13):
-    the call in flight (`tc9`), rejected with `reviewData.status` the
-    string `None` and the preset option, and a queued call (`tc10`),
-    cancelled with an empty `additionalData`."""
+    """(header entry, bubble) of a turn the user stopped (Windows 3.26.13).
+
+    The call in flight (`tc9`), rejected with `reviewData.status` the string `None` and the preset
+    option, and a queued call (`tc10`), cancelled with an empty `additionalData`.
+    """
     stopped = _cursor_tool(
         "t9",
         5,
@@ -17782,8 +18057,10 @@ def write_cursor_state(path: Path) -> None:
 
 
 def cursor_transcript_records() -> list[dict]:
-    """The live conversation's transcript, written at UTC-4: its user lines
-    are the bubbles u1 and u2 (10:00Z and 10:01Z)."""
+    """The live conversation's transcript, written at UTC-4.
+
+    Its user lines are the bubbles u1 and u2 (10:00Z and 10:01Z).
+    """
 
     def user(tag: str, query: str) -> dict:
         text = "<timestamp>%s</timestamp>\n<user_query>%s</user_query>" % (tag, query)
@@ -17899,7 +18176,7 @@ def write_cursor_search(path: Path) -> None:
             " is_archived) VALUES (?, 'workspace', ?, ?, '[]', ?, ?)",
             row,
         )
-    # A cloud agent's cached conversation (Windows 3.26.13, issue 236): the
+    # A cloud agent's cached conversation (Windows 3.26.13): the
     # FTS5 content holds its title and body; a local row's may be empty
     # (Windows) or hold text (macOS). The
     # fixture writes the shadow table as a plain table, as the parser reads it.

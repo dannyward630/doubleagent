@@ -80,14 +80,19 @@ class ParseBoundTests(unittest.TestCase):
             self.assertEqual(self.both(text), (want, want), text)
 
     def test_rejected(self):
-        for text in ("", "3x", "last friday", "10/01/2026", "2026-13-01", "2026-10-01T25:00"):
+        rejected = ("", "3x", "last friday", "10/01/2026", "2026-13-01", "2026-10-01T25:00")
+        out_of_range = ("99999y", "9" * 5000 + "d", "9" * 20)
+        for text in (*rejected, *out_of_range):
             with self.assertRaises(BoundError, msg=text) as caught:
                 parse_bound(text, now=NOW)
-            self.assertIn("accepted:", str(caught.exception))
+            self.assertIn("; accepted:", str(caught.exception), text)
         with self.assertRaisesRegex(BoundError, "month must be in 1..12"):
             parse_bound("2026-13-01")
         with self.assertRaisesRegex(BoundError, "out of range"):
             parse_bound("99999y", now=NOW)
+        # Past Python's integer conversion digit limit, the same error as any other size.
+        with self.assertRaisesRegex(BoundError, "out of range; accepted:"):
+            parse_bound("9" * 5000 + "d", now=NOW)
 
 
 def _row(timestamp, text="", turn_type="user", session="s1", tool_use_id=""):

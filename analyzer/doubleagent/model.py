@@ -1,6 +1,8 @@
-"""Output schema. `timeline.jsonl` and `sessions.jsonl` are interfaces that
-analysts build on; add fields at the end, never rename or remove them
-without a note in docs/output.md."""
+"""Define the rows of `timeline.jsonl` and `sessions.jsonl` and their helpers.
+
+Both files are interfaces analysts build on: fields are added at the end,
+never renamed or removed without a note in `analyzer/docs/output.md`.
+"""
 
 from __future__ import annotations
 
@@ -47,21 +49,21 @@ SESSION_COLUMNS = [
 ]
 
 # The text that starts a parser's row for a session synced to a remote
-# account (`Parser.records_sync`, issue 151).
+# account (`Parser.records_sync`).
 SYNCED_PREFIX = "session synced:"
 # The text that starts a parser's row for a session carried through a
-# messaging platform (`Parser.records_relay`, issue 153).
+# messaging platform (`Parser.records_relay`).
 RELAYED_PREFIX = "session relayed:"
 # The text that starts a parser's row for a session that began on the
-# vendor's servers (`Parser.records_origin`, issue 153).
+# vendor's servers (`Parser.records_origin`).
 ORIGIN_PREFIX = "session origin: remote"
 # The text that starts a parser's row naming a scratch directory, a
-# working directory that belongs to the agent rather than to the user
-# (issue 149); inventory.json lists the row's `project_path` under
+# working directory that belongs to the agent rather than to the user;
+# inventory.json lists the row's `project_path` under
 # `scratch_directories` instead of `projects`.
 SCRATCH_PREFIX = "scratch directory:"
 # The text that starts a parser's row naming a git remote URL the agent
-# recorded for the session's repository (issue 253); the URL follows the
+# recorded for the session's repository; the URL follows the
 # prefix as recorded, and inventory.json lists it under the project's
 # `recorded_remotes`.
 GIT_REMOTE_PREFIX = "git remote: "
@@ -69,6 +71,8 @@ GIT_REMOTE_PREFIX = "git remote: "
 
 @dataclass
 class Row:
+    """One line of `timeline.jsonl`, its fields in column order."""
+
     timestamp_utc: str = ""
     host: str = ""
     user: str = ""
@@ -90,14 +94,17 @@ class Row:
     recovered: str = ""
 
     def as_dict(self) -> dict[str, object]:
-        return {c: getattr(self, c) for c in TIMELINE_COLUMNS}
+        """Return the row as a dict in `TIMELINE_COLUMNS` order."""
+        return {column: getattr(self, column) for column in TIMELINE_COLUMNS}
 
 
-assert [f.name for f in fields(Row)] == TIMELINE_COLUMNS
+assert [row_field.name for row_field in fields(Row)] == TIMELINE_COLUMNS
 
 
 @dataclass
 class SessionSummary:
+    """One line of `sessions.jsonl`, built from a session's rows by `summarise`."""
+
     host: str
     user: str
     agent: str
@@ -130,6 +137,7 @@ class SessionSummary:
     _scratch_path: str = ""
 
     def add(self, row: Row) -> None:
+        """Count one row of the session into the summary."""
         # Only event rows decide `recovered`: a `system` row describes its
         # source or the session, not a turn the primary store could lose.
         if row.turn_type != "system":
@@ -170,6 +178,7 @@ class SessionSummary:
             self.origin = "remote"
 
     def as_dict(self) -> dict[str, object]:
+        """Return the summary as a dict in `SESSION_COLUMNS` order."""
         return {
             "host": self.host,
             "user": self.user,
@@ -197,50 +206,55 @@ def summarise(
     origin_agents: frozenset[str] = frozenset(),
     secondary_agents: frozenset[str] = frozenset(),
 ) -> list[SessionSummary]:
-    """One summary per (host, user, agent, session id) of `rows`, sorted by
-    first timestamp, agent and session id. `sync_agents` names the agents
-    whose parser records sync state (`Parser.records_sync`); their sessions
-    without the marker get `synced` "no", the others keep "". `relay_agents`
-    does the same for `relayed` (`Parser.records_relay`), and
-    `origin_agents` sets `origin` "local" (`Parser.records_origin`).
-    `recovered` is "yes" when every row of the session is recovered,
-    "partial" when some are, else "no" for an agent of `secondary_agents`
-    (`Parser.has_secondary`) and "" for the others; `system` rows are left
-    out of the count, so a session of only such rows is never "yes"."""
+    """Return one summary per (host, user, agent, session id) of the rows.
+
+    Each `*_agents` set names the agents whose parser records that mark; their
+    sessions without it get "no" (`origin` "local"), the others "". `system`
+    rows are not counted for `recovered`, so a session of only such rows is
+    never "yes".
+
+    Returns:
+        The summaries, sorted by first timestamp, agent and session id.
+    """
     out: dict[tuple, SessionSummary] = {}
-    for r in rows:
-        if not r.session_id:
+    for row in rows:
+        if not row.session_id:
             continue
-        key = (r.host, r.user, r.agent, r.session_id)
-        s = out.get(key)
-        if s is None:
-            s = SessionSummary(r.host, r.user, r.agent, r.session_id)
-            out[key] = s
-        s.add(r)
-    for s in out.values():
-        if not s.project_path:
-            s.project_path = s._scratch_path
-        if not s.synced and s.agent in sync_agents:
-            s.synced = "no"
-        if not s.relayed and s.agent in relay_agents:
-            s.relayed = "no"
-        if not s.origin and s.agent in origin_agents:
-            s.origin = "local"
-        if s._recovered_rows:
-            s.recovered = "yes" if s._recovered_rows == s._rows else "partial"
-        elif s.agent in secondary_agents:
-            s.recovered = "no"
-    return sorted(out.values(), key=lambda s: (s.first_timestamp_utc, s.agent, s.session_id))
+        key = (row.host, row.user, row.agent, row.session_id)
+        summary = out.get(key)
+        if summary is None:
+            summary = SessionSummary(row.host, row.user, row.agent, row.session_id)
+            out[key] = summary
+        summary.add(row)
+    for summary in out.values():
+        if not summary.project_path:
+            summary.project_path = summary._scratch_path
+        if not summary.synced and summary.agent in sync_agents:
+            summary.synced = "no"
+        if not summary.relayed and summary.agent in relay_agents:
+            summary.relayed = "no"
+        if not summary.origin and summary.agent in origin_agents:
+            summary.origin = "local"
+        if summary._recovered_rows:
+            summary.recovered = "yes" if summary._recovered_rows == summary._rows else "partial"
+        elif summary.agent in secondary_agents:
+            summary.recovered = "no"
+    return sorted(
+        out.values(),
+        key=lambda summary: (summary.first_timestamp_utc, summary.agent, summary.session_id),
+    )
 
 
 def compact(text: object | None) -> str:
-    """Event text with leading and trailing whitespace stripped. Inner
-    newlines and indentation are kept: JSON escapes them, so each record
-    still stays on one line of the JSONL output."""
+    """Return event text with leading and trailing whitespace stripped.
+
+    Inner newlines and indentation are kept: JSON escapes them, so each record
+    still stays on one line of the JSONL output.
+    """
     if text is None:
         return ""
-    s = text if isinstance(text, str) else str(text)
-    return s.strip()
+    value = text if isinstance(text, str) else str(text)
+    return value.strip()
 
 
 # A drive-letter path (`C:\x`, `c:/x`) and the extended-length prefixes
@@ -250,53 +264,46 @@ _EXTENDED = re.compile(r"\\\\\?\\(UNC\\)?", re.IGNORECASE)
 
 
 def _windows_path(path: str) -> str | None:
-    """`path` in the canonical Windows form `canonical_project_path`
-    describes, or None when it is not a Windows form."""
-    m = _EXTENDED.match(path)
-    if m:
-        path = ("\\\\" if m.group(1) else "") + path[m.end() :]
+    """Return a path in the canonical Windows form, or None when it is not a Windows form."""
+    match = _EXTENDED.match(path)
+    if match:
+        path = ("\\\\" if match.group(1) else "") + path[match.end() :]
     if _DRIVE.match(path):
-        parts = [p for p in path[2:].replace("/", "\\").split("\\") if p]
+        parts = [part for part in path[2:].replace("/", "\\").split("\\") if part]
         return path[0].upper() + ":\\" + "\\".join(parts)
     if path.startswith("\\\\"):
-        parts = [p for p in path[2:].replace("/", "\\").split("\\") if p]
+        parts = [part for part in path[2:].replace("/", "\\").split("\\") if part]
         if parts:
             return "\\\\" + "\\".join(parts)
     return None
 
 
 def is_windows_path(path: str) -> bool:
-    """Whether `path` is in one of the Windows forms that
-    `canonical_project_path` rewrites (a drive letter, UNC or `\\\\?\\`)."""
+    """Return whether a path is in a Windows form `canonical_project_path` rewrites."""
     return bool(path) and _windows_path(path) is not None
 
 
 def canonical_project_path(path: str) -> str:
-    r"""One spelling for a Windows `project_path`, so a folder that agents
-    record as `c:/Users/a/demo`, `C:\Users\a\demo\` and
-    `\\?\C:\Users\a\demo` is `C:\Users\a\demo` in every row.
+    r"""Return one spelling for a Windows `project_path`.
 
-    A Windows form is a path that starts with a drive letter, a colon and a
-    separator, or with two backslashes (UNC, `\\server\share`), after the
-    extended-length prefix `\\?\` is removed (`\\?\UNC\server\share`
-    becomes `\\server\share`). Its canonical form has an upper-case drive
-    letter, backslash separators, no repeated separators after the drive or
-    the UNC prefix and no trailing separator, except in the root `C:\`.
-    The case of everything after the drive is kept as recorded, because the
-    analyzer cannot know the folder's real casing. Any other path, POSIX
-    paths and `//server/share` included, is returned unchanged: a backslash
-    is a legal character in a POSIX file name, and `file:` URIs are decoded
-    by the parser that reads them."""
+    `c:/Users/a/demo`, `C:\Users\a\demo\` and `\\?\C:\Users\a\demo` all become
+    `C:\Users\a\demo`: an upper-case drive letter, backslashes, no repeated or
+    trailing separator, the extended-length prefix `\\?\` removed. The case
+    after the drive is kept, since the folder's real casing is unknown. Any
+    other path, `//server/share` included, is returned unchanged, because a
+    backslash is a legal character in a POSIX file name.
+    """
     if not path:
         return path
-    win = _windows_path(path)
-    return path if win is None else win
+    windows_form = _windows_path(path)
+    return path if windows_form is None else windows_form
 
 
 def project_key(path: str) -> str:
-    """The key under which `inventory.json` groups a `project_path`: the
-    canonical form from `canonical_project_path`, lower-cased when it is a
-    Windows form, because Windows file names are case-insensitive; any
-    other path unchanged, compared exactly."""
-    win = _windows_path(path) if path else None
-    return path if win is None else win.lower()
+    """Return the key under which `inventory.json` groups a `project_path`.
+
+    A Windows form is canonicalised and lower-cased, since Windows file names
+    are case-insensitive; any other path is returned unchanged.
+    """
+    windows_form = _windows_path(path) if path else None
+    return path if windows_form is None else windows_form.lower()

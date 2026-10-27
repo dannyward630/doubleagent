@@ -1,5 +1,8 @@
-"""Parser interface. A parser owns one agent name from the catalog, says which
-of that agent's artifacts it reads, and yields timeline rows from each."""
+"""Define the parser interface and the helpers every parser shares.
+
+A parser owns one agent name from the catalog, says which of that agent's
+artifacts it reads, and yields timeline rows from each.
+"""
 
 from __future__ import annotations
 
@@ -15,10 +18,14 @@ from ..timeutil import to_utc
 
 @dataclass
 class Options:
+    """The timeline options a parser honours."""
+
     include_thinking: bool = False
 
 
 class Parser:
+    """The base class of every parser; a subclass sets `agent` and overrides `wants` and `parse`."""
+
     agent: str = ""
     name: str = ""
     # Other catalog agents whose artifacts this parser is also offered: an
@@ -28,20 +35,20 @@ class Parser:
     reads_agents: tuple[str, ...] = ()
     # True when the agent's format records whether a session is synced to a
     # remote account, and the parser yields a `system` row starting
-    # `session synced:` for a synced one (issue 151). `sessions.jsonl` then
-    # says `synced` "no" for a session without that row rather than "".
+    # `session synced:` for a synced one. `sessions.jsonl` then says
+    # `synced` "no" for a session without that row rather than "".
     records_sync: bool = False
     # True when the agent's format records whether a session was carried
     # through a messaging platform (Telegram, WhatsApp, email), and the
     # parser yields a `system` row starting `session relayed:` for such a
-    # session (issue 153). `sessions.jsonl` then says `relayed` "no" for a
-    # session without that row rather than "".
+    # session. `sessions.jsonl` then says `relayed` "no" for a session
+    # without that row rather than "".
     records_relay: bool = False
     # True when the agent's format records whether a session began on the
     # vendor's servers and is only listed locally, and the parser yields a
-    # `system` row starting `session origin: remote` for such a session
-    # (issue 153). `sessions.jsonl` then says `origin` "local" for a session
-    # without that row rather than "".
+    # `system` row starting `session origin: remote` for such a session.
+    # `sessions.jsonl` then says `origin` "local" for a session without that
+    # row rather than "".
     records_origin: bool = False
     # True when `secondary()` can return True for some artifact, so the agent
     # reads at least one secondary source; `sessions.jsonl` then says
@@ -50,29 +57,33 @@ class Parser:
     has_secondary: bool = False
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return whether this parser reads the artifact, chosen by `artifact.rel`."""
         raise NotImplementedError
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the timeline rows of one artifact."""
         raise NotImplementedError
 
     def secondary(self, artifact: Artifact) -> bool:
-        """True when `artifact` is a secondary source of this parser: a
-        per-prompt history file, a mirror or a projection of a store the
-        parser also reads. Its rows are kept in the timeline unless the
-        primary store yields the same event (`dedup.deduplicate`), so a
-        session whose primary store is gone is still recovered from it."""
+        """Return whether the artifact is a secondary source of this parser.
+
+        A secondary source repeats events of a store the parser also reads (a
+        per-prompt history, a mirror). Its rows are kept unless the primary
+        store yields the same event (`dedup.deduplicate`).
+        """
         return False
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        """Seconds a secondary row's `timestamp_utc` may differ from the primary
-        row's for `dedup.deduplicate` to pair them. The default suits a history
-        line written when the prompt was submitted; a parser whose secondary
-        source stamps an event later than the primary store does (a transcript
-        captured at the end of a turn) returns a wider window and says why in
-        its docstring."""
+        """Return how many seconds a secondary row's time may differ from its primary row's.
+
+        The default suits a history line written when the prompt was
+        submitted; a parser whose secondary source stamps an event later than
+        the primary store returns a wider window and says why.
+        """
         return TOLERANCE_SECONDS
 
     def base_row(self, artifact: Artifact) -> Row:
+        """Return a row with host, user, agent and `source_file` filled in."""
         return Row(
             host=artifact.home.host,
             user=artifact.home.user,
@@ -82,35 +93,35 @@ class Parser:
 
 
 def iter_jsonl(path, errors: list) -> Iterator[tuple[int, dict]]:
-    """Yield (line_number, record) for each JSON object line. A bad line is
-    appended to `errors` as (line_number, message, raw_text) and skipped: a
-    transcript truncated mid-write by a running agent must not lose its
-    earlier turns. A line that decodes to a JSON value other than an object
-    (an array, a string, a number, `null`) is a bad line too, with the
-    message `unparseable line (not a JSON object)` (issue 228); a parser
-    whose format holds such lines reads them itself. `raw_text` is the line
-    as read, decoded UTF-8 with `errors="replace"`, less only its trailing
-    line terminator, for `error_rows` to report in full (issue 136)."""
-    with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
+    """Yield (line_number, record) for each JSON object line of a file.
+
+    A bad line, one that does not decode or decodes to something other than
+    an object, is appended to `errors` as (line_number, message, raw_text)
+    and skipped, so a transcript cut mid-write keeps its earlier turns.
+    `raw_text` is the line as read less its terminator (`line_text`).
+    """
+    with open(path, "rb") as handle:
+        for line_number, raw in enumerate(handle, 1):
             stripped = raw.strip()
             if not stripped:
                 continue
             try:
-                rec = json.loads(stripped.decode("utf-8", errors="replace"))
-            except ValueError as e:
-                errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                record = json.loads(stripped.decode("utf-8", errors="replace"))
+            except ValueError as error:
+                errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                 continue
-            if not isinstance(rec, dict):
-                errors.append((n, "unparseable line (not a JSON object)", line_text(raw)))
+            if not isinstance(record, dict):
+                errors.append((line_number, "unparseable line (not a JSON object)", line_text(raw)))
                 continue
-            yield n, rec
+            yield line_number, record
 
 
 def line_text(raw: bytes) -> str:
-    """A line read in binary mode as error row text: decoded UTF-8 with
-    `errors="replace"`, its trailing `\\n` and then `\\r` removed, nothing
-    else stripped."""
+    r"""Return a line read in binary mode as error row text.
+
+    The line is decoded as UTF-8 with replacement and loses its trailing
+    `\n` and then `\r`, nothing else.
+    """
     if raw.endswith(b"\n"):
         raw = raw[:-1]
     if raw.endswith(b"\r"):
@@ -118,13 +129,14 @@ def line_text(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def tail_text(s: str, start: int) -> str:
-    """`s` from `start` to its end as error row text, its trailing `\n` and
-    then `\r` removed, nothing else stripped, as `line_text` treats a line:
-    the record a JSON array reader failed to decode at `start`, with
-    everything after it that was never decoded, since a broken record has
-    no boundary of its own."""
-    tail = s[start:]
+def tail_text(text: str, start: int) -> str:
+    """Return text from `start` to its end as error row text, as `line_text` treats a line.
+
+    A JSON array reader passes the offset of the record it failed to decode:
+    a broken record has no boundary of its own, so everything after it goes
+    too.
+    """
+    tail = text[start:]
     if tail.endswith("\n"):
         tail = tail[:-1]
     if tail.endswith("\r"):
@@ -135,22 +147,14 @@ def tail_text(s: str, start: int) -> str:
 def error_rows(
     parser: Parser, artifact: Artifact, errors: list, session_id: str = "", project_path: str = ""
 ) -> Iterator[Row]:
-    """One `system` row per entry of `errors` (issue 136), in list order,
-    with the given `session_id` and `project_path` and `source_line` set to
-    the entry's line number (0 when the error has none).
+    """Yield one `system` row per entry of `errors`, in list order.
 
-    An entry is (line, message, raw), or the older (line, message) pair,
-    read as raw `""`. The message carries the whole label: a JSONL reader
-    writes `unparseable line (<reason>)`, a JSON array reader
-    `unparseable record <N> (<reason>)`, and a line that decodes but cannot
-    be applied names what failed (`mutation not applied (<reason>)`). When
-    raw is not empty the row text is `parser: <message>: <raw>`, carrying
-    the line or record exactly as the reader stored it: no field is pulled
-    out of the broken record, nothing is repaired or shortened, and the
-    text is not passed through `compact()`. When raw is empty the error
-    concerns the whole file (it could not be read, it is not a JSON array,
-    it was cut off after record N) or a record with no text left, and the
-    row text is `parser: <message>`."""
+    An entry is (line, message, raw) or (line, message). The row text is
+    `parser: <message>: <raw>`, the raw line or record exactly as the reader
+    stored it, or `parser: <message>` when raw is empty (a whole-file error). The
+    row carries the given `session_id` and `project_path` and `source_line`
+    set to the line number, 0 when there is none.
+    """
     for entry in errors:
         line, message = entry[0], entry[1]
         raw = entry[2] if len(entry) > 2 else ""
@@ -167,67 +171,69 @@ def error_rows(
 
 
 def text_of(content) -> str:
-    """Flatten the content field of a chat message: a string, or a list of
-    typed blocks whose text lives under `text`."""
+    """Return the text of a chat message's content: a string, or a list of typed blocks."""
     if content is None:
         return ""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
         parts = []
-        for b in content:
-            if isinstance(b, str):
-                parts.append(b)
-            elif isinstance(b, dict):
-                t = b.get("text")
-                if isinstance(t, str):
-                    parts.append(t)
-                elif b.get("type") == "image":
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                elif block.get("type") == "image":
                     parts.append("[image]")
         return "\n".join(parts)
     if isinstance(content, dict):
-        t = content.get("text")
-        return t if isinstance(t, str) else json.dumps(content, ensure_ascii=False)
+        text = content.get("text")
+        return text if isinstance(text, str) else json.dumps(content, ensure_ascii=False)
     return str(content)
 
 
 def compact_json(value) -> str:
+    """Return a value as compact JSON with sorted keys, or as `str()` when it is not JSON."""
     try:
-        s = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     except (TypeError, ValueError):
-        s = str(value)
-    return s
+        text = str(value)
+    return text
 
 
 def file_mtime(artifact: Artifact) -> str:
-    """The file's modification time as a timeline timestamp: the manifest's
-    pre-copy `mtime` when the collection has a manifest, else the file's
-    own. Standing settings rows (`permission setting: ... (from <file>,
-    file mtime)`) are timestamped with this."""
-    t = (artifact.manifest or {}).get("mtime")
-    if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
-        return to_utc(t)
+    """Return the file's modification time as a timeline timestamp.
+
+    The manifest's pre-copy `mtime` is used when the collection has one, else
+    the file's own. Rows for standing settings carry this time.
+    """
+    mtime = (artifact.manifest or {}).get("mtime")
+    if isinstance(mtime, (int, float)) and not isinstance(mtime, bool) and mtime > 0:
+        return to_utc(mtime)
     try:
         return to_utc(artifact.disk_path.lstat().st_mtime)
     except OSError:
         return ""
 
 
-def setting_value(v) -> str:
-    """A setting as row text: a bool as `true`/`false`, a string as it is,
-    anything else as compact JSON."""
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, str):
-        return v
-    return compact_json(v)
+def setting_value(value) -> str:
+    """Return a setting as row text: `true` or `false`, a string as it is, else compact JSON."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value
+    return compact_json(value)
 
 
 def track_change(label: str, seen: dict, key, value: str) -> str:
-    """The `system` row text for a tracked state (`model`, `permission mode`)
-    when `value` is new for `key` (a session or thread id): `<label>: <value>`
-    the first time, `<label>: <old> -> <new>` on a change, and `""` when it
-    is unchanged or empty. `seen` is the parser's per-file dict."""
+    """Return the `system` row text for a change of a tracked state, or `""`.
+
+    The text is `<label>: <value>` the first time `key` (a session or thread
+    id) has a value and `<label>: <old> -> <new>` on a change; an unchanged or
+    empty value gives `""`. `seen` is the parser's per-file dict.
+    """
     if not value:
         return ""
     old = seen.get(key)

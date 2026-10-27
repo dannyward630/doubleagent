@@ -32,12 +32,13 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from .catalog import Catalog
+from .errors import InputError
 
 PARSE_STATUSES = ("collected",)
 
-# Agent name collectors before 1.12.0 gave every file found through the
-# project catalog, and that later ones keep for files no single agent owns
-# (AGENTS.md). Such a file is offered to every parser.
+# The agent of a project file no single agent owns (AGENTS.md), and of
+# every project-catalog file in collections before collector 1.12.0. Such a
+# file is offered to every parser.
 PROJECT_AGENT = "project"
 
 # Parent directories whose children are user homes, as the collectors enumerate
@@ -48,6 +49,8 @@ ROOT_HOMES = ("root", "var/root")
 
 @dataclass
 class Home:
+    """A base the artifacts are relative to: a user's home, a volume or a project."""
+
     disk_path: Path  # where the home is on the analyst's disk
     original: str  # path on the source host, best effort
     user: str
@@ -62,6 +65,8 @@ class Home:
 
 @dataclass
 class Artifact:
+    """One attributed file of the input, with its manifest row when there is one."""
+
     disk_path: Path
     original: str  # path on the source host
     rel: str  # path relative to the home, posix
@@ -72,6 +77,8 @@ class Artifact:
 
 @dataclass
 class Collection:
+    """The opened input: its kind, homes, artifacts, notes and problems."""
+
     source: Path
     kind: str  # archive | collected | loose
     root: Path  # directory that holds fs/ (collected) or the tree itself (loose)
@@ -84,72 +91,83 @@ class Collection:
     # "<path>: <reason>" for each directory or file inside the input that
     # could not be read while the input was opened.
     problems: list[str] = field(default_factory=list)
-    _tmp: str | None = None
+    _extracted_dir: str | None = None
 
     def cleanup(self) -> None:
-        if self._tmp and os.path.isdir(self._tmp):
-            shutil.rmtree(self._tmp, ignore_errors=True)
-            self._tmp = None
+        """Remove the directory an archive was extracted to, if any."""
+        if self._extracted_dir and os.path.isdir(self._extracted_dir):
+            shutil.rmtree(self._extracted_dir, ignore_errors=True)
+            self._extracted_dir = None
 
     def artifacts_for(self, agent: str) -> list[Artifact]:
-        return [a for a in self.artifacts if a.agent == agent]
+        """Return the artifacts attributed to one agent."""
+        return [artifact for artifact in self.artifacts if artifact.agent == agent]
 
     def agents(self) -> list[str]:
+        """Return the agents of the artifacts, in the order first met."""
         seen: dict[str, None] = {}
-        for a in self.artifacts:
-            seen.setdefault(a.agent)
+        for artifact in self.artifacts:
+            seen.setdefault(artifact.agent)
         return list(seen)
 
 
-def error_reason(e: BaseException) -> str:
-    """The reason in an exception without the path it names: the OS message
-    of an OSError, lower-cased (`permission denied`, `no such file or
-    directory`), otherwise the exception's own text."""
-    if isinstance(e, OSError) and e.strerror:
-        return e.strerror.lower()
-    return str(e)
+def error_reason(error: BaseException) -> str:
+    """Return an exception's reason without the path it names.
+
+    An OSError gives its OS message lower-cased (`permission denied`), any
+    other exception its own text.
+    """
+    if isinstance(error, OSError) and error.strerror:
+        return error.strerror.lower()
+    return str(error)
 
 
-def describe_error(path, e: BaseException) -> str:
-    """`<path>: <reason>` for a problem line or an error message. The path is
-    the file the OS reported when it names one, otherwise `path`."""
-    name = e.filename if isinstance(e, OSError) and e.filename else path
-    return "%s: %s" % (os.fsdecode(name), error_reason(e))
+def describe_error(path, error: BaseException) -> str:
+    """Return `<path>: <reason>` for a problem line or an error message.
+
+    The path is the file the OS reported when it names one, otherwise `path`.
+    """
+    name = error.filename if isinstance(error, OSError) and error.filename else path
+    return "%s: %s" % (os.fsdecode(name), error_reason(error))
 
 
 def open_input(
     path: Path, catalog: Catalog, work_dir: Path | None = None, host: str = ""
 ) -> Collection:
-    """Open an archive, extracted collection or loose directory. Raises
-    OSError when the input itself, an archive member being extracted, or the
-    manifest cannot be read, and ValueError when a file input is not an
-    archive. Unreadable directories and files inside a loose tree are not
-    errors; they are recorded in `Collection.problems`."""
+    """Open an archive, an extracted collection or a loose directory.
+
+    Unreadable directories and files inside a loose tree are not errors; they
+    are recorded in `Collection.problems`.
+
+    Raises:
+        OSError: The input, an archive member or the manifest cannot be read.
+        InputError: The input is not a file or directory, or not an archive it can extract.
+    """
     path = Path(path)
-    # stat, not exists(): exists() hides the reason, and on Python 3.14 also
+    # stat, not exists(): exists() hides the reason, and from Python 3.14
     # returns False for a permission error.
-    st = path.stat()
-    if stat.S_ISDIR(st.st_mode):
+    file_stat = path.stat()
+    if stat.S_ISDIR(file_stat.st_mode):
         os.listdir(path)  # an unlistable input directory is an error, not an empty tree
         if (path / "manifest.jsonl").is_file() and (path / "fs").is_dir():
-            col = Collection(source=path, kind="collected", root=path)
+            collection = Collection(source=path, kind="collected", root=path)
         else:
-            col = Collection(source=path, kind="loose", root=path)
-    elif stat.S_ISREG(st.st_mode):
-        col = _open_archive(path, work_dir)
+            collection = Collection(source=path, kind="loose", root=path)
+    elif stat.S_ISREG(file_stat.st_mode):
+        collection = _open_archive(path, work_dir)
     else:
-        raise ValueError("%s is neither a regular file nor a directory" % path)
+        raise InputError("%s is neither a regular file nor a directory" % path)
     if host:
-        col.host = host
+        collection.host = host
     try:
-        if col.kind in ("archive", "collected"):
-            _load_collected(col, catalog)
+        if collection.kind in ("archive", "collected"):
+            _load_collected(collection, catalog)
         else:
-            _discover_loose(col, catalog)
+            _discover_loose(collection, catalog)
     except BaseException:
-        col.cleanup()
+        collection.cleanup()
         raise
-    return col
+    return collection
 
 
 # ---- archives -----------------------------------------------------------------
@@ -165,78 +183,84 @@ def _open_archive(path: Path, work_dir: Path | None) -> Collection:
         dest = Path(tempfile.mkdtemp(prefix="cac-", dir=str(work_dir)))
     else:
         dest = Path(tempfile.mkdtemp(prefix="cac-analyzer-"))
-    col = Collection(source=path, kind="archive", root=dest)
-    col._tmp = str(dest)
+    collection = Collection(source=path, kind="archive", root=dest)
+    collection._extracted_dir = str(dest)
     try:
         sidecar = Path(str(path) + ".sha256")
         if sidecar.is_file():
-            col.notes.append(_verify_sidecar(path, sidecar))
+            collection.notes.append(_verify_sidecar(path, sidecar))
         if zipfile.is_zipfile(path):
             _extract_zip(path, dest)
         elif tarfile.is_tarfile(path):
             _extract_tar(path, dest)
         else:
-            raise ValueError("%s is neither a tar nor a zip archive" % path)
-    except (tarfile.TarError, zipfile.BadZipFile, EOFError) as e:
-        col.cleanup()
-        raise ValueError("%s: cannot extract: %s" % (path, e)) from None
+            raise InputError("%s is neither a tar nor a zip archive" % path)
+    except (tarfile.TarError, zipfile.BadZipFile, EOFError) as error:
+        collection.cleanup()
+        raise InputError("%s: cannot extract: %s" % (path, error)) from None
     except BaseException:
-        col.cleanup()
+        collection.cleanup()
         raise
     # An archive produced by the collector unpacks to manifest.jsonl + fs/ at
     # the top; anything else is treated as a loose tree.
     if not ((dest / "manifest.jsonl").is_file() and (dest / "fs").is_dir()):
-        col.kind = "loose"
-    return col
+        collection.kind = "loose"
+    return collection
 
 
 def _verify_sidecar(archive: Path, sidecar: Path) -> str:
     try:
         expected = sidecar.read_text(encoding="utf-8", errors="replace").split()
-    except OSError as e:
-        return "WARNING archive sha256 not checked: %s" % describe_error(sidecar, e)
+    except OSError as error:
+        return "WARNING archive sha256 not checked: %s" % describe_error(sidecar, error)
     expected = expected[0].lower() if expected else ""
-    h = hashlib.sha256()
-    with open(archive, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    actual = h.hexdigest()
+    digest = hashlib.sha256()
+    with open(archive, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    actual = digest.hexdigest()
     if actual == expected:
         return "archive sha256 verified against %s" % sidecar.name
     return "WARNING archive sha256 %s does not match %s (%s)" % (actual, sidecar.name, expected)
 
 
 def _safe_member(dest: Path, name: str) -> bool:
-    p = PurePosixPath(name)
-    return not p.is_absolute() and ".." not in p.parts and not re.match(r"^[A-Za-z]:", name)
+    member_path = PurePosixPath(name)
+    return (
+        not member_path.is_absolute()
+        and ".." not in member_path.parts
+        and not re.match(r"^[A-Za-z]:", name)
+    )
 
 
 def _skip_links(member, dest):
-    """Extraction filter: regular files and directories go through the data
-    filter; symlinks and hard links are not materialised. The collector
-    recreates symlinks with their original absolute targets, which the data
-    filter would reject; their targets are in the manifest `target` field."""
+    """Pass regular files and directories through the data filter and drop links.
+
+    The collector recreates symlinks with their absolute targets, which the
+    data filter would reject; the targets are in the manifest `target` field.
+    """
     if member.issym() or member.islnk() or member.isdev():
         return None
     return tarfile.data_filter(member, dest)
 
 
 def _extract_tar(path: Path, dest: Path) -> None:
-    with tarfile.open(path, "r:*") as tf:
+    with tarfile.open(path, "r:*") as archive:
         if hasattr(tarfile, "data_filter"):
-            tf.extractall(dest, filter=_skip_links)
+            archive.extractall(dest, filter=_skip_links)
             return
         members = [
-            m
-            for m in tf.getmembers()
-            if _safe_member(dest, m.name) and not (m.issym() or m.islnk() or m.isdev())
+            member
+            for member in archive.getmembers()
+            if _safe_member(dest, member.name)
+            and not (member.issym() or member.islnk() or member.isdev())
         ]
-        tf.extractall(dest, members=members)
+        archive.extractall(dest, members=members)
 
 
 def _extract_zip(path: Path, dest: Path) -> None:
-    with zipfile.ZipFile(path) as zf:
-        for info in zf.infolist():
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
             name = info.filename.replace("\\", "/")
             if not _safe_member(dest, name):
                 continue
@@ -245,27 +269,27 @@ def _extract_zip(path: Path, dest: Path) -> None:
                 target.mkdir(parents=True, exist_ok=True)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(info) as src, open(target, "wb") as out:
-                shutil.copyfileobj(src, out)
+            with archive.open(info) as source, open(target, "wb") as out:
+                shutil.copyfileobj(source, out)
 
 
 # ---- collected layout (manifest present) --------------------------------------
 
 
-def _load_collected(col: Collection, catalog: Catalog) -> None:
-    root = col.root
+def _load_collected(collection: Collection, catalog: Catalog) -> None:
+    root = collection.root
     summary_path = root / "collection.json"
     if summary_path.is_file():
         try:
-            col.summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as e:
-            col.notes.append("collection.json unreadable: %s" % error_reason(e))
-    if not col.host and col.summary:
-        col.host = str(col.summary.get("hostname") or "")
+            collection.summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            collection.notes.append("collection.json unreadable: %s" % error_reason(error))
+    if not collection.host and collection.summary:
+        collection.host = str(collection.summary.get("hostname") or "")
     rows: list[dict] = []
     bad = 0
-    with open(root / "manifest.jsonl", encoding="utf-8", errors="replace") as fh:
-        for line in fh:
+    with open(root / "manifest.jsonl", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
             line = line.strip()
             if not line:
                 continue
@@ -274,37 +298,39 @@ def _load_collected(col: Collection, catalog: Catalog) -> None:
             except ValueError:
                 bad += 1
     if bad:
-        col.notes.append("%d manifest rows did not parse" % bad)
-    col.manifest = rows
-    summary_projects = (col.summary or {}).get("projects")
+        collection.notes.append("%d manifest rows did not parse" % bad)
+    collection.manifest = rows
+    summary_projects = (collection.summary or {}).get("projects")
     projects = {
-        str(p) for p in (summary_projects if isinstance(summary_projects, list) else []) if p
+        str(project)
+        for project in (summary_projects if isinstance(summary_projects, list) else [])
+        if project
     }
     homes: dict[tuple[str, str], Home] = {}
-    for r in rows:
-        if r.get("status") not in PARSE_STATUSES or r.get("type") != "file":
+    for row in rows:
+        if row.get("status") not in PARSE_STATUSES or row.get("type") != "file":
             continue
-        user = str(r.get("user") or "")
-        home_orig = str(r.get("home") or "")
-        key = (user, home_orig)
+        user = str(row.get("user") or "")
+        home_original = str(row.get("home") or "")
+        key = (user, home_original)
         home = homes.get(key)
         if home is None:
             home = Home(
-                disk_path=root / _archive_dir_for_home(r),
-                original=home_orig,
+                disk_path=root / _archive_dir_for_home(row),
+                original=home_original,
                 user=user,
-                host=col.host,
-                project=home_orig in projects,
+                host=collection.host,
+                project=home_original in projects,
             )
             homes[key] = home
-        orig = str(r.get("path") or "")
-        archive_path = str(r.get("archive_path") or "")
-        rel = _relative_to_home(orig, home_orig)
-        agent = str(r.get("agent") or "")
+        original = str(row.get("path") or "")
+        archive_path = str(row.get("archive_path") or "")
+        rel = _relative_to_home(original, home_original)
+        agent = str(row.get("agent") or "")
         if agent == PROJECT_AGENT:
-            # A project-catalog file. Collectors before 1.12.0 recorded every
-            # one as `project`; name the agent the bundled project catalog
-            # gives it, so old and new collections report the same agents.
+            # Collectors before 1.12.0 recorded every project-catalog file as
+            # `project`; the bundled project catalog names its agent, so old and
+            # new collections report the same agents.
             home.project = True
             agent = catalog.project_agent_for(rel) or PROJECT_AGENT
         disk_path = root / archive_path
@@ -315,103 +341,117 @@ def _load_collected(col: Collection, catalog: Catalog) -> None:
             reason = "missing from the collection"
         except FileNotFoundError:
             present, reason = False, "missing from the collection"
-        except OSError as e:
-            present, reason = False, error_reason(e)
+        except OSError as error:
+            present, reason = False, error_reason(error)
         if not present:
-            col.problems.append("%s: %s" % (orig or archive_path, reason))
+            collection.problems.append("%s: %s" % (original or archive_path, reason))
             continue
-        col.artifacts.append(
+        collection.artifacts.append(
             Artifact(
                 disk_path=disk_path,
-                original=orig,
+                original=original,
                 rel=rel,
                 agent=agent,
                 home=home,
-                manifest=r,
+                manifest=row,
             )
         )
-    col.homes = list(homes.values())
+    collection.homes = list(homes.values())
 
 
 def _archive_dir_for_home(row: dict) -> str:
-    """fs/<home> as the collector lays it out, derived from one row so Windows
-    drive-letter layouts (fs/C/Users/alice) are handled without guessing."""
-    orig = str(row.get("path") or "")
+    """Return `fs/<home>` as the collector laid it out, derived from one manifest row.
+
+    Deriving it from a row handles Windows drive-letter layouts
+    (`fs/C/Users/alice`) without guessing.
+    """
+    original = str(row.get("path") or "")
     home = str(row.get("home") or "")
-    ap = str(row.get("archive_path") or "")
-    rel = _relative_to_home(orig, home)
-    if rel and ap.replace("\\", "/").endswith(rel):
-        return ap.replace("\\", "/")[: -len(rel)].rstrip("/")
+    archive_path = str(row.get("archive_path") or "")
+    rel = _relative_to_home(original, home)
+    if rel and archive_path.replace("\\", "/").endswith(rel):
+        return archive_path.replace("\\", "/")[: -len(rel)].rstrip("/")
     return "fs" + home.replace("\\", "/")
 
 
 def _relative_to_home(path: str, home: str) -> str:
-    p = path.replace("\\", "/")
-    h = home.replace("\\", "/").rstrip("/")
-    if h and (p == h or p.startswith(h + "/")):
-        return p[len(h) :].lstrip("/")
-    return p.lstrip("/")
+    posix_path = path.replace("\\", "/")
+    posix_home = home.replace("\\", "/").rstrip("/")
+    if posix_home and (posix_path == posix_home or posix_path.startswith(posix_home + "/")):
+        return posix_path[len(posix_home) :].lstrip("/")
+    return posix_path.lstrip("/")
 
 
 # ---- loose layout (no manifest) ------------------------------------------------
 
 
-def _discover_loose(col: Collection, catalog: Catalog) -> None:
-    root = col.root
+def _discover_loose(collection: Collection, catalog: Catalog) -> None:
+    root = collection.root
     tree = (
         root / "fs" if (root / "fs").is_dir() and not (root / "manifest.jsonl").exists() else root
     )
     if tree is not root:
-        col.notes.append("fs/ found without manifest.jsonl; treating fs/ as the root")
+        collection.notes.append("fs/ found without manifest.jsonl; treating fs/ as the root")
     homes: list[Home] = []
 
     # The analyst may have pointed at an agent directory itself (~/.claude,
     # ~/.codex copied out on its own). Its parent is then the home, restricted
     # to this one directory, and nothing inside it is a home.
-    for e in catalog.entries:
-        if len(e.segments) == 1 and e.agent != "shared" and e.regexes[0].fullmatch(tree.name):
+    for catalog_entry in catalog.entries:
+        if (
+            len(catalog_entry.segments) == 1
+            and catalog_entry.agent != "shared"
+            and catalog_entry.regexes[0].fullmatch(tree.name)
+        ):
             parent = tree.resolve().parent
             home = Home(
                 disk_path=tree.parent,
                 original="",
                 user=_user_from_parts(parent.parts[1:]),
-                host=col.host,
+                host=collection.host,
                 inferred=True,
             )
-            col.notes.append("root is a %s directory; treating its parent as the home" % e.agent)
+            collection.notes.append(
+                "root is a %s directory; treating its parent as the home" % catalog_entry.agent
+            )
             homes.append(home)
-            nested = catalog.nested_matches(tree, onerror=_problem_recorder(col))
-            _add_hits(col, home, [(e, tree), *list(nested)])
-            col.homes = homes
+            nested = catalog.nested_matches(tree, onerror=_problem_recorder(collection))
+            _add_hits(collection, home, [(catalog_entry, tree), *list(nested)])
+            collection.homes = homes
             return
 
-    first_rx = catalog.first_segment_regexes()
+    first_patterns = catalog.first_segment_regexes()
     for dirpath, dirnames, filenames in os.walk(
-        tree, onerror=_problem_recorder(col), followlinks=False
+        tree, onerror=_problem_recorder(collection), followlinks=False
     ):
         here = Path(dirpath)
         names = dirnames + filenames
-        if any(rx.fullmatch(n) for n in names for rx in first_rx):
-            hits = list(catalog.matches_in_home(here, onerror=_problem_recorder(col)))
+        if any(pattern.fullmatch(name) for name in names for pattern in first_patterns):
+            hits = list(catalog.matches_in_home(here, onerror=_problem_recorder(collection)))
             # A directory holding only shared files (AGENTS.md) is a
             # project, not a home; it needs a hit from a real agent.
             if any(entry.agent != "shared" for entry, _ in hits):
-                homes.append(_make_home(here, tree, col.host))
-                _add_hits(col, homes[-1], hits)
+                homes.append(_make_home(here, tree, collection.host))
+                _add_hits(collection, homes[-1], hits)
                 dirnames[:] = []  # a home does not contain other homes
                 continue
-        dirnames[:] = [d for d in dirnames if not (here / d).is_symlink()]
-    col.homes = homes
+        dirnames[:] = [dirname for dirname in dirnames if not (here / dirname).is_symlink()]
+    collection.homes = homes
 
 
 def _user_from_parts(parts) -> str:
-    """Owner of a home from its path components, by the conventions the
-    collectors use to enumerate homes: home/<u>, Users/<u>, usr/home/<u>,
-    export/home/<u>, root, var/root. Empty when none applies."""
-    parts = [p for p in parts if p]
+    """Return the owner of a home from its path components, or `""`.
+
+    The conventions are those the collectors enumerate homes by: home/<user>,
+    Users/<user>, usr/home/<user>, export/home/<user>, root and var/root.
+    """
+    parts = [part for part in parts if part]
     for parent in HOME_PARENTS:
-        pp = parent.split("/")
-        if len(parts) >= len(pp) + 1 and parts[-len(pp) - 1 : -1] == pp:
+        parent_parts = parent.split("/")
+        if (
+            len(parts) >= len(parent_parts) + 1
+            and parts[-len(parent_parts) - 1 : -1] == parent_parts
+        ):
             return parts[-1]
     if "/".join(parts) in ROOT_HOMES:
         return "root"
@@ -429,22 +469,22 @@ def _make_home(here: Path, tree: Path, host: str) -> Home:
     )
 
 
-def _add_hits(col: Collection, home: Home, hits) -> None:
+def _add_hits(collection: Collection, home: Home, hits) -> None:
     # The most specific entry wins: .gemini/antigravity-cli claims its files
     # before the enclosing .gemini entry sweeps the rest, matching the
     # collectors' nested-claim rule.
-    hits = sorted(hits, key=lambda h: -len(h[0].segments))
+    hits = sorted(hits, key=lambda hit: -len(hit[0].segments))
     seen: dict[Path, None] = {}
-    onerror = _problem_recorder(col)
+    onerror = _problem_recorder(collection)
     for entry, hit in hits:
-        for f in _walk_files(hit, onerror):
-            if f in seen:
+        for path in _walk_files(hit, onerror):
+            if path in seen:
                 continue
-            seen[f] = None
-            rel = f.relative_to(home.disk_path).as_posix()
-            col.artifacts.append(
+            seen[path] = None
+            rel = path.relative_to(home.disk_path).as_posix()
+            collection.artifacts.append(
                 Artifact(
-                    disk_path=f,
+                    disk_path=path,
                     original=(home.original.rstrip("/") + "/" + rel) if home.original else rel,
                     rel=rel,
                     agent=entry.agent,
@@ -453,28 +493,27 @@ def _add_hits(col: Collection, home: Home, hits) -> None:
             )
 
 
-def _problem_recorder(col: Collection):
-    """An os.walk onerror callback that records the unreadable directory as a
-    problem of the collection, once per path, instead of skipping it."""
+def _problem_recorder(collection: Collection):
+    """Return an os.walk `onerror` callback that records each unreadable path once as a problem."""
 
-    def record(e: OSError) -> None:
-        line = describe_error("", e)
-        if line not in col.problems:
-            col.problems.append(line)
+    def record(error: OSError) -> None:
+        line = describe_error("", error)
+        if line not in collection.problems:
+            collection.problems.append(line)
 
     return record
 
 
-def _walk_files(p: Path, onerror=None) -> Iterator[Path]:
-    if p.is_symlink():
+def _walk_files(path: Path, onerror=None) -> Iterator[Path]:
+    if path.is_symlink():
         return
-    if p.is_file():
-        yield p
+    if path.is_file():
+        yield path
         return
-    for dirpath, dirnames, filenames in os.walk(p, onerror=onerror, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(path, onerror=onerror, followlinks=False):
         here = Path(dirpath)
-        dirnames[:] = [d for d in dirnames if not (here / d).is_symlink()]
-        for n in filenames:
-            f = here / n
-            if not f.is_symlink():
-                yield f
+        dirnames[:] = [dirname for dirname in dirnames if not (here / dirname).is_symlink()]
+        for filename in filenames:
+            file_path = here / filename
+            if not file_path.is_symlink():
+                yield file_path

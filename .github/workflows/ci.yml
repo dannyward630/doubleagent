@@ -185,8 +185,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Install analyzer dependencies
-        run: pip install -r analyzer/requirements.txt
-      - name: unittest
+        run: pip install -r analyzer/requirements-dev.txt
+      - name: pytest
         run: analyzer/tests/run.sh
 
   lint:

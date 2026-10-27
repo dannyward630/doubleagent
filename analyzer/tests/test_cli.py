@@ -1685,7 +1685,7 @@ class ProjectAgentsTests(unittest.TestCase):
             c.add("alice", home, agent if new else "project", rel, text)
         return c.write()
 
-    def agents_of(self, root: Path) -> dict[str, dict]:
+    def agents_of(self, root: Path) -> dict[str, cli.ProjectAgents]:
         col = open_input(root, self.cat)
         try:
             return cli.project_agents(col)

@@ -12,7 +12,8 @@ credentials; they are never read here, whatever key a caller asks for.
 The database is opened through `sqlite_util.open_copy`, so the `-wal`
 sidecar is applied and the evidence copy is never opened. A file that is
 not SQLite at all yields nothing; a damaged SQLite file or a value that is
-not JSON is reported in the returned problem list."""
+not JSON is reported in the returned problem list.
+"""
 
 from __future__ import annotations
 
@@ -42,38 +43,42 @@ def _text(value) -> str:
 
 
 def read_items(path: Path, keys: Iterable[str]) -> tuple[dict[str, object], list[str]]:
-    """(key -> decoded JSON value, problems) for the requested `ItemTable`
-    keys present in the database. A value that is not valid JSON is returned
-    as its text and noted in problems, so a caller can still try to recover
-    from it."""
-    wanted = [k for k in keys if isinstance(k, str) and not k.startswith(SECRET_PREFIX)]
+    """Return the decoded JSON values of the requested `ItemTable` keys.
+
+    A value that is not JSON is returned as its text and noted in the
+    problems. `secret://` keys are never read.
+
+    Returns:
+        The values of the keys present and the problems.
+    """
+    wanted = [key for key in keys if isinstance(key, str) and not key.startswith(SECRET_PREFIX)]
     path = Path(path)
     out: dict[str, object] = {}
     problems: list[str] = []
     if not wanted or path.is_symlink() or not sqlite_util.is_sqlite(path):
         return out, problems
     try:
-        with sqlite_util.open_copy(path) as con:
-            if "ItemTable" not in sqlite_util.table_names(con):
+        with sqlite_util.open_copy(path) as connection:
+            if "ItemTable" not in sqlite_util.table_names(connection):
                 return out, problems
             sql = "select key, value from ItemTable where key in (%s)" % ",".join("?" * len(wanted))
-            rows = [(r[0], r[1]) for r in con.execute(sql, wanted)]
-    except (sqlite3.DatabaseError, OSError) as e:
-        return out, ["state.vscdb unreadable: %s" % e]
+            rows = [(row[0], row[1]) for row in connection.execute(sql, wanted)]
+    except (sqlite3.DatabaseError, OSError) as error:
+        return out, ["state.vscdb unreadable: %s" % error]
     for key, value in rows:
         if not isinstance(key, str) or key.startswith(SECRET_PREFIX):
             continue
         text = _text(value)
         try:
             out[key] = json.loads(text)
-        except ValueError as e:
+        except ValueError as error:
             out[key] = text
-            problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, e))
+            problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, error))
     return out, problems
 
 
 def read_item(path: Path, key: str) -> tuple[object, list[str]]:
-    """The decoded JSON value of one `ItemTable` key, or None, and problems."""
+    """Return the decoded JSON value of one `ItemTable` key, or None, and the problems."""
     values, problems = read_items(path, [key])
     return values.get(key), problems
 

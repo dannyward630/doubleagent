@@ -1,4 +1,4 @@
-"""Parser registry. Add a parser module here and fill its row in the table in docs/agents.md."""
+"""Register every parser; a new parser module is added to `ALL` here."""
 
 from __future__ import annotations
 
@@ -97,10 +97,11 @@ NO_TRANSCRIPTS: frozenset[str] = frozenset(
 
 
 def by_agent() -> dict[str, list[Parser]]:
-    out: dict[str, list[Parser]] = {}
-    for p in ALL:
-        out.setdefault(p.agent, []).append(p)
-    return out
+    """Return the registered parsers by their agent name."""
+    parsers: dict[str, list[Parser]] = {}
+    for parser in ALL:
+        parsers.setdefault(parser.agent, []).append(parser)
+    return parsers
 
 
 __all__ = ["ALL", "NO_TRANSCRIPTS", "Options", "Parser", "by_agent"]

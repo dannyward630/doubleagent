@@ -1,11 +1,11 @@
-"""Read-only access to collected SQLite databases.
+"""Open collected SQLite databases without touching the evidence copy.
 
-Agents that use WAL mode (OpenCode, Crush, Goose, Kilo, Antigravity's
-conversation stores) keep recent rows in a `-wal` sidecar until a checkpoint,
-so the database, its `-wal` and its `-shm` are copied together into a scratch
-directory and opened there. The originals are never opened, let alone
-written, which matters because SQLite would otherwise checkpoint the WAL into
-the evidence copy."""
+An agent in WAL (write-ahead log) mode keeps recent rows in a `-wal` sidecar
+until a checkpoint, so the database and its `-wal`, `-shm` and `-journal`
+sidecars are copied together into a scratch directory and opened there.
+The originals are never opened: SQLite would otherwise checkpoint the WAL
+into the evidence copy.
+"""
 
 from __future__ import annotations
 
@@ -19,32 +19,40 @@ from pathlib import Path
 
 @contextmanager
 def open_copy(path: Path) -> Iterator[sqlite3.Connection]:
+    """Yield a connection to a scratch copy of the database and its sidecars.
+
+    Rows come back as `sqlite3.Row`. The copy is removed when the context ends.
+    """
     path = Path(path)
-    tmp = tempfile.mkdtemp(prefix="cac-sqlite-")
+    scratch = tempfile.mkdtemp(prefix="cac-sqlite-")
     try:
-        target = Path(tmp) / path.name
+        target = Path(scratch) / path.name
         shutil.copyfile(path, target)
         for suffix in ("-wal", "-shm", "-journal"):
-            side = Path(str(path) + suffix)
-            if side.is_file():
-                shutil.copyfile(side, Path(str(target) + suffix))
-        con = sqlite3.connect(str(target))
+            sidecar = Path(str(path) + suffix)
+            if sidecar.is_file():
+                shutil.copyfile(sidecar, Path(str(target) + suffix))
+        connection = sqlite3.connect(str(target))
         try:
-            con.row_factory = sqlite3.Row
-            yield con
+            connection.row_factory = sqlite3.Row
+            yield connection
         finally:
-            con.close()
+            connection.close()
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
-def table_names(con: sqlite3.Connection) -> set:
-    return {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
+def table_names(connection: sqlite3.Connection) -> set:
+    """Return the names of the database's tables."""
+    return {
+        row[0] for row in connection.execute("select name from sqlite_master where type='table'")
+    }
 
 
 def is_sqlite(path: Path) -> bool:
+    """Return whether the file starts with the SQLite header."""
     try:
-        with open(path, "rb") as fh:
-            return fh.read(16) == b"SQLite format 3\x00"
+        with open(path, "rb") as handle:
+            return handle.read(16) == b"SQLite format 3\x00"
     except OSError:
         return False

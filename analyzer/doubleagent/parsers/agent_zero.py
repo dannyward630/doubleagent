@@ -51,31 +51,31 @@ from .base import (
 # `<a0>/tmp/chats`); a volume mounted at `/a0/usr` is collected with its
 # `_data` directory as the home, so its chats start at `chats/`.
 CHATS_ROOT = r"(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?(?:usr|tmp)/)?chats"
-CHAT_RX = re.compile(r"^%s/[^/]+/chat\.json$" % CHATS_ROOT)
-LEGACY_RX = re.compile(r"^%s/[^/]+\.json$" % CHATS_ROOT)
+CHAT_PATTERN = re.compile(r"^%s/[^/]+/chat\.json$" % CHATS_ROOT)
+LEGACY_PATTERN = re.compile(r"^%s/[^/]+\.json$" % CHATS_ROOT)
 # The other `usr/` files read beside the chats, in the same two forms (a home
 # install's `<a0>/usr/` prefix, or none at a volume's base).
 USR = r"^(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?usr/)?"
-TASKS_RX = re.compile(
+TASKS_PATTERN = re.compile(
     r"^(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?(?:usr|tmp)/)?scheduler/tasks\.json$"
 )
-TG_STATE_RX = re.compile(USR + r"plugins/_telegram_integration/state\.json$")
+TELEGRAM_STATE_PATTERN = re.compile(USR + r"plugins/_telegram_integration/state\.json$")
 # A plugin's scoped directory: `usr/plugins/<plugin>`, a profile's
 # `usr/agents/<profile>/plugins/<plugin>`, a project's
 # `usr/projects/<name>/.a0proj/plugins/<plugin>` and a project profile's
 # `.a0proj/agents/<profile>/plugins/<plugin>` (helpers/plugins.py:850-863).
 SCOPE = r"(?:projects/(?P<project>[^/]+)/\.a0proj/)?(?:agents/(?P<profile>[^/]+)/)?plugins/"
-POLICY_RX = re.compile(USR + SCOPE + r"(?P<plugin>_tool_access|_orchestrator)/config\.json$")
-TOGGLE_RX = re.compile(
+POLICY_PATTERN = re.compile(USR + SCOPE + r"(?P<plugin>_tool_access|_orchestrator)/config\.json$")
+TOGGLE_PATTERN = re.compile(
     USR + SCOPE + r"(?P<plugin>_infection_check|_orchestrator)/\.toggle-(?P<state>[01])$"
 )
-CONNECTOR_ENV_RX = re.compile(r"^\.agent-zero/\.env$")
+CONNECTOR_ENV_PATTERN = re.compile(r"^\.agent-zero/\.env$")
 
 LOG_SIZE = 1000
 TOOL_TYPES = ("tool", "mcp", "code_exe", "browser", "subagent")
 ARG_KEYS = ("code", "command", "url", "query", "path")
-ICON_RX = re.compile(r"icon://\S+\s*")
-LOGS_RX = re.compile(r'"logs"\s*:\s*\[')
+ICON_PATTERN = re.compile(r"icon://\S+\s*")
+LOGS_PATTERN = re.compile(r'"logs"\s*:\s*\[')
 # The `data` keys of a Telegram chat, in row order (`telegram_bot_cfg` is never read).
 TELEGRAM_KEYS = ("telegram_bot", "telegram_chat_id", "telegram_user_id", "telegram_username")
 # The policy keys of `_tool_access` (plugins/_tool_access/default_config.yaml:1-5).
@@ -95,7 +95,7 @@ ORCHESTRATOR_KEYS = (
 )
 # The message `ensure_tool_allowed` raises for a blocked tool, inside the
 # formatted error of the `warning` log item (helpers/tool_policy.py:197-208).
-BLOCKED_RX = re.compile(
+BLOCKED_PATTERN = re.compile(
     r'Tool "(?P<tool>[^"]*)" is blocked for agent profile "(?P<profile>[^"]*)"\.'
 )
 MCP_APPROVAL_HEADING = "Responses MCP approval required"
@@ -193,7 +193,7 @@ def _content_text(value) -> str:
 
 def recover_logs(raw: str) -> list[dict]:
     """Return the complete log items before the point where a damaged file breaks off."""
-    match = LOGS_RX.search(raw)
+    match = LOGS_PATTERN.search(raw)
     if not match:
         return []
     decoder = json.JSONDecoder()
@@ -323,7 +323,7 @@ def warning_decision(item: dict) -> tuple[str, str]:
     """
     heading = str(item.get("heading") or "")
     content = item.get("content")
-    match = BLOCKED_RX.search(content) if isinstance(content, str) else None
+    match = BLOCKED_PATTERN.search(content) if isinstance(content, str) else None
     if match:
         return (
             "permission decision: blocked tool=%s profile=%s" % (match["tool"], match["profile"]),
@@ -366,53 +366,53 @@ class AgentZeroParser(Parser):
         return any(
             pattern.match(rel)
             for pattern in (
-                CHAT_RX,
-                LEGACY_RX,
-                TASKS_RX,
-                TG_STATE_RX,
-                POLICY_RX,
-                TOGGLE_RX,
-                CONNECTOR_ENV_RX,
+                CHAT_PATTERN,
+                LEGACY_PATTERN,
+                TASKS_PATTERN,
+                TELEGRAM_STATE_PATTERN,
+                POLICY_PATTERN,
+                TOGGLE_PATTERN,
+                CONNECTOR_ENV_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the scheduler's tasks and the Telegram chat map."""
-        return bool(TASKS_RX.match(artifact.rel) or TG_STATE_RX.match(artifact.rel))
+        return bool(TASKS_PATTERN.match(artifact.rel) or TELEGRAM_STATE_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return the wider window of the scheduler, whose `last_run` follows the reply."""
         return (
             TASKS_TOLERANCE
-            if TASKS_RX.match(artifact.rel)
+            if TASKS_PATTERN.match(artifact.rel)
             else super().secondary_tolerance(artifact)
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Agent Zero file."""
         rel = artifact.rel
-        if TASKS_RX.match(rel):
+        if TASKS_PATTERN.match(rel):
             yield from self._tasks(artifact)
             return
-        if TG_STATE_RX.match(rel):
+        if TELEGRAM_STATE_PATTERN.match(rel):
             yield from self._telegram_state(artifact)
             return
-        match = POLICY_RX.match(rel)
+        match = POLICY_PATTERN.match(rel)
         if match:
             yield from self._policy(artifact, match)
             return
-        match = TOGGLE_RX.match(rel)
+        match = TOGGLE_PATTERN.match(rel)
         if match:
             yield from self._toggle(artifact, match)
             return
-        if CONNECTOR_ENV_RX.match(rel):
+        if CONNECTOR_ENV_PATTERN.match(rel):
             yield from self._connector_env(artifact)
             return
         yield from self._chat(artifact, opts)
 
     def _chat(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         path = artifact.disk_path
-        legacy = not CHAT_RX.match(artifact.rel)
+        legacy = not CHAT_PATTERN.match(artifact.rel)
         fallback_id = path.stem if legacy else path.parent.name
         base = self.base_row(artifact)
         base.session_id = fallback_id
@@ -709,7 +709,7 @@ class AgentZeroParser(Parser):
                     row.tool_name, row.tool_use_id = tool_name, tool_id
                     yield row
             else:
-                heading = ICON_RX.sub("", str(item.get("heading") or "")).strip()
+                heading = ICON_PATTERN.sub("", str(item.get("heading") or "")).strip()
                 text = " | ".join(part for part in (heading, _content_text(content)) if part)
                 yield make_row(
                     "system", "%s: %s" % (kind or "log", text) if text else kind or "log"

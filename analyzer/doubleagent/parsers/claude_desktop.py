@@ -61,24 +61,30 @@ BASE = (
 )
 _TREES = r"(?:local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/"
 # Group `sess` is the session dir, relative to the home.
-TRANSCRIPT_RX = re.compile(
+TRANSCRIPT_PATTERN = re.compile(
     r"(?P<sess>"
     + BASE
     + _TREES
     + r"(?:agent/)?[^/]+)/\.claude/projects/[^/]+/"
     + r"(?:[^/]+\.jsonl|[^/]+/subagents/(?:[^/]+/)*agent-[^/]+\.jsonl)$"
 )
-STAGED_RX = re.compile(BASE + r"claude-code-sessions/[^/]+/[^/]+/imported-staging/[^/]+\.jsonl$")
-AUDIT_RX = re.compile(
+STAGED_PATTERN = re.compile(
+    BASE + r"claude-code-sessions/[^/]+/[^/]+/imported-staging/[^/]+\.jsonl$"
+)
+AUDIT_PATTERN = re.compile(
     r"(?P<sess>" + BASE + r"local-agent-mode-sessions/[^/]+/[^/]+/(?:agent/)?[^/]+)/audit\.jsonl$"
 )
-RECORD_RX = re.compile(BASE + r"(?P<tree>" + _TREES + r")(?:agent/)?local_[0-9a-f-]{36}\.json$")
-SCHED_RX = re.compile(BASE + _TREES + r"scheduled-tasks\.json$")
-WORKTREE_RX = re.compile(BASE + r"git-worktrees\.json$")
-SPACES_RX = re.compile(BASE + r"local-agent-mode-sessions/[^/]+/[^/]+/remote-session-spaces\.json$")
+RECORD_PATTERN = re.compile(
+    BASE + r"(?P<tree>" + _TREES + r")(?:agent/)?local_[0-9a-f-]{36}\.json$"
+)
+SCHEDULED_TASKS_PATTERN = re.compile(BASE + _TREES + r"scheduled-tasks\.json$")
+WORKTREE_PATTERN = re.compile(BASE + r"git-worktrees\.json$")
+SPACES_PATTERN = re.compile(
+    BASE + r"local-agent-mode-sessions/[^/]+/[^/]+/remote-session-spaces\.json$"
+)
 
-LONG_RX = re.compile(r"^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-SHORT_RX = re.compile(r"^[0-9a-f]{8}$")
+LONG_PATTERN = re.compile(r"^local_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+SHORT_PATTERN = re.compile(r"^[0-9a-f]{8}$")
 
 
 def _bool(value) -> str:
@@ -166,14 +172,14 @@ def _find_record(session_dir: Path) -> dict | None:
     """
     org = _org_dir(session_dir)
     name = session_dir.name
-    if not (LONG_RX.match(name) or SHORT_RX.match(name)):
+    if not (LONG_PATTERN.match(name) or SHORT_PATTERN.match(name)):
         return None
     if org.is_symlink() or session_dir.parent.is_symlink():
         return None
     for directory in (org, org / "agent"):
         if not _plain_dir(directory):
             continue
-        if LONG_RX.match(name):
+        if LONG_PATTERN.match(name):
             candidates = [directory / (name + ".json")]
         else:
             try:
@@ -181,7 +187,9 @@ def _find_record(session_dir: Path) -> dict | None:
             except OSError:
                 candidates = []
         for candidate in candidates:
-            if not LONG_RX.match(candidate.name[: -len(".json")]) or not _plain_file(candidate):
+            if not LONG_PATTERN.match(candidate.name[: -len(".json")]) or not _plain_file(
+                candidate
+            ):
                 continue
             record = _read_json(candidate)
             if isinstance(record, dict):
@@ -236,40 +244,42 @@ class ClaudeDesktopParser(ClaudeCodeParser):
         return any(
             pattern.match(rel)
             for pattern in (
-                TRANSCRIPT_RX,
-                STAGED_RX,
-                AUDIT_RX,
-                RECORD_RX,
-                SCHED_RX,
-                WORKTREE_RX,
-                SPACES_RX,
+                TRANSCRIPT_PATTERN,
+                STAGED_PATTERN,
+                AUDIT_PATTERN,
+                RECORD_PATTERN,
+                SCHEDULED_TASKS_PATTERN,
+                WORKTREE_PATTERN,
+                SPACES_PATTERN,
             )
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Claude Desktop file."""
         rel = artifact.rel
-        match = TRANSCRIPT_RX.match(rel)
+        match = TRANSCRIPT_PATTERN.match(rel)
         if match:
-            yield from self._transcript(artifact, opts, self._sess(artifact, match.group("sess")))
-        elif STAGED_RX.match(rel):
+            yield from self._transcript(
+                artifact, opts, self._session_dir(artifact, match.group("sess"))
+            )
+        elif STAGED_PATTERN.match(rel):
             yield from self._transcript(artifact, opts, None)
-        elif AUDIT_RX.match(rel):
-            match = AUDIT_RX.match(rel)
+        elif AUDIT_PATTERN.match(rel):
+            match = AUDIT_PATTERN.match(rel)
             assert match is not None
-            yield from self._audit(artifact, opts, self._sess(artifact, match.group("sess")))
-        elif RECORD_RX.match(rel):
+            yield from self._audit(artifact, opts, self._session_dir(artifact, match.group("sess")))
+        elif RECORD_PATTERN.match(rel):
             yield from self._record(artifact)
-        elif SCHED_RX.match(rel):
+        elif SCHEDULED_TASKS_PATTERN.match(rel):
             yield from self._scheduled(artifact)
-        elif WORKTREE_RX.match(rel):
+        elif WORKTREE_PATTERN.match(rel):
             yield from self._worktrees(artifact)
-        elif SPACES_RX.match(rel):
+        elif SPACES_PATTERN.match(rel):
             yield from self._spaces(artifact)
 
     @staticmethod
-    def _sess(artifact: Artifact, sess_rel: str) -> Path:
-        return artifact.home.disk_path / sess_rel
+    def _session_dir(artifact: Artifact, session_rel: str) -> Path:
+        return artifact.home.disk_path / session_rel
 
     def _system(self, artifact: Artifact, text: str, line: int = 0) -> Row:
         row = self.base_row(artifact)
@@ -294,7 +304,7 @@ class ClaudeDesktopParser(ClaudeCodeParser):
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for an audit log or a session record."""
-        return bool(AUDIT_RX.match(artifact.rel) or RECORD_RX.match(artifact.rel))
+        return bool(AUDIT_PATTERN.match(artifact.rel) or RECORD_PATTERN.match(artifact.rel))
 
     @staticmethod
     def _init_cwd(artifact: Artifact) -> str:
@@ -466,7 +476,7 @@ class ClaudeDesktopParser(ClaudeCodeParser):
     # -- session records -------------------------------------------------------
 
     def _record(self, artifact: Artifact) -> Iterator[Row]:
-        match = RECORD_RX.match(artifact.rel)
+        match = RECORD_PATTERN.match(artifact.rel)
         assert match is not None
         code = match.group("tree").startswith("claude-code-sessions/")
         record = _read_json(artifact.disk_path)
@@ -599,7 +609,7 @@ class ClaudeDesktopParser(ClaudeCodeParser):
         org = record_dir.parent if record_dir.name == "agent" else record_dir
         session_id = _str(record.get("sessionId")) or artifact.disk_path.stem
         names = [session_id]
-        if LONG_RX.match(session_id):
+        if LONG_PATTERN.match(session_id):
             names.append(session_id[len("local_") : len("local_") + 8])
         for directory in dict.fromkeys((record_dir, org)):
             for name in names:

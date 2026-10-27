@@ -39,20 +39,20 @@ from .base import Options, Parser, error_rows, line_text
 CHAT = ".aider.chat.history.md"
 INPUT = ".aider.input.history"
 LLM = ".aider.llm.history"
-FILE_RX = re.compile(r"^(?:.*/)?(\.aider\.(?:chat\.history\.md|input\.history|llm\.history))$")
-HEADER_RX = re.compile(r"^# aider chat started at (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\s*$")
-INPUT_TS_RX = re.compile(r"^# (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\s*$")
-LLM_RX = re.compile(r"^(TO LLM|LLM RESPONSE) (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\s*$")
+FILE_PATTERN = re.compile(r"^(?:.*/)?(\.aider\.(?:chat\.history\.md|input\.history|llm\.history))$")
+HEADER_PATTERN = re.compile(r"^# aider chat started at (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)\s*$")
+INPUT_TIMESTAMP_PATTERN = re.compile(r"^# (\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)?)\s*$")
+LLM_PATTERN = re.compile(r"^(TO LLM|LLM RESPONSE) (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\s*$")
 ROLE_TURN = {"USER": "user", "ASSISTANT": "assistant", "SYSTEM": "system"}
 # Announcement lines (`base_coder.py` `get_announcements`): the main model with
 # its edit format and options, the editor model in architect mode, the weak
 # model when it is not the main model.
-MAIN_MODEL_RX = re.compile(r"^(?:Main model|Model): (\S.*?) with (\S+) edit format(?:, .*)?$")
-EDITOR_MODEL_RX = re.compile(r"^Editor model: (\S.*?) with (\S+) edit format$")
-WEAK_MODEL_RX = re.compile(r"^Weak model: (\S.*)$")
+MAIN_MODEL_PATTERN = re.compile(r"^(?:Main model|Model): (\S.*?) with (\S+) edit format(?:, .*)?$")
+EDITOR_MODEL_PATTERN = re.compile(r"^Editor model: (\S.*?) with (\S+) edit format$")
+WEAK_MODEL_PATTERN = re.compile(r"^Weak model: (\S.*)$")
 # A `confirm_ask` line (`io.py`): the question, its options, the default in
 # brackets, and the first letter of the answer, lower case.
-CONFIRM_RX = re.compile(
+CONFIRM_PATTERN = re.compile(
     r"^(?P<question>.+?) \(Y\)es/\(N\)o(?:/\(A\)ll)?(?:/\(S\)kip all)?"
     r"(?:/\(D\)on't ask again)? \[(?P<default>[^\]]*)\]: (?P<answer>[ynasd])$"
 )
@@ -91,7 +91,7 @@ def read_input_history(path: Path, errors: list | None = None) -> list[tuple[int
     """
     out: list[list] = []
     for line_number, line in _lines(path):
-        match = INPUT_TS_RX.match(line)
+        match = INPUT_TIMESTAMP_PATTERN.match(line)
         if match:
             out.append([line_number, match.group(1), []])
         elif line.startswith("+"):
@@ -108,7 +108,10 @@ def read_headers(path: Path) -> list[str]:
     if not path.is_file() or path.is_symlink():
         return []
     return [
-        match.group(1) for _, line in _lines(path) for match in [HEADER_RX.match(line)] if match
+        match.group(1)
+        for _, line in _lines(path)
+        for match in [HEADER_PATTERN.match(line)]
+        if match
     ]
 
 
@@ -121,11 +124,11 @@ class AiderParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         """Return True for one of the three Aider history files."""
-        return bool(FILE_RX.match(artifact.rel))
+        return bool(FILE_PATTERN.match(artifact.rel))
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the input and LLM histories."""
-        match = FILE_RX.match(artifact.rel)
+        match = FILE_PATTERN.match(artifact.rel)
         return bool(match) and match.group(1) != CHAT
 
     def base_row(self, artifact: Artifact) -> Row:
@@ -141,7 +144,7 @@ class AiderParser(Parser):
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Aider history file."""
-        match = FILE_RX.match(artifact.rel)
+        match = FILE_PATTERN.match(artifact.rel)
         assert match is not None  # wants() accepted only matching paths
         kind = match.group(1)
         if kind == CHAT:
@@ -219,7 +222,7 @@ class AiderParser(Parser):
                 )
 
         for line_number, line in _lines(artifact.disk_path):
-            match = HEADER_RX.match(line)
+            match = HEADER_PATTERN.match(line)
             if match:
                 yield from flush()
                 kind, buffer, line_numbers = "", [], []
@@ -266,19 +269,19 @@ class AiderParser(Parser):
         They follow the run's `tool_result` row. `models` holds the session's main, editor
         and weak model so far and is updated in place.
         """
-        announced = any(MAIN_MODEL_RX.match(text_line) for text_line in lines)
+        announced = any(MAIN_MODEL_PATTERN.match(text_line) for text_line in lines)
         for line_number, line in zip(line_numbers, lines, strict=True):
             changes: list[tuple[str, str, str, bool]] = []
-            match = MAIN_MODEL_RX.match(line) if announced else None
+            match = MAIN_MODEL_PATTERN.match(line) if announced else None
             if match:
                 changes.append(("main", match.group(1), "", True))
                 if line.startswith("Model: "):
                     # no separate weak model: the weak model is the main model,
                     # a row only when it replaces a separate one
                     changes.append(("weak", match.group(1), " (weak model)", False))
-            elif announced and (match := EDITOR_MODEL_RX.match(line)):
+            elif announced and (match := EDITOR_MODEL_PATTERN.match(line)):
                 changes.append(("editor", match.group(1), " (editor model)", True))
-            elif announced and (match := WEAK_MODEL_RX.match(line)):
+            elif announced and (match := WEAK_MODEL_PATTERN.match(line)):
                 changes.append(("weak", match.group(1), " (weak model)", True))
             for role, name, label, first in changes:
                 old = models.get(role, "")
@@ -290,7 +293,7 @@ class AiderParser(Parser):
                     )
             if changes:
                 continue
-            match = CONFIRM_RX.match(line)
+            match = CONFIRM_PATTERN.match(line)
             if match:
                 answer = match.group("answer")
                 text = "permission decision: %s (%s) answer=%s default=%s" % (
@@ -389,7 +392,7 @@ class AiderParser(Parser):
             yield row
 
         for line_number, line in _lines(artifact.disk_path):
-            match = LLM_RX.match(line)
+            match = LLM_PATTERN.match(line)
             if match:
                 yield from emit(block)
                 block = {

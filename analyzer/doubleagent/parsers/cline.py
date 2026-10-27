@@ -63,21 +63,21 @@ from .cline_legacy import (
 )
 
 ROOT = r"(?:(?:.*/)?User/globalStorage/saoudrizwan\.claude-dev|\.cline/data)"
-STATE_RX = re.compile(r"^%s/state/taskHistory\.json$" % ROOT, re.I)
-MANIFEST_RX = re.compile(r"^\.cline/data/sessions/([^/]+)/\1\.json$")
-MESSAGES_RX = re.compile(r"^\.cline/data/sessions/[^/]+/[^/]+\.messages\.json$")
-SESSIONS_DB_REL = ".cline/data/db/sessions.db"
-SYNC_QUEUE_RX = re.compile(
+STATE_PATTERN = re.compile(r"^%s/state/taskHistory\.json$" % ROOT, re.I)
+MANIFEST_PATTERN = re.compile(r"^\.cline/data/sessions/([^/]+)/\1\.json$")
+MESSAGES_PATTERN = re.compile(r"^\.cline/data/sessions/[^/]+/[^/]+\.messages\.json$")
+SESSIONS_DATABASE_REL = ".cline/data/db/sessions.db"
+SYNC_QUEUE_PATTERN = re.compile(
     r"^(?:.*/)?User/globalStorage/saoudrizwan\.claude-dev/cache/sync-queue\.json$", re.I
 )
-SEARCH_DB_REL = ".cline/data/db/session-search.db"
+SEARCH_DATABASE_REL = ".cline/data/db/session-search.db"
 INPUT_HISTORY_REL = ".cline/data/cache/user_input_history.jsonl"
 SEARCH_COLUMNS = (
     "session_id, document_id, ordinal, role, started_at, workspace_root, title, content"
 )
 BLOB_UPLOAD_KEY = "enterprise.blobUpload"
 SEARCH_KEYS = ("title", "workspace_root", "prompt", "document_count", "indexed_at")
-MESSAGES_KEY_RX = re.compile(r'"messages"\s*:\s*(?=\[)')
+MESSAGES_KEY_PATTERN = re.compile(r'"messages"\s*:\s*(?=\[)')
 HOOKS_REL = ".cline/data/logs/hooks.jsonl"
 # A tool_call or tool_result line is written when the call starts or ends,
 # the transcript's message when the whole turn is persisted, which can be a
@@ -85,14 +85,14 @@ HOOKS_REL = ".cline/data/logs/hooks.jsonl"
 HOOKS_TOLERANCE_SECONDS = 3600.0
 GLOBAL_STATE_REL = ".cline/data/globalState.json"
 GLOBAL_SETTINGS_REL = ".cline/data/settings/global-settings.json"
-MCP_SETTINGS_RX = re.compile(r"^%s/settings/cline_mcp_settings\.json$" % ROOT, re.I)
-PENDING_START_RX = re.compile(r"^\.cline/data/cloud-pending-starts/\d+-[0-9a-f-]+\.json$")
+MCP_SETTINGS_PATTERN = re.compile(r"^%s/settings/cline_mcp_settings\.json$" % ROOT, re.I)
+PENDING_START_PATTERN = re.compile(r"^\.cline/data/cloud-pending-starts/\d+-[0-9a-f-]+\.json$")
 # The runtime appends this to every rejected approval's reason
 # (sdk/packages/shared/src/llms/tools.ts:104-105, agent-runtime.ts:2490).
 REJECTION_SUFFIX = " -- NOT a tool or system failure. Clarify with user before proceeding."
 # The two fixed reasons of a call the runtime skips without asking
 # (sdk/packages/agents/src/agent-runtime.ts:2469, 2481).
-BLOCKED_RX = re.compile(
+BLOCKED_PATTERN = re.compile(
     r'^(?:Tool "[^"\n]*" is disabled by policy|Tool [^\n]* was blocked by a runtime hook)$'
 )
 # Hook audit keys named on a `hook audit:` row, with the name the row uses.
@@ -134,15 +134,15 @@ class ClineParser(LegacyTaskParser):
         rel = artifact.rel
         return bool(
             self.task_match(artifact)
-            or STATE_RX.match(rel)
-            or MANIFEST_RX.match(rel)
-            or MESSAGES_RX.match(rel)
-            or SYNC_QUEUE_RX.match(rel)
-            or MCP_SETTINGS_RX.match(rel)
-            or PENDING_START_RX.match(rel)
+            or STATE_PATTERN.match(rel)
+            or MANIFEST_PATTERN.match(rel)
+            or MESSAGES_PATTERN.match(rel)
+            or SYNC_QUEUE_PATTERN.match(rel)
+            or MCP_SETTINGS_PATTERN.match(rel)
+            or PENDING_START_PATTERN.match(rel)
         ) or rel in (
-            SESSIONS_DB_REL,
-            SEARCH_DB_REL,
+            SESSIONS_DATABASE_REL,
+            SEARCH_DATABASE_REL,
             INPUT_HISTORY_REL,
             HOOKS_REL,
             GLOBAL_STATE_REL,
@@ -151,7 +151,7 @@ class ClineParser(LegacyTaskParser):
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the search index, the input history and the hook log."""
-        return artifact.rel in (SEARCH_DB_REL, INPUT_HISTORY_REL, HOOKS_REL)
+        return artifact.rel in (SEARCH_DATABASE_REL, INPUT_HISTORY_REL, HOOKS_REL)
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return an hour for `logs/hooks.jsonl`, else the default window.
@@ -177,19 +177,19 @@ class ClineParser(LegacyTaskParser):
         rel = artifact.rel
         if self.task_match(artifact):
             yield from self.parse_task_file(artifact, opts)
-        elif STATE_RX.match(rel):
+        elif STATE_PATTERN.match(rel):
             yield from self._parse_task_history(artifact, opts)
-        elif MANIFEST_RX.match(rel):
+        elif MANIFEST_PATTERN.match(rel):
             yield from self._parse_manifest(artifact, opts)
-        elif MESSAGES_RX.match(rel):
+        elif MESSAGES_PATTERN.match(rel):
             yield from self._parse_messages(artifact, opts)
-        elif rel == SESSIONS_DB_REL:
-            yield from self._parse_sessions_db(artifact, opts)
-        elif rel == SEARCH_DB_REL:
-            yield from self._parse_search_db(artifact)
+        elif rel == SESSIONS_DATABASE_REL:
+            yield from self._parse_sessions_database(artifact, opts)
+        elif rel == SEARCH_DATABASE_REL:
+            yield from self._parse_search_database(artifact)
         elif rel == INPUT_HISTORY_REL:
             yield from self._parse_input_history(artifact)
-        elif SYNC_QUEUE_RX.match(rel):
+        elif SYNC_QUEUE_PATTERN.match(rel):
             yield from self._parse_sync_queue(artifact)
         elif rel == HOOKS_REL:
             yield from self._parse_hooks_log(artifact)
@@ -197,9 +197,9 @@ class ClineParser(LegacyTaskParser):
             yield from self._parse_global_state(artifact)
         elif rel == GLOBAL_SETTINGS_REL:
             yield from self._parse_global_settings(artifact)
-        elif MCP_SETTINGS_RX.match(rel):
+        elif MCP_SETTINGS_PATTERN.match(rel):
             yield from self._parse_mcp_settings(artifact)
-        elif PENDING_START_RX.match(rel):
+        elif PENDING_START_PATTERN.match(rel):
             yield from self._parse_pending_starts(artifact)
 
     # -- cache/sync-queue.json (VS Code extension)
@@ -385,7 +385,7 @@ class ClineParser(LegacyTaskParser):
             fallback = to_utc(manifest.get("started_at")) or to_utc(payload.get("updated_at"))
         elif raw_text is not None:
             # Cut mid-write: walk the messages array as far as it parses.
-            match = MESSAGES_KEY_RX.search(raw_text)
+            match = MESSAGES_KEY_PATTERN.search(raw_text)
             if match:
                 messages = iter_array_at(raw_text, match.end(), errors)
             else:
@@ -443,7 +443,7 @@ class ClineParser(LegacyTaskParser):
                     yield replace(row, turn_type="system", text=decisions.pop(tool_id))
         yield from error_rows(self, artifact, errors, session_id, project)
 
-    def _parse_sessions_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_sessions_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield from error_rows(self, artifact, [(0, "sessions.db is not a SQLite database", "")])
             return
@@ -453,8 +453,10 @@ class ClineParser(LegacyTaskParser):
                 if "sessions" not in table_names(connection):
                     return
                 rows = [
-                    dict(db_row)
-                    for db_row in connection.execute("select rowid as _rowid, * from sessions")
+                    dict(database_row)
+                    for database_row in connection.execute(
+                        "select rowid as _rowid, * from sessions"
+                    )
                 ]
         except Exception as error:  # noqa: BLE001 - a damaged database must not stop the timeline
             yield from error_rows(self, artifact, [(0, "sessions.db unreadable (%s)" % error, "")])
@@ -493,7 +495,7 @@ class ClineParser(LegacyTaskParser):
         """
         errors: list = []
         for line_number, record in iter_jsonl(artifact.disk_path, errors):
-            session_context = _obj(record.get("sessionContext"))
+            session_context = _object(record.get("sessionContext"))
             roots = record.get("workspaceRoots")
             row = self.base_row(artifact)
             row.source_line = line_number
@@ -513,7 +515,7 @@ class ClineParser(LegacyTaskParser):
                     for key, name in HOOK_KEYS
                     if record.get(key) not in (None, "")
                 )
-                error = _obj(record.get("error"))
+                error = _object(record.get("error"))
                 if error:
                     detail += " error=%s: %s" % (
                         _dash(error.get("name")),
@@ -556,7 +558,7 @@ class ClineParser(LegacyTaskParser):
             yield from error_rows(self, artifact, errors)
             return
         timestamp = file_mtime(artifact)
-        auto = _obj(doc.get("autoApprovalSettings"))
+        auto = _object(doc.get("autoApprovalSettings"))
         for key in ("enabled", "maxRequests"):
             if key in auto:
                 yield self._settings_row(
@@ -565,7 +567,7 @@ class ClineParser(LegacyTaskParser):
         favorites = auto.get("favorites")
         for entry in favorites if isinstance(favorites, list) else []:
             yield self._settings_row(artifact, timestamp, "autoApprovalSettings.favorites", entry)
-        for key, value in _obj(auto.get("actions")).items():
+        for key, value in _object(auto.get("actions")).items():
             yield self._settings_row(
                 artifact, timestamp, "autoApprovalSettings.actions." + key, value
             )
@@ -586,8 +588,8 @@ class ClineParser(LegacyTaskParser):
             )
             yield row
         source = "%s cloudSessionStatuses, observedAt" % artifact.rel
-        for session_id, status in _obj(doc.get("cloudSessionStatuses")).items():
-            status = _obj(status)
+        for session_id, status in _object(doc.get("cloudSessionStatuses")).items():
+            status = _object(status)
             yield from self._cloud_rows(
                 artifact,
                 str(session_id),
@@ -657,8 +659,8 @@ class ClineParser(LegacyTaskParser):
             entries = doc.get(key)
             for entry in entries if isinstance(entries, list) else []:
                 yield self._settings_row(artifact, timestamp, key, entry)
-        for name, tool in _obj(doc.get("tools")).items():
-            tool = _obj(tool)
+        for name, tool in _object(doc.get("tools")).items():
+            tool = _object(tool)
             if "enabled" in tool:
                 yield self._settings_row(
                     artifact, timestamp, "tools.%s.enabled" % name, tool["enabled"]
@@ -674,8 +676,8 @@ class ClineParser(LegacyTaskParser):
             yield from error_rows(self, artifact, errors)
             return
         timestamp = file_mtime(artifact)
-        for name, server in _obj(doc.get("mcpServers")).items():
-            server = _obj(server)
+        for name, server in _object(doc.get("mcpServers")).items():
+            server = _object(server)
             entries = server.get("autoApprove")
             for entry in entries if isinstance(entries, list) else []:
                 key = "mcpServers.%s.autoApprove" % name
@@ -707,7 +709,7 @@ class ClineParser(LegacyTaskParser):
 
     # -- session-search.db
 
-    def _parse_search_db(self, artifact: Artifact) -> Iterator[Row]:
+    def _parse_search_database(self, artifact: Artifact) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield from error_rows(
                 self, artifact, [(0, "session-search.db is not a SQLite database", "")]
@@ -720,8 +722,8 @@ class ClineParser(LegacyTaskParser):
                 indexed = []
                 if "indexed_sessions" in tables:
                     indexed = [
-                        dict(db_row)
-                        for db_row in connection.execute(
+                        dict(database_row)
+                        for database_row in connection.execute(
                             "select * from indexed_sessions order by rowid"
                         )
                     ]
@@ -729,8 +731,8 @@ class ClineParser(LegacyTaskParser):
                 if "session_search" in tables:
                     try:
                         docs = [
-                            dict(db_row)
-                            for db_row in connection.execute(
+                            dict(database_row)
+                            for database_row in connection.execute(
                                 "select %s from session_search order by rowid" % SEARCH_COLUMNS
                             )
                         ]
@@ -818,7 +820,7 @@ def load_json_text(text):
         return None
 
 
-def _obj(value) -> dict:
+def _object(value) -> dict:
     """Return `value` when it is a JSON object, else an empty one."""
     return value if isinstance(value, dict) else {}
 
@@ -830,7 +832,7 @@ def _dash(value) -> str:
 
 def _imported(session: dict, meta) -> None:
     """Copy `metadata.importedFrom` onto the session under the start row's `imported_*` names."""
-    source = _obj(_obj(meta).get("importedFrom"))
+    source = _object(_object(meta).get("importedFrom"))
     for key, name in IMPORTED_KEYS:
         if source.get(key) not in (None, ""):
             session[name] = source[key]
@@ -846,12 +848,12 @@ def _denial(content) -> str:
             content = json.loads(content)
         except ValueError:
             return ""
-    reason = _obj(content).get("error")
+    reason = _object(content).get("error")
     if not isinstance(reason, str):
         return ""
     if reason.endswith(REJECTION_SUFFIX):
         return "permission decision: rejected reason=%s" % reason[: -len(REJECTION_SUFFIX)]
-    if BLOCKED_RX.match(reason):
+    if BLOCKED_PATTERN.match(reason):
         return "permission decision: blocked reason=%s" % reason
     return ""
 
@@ -863,7 +865,7 @@ def _decisions(content) -> dict:
     """
     out: dict = {}
     for block in content if isinstance(content, list) else []:
-        block = _obj(block)
+        block = _object(block)
         if block.get("type") == "tool_result" and block.get("is_error"):
             text = _denial(block.get("content"))
             if text:
@@ -874,19 +876,19 @@ def _decisions(content) -> dict:
 def _hook_event(row: Row, hook: str, entry: dict) -> bool:
     """Fill `row` as the transcript event a hook audit line repeats; return whether it is one."""
     if hook == "prompt_submit":
-        prompt = _obj(entry.get("userPromptSubmit")).get("prompt")
+        prompt = _object(entry.get("userPromptSubmit")).get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
             return False
         row.turn_type, row.text = "user", compact(prompt)
     elif hook == "tool_call":
-        call = _obj(entry.get("tool_call"))
+        call = _object(entry.get("tool_call"))
         row.turn_type = "tool_use"
         row.tool_name = str(call.get("name") or "")
         row.tool_use_id = str(call.get("id") or "")
         row.text = compact(tool_summary(row.tool_name, call.get("input")))
     elif hook == "tool_result":
-        record = _obj(entry.get("tool_result"))
-        post = _obj(entry.get("postToolUse"))
+        record = _object(entry.get("tool_result"))
+        post = _object(entry.get("postToolUse"))
         row.turn_type = "tool_result"
         row.tool_name = str(record.get("name") or post.get("toolName") or "")
         row.tool_use_id = str(record.get("id") or "")
@@ -900,7 +902,7 @@ def _hook_event(row: Row, hook: str, entry: dict) -> bool:
                 text_of(output) if isinstance(output, (str, list)) else compact_json(output)
             )
     elif hook == "agent_end":
-        text = _obj(entry.get("turn")).get("outputText")
+        text = _object(entry.get("turn")).get("outputText")
         if not isinstance(text, str) or not text.strip():
             return False
         row.turn_type, row.text = "assistant", compact(text)

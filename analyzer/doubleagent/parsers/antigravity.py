@@ -58,14 +58,14 @@ BASE = ".gemini/antigravity-cli/"
 # CLI's, the desktop app's, the separately installed IDE's and the backup the
 # app takes when it migrates pre-2.0 IDE data. Group 1 is the directory name.
 DATA_DIR = r"^\.gemini/(antigravity(?:-cli|-ide|-backup)?)/"
-CONV_RX = re.compile(DATA_DIR + r"conversations/[^/]+\.db$")
-SUMMARIES_RX = re.compile(DATA_DIR + r"conversation_summaries\.db$")
+CONVERSATION_PATTERN = re.compile(DATA_DIR + r"conversations/[^/]+\.db$")
+SUMMARIES_PATTERN = re.compile(DATA_DIR + r"conversation_summaries\.db$")
 HISTORY_REL = BASE + "history.jsonl"
 # The brain mirror: per conversation, the step transcript in its
 # complete form, its shortened twin, or either split into numbered chunks.
 # Group 2 is the conversation id; group 3 the file form, or groups 4 and 5
 # the chunked form and the chunk number.
-BRAIN_RX = re.compile(
+BRAIN_PATTERN = re.compile(
     DATA_DIR + r"brain/([^/]+)/\.system_generated/logs/"
     r"(?:(transcript(?:_full)?)\.jsonl|chunks/(transcript(?:_full)?)/(\d+)\.jsonl)$"
 )
@@ -77,8 +77,8 @@ SHORT = "transcript"
 BRAIN_TOLERANCE_SECONDS = 600.0
 # Standing permission files.
 CONFIG_REL = ".gemini/config/config.json"
-PROJECT_RX = re.compile(r"^\.gemini/config/projects/[^/]+\.json$")
-SIDECAR_RX = re.compile(r"^\.gemini/config/sidecars/[^/]+/sidecar\.json$")
+PROJECT_PATTERN = re.compile(r"^\.gemini/config/projects/[^/]+\.json$")
+SIDECAR_PATTERN = re.compile(r"^\.gemini/config/sidecars/[^/]+/sidecar\.json$")
 CLI_SETTINGS_REL = BASE + "settings.json"
 
 # exa.cortex_pb.PermissionScope, lower-cased without the PERMISSION_SCOPE_
@@ -496,7 +496,7 @@ SCHEMA: Schema = {
 # the permissions that sit beside the step kind.
 PAYLOAD_KINDS = [
     name
-    for num, (name, kind) in SCHEMA["Step"].items()
+    for number, (name, kind) in SCHEMA["Step"].items()
     if kind not in ("int", "CortexStepMetadata", "TrajectoryPermissions")
 ]
 
@@ -703,7 +703,7 @@ def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
                 out.append(("sidecars.%s.enabled" % name, sidecar["enabled"], ""))
             for value in _list(_dict(sidecar.get("resolvedPermissions")).get("accessGrants")):
                 out.append(("sidecars.%s.resolvedPermissions.accessGrants" % name, value, ""))
-    elif PROJECT_RX.match(rel):
+    elif PROJECT_PATTERN.match(rel):
         folder = ""
         for resource in _list(_dict(doc.get("projectResources")).get("resources")):
             uri = _dict(resource).get("folderUri")
@@ -717,7 +717,7 @@ def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
                 out.append(("permissionGrants.permissionGrants." + list_key, value, folder))
         if "v2Migrated" in project_grants:
             out.append(("permissionGrants.v2Migrated", project_grants["v2Migrated"], folder))
-    elif SIDECAR_RX.match(rel):
+    elif SIDECAR_PATTERN.match(rel):
         for value in _list(_dict(doc.get("agent_permissions")).get("access_grants")):
             out.append(("agent_permissions.access_grants", value, ""))
     elif rel == CLI_SETTINGS_REL:
@@ -879,9 +879,9 @@ class AntigravityParser(Parser):
         """Return True for a conversation, summaries, brain, history or permission file."""
         return (
             artifact.rel == HISTORY_REL
-            or bool(BRAIN_RX.match(artifact.rel))
-            or bool(SUMMARIES_RX.match(artifact.rel))
-            or bool(CONV_RX.match(artifact.rel))
+            or bool(BRAIN_PATTERN.match(artifact.rel))
+            or bool(SUMMARIES_PATTERN.match(artifact.rel))
+            or bool(CONVERSATION_PATTERN.match(artifact.rel))
             or self._standing(artifact.rel)
         )
 
@@ -889,17 +889,17 @@ class AntigravityParser(Parser):
     def _standing(rel: str) -> bool:
         return (
             rel in (CONFIG_REL, CLI_SETTINGS_REL)
-            or bool(PROJECT_RX.match(rel))
-            or bool(SIDECAR_RX.match(rel))
+            or bool(PROJECT_PATTERN.match(rel))
+            or bool(SIDECAR_PATTERN.match(rel))
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the CLI history and the brain mirror."""
-        return artifact.rel == HISTORY_REL or bool(BRAIN_RX.match(artifact.rel))
+        return artifact.rel == HISTORY_REL or bool(BRAIN_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return the wider brain window: it stamps steps at creation, not completion."""
-        if BRAIN_RX.match(artifact.rel):
+        if BRAIN_PATTERN.match(artifact.rel):
             return BRAIN_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
@@ -907,11 +907,11 @@ class AntigravityParser(Parser):
         """Yield the rows of one Antigravity file."""
         if artifact.rel == HISTORY_REL:
             yield from self._parse_history(artifact, opts)
-        elif BRAIN_RX.match(artifact.rel):
+        elif BRAIN_PATTERN.match(artifact.rel):
             yield from self._parse_brain(artifact, opts)
         elif self._standing(artifact.rel):
             yield from self._parse_standing(artifact)
-        elif SUMMARIES_RX.match(artifact.rel):
+        elif SUMMARIES_PATTERN.match(artifact.rel):
             yield from self._parse_summaries(artifact, opts)
         else:
             yield from self._parse_conversation(artifact, opts)
@@ -919,20 +919,20 @@ class AntigravityParser(Parser):
     # -- history.jsonl ------------------------------------------------------------
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
             row.source_line = line_number
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.project_path = uri_to_path(str(rec.get("workspace") or ""))
-            row.session_id = str(rec.get("conversationId") or "")
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.project_path = uri_to_path(str(record.get("workspace") or ""))
+            row.session_id = str(record.get("conversationId") or "")
             row.turn_type = "user"
-            row.text = compact(rec.get("display"))
+            row.text = compact(record.get("display"))
             yield row
         yield from error_rows(self, artifact, errors)
 
     # -- brain/<uuid>/.system_generated/logs ------------------------------------
     def _parse_brain(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        match = BRAIN_RX.match(artifact.rel)
+        match = BRAIN_PATTERN.match(artifact.rel)
         if not match:
             return
         blob = brain_copy(artifact.disk_path, match.group(3) or "", match.group(4) or "")
@@ -946,19 +946,19 @@ class AntigravityParser(Parser):
             if not stripped:
                 continue
             try:
-                rec = json.loads(stripped.decode("utf-8", errors="replace"))
+                record = json.loads(stripped.decode("utf-8", errors="replace"))
             except ValueError as error:
                 errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                 continue
-            if isinstance(rec, dict):
-                yield from self._brain_rows(artifact, line_number, rec, session_id, calls, opts)
+            if isinstance(record, dict):
+                yield from self._brain_rows(artifact, line_number, record, session_id, calls, opts)
         yield from error_rows(self, artifact, errors, session_id)
 
     def _brain_rows(
         self,
         artifact: Artifact,
         line_number: int,
-        rec: dict,
+        record: dict,
         session_id: str,
         calls: list[dict],
         opts: Options,
@@ -968,16 +968,16 @@ class AntigravityParser(Parser):
         `calls` holds the tool calls of the last PLANNER_RESPONSE not yet matched to a
         GENERIC line.
         """
-        kind = str(rec.get("type") or "")
-        status = str(rec.get("status") or "").lower()
-        content = text_of(rec.get("content"))
-        truncated = [str(field) for field in _list(rec.get("truncated_fields"))]
+        kind = str(record.get("type") or "")
+        status = str(record.get("status") or "").lower()
+        content = text_of(record.get("content"))
+        truncated = [str(field) for field in _list(record.get("truncated_fields"))]
 
         def base(turn_type: str, text: str, field: str = "content") -> Row:
             row = self.base_row(artifact)
             row.source_line = line_number
             row.session_id = session_id
-            row.timestamp_utc = to_utc(rec.get("created_at"))
+            row.timestamp_utc = to_utc(record.get("created_at"))
             row.turn_type = turn_type
             if field in truncated:
                 text += " [truncated: %s]" % field
@@ -985,17 +985,17 @@ class AntigravityParser(Parser):
             return row
 
         if kind == "USER_INPUT":
-            implicit = rec.get("source") == "USER_IMPLICIT"
+            implicit = record.get("source") == "USER_IMPLICIT"
             calls.clear()
             yield base("system" if implicit else "user", content)
             return
         if kind == "PLANNER_RESPONSE":
-            thinking = text_of(rec.get("thinking"))
+            thinking = text_of(record.get("thinking"))
             if thinking and opts.include_thinking:
                 yield base("thinking", thinking, "thinking")
             if content:
                 yield base("assistant", content)
-            calls[:] = [_dict(raw_call) for raw_call in _list(rec.get("tool_calls"))]
+            calls[:] = [_dict(raw_call) for raw_call in _list(record.get("tool_calls"))]
             for tool_call in calls:
                 row = base("tool_use", tool_args_summary(_brain_args(tool_call)), "tool_calls")
                 row.tool_name = str(tool_call.get("name") or "")
@@ -1005,7 +1005,7 @@ class AntigravityParser(Parser):
         if kind == "SYSTEM_MESSAGE":
             text = "system_message: " + content
         elif kind == "ERROR_MESSAGE":
-            error = rec.get("error")
+            error = record.get("error")
             if isinstance(error, dict):
                 error = (
                     error.get("short_error")
@@ -1098,7 +1098,7 @@ class AntigravityParser(Parser):
                 return
             session_id = artifact.disk_path.name[:-3]
             project_path = branch = source = ""
-            match = CONV_RX.match(artifact.rel)
+            match = CONVERSATION_PATTERN.match(artifact.rel)
             data_dir = match.group(1) if match else ""
             if "trajectory_meta" in tables:
                 trajectory = connection.execute("select * from trajectory_meta limit 1").fetchone()
@@ -1154,8 +1154,8 @@ class AntigravityParser(Parser):
                         or chat_model.get("model_display_name")
                         or ""
                     )
-                    for idx in generator.get("step_indices", []):
-                        models[idx] = model
+                    for index in generator.get("step_indices", []):
+                        models[index] = model
             seen_models: dict = {}
             bad = 0
             columns = {
@@ -1168,7 +1168,7 @@ class AntigravityParser(Parser):
                 "select idx, step_type, status, metadata, step_payload, %s from steps order by idx"
                 % permissions_column
             ):
-                idx = step_row["idx"]
+                index = step_row["idx"]
                 try:
                     step = (
                         decode(step_row["step_payload"], "Step", SCHEMA)
@@ -1182,13 +1182,13 @@ class AntigravityParser(Parser):
                 except ValueError:
                     bad += 1
                     continue
-                model = models.get(idx, "")
+                model = models.get(index, "")
                 change = track_change("model", seen_models, session_id, model)
                 if change:
                     # The model at the conversation's first generated step and
                     # on every change, before that step's own rows.
                     metadata = step.get("metadata") or {}
-                    row = self._row(artifact, idx, session_id, project_path, branch)
+                    row = self._row(artifact, index, session_id, project_path, branch)
                     row.timestamp_utc = metadata.get("created_at") or metadata.get(
                         "completed_at", ""
                     )
@@ -1198,7 +1198,7 @@ class AntigravityParser(Parser):
                     yield row
                 yield from self._step_rows(
                     artifact,
-                    idx,
+                    index,
                     step_row["step_type"],
                     step_row["status"],
                     step,
@@ -1209,7 +1209,7 @@ class AntigravityParser(Parser):
                     opts,
                 )
                 yield from self._permission_rows(
-                    artifact, idx, step, step_row["permissions"], session_id, project_path, branch
+                    artifact, index, step, step_row["permissions"], session_id, project_path, branch
                 )
             if bad:
                 row = self._row(artifact, 0, session_id, project_path, branch)
@@ -1218,10 +1218,10 @@ class AntigravityParser(Parser):
                 yield row
 
     def _row(
-        self, artifact: Artifact, idx: int, session_id: str, project_path: str, branch: str
+        self, artifact: Artifact, index: int, session_id: str, project_path: str, branch: str
     ) -> Row:
         row = self.base_row(artifact)
-        row.source_line = idx
+        row.source_line = index
         row.session_id = session_id
         row.project_path = project_path
         row.git_branch = branch
@@ -1230,7 +1230,7 @@ class AntigravityParser(Parser):
     def _permission_rows(
         self,
         artifact: Artifact,
-        idx: int,
+        index: int,
         step: dict,
         column: bytes | None,
         session_id: str,
@@ -1247,9 +1247,9 @@ class AntigravityParser(Parser):
             try:
                 permissions = decode(column, "TrajectoryPermissions", SCHEMA)
             except ValueError:
-                row = self._row(artifact, idx, session_id, project_path, branch)
+                row = self._row(artifact, index, session_id, project_path, branch)
                 row.turn_type = "system"
-                row.text = "parser: the permissions of step %d could not be decoded" % idx
+                row.text = "parser: the permissions of step %d could not be decoded" % index
                 yield row
                 return
         texts = permission_texts(permissions)
@@ -1263,7 +1263,7 @@ class AntigravityParser(Parser):
             or metadata.get("created_at", "")
         )
         for text in texts:
-            row = self._row(artifact, idx, session_id, project_path, branch)
+            row = self._row(artifact, index, session_id, project_path, branch)
             row.timestamp_utc = timestamp
             row.turn_type = "system"
             row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
@@ -1274,7 +1274,7 @@ class AntigravityParser(Parser):
     def _step_rows(
         self,
         artifact: Artifact,
-        idx: int,
+        index: int,
         step_type: int,
         status: int,
         step: dict,
@@ -1295,7 +1295,7 @@ class AntigravityParser(Parser):
         type_name = STEP_TYPES.get(step_type, str(step_type))
 
         def base(timestamp: str) -> Row:
-            row = self._row(artifact, idx, session_id, project_path, branch)
+            row = self._row(artifact, index, session_id, project_path, branch)
             row.timestamp_utc = timestamp
             row.model = model
             return row

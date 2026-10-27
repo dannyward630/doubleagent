@@ -52,14 +52,14 @@ from .base import (
 from .cline_legacy import iter_array_at, read_text
 from .gemini_cli import parse_jsonc
 
-JETBRAINS_RX = re.compile(
+JETBRAINS_PATTERN = re.compile(
     r"(?:^|/)Cody-nodejs/(?:[^/]+/)?JetBrains-globalState/cody-local-chatHistory-v2$"
 )
-JETBRAINS_PREFS_RX = re.compile(
+JETBRAINS_PREFERENCES_PATTERN = re.compile(
     r"(?:^|/)Cody-nodejs/(?:[^/]+/)?JetBrains-globalState/cody-model-preferences$"
 )
-SETTINGS_RX = re.compile(r"(?:^|/)User/settings\.json$")
-LEGACY_RX = re.compile(r"(?:^|/)\.idea/cody_history\.xml$")
+SETTINGS_PATTERN = re.compile(r"(?:^|/)User/settings\.json$")
+LEGACY_PATTERN = re.compile(r"(?:^|/)\.idea/cody_history\.xml$")
 ITEM_KEY = "sourcegraph.cody-ai"
 HISTORY_KEY = "cody-local-chatHistory-v2"
 PREFS_KEY = "cody-model-preferences"
@@ -236,27 +236,33 @@ class CodyParser(Parser):
         rel = artifact.rel
         return any(
             pattern.search(rel)
-            for pattern in (STATE_DB_RX, JETBRAINS_RX, JETBRAINS_PREFS_RX, SETTINGS_RX, LEGACY_RX)
+            for pattern in (
+                STATE_DB_RX,
+                JETBRAINS_PATTERN,
+                JETBRAINS_PREFERENCES_PATTERN,
+                SETTINGS_PATTERN,
+                LEGACY_PATTERN,
+            )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the legacy JetBrains `.idea/cody_history.xml`."""
-        return bool(LEGACY_RX.search(artifact.rel))
+        return bool(LEGACY_PATTERN.search(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Cody store."""
-        if SETTINGS_RX.search(artifact.rel):
+        if SETTINGS_PATTERN.search(artifact.rel):
             yield from self._settings_rows(artifact)
             return
-        if JETBRAINS_PREFS_RX.search(artifact.rel):
+        if JETBRAINS_PREFERENCES_PATTERN.search(artifact.rel):
             yield from self._prefs_file_rows(artifact)
             return
-        if LEGACY_RX.search(artifact.rel):
+        if LEGACY_PATTERN.search(artifact.rel):
             yield from self._legacy_rows(artifact)
             return
         problems: list[str] = []
         state = None
-        if JETBRAINS_RX.search(artifact.rel):
+        if JETBRAINS_PATTERN.search(artifact.rel):
             line = 1
             text = read_text(artifact.disk_path)
             if text is None:

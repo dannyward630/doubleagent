@@ -58,16 +58,16 @@ TELEPORT_SYNCED = (
     + " cloud session (teleported: remoteSourced records replayed from the vendor's copy)"
 )
 
-SESSION_RX = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/.*\.jsonl$")
-SUBAGENT_RX = re.compile(r"/subagents/(?:[^/]+/)*agent-([^/]+)\.jsonl$")
-HISTORY_RX = re.compile(r"^\.claude(?:-[^/]+)?/history\.jsonl$")
-REGISTRY_RX = re.compile(r"^\.claude(?:-[^/]+)?/sessions/\d+\.json$")
-SETTINGS_RX = re.compile(r"^\.claude(?:-[^/]+)?/settings(?:\.local)?\.json$")
-GLOBAL_CONFIG_RX = re.compile(r"^(?:\.claude-[^/]+/)?\.claude\.json$")
+SESSION_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/.*\.jsonl$")
+SUBAGENT_PATTERN = re.compile(r"/subagents/(?:[^/]+/)*agent-([^/]+)\.jsonl$")
+HISTORY_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/history\.jsonl$")
+REGISTRY_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/sessions/\d+\.json$")
+SETTINGS_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/settings(?:\.local)?\.json$")
+GLOBAL_CONFIG_PATTERN = re.compile(r"^(?:\.claude-[^/]+/)?\.claude\.json$")
 # Remote Control sidecars beside the transcripts: `ccr-tip.json` ("ccr" is
 # Claude Code Remote) in a session's directory, `bridge-pointer.json` in a project's.
-CCR_TIP_RX = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/([^/]+)/ccr-tip\.json$")
-BRIDGE_POINTER_RX = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/bridge-pointer\.json$")
+CCR_TIP_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/([^/]+)/ccr-tip\.json$")
+BRIDGE_POINTER_PATTERN = re.compile(r"^\.claude(?:-[^/]+)?/projects/[^/]+/bridge-pointer\.json$")
 # Settings `permissions` keys read, the lists first (the 2.1.296 settings schema).
 PERMISSION_LISTS = ("allow", "deny", "ask", "additionalDirectories")
 PERMISSION_SCALARS = ("defaultMode", "disableBypassPermissionsMode")
@@ -80,24 +80,24 @@ GITHUB_STATUS_KEY = "githubWebConnectionStatusCache"
 # `.claude.json` Remote Control and cloud keys: the machine id (a UUID, never
 # printed), the per-project spawn mode and the flag set when a cloud session is
 # created from the CLI.
-RC_MACHINE_KEY = "remoteControlMachineId"
-RC_SPAWN_KEY = "remoteControlSpawnMode"
+REMOTE_CONTROL_MACHINE_KEY = "remoteControlMachineId"
+REMOTE_CONTROL_SPAWN_KEY = "remoteControlSpawnMode"
 CLOUD_ENV_KEY = "hasRemoteEnvironment"
 # The settings key that holds the model alias (`fable`, `opus`).
 MODEL_KEY = "model"
 # A history line's paste placeholder, `[Pasted text #<n> +<m> lines]` or
 # `[Pasted text #<n>]`, and the `paste-cache/<contentHash>.txt` name.
-PASTE_RX = re.compile(r"\[Pasted text #(\d+)(?: \+\d+ lines)?\]")
-PASTE_HASH_RX = re.compile(r"^[0-9A-Za-z]+$")
+PASTE_PATTERN = re.compile(r"\[Pasted text #(\d+)(?: \+\d+ lines)?\]")
+PASTE_HASH_PATTERN = re.compile(r"^[0-9A-Za-z]+$")
 # The parts of a slash command's tag form in a transcript record.
-COMMAND_NAME_RX = re.compile(r"<command-name>(.*?)</command-name>", re.S)
-COMMAND_ARGS_RX = re.compile(r"<command-args>(.*?)</command-args>", re.S)
-ASCII_SPACE_RX = re.compile(r"[ \t\r\n\f\v]+")
+COMMAND_NAME_PATTERN = re.compile(r"<command-name>(.*?)</command-name>", re.S)
+COMMAND_ARGS_PATTERN = re.compile(r"<command-args>(.*?)</command-args>", re.S)
+ASCII_SPACE_PATTERN = re.compile(r"[ \t\r\n\f\v]+")
 # The wrapper 2.1.310 puts around a paste in the transcript's prompt,
 # `<pasted_content id="<4 hex>">` ... `</pasted_content>`.
-PASTE_WRAPPER_RX = re.compile(r"</?pasted_content(?:\s[^>]*)?>")
+PASTE_WRAPPER_PATTERN = re.compile(r"</?pasted_content(?:\s[^>]*)?>")
 # A history line that is a slash command as typed (`/model`, `/rename x`).
-HISTORY_COMMAND_RX = re.compile(r"^/[A-Za-z][A-Za-z0-9:_-]*(?:[ \t]|$)")
+HISTORY_COMMAND_PATTERN = re.compile(r"^/[A-Za-z][A-Za-z0-9:_-]*(?:[ \t]|$)")
 # How far a history command line may be from its transcript record: a
 # command that opens a picker, an overlay or a flow (`/model`, `/help`,
 # `/install-github-app`) is written to the transcript when it completes, which
@@ -105,7 +105,9 @@ HISTORY_COMMAND_RX = re.compile(r"^/[A-Za-z][A-Za-z0-9:_-]*(?:[ \t]|$)")
 # default two seconds.
 COMMAND_TOLERANCE_SECONDS = 600.0
 PERSISTED_MARK = "<persisted-output>"
-PERSISTED_RX = re.compile(r"Full output saved to: ([^\r\n]*?tool-results[/\\][^/\\\r\n]+?\.txt)")
+PERSISTED_PATTERN = re.compile(
+    r"Full output saved to: ([^\r\n]*?tool-results[/\\][^/\\\r\n]+?\.txt)"
+)
 
 # Which tool_use input field best identifies the action, per tool name.
 TOOL_KEYS = {
@@ -229,7 +231,7 @@ def session_dir(artifact: Artifact) -> Path:
     a subagent file.
     """
     path = artifact.disk_path
-    if SUBAGENT_RX.search(artifact.rel):
+    if SUBAGENT_PATTERN.search(artifact.rel):
         directory = path.parent
         while directory.name != "subagents" and directory != directory.parent:
             directory = directory.parent
@@ -245,7 +247,7 @@ def persisted_text(artifact: Artifact, stub: str, path: str = "") -> str:
     without it the path is read from a `<persisted-output>` stub's text.
     """
     if not path:
-        match = PERSISTED_RX.search(stub)
+        match = PERSISTED_PATTERN.search(stub)
         if not match:
             return stub
         path = match.group(1)
@@ -287,24 +289,24 @@ def match_form(row: Row) -> tuple[str, str]:
     text = row.text
     if row.turn_type == "system":
         if text.startswith(("slash command: ", "local_command: ")):
-            name = COMMAND_NAME_RX.search(text)
+            name = COMMAND_NAME_PATTERN.search(text)
             if name:
                 command = name.group(1).strip(" \t\r\n")
                 if not command.startswith("/"):
                     command = "/" + command
-                args = COMMAND_ARGS_RX.search(text)
+                args = COMMAND_ARGS_PATTERN.search(text)
                 if args and args.group(1).strip(" \t\r\n"):
                     command += " " + args.group(1).strip(" \t\r\n")
                 return "user", _squash(command)
         return row.turn_type, text
     if row.turn_type == "user":
-        return "user", _squash(PASTE_WRAPPER_RX.sub(" ", text))
+        return "user", _squash(PASTE_WRAPPER_PATTERN.sub(" ", text))
     return row.turn_type, text
 
 
 def _squash(text: str) -> str:
     """Return `text` with each run of ASCII whitespace collapsed to one space, trimmed."""
-    return ASCII_SPACE_RX.sub(" ", text).strip(" ")
+    return ASCII_SPACE_PATTERN.sub(" ", text).strip(" ")
 
 
 def match_tolerance(row: Row) -> float | None:
@@ -313,7 +315,7 @@ def match_tolerance(row: Row) -> float | None:
     That is `COMMAND_TOLERANCE_SECONDS`, how long after the line its transcript record may
     be written; any other row gets None, the source's own window (`dedup.MATCH_TOLERANCES`).
     """
-    if row.turn_type == "user" and HISTORY_COMMAND_RX.match(row.text):
+    if row.turn_type == "user" and HISTORY_COMMAND_PATTERN.match(row.text):
         return COMMAND_TOLERANCE_SECONDS
     return None
 
@@ -326,7 +328,7 @@ def read_paste(history: Path, content_hash: str) -> tuple[str | None, str]:
     `(None, "<message>")` when a file that is there could not be read, since a read
     failure is evidence, not an absent cache entry.
     """
-    if not PASTE_HASH_RX.match(content_hash):
+    if not PASTE_HASH_PATTERN.match(content_hash):
         return None, ""
     cache = history.parent / "paste-cache"
     cache_file = cache / (content_hash + ".txt")
@@ -366,7 +368,7 @@ def expand_pastes(
             errors.append((line, problem, ""))
         return match.group(0) if text is None else text
 
-    return PASTE_RX.sub(replace_paste, display)
+    return PASTE_PATTERN.sub(replace_paste, display)
 
 
 class _Prescan:
@@ -422,33 +424,33 @@ class ClaudeCodeParser(Parser):
         return any(
             pattern.match(rel)
             for pattern in (
-                HISTORY_RX,
-                SESSION_RX,
-                REGISTRY_RX,
-                SETTINGS_RX,
-                GLOBAL_CONFIG_RX,
-                CCR_TIP_RX,
-                BRIDGE_POINTER_RX,
+                HISTORY_PATTERN,
+                SESSION_PATTERN,
+                REGISTRY_PATTERN,
+                SETTINGS_PATTERN,
+                GLOBAL_CONFIG_PATTERN,
+                CCR_TIP_PATTERN,
+                BRIDGE_POINTER_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for `history.jsonl`."""
-        return bool(HISTORY_RX.match(artifact.rel))
+        return bool(HISTORY_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Claude Code file."""
-        if HISTORY_RX.match(artifact.rel):
+        if HISTORY_PATTERN.match(artifact.rel):
             yield from self._parse_history(artifact, opts)
-        elif REGISTRY_RX.match(artifact.rel):
+        elif REGISTRY_PATTERN.match(artifact.rel):
             yield from self._parse_registry(artifact)
-        elif SETTINGS_RX.match(artifact.rel):
+        elif SETTINGS_PATTERN.match(artifact.rel):
             yield from self._parse_settings(artifact)
-        elif GLOBAL_CONFIG_RX.match(artifact.rel):
+        elif GLOBAL_CONFIG_PATTERN.match(artifact.rel):
             yield from self._parse_global_config(artifact)
-        elif CCR_TIP_RX.match(artifact.rel):
+        elif CCR_TIP_PATTERN.match(artifact.rel):
             yield from self._parse_ccr_tip(artifact)
-        elif BRIDGE_POINTER_RX.match(artifact.rel):
+        elif BRIDGE_POINTER_PATTERN.match(artifact.rel):
             yield from self._parse_bridge_pointer(artifact)
         else:
             yield from self._parse_session(artifact, opts)
@@ -477,7 +479,7 @@ class ClaudeCodeParser(Parser):
         The file's `eventId` and `updatedAt` name the last claude.ai event the local side of
         a Remote Control session processed; the row is at the file's modification time.
         """
-        match = CCR_TIP_RX.match(artifact.rel)
+        match = CCR_TIP_PATTERN.match(artifact.rel)
         session = match.group(1) if match else ""
         doc, bad = self._settings_doc(artifact, "ccr-tip.json")
         if doc is None:
@@ -489,7 +491,12 @@ class ClaudeCodeParser(Parser):
         row.session_id = session
         row.text = compact(
             "%s remote event %s at %s (from %s, file mtime)"
-            % (SYNCED_PREFIX, self._val(doc, "eventId"), self._val(doc, "updatedAt"), artifact.rel)
+            % (
+                SYNCED_PREFIX,
+                self._value_text(doc, "eventId"),
+                self._value_text(doc, "updatedAt"),
+                artifact.rel,
+            )
         )
         yield row
 
@@ -509,16 +516,16 @@ class ClaudeCodeParser(Parser):
         row.text = compact(
             "remote control: environment %s session %s source=%s (from %s, file mtime)"
             % (
-                self._val(doc, "environmentId"),
-                self._val(doc, "sessionId"),
-                self._val(doc, "source"),
+                self._value_text(doc, "environmentId"),
+                self._value_text(doc, "sessionId"),
+                self._value_text(doc, "source"),
                 artifact.rel,
             )
         )
         yield row
 
     @staticmethod
-    def _val(doc: dict, key: str) -> str:
+    def _value_text(doc: dict, key: str) -> str:
         """Return a JSON value as row text, `-` when missing or empty."""
         value = doc.get(key)
         return "-" if value in (None, "") else setting_value(value)
@@ -658,7 +665,7 @@ class ClaudeCodeParser(Parser):
             for key in PROJECT_FLAGS:
                 if project.get(key) is not None:
                     yield self._standing_row(artifact, timestamp, str(path), key, project[key])
-            spawn = project.get(RC_SPAWN_KEY)
+            spawn = project.get(REMOTE_CONTROL_SPAWN_KEY)
             if spawn not in (None, ""):
                 row = self._file_row(artifact)
                 row.timestamp_utc = timestamp
@@ -681,7 +688,7 @@ class ClaudeCodeParser(Parser):
                 % ("-" if status in (None, "") else setting_value(status), artifact.rel)
             )
             yield row
-        if doc.get(RC_MACHINE_KEY) not in (None, ""):
+        if doc.get(REMOTE_CONTROL_MACHINE_KEY) not in (None, ""):
             # The machine id is an identity value: never printed.
             row = self._file_row(artifact)
             row.timestamp_utc = timestamp
@@ -769,7 +776,7 @@ class ClaudeCodeParser(Parser):
         errors: list = []
         prescan = self._prescan(artifact)
         delivered = prescan.delivered
-        subagent = SUBAGENT_RX.search(artifact.rel)
+        subagent = SUBAGENT_PATTERN.search(artifact.rel)
         file_agent_id = subagent.group(1) if subagent else ""
         header_done = not subagent
         task_done = not subagent or prescan.fork
@@ -875,7 +882,7 @@ class ClaudeCodeParser(Parser):
                 elif subtype == "scheduled_task_fire":
                     row.text = compact(
                         "scheduled task fired: %s cron=%s"
-                        % (self._val(record, "taskId"), self._val(record, "cron"))
+                        % (self._value_text(record, "taskId"), self._value_text(record, "cron"))
                     )
                     yield row
                     continue

@@ -31,7 +31,7 @@ from ..sqlite_util import is_sqlite, open_copy, table_names
 from ..timeutil import to_utc
 from .base import Options, Parser
 
-DB_REL = ".codex/sqlite/codex-dev.db"
+DATABASE_REL = ".codex/sqlite/codex-dev.db"
 TABLE = "local_thread_catalog"
 
 
@@ -55,7 +55,7 @@ class ChatGptDesktopParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         """Return True for `.codex/sqlite/codex-dev.db`."""
-        return artifact.rel == DB_REL
+        return artifact.rel == DATABASE_REL
 
     def _system(self, artifact: Artifact, session_id: str, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
@@ -105,7 +105,7 @@ class ChatGptDesktopParser(Parser):
                 created or "-",
                 updated or "-",
                 _value(record.get("host_id")),
-                DB_REL,
+                DATABASE_REL,
                 TABLE,
             ),
         )

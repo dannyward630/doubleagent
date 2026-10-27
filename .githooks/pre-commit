@@ -11,13 +11,13 @@ cd "$(git rev-parse --show-toplevel)" || exit 1
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
 
-# staged_match PATTERN: true when a staged path matches the grep pattern.
+# staged_match PATTERN: true when a staged path matches the extended regex.
 staged_match() {
-  printf '%s\n' "$staged" | grep -q "$1"
+  printf '%s\n' "$staged" | grep -Eq "$1"
 }
 
 # Catalog copy and drift check.
-if staged_match 'collectors/collect-agent-artifacts.sh\|collectors/Collect-AgentArtifacts.ps1\|analyzer/doubleagent/catalog.txt'; then
+if staged_match 'collectors/collect-agent-artifacts\.sh|collectors/Collect-AgentArtifacts\.ps1|analyzer/doubleagent/catalog\.txt'; then
   if ! collectors/collect-agent-artifacts.sh --list | cmp -s - analyzer/doubleagent/catalog.txt; then
     echo "pre-commit: analyzer/doubleagent/catalog.txt is stale. Regenerate and stage it:" >&2
     echo "  collectors/collect-agent-artifacts.sh --list > analyzer/doubleagent/catalog.txt && git add analyzer/doubleagent/catalog.txt" >&2

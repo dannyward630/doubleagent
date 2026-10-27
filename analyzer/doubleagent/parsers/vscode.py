@@ -151,9 +151,9 @@ def apply_mutation(state, rec: dict):
 
 def _walk(state, path):
     cur = state
-    for k in path:
+    for key in path:
         try:
-            cur = cur[k]
+            cur = cur[key]
         except (KeyError, IndexError, TypeError):
             raise MutationError("path %r not found" % (path,)) from None
     return cur
@@ -198,23 +198,23 @@ def uri_text(uri) -> str:
     if isinstance(uri, dict):
         if "uri" in uri:
             return uri_text(uri["uri"])
-        for k in ("fsPath", "path", "external"):
-            if isinstance(uri.get(k), str):
-                return uri[k]
+        for key in ("fsPath", "path", "external"):
+            if isinstance(uri.get(key), str):
+                return uri[key]
     return compact_json(uri) if uri is not None else ""
 
 
 def tool_call_text(part: dict) -> str:
     """Return a tool invocation's command line or raw input, else its invocation message."""
-    tsd = part.get("toolSpecificData")
-    if isinstance(tsd, dict):
-        command_line = tsd.get("commandLine")
+    specific_data = part.get("toolSpecificData")
+    if isinstance(specific_data, dict):
+        command_line = specific_data.get("commandLine")
         if isinstance(command_line, dict) and (
             command_line.get("userEdited") or command_line.get("original")
         ):
             return str(command_line.get("userEdited") or command_line.get("original"))
-        if "rawInput" in tsd:
-            raw = tsd["rawInput"]
+        if "rawInput" in specific_data:
+            raw = specific_data["rawInput"]
             return raw if isinstance(raw, str) else compact_json(raw)
     result_details = part.get("resultDetails")
     if (
@@ -316,8 +316,8 @@ def tool_result_text(part: dict) -> str:
 
 def user_rel(rel: str) -> str:
     """Return `rel` from its `User/` component on, as row text names the file."""
-    i = rel.find("/User/")
-    return rel[i + 1 :] if i >= 0 else rel
+    position = rel.find("/User/")
+    return rel[position + 1 :] if position >= 0 else rel
 
 
 def grant_texts(values: dict, problems: list) -> Iterator[str]:
@@ -827,7 +827,7 @@ class VsCodeParser(Parser):
         config = req.get("modelConfiguration")
         pairs = ""
         if model and isinstance(config, dict):
-            pairs = " ".join("%s=%s" % (k, setting_value(config[k])) for k in sorted(config))
+            pairs = " ".join("%s=%s" % (key, setting_value(config[key])) for key in sorted(config))
         change = track_change("model", seen, "model", model + (" " + pairs if pairs else ""))
         if change:
             yield base("system", change, req_ts, line, model)
@@ -920,9 +920,9 @@ class VsCodeParser(Parser):
                 yield res
                 decision = confirmed_text(part)
                 if decision:
-                    dec = base("system", decision, resp_ts, line, model)
-                    dec.tool_name, dec.tool_use_id = tname, tid
-                    yield dec
+                    decision_row = base("system", decision, resp_ts, line, model)
+                    decision_row.tool_name, decision_row.tool_use_id = tname, tid
+                    yield decision_row
             elif kind == "confirmation":
                 yield base("system", confirmation_part_text(part), resp_ts, line, model)
             elif kind == "textEditGroup":

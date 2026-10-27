@@ -117,8 +117,8 @@ def entry_keys(path) -> set[tuple[str, str]]:
 def args_summary(args) -> str:
     """Return the most identifying tool argument, else the arguments as JSON."""
     if isinstance(args, dict):
-        for k in ARG_KEYS:
-            value = args.get(k)
+        for key in ARG_KEYS:
+            value = args.get(key)
             if value not in (None, ""):
                 return value if isinstance(value, str) else compact_json(value)
         return compact_json(args)
@@ -383,9 +383,9 @@ def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
     home = artifact.home.original.replace("\\", "/").rstrip("/")
     if home and path.startswith(home + "/"):
         rels.append(path[len(home) + 1 :])
-    i = path.rfind("/" + marker)
-    if i >= 0:
-        rels.append(path[i + 1 :])
+    marker_at = path.rfind("/" + marker)
+    if marker_at >= 0:
+        rels.append(path[marker_at + 1 :])
     root = artifact.home.disk_path
     for rel in rels:
         parts = [part for part in rel.split("/") if part]

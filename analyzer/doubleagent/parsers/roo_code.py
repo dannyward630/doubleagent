@@ -496,7 +496,7 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
         (record position, record `ts`, tool_use_id, tool name, row text).
     """
     names: dict[str, str] = {}
-    dec = json.JSONDecoder()
+    decoder = json.JSONDecoder()
     for index, msg in iter_json_array(path, errors):
         if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
             continue
@@ -512,7 +512,7 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
             if not body.startswith("{"):
                 continue
             try:
-                status, _end = dec.raw_decode(body)
+                status, _end = decoder.raw_decode(body)
             except ValueError:
                 continue
             if not isinstance(status, dict) or status.get("status") not in ("denied", "approved"):

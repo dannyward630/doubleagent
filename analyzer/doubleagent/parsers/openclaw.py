@@ -145,9 +145,9 @@ def tool_args_text(args) -> str:
         except ValueError:
             return args
     if isinstance(args, dict):
-        for k in ("command", "path", "url"):
-            if isinstance(args.get(k), str) and args[k]:
-                return args[k]
+        for key in ("command", "path", "url"):
+            if isinstance(args.get(key), str) and args[key]:
+                return args[key]
     if args in (None, "", {}):
         return ""
     return compact_json(args)
@@ -224,9 +224,9 @@ def _delivery_relay(delivery) -> str:
 def _override_text(entry: dict) -> str:
     """Return the `model:` text of a session's `modelOverride` (`types.ts:502-516`)."""
     origin = "/".join(
-        str(entry[k])
-        for k in ("modelOverrideFallbackOriginProvider", "modelOverrideFallbackOriginModel")
-        if entry.get(k)
+        str(entry[key])
+        for key in ("modelOverrideFallbackOriginProvider", "modelOverrideFallbackOriginModel")
+        if entry.get(key)
     )
     return (
         "model: %s provider=%s source=%s%s (from openclaw-agent.sqlite"
@@ -960,7 +960,11 @@ class OpenClawParser(Parser):
                 archived_by = entry.get("archivedBy")
                 archived_by = archived_by if isinstance(archived_by, dict) else {}
                 actor = (
-                    ":".join(str(archived_by[k]) for k in ("type", "id") if archived_by.get(k))
+                    ":".join(
+                        str(archived_by[field])
+                        for field in ("type", "id")
+                        if archived_by.get(field)
+                    )
                     or "-"
                 )
                 ctx.attach(
@@ -1119,8 +1123,8 @@ class OpenClawParser(Parser):
         for record in con.execute(
             "select id, c0, c1, c2, c3, c4 from session_transcript_fts_content order by id"
         ):
-            sid, mid = str(record["c1"] or ""), str(record["c2"] or "")
-            if mid and (sid, mid) in ctx.ids:
+            sid, message_id = str(record["c1"] or ""), str(record["c2"] or "")
+            if message_id and (sid, message_id) in ctx.ids:
                 continue
             role = str(record["c3"] or "")
             text = compact(record["c0"])

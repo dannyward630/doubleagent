@@ -202,7 +202,8 @@ def _model_text(group: str, kind: str, body: dict) -> str:
             for part in (
                 "kind=%s" % body["kind"] if body.get("kind") else "",
                 "endpoint=%s" % body["api_endpoint"] if body.get("api_endpoint") else "",
-                "supported_models=%s" % ",".join(str(part) for part in supported)
+                "supported_models=%s"
+                % ",".join(str(supported_model) for supported_model in supported)
                 if isinstance(supported, list) and supported
                 else "",
             )
@@ -460,12 +461,12 @@ class TabbyParser(Parser):
         pages = list(_select(con, "pages", "created_at,id"))
         known = {str(page.get("id")) for page in pages}
         # Sections whose page row is gone still get parsed, under their page id.
-        pages += [{"id": pid} for pid in sections if pid not in known]
+        pages += [{"id": page_id} for page_id in sections if page_id not in known]
         for page in pages:
-            pid = str(page.get("id"))
-            line = int(pid) if pid.isdigit() else 0
-            sid = "page:%s" % pid
-            secs = sections.get(pid, [])
+            page_id = str(page.get("id"))
+            line = int(page_id) if page_id.isdigit() else 0
+            sid = "page:%s" % page_id
+            secs = sections.get(page_id, [])
             atts = [_json(sec.get("attachment"), {}) for sec in secs]
             atts = [attachment if isinstance(attachment, dict) else {} for attachment in atts]
             project = next(
@@ -527,16 +528,16 @@ class TabbyParser(Parser):
         selected.
         """
         names: dict[str, tuple[str, str]] = {}
-        for i in _select(con, "integrations", "created_at,id"):
-            kind = str(i.get("kind") or "")
-            api_base = str(i.get("api_base") or "")
+        for integration in _select(con, "integrations", "created_at,id"):
+            kind = str(integration.get("kind") or "")
+            api_base = str(integration.get("api_base") or "")
             host = INTEGRATION_HOSTS.get(kind) or urlparse(api_base).hostname or "-"
-            name = str(i.get("display_name") or "")
-            names[str(i.get("id"))] = (name, kind)
+            name = str(integration.get("display_name") or "")
+            names[str(integration.get("id"))] = (name, kind)
             yield self._row(
                 artifact,
-                i.get("id") or 0,
-                timestamp=to_utc(i.get("created_at")),
+                integration.get("id") or 0,
+                timestamp=to_utc(integration.get("created_at")),
                 opts=opts,
                 text="source host: %s integration %s kind=%s api_base=%s (account not recorded; "
                 "from integrations table, created_at)"
@@ -657,16 +658,16 @@ class TabbyParser(Parser):
         if isinstance(state, dict):
             history = state.get(VSCODE_HISTORY_KEY)
             commands = [
-                command for command in (_command_text(i) for i in _list(history)) if command
+                command for command in (_command_text(entry) for entry in _list(history)) if command
             ]
             if commands:
                 source = "state.vscdb %s %s" % (VSCODE_ITEM_KEY, VSCODE_HISTORY_KEY)
                 yield from self._history_rows(artifact, source, commands, opts)
         elif state is not None:
             problems = problems or ["%s value is not a JSON object" % VSCODE_ITEM_KEY]
-        for prob in problems:
+        for problem in problems:
             # Never echo the value: the same row holds the endpoint tokens.
-            yield self._row(artifact, 0, opts=opts, text="parser: " + prob.split(" (", 1)[0])
+            yield self._row(artifact, 0, opts=opts, text="parser: " + problem.split(" (", 1)[0])
 
     # -- events/YYYY-MM-DD.json ----------------------------------------------------------
     def _parse_events(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -711,7 +712,7 @@ class TabbyParser(Parser):
             return
         tag, body = next(iter(event.items()))
         body = body if isinstance(body, dict) else {}
-        cid = str(body.get("completion_id") or "")
+        completion_id = str(body.get("completion_id") or "")
         if tag == "completion":
             seg = body.get("segments")
             if not isinstance(seg, dict):
@@ -720,7 +721,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 line,
-                cid,
+                completion_id,
                 project,
                 timestamp,
                 opts=opts,
@@ -733,14 +734,21 @@ class TabbyParser(Parser):
                 ),
             )
             yield self._row(
-                artifact, line, cid, project, timestamp, "user", str(body.get("prompt") or ""), opts
+                artifact,
+                line,
+                completion_id,
+                project,
+                timestamp,
+                "user",
+                str(body.get("prompt") or ""),
+                opts,
             )
             for choice in _list(body.get("choices")):
                 if isinstance(choice, dict):
                     yield self._row(
                         artifact,
                         line,
-                        cid,
+                        completion_id,
                         project,
                         timestamp,
                         "assistant",
@@ -751,7 +759,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 line,
-                cid,
+                completion_id,
                 timestamp=timestamp,
                 opts=opts,
                 text=_join(
@@ -766,7 +774,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 line,
-                cid,
+                completion_id,
                 timestamp=timestamp,
                 opts=opts,
                 text=_join(str(tag), owner, compact_json(body) if body else ""),

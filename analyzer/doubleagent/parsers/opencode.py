@@ -280,7 +280,7 @@ def session_rules(value) -> list[tuple[str, str, str]] | None:
         else:
             continue
         perm, pattern, effect = (
-            str(rule[k]) if rule.get(k) not in (None, "") else "-" for k in keys
+            str(rule[key]) if rule.get(key) not in (None, "") else "-" for key in keys
         )
         out.append((perm, pattern, effect))
     return out
@@ -1237,24 +1237,24 @@ class OpenCodeParser(Parser):
         names = [sibling.name for sibling in siblings]
         if path.name not in names:
             return None
-        i = names.index(path.name)
-        return _read_json(siblings[i - 1]) if i > 0 else None
+        position = names.index(path.name)
+        return _read_json(siblings[position - 1]) if position > 0 else None
 
     def _session_ctx(self, root: Path, session_id: str, old: bool, msg: dict) -> tuple[_Ctx, dict]:
         session: dict | None = None
         if old:
             session = _read_json(root / "info" / (session_id + ".json"))
         else:
-            sdir = root / "session"
+            session_dir = root / "session"
             try:
-                cands = sorted(
+                candidates = sorted(
                     directory / (session_id + ".json")
-                    for directory in sdir.iterdir()
+                    for directory in session_dir.iterdir()
                     if not directory.is_symlink() and directory.is_dir()
                 )
             except OSError:
-                cands = []
-            for candidate in cands:
+                candidates = []
+            for candidate in candidates:
                 if candidate.is_file() and not candidate.is_symlink():
                     session = _read_json(candidate)
                     if session is not None:
@@ -1318,13 +1318,13 @@ class OpenCodeParser(Parser):
         if prev is not None:
             model_row_text(ctx.models, ctx.session_id, *message_ref(prev))
             agent_row_text(ctx.modes, ctx.session_id, prev.get("agent"))
-        pdir_rel = ["part", session_id, msg_id] if old else ["part", msg_id]
-        pdir = root.joinpath(*pdir_rel)
+        part_dir_parts = ["part", session_id, msg_id] if old else ["part", msg_id]
+        part_dir = root.joinpath(*part_dir_parts)
         parts = []
         errors: list[tuple[int, str, str, str]] = []
-        for file in self._children(pdir):
+        for file in self._children(part_dir):
             data, reason, raw = _read_part(file)
-            src = orig_root + sep + sep.join([*pdir_rel, file.name])
+            src = orig_root + sep + sep.join([*part_dir_parts, file.name])
             if data is None:
                 errors.append((1, "unparseable part %s (%s)" % (file.stem, reason), raw, src))
             else:

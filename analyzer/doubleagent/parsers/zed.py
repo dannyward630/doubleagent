@@ -75,13 +75,13 @@ AUTO_DENIAL_RX = re.compile(
 
 def decompress(blob: bytes) -> bytes:
     """Return a zstd frame's content, streaming it when the header records no size."""
-    dctx = zstandard.ZstdDecompressor()
+    decompressor = zstandard.ZstdDecompressor()
     try:
-        return dctx.decompress(blob)
+        return decompressor.decompress(blob)
     except zstandard.ZstdError:
         # No content size in the frame header: stream it instead.
         out = io.BytesIO()
-        with dctx.stream_reader(io.BytesIO(blob)) as reader:
+        with decompressor.stream_reader(io.BytesIO(blob)) as reader:
             while True:
                 chunk = reader.read(65536)
                 if not chunk:

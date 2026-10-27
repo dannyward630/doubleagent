@@ -63,16 +63,16 @@ def load_messages(raw: str) -> tuple[list[dict], str]:
     text = raw.lstrip()
     if not text.startswith("["):
         return [], err
-    dec = json.JSONDecoder()
+    decoder = json.JSONDecoder()
     out: list[dict] = []
-    i = 1
+    position = 1
     while True:
-        while i < len(text) and text[i] in " \t\r\n,":
-            i += 1
-        if i >= len(text) or text[i] == "]":
+        while position < len(text) and text[position] in " \t\r\n,":
+            position += 1
+        if position >= len(text) or text[position] == "]":
             break
         try:
-            value, i = dec.raw_decode(text, i)
+            value, position = decoder.raw_decode(text, position)
         except ValueError:
             break
         if isinstance(value, dict):
@@ -227,7 +227,7 @@ class ShellGptParser(Parser):
 
         names = {}  # tool call id -> function name
         pending = ("", "")  # (synthetic id, name) of a legacy function_call awaiting its result
-        for i, message in enumerate(messages):
+        for index, message in enumerate(messages):
             role = str(message.get("role") or "")
             content = text_of(message.get("content"))
             prev, pending = pending, ("", "")
@@ -244,7 +244,7 @@ class ShellGptParser(Parser):
                     yield make_row("tool_use", call_text(function.get("arguments")), name, call_id)
                 function_call = message.get("function_call")
                 if isinstance(function_call, dict):
-                    pending = ("function_call_%d" % i, str(function_call.get("name") or ""))
+                    pending = ("function_call_%d" % index, str(function_call.get("name") or ""))
                     yield make_row(
                         "tool_use",
                         call_text(function_call.get("arguments")),

@@ -342,15 +342,15 @@ class PearAiParser(LegacyTaskParser):
         """
         content = msg.get("content")
         if base_turn == "assistant":
-            k = 0
+            tool_count = 0
             for turn, text, name, tid in content_rows(content, base_turn, include_thinking):
                 if turn != "assistant":
                     yield turn, text, name, tid
                     continue
                 for kind, body, tool in xml_blocks(text, include_thinking):
                     if kind == "tool_use":
-                        k += 1
-                        tid = str(n) if k == 1 else "%d.%d" % (n, k)
+                        tool_count += 1
+                        tid = str(n) if tool_count == 1 else "%d.%d" % (n, tool_count)
                     yield kind, body, tool, tid if kind == "tool_use" else ""
             return
         if base_turn != "user" or not isinstance(content, list):
@@ -456,7 +456,7 @@ class PearAiParser(LegacyTaskParser):
         yield base(0, "system", " | ".join(bits))
 
         models: dict = {}
-        for i, item in enumerate(history + search, 1):
+        for position, item in enumerate(history + search, 1):
             if not isinstance(item, dict) or not isinstance(item.get("message"), dict):
                 continue
             msg = item["message"]
@@ -471,7 +471,7 @@ class PearAiParser(LegacyTaskParser):
                     model = str(options["model"])
                     change = track_change("model", models, session_id, model)
                     if change:
-                        yield base(i, "system", change, model)
+                        yield base(position, "system", change, model)
             if role == "user":
                 ctx = [
                     str(context_item.get("description") or context_item.get("name") or "")
@@ -482,7 +482,7 @@ class PearAiParser(LegacyTaskParser):
                 if ctx:
                     text = "%s\n[context: %s]" % (text, ", ".join(ctx))
                 if text:
-                    yield base(i, "user", text)
+                    yield base(position, "user", text)
             elif role == "assistant":
                 cites = [
                     str(citation.get("url") or citation.get("title") or "")
@@ -493,10 +493,10 @@ class PearAiParser(LegacyTaskParser):
                 if cites:
                     text = "%s\n[citations: %s]" % (text, ", ".join(cites))
                 if text:
-                    yield base(i, "assistant", text, model)
+                    yield base(position, "assistant", text, model)
             elif text:
                 yield base(
-                    i,
+                    position,
                     "system",
                     text if role == "system" else "%s: %s" % (role or "unknown", text),
                     model,
@@ -523,8 +523,8 @@ class PearAiParser(LegacyTaskParser):
             errors.append(
                 (1, "unparseable record (before the first separator)", preamble.rstrip("\n"))
             )
-        for i, start in enumerate(starts):
-            end = starts[i + 1] - 2 * 75 if i + 1 < len(starts) else len(raw)
+        for index, start in enumerate(starts):
+            end = starts[index + 1] - 2 * 75 if index + 1 < len(starts) else len(raw)
             record = raw[start:end]
             line = raw.count("\n", 0, start) + 1
 
@@ -612,8 +612,8 @@ class PearAiParser(LegacyTaskParser):
             row.turn_type = "system"
             row.model = str(rec.get("model") or "")
             row.text = "tokens generated: " + " ".join(
-                "%s=%s" % (k, setting_value(rec.get(k)) if k in rec else "-")
-                for k in ("model", "provider", "promptTokens", "generatedTokens")
+                "%s=%s" % (key, setting_value(rec.get(key)) if key in rec else "-")
+                for key in ("model", "provider", "promptTokens", "generatedTokens")
             )
             yield row
         yield from error_rows(self, artifact, errors)

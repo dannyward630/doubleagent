@@ -85,8 +85,8 @@ ARG_KEYS = (
 def args_summary(args) -> str:
     """Return the most identifying argument of a function call, else the arguments as JSON."""
     if isinstance(args, dict):
-        for k in ARG_KEYS:
-            value = args.get(k)
+        for key in ARG_KEYS:
+            value = args.get(key)
             if value not in (None, ""):
                 return value if isinstance(value, str) else compact_json(value)
         return compact_json(args)
@@ -105,8 +105,8 @@ def _parts(rec: dict) -> list:
 
 def _response_text(response) -> str:
     if isinstance(response, dict):
-        for k in ("output", "error", "llmContent"):
-            value = response.get(k)
+        for key in ("output", "error", "llmContent"):
+            value = response.get(key)
             if isinstance(value, str) and value:
                 return value
         return compact_json(response)
@@ -216,8 +216,8 @@ class QwenCodeParser(Parser):
             target = entry.get("target")
             target = target if isinstance(target, dict) else {}
 
-            def value(k: str, target: dict = target) -> str:
-                field = target.get(k)
+            def value(key: str, target: dict = target) -> str:
+                field = target.get(key)
                 return str(field) if field not in (None, "") else "-"
 
             row = self.base_row(artifact)
@@ -438,9 +438,12 @@ class QwenCodeParser(Parser):
                 row.tool_use_id = str(tcr.get("callId") or first_response.get("id") or "")
                 yield row
                 if status in DECISION_STATUSES:
-                    dec = base("system", "permission decision: %s" % status)
-                    dec.tool_name, dec.tool_use_id = row.tool_name, row.tool_use_id
-                    yield dec
+                    decision_row = base("system", "permission decision: %s" % status)
+                    decision_row.tool_name, decision_row.tool_use_id = (
+                        row.tool_name,
+                        row.tool_use_id,
+                    )
+                    yield decision_row
             elif rtype == "system":
                 subtype = str(rec.get("subtype") or "system")
                 payload = rec.get("systemPayload")
@@ -459,9 +462,9 @@ class QwenCodeParser(Parser):
                     if mode:
                         change = track_change("permission mode", modes, session_id, mode)
                         extras = [
-                            " %s=%s" % (k, payload[k])
-                            for k in ("prePlanMode", "planExecutionMode")
-                            if payload.get(k)
+                            " %s=%s" % (key, payload[key])
+                            for key in ("prePlanMode", "planExecutionMode")
+                            if payload.get(key)
                         ]
                         text = (change or "permission mode: %s" % mode) + "".join(extras)
                 row = base("system", text)
@@ -474,13 +477,13 @@ class QwenCodeParser(Parser):
                     and event.get("event.name") in TOOL_CALL_EVENTS
                     and event.get("decision")
                 ):
-                    dec = base(
+                    decision_row = base(
                         "system",
                         "permission decision: %s (tool_call ui_telemetry)" % event["decision"],
                     )
-                    dec.tool_name = str(event.get("function_name") or "")
-                    dec.tool_use_id = str(event.get("call_id") or "")
-                    yield dec
+                    decision_row.tool_name = str(event.get("function_name") or "")
+                    decision_row.tool_use_id = str(event.get("call_id") or "")
+                    yield decision_row
         yield from error_rows(self, artifact, errors, session_id, project_path)
 
     def _parse_logs(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -532,7 +535,7 @@ class QwenCodeParser(Parser):
         """
         with open(path, "rb") as handle:
             data = handle.read().decode("utf-8", errors="replace")
-        dec = json.JSONDecoder()
+        decoder = json.JSONDecoder()
         pos = 0
         length = len(data)
 
@@ -552,7 +555,7 @@ class QwenCodeParser(Parser):
         while pos < length and data[pos] != "]":
             idx += 1
             try:
-                value, pos = dec.raw_decode(data, pos)
+                value, pos = decoder.raw_decode(data, pos)
             except ValueError as error:
                 errors.append(
                     (idx, "unparseable record %d (%s)" % (idx, error), tail_text(data, pos))

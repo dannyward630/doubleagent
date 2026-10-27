@@ -1,6 +1,8 @@
-"""Inputs that cannot be read: the reason is printed, the exit code is 2 for
-the input itself, and anything unreadable inside an input is a problem line,
-never a traceback and never silence (issue 37)."""
+"""Inputs that cannot be read.
+
+The reason is printed, the exit code is 2 for the input itself, and anything unreadable inside an
+input is a problem line, never a traceback and never silence.
+"""
 
 import ast
 import contextlib
@@ -31,8 +33,10 @@ def run_cli(argv):
 
 
 def build_collected(root: Path, extra_rows=()) -> Path:
-    """A minimal extracted collection: one Claude Code transcript under
-    fs/home/alice with its manifest row, plus any extra rows given."""
+    """A minimal extracted collection.
+
+    One Claude Code transcript under fs/home/alice with its manifest row, plus any extra rows given.
+    """
     home = build_home(root / "src", with_noise=False)
     dest = root / "col" / "fs/home/alice" / SESSION_REL
     dest.parent.mkdir(parents=True)
@@ -67,6 +71,8 @@ def make_archive(src: Path, dest: Path) -> Path:
 
 
 class ErrorTestBase(unittest.TestCase):
+    """A temporary directory and a way to make a path unreadable for the test."""
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-errors-test-"))
         self._locked: list[Path] = []
@@ -88,6 +94,8 @@ class ErrorTestBase(unittest.TestCase):
 
 
 class MissingInputTests(ErrorTestBase):
+    """An input that does not exist is an error with exit code 2."""
+
     def test_detect(self):
         path = self.tmp / "nope.tar.gz"
         self.assertInputError(["detect", str(path)], path, "no such file or directory")
@@ -139,6 +147,8 @@ class MissingFromCollectionTests(ErrorTestBase):
 
 @unittest.skipUnless(CAN_DENY, DENY_REASON)
 class PermissionTests(ErrorTestBase):
+    """An unreadable input is an error; an unreadable file inside one is a problem line."""
+
     def test_unreadable_archive(self):
         archive = make_archive(build_collected(self.tmp), self.tmp / "y.tar.gz")
         self.lock(archive)
@@ -205,7 +215,7 @@ class PermissionTests(ErrorTestBase):
         self.assertNotIn("Traceback", out + err)
         self.assertIn("problem:   /home/alice/%s: permission denied\n" % SESSION_REL, out)
         self.assertNotIn("Errno", out)
-        # The parser problem is in inventory.json as well (issue 104).
+        # The parser problem is in inventory.json as well.
         inv = json.loads((self.tmp / "tl" / "inventory.json").read_text(encoding="utf-8"))
         self.assertEqual(inv["problems"], ["/home/alice/%s: permission denied" % SESSION_REL])
 
@@ -215,11 +225,12 @@ if __name__ == "__main__":
 
 
 class ErrorListsReportedTests(unittest.TestCase):
-    """Every error list a parser fills is read again, to yield its `system`
-    row, return it or pass it on (issues 125 and 134). A list created empty
-    and only handed to a reader is the silent drop those issues fixed; a
-    pre-scan that discards errors passes a literal `[]` instead, because
-    the same parser reports them when it parses the file in full."""
+    """Every error list a parser fills is read again.
+
+    It yields its `system` row, is returned or is passed on: a list created empty and only handed to
+    a reader drops its bad lines silently. A pre-scan that discards errors passes a literal `[]`
+    instead, because the same parser reports them when it parses the file in full.
+    """
 
     PARSERS = Path(__file__).resolve().parent.parent / "doubleagent" / "parsers"
 
@@ -244,8 +255,11 @@ class ErrorListsReportedTests(unittest.TestCase):
 
 
 def _empty_error_lists(func):
-    """(name, line) of each local in `func` whose name ends in `errors` and
-    that is assigned an empty list literal, annotated or not."""
+    """(name, line) of each local error list in `func` assigned an empty list.
+
+    (name, line) of each local in `func` whose name ends in `errors` and that is assigned an empty
+    list literal, annotated or not.
+    """
     for node in ast.walk(func):
         if isinstance(node, ast.Assign):
             targets, value = node.targets, node.value

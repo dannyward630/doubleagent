@@ -1,5 +1,4 @@
-"""dedup.deduplicate: secondary-source rows dropped when a primary store
-yields the same event (issue 122)."""
+"""dedup.deduplicate: secondary-source rows dropped when a primary store yields the same event."""
 
 import json
 import shutil
@@ -57,6 +56,8 @@ def dedup(primary, secondary, tolerance=TOLERANCE_SECONDS):
 
 
 class DeduplicateTests(unittest.TestCase):
+    """`deduplicate` on synthetic primary and secondary rows."""
+
     def kept_secondary(self, primary, secondary, tolerance=TOLERANCE_SECONDS):
         kept, _ = dedup(primary, secondary, tolerance)
         return kept[len(primary) :]
@@ -418,8 +419,11 @@ if __name__ == "__main__":
 
 
 class ParserRowTests(unittest.TestCase):
-    """A `parser:` row describes its own `source_file`, so it is never
-    dropped as a secondary copy and never takes one (issue 135)."""
+    """A `parser:` row is never dropped as a secondary copy and never takes one.
+
+    A `parser:` row describes its own `source_file`, so it is never dropped as a secondary copy and
+    never takes one.
+    """
 
     def test_parser_rows_never_paired_unit(self):
         text = "parser: unreadable (Permission denied)"

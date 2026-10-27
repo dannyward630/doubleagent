@@ -1,5 +1,8 @@
-"""The timeline's stdout summary: the `agents:` line reads naturally when
-either of its lists is empty (issue 85)."""
+"""Tests of the `detect` and `timeline` commands' output.
+
+The stdout summary, inventory.json, the session and project marks of sessions.jsonl, project
+attribution, deduplication, Windows project paths, repository metadata and scratch directories.
+"""
 
 import contextlib
 import io
@@ -105,7 +108,7 @@ PROJECT_KEYS = [
     "recovered",
 ]
 # The last keys of a project or scratch directory entry of inventory.json,
-# after the marks (issue 253); `outside_projects` has none of them.
+# after the marks; `outside_projects` has none of them.
 REPO_KEYS = ["remotes", "head", "recorded_remotes"]
 
 
@@ -123,6 +126,8 @@ def agents_line(stdout: str) -> str:
 
 
 class AgentsSummaryTests(unittest.TestCase):
+    """The `agents:` line of the timeline summary, whichever of its lists is empty."""
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-cli-test-"))
         self.home = self.tmp / "home" / "alice"
@@ -264,8 +269,10 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 class InventoryJsonTests(unittest.TestCase):
-    """inventory.json: counts per project and outside any project, and the
-    agent lists, written by `timeline` (issue 103)."""
+    """inventory.json.
+
+    Counts per project and outside any project, and the agent lists, written by `timeline`.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-inv-json-test-"))
@@ -284,7 +291,7 @@ class InventoryJsonTests(unittest.TestCase):
         inv = json.loads((out / "inventory.json").read_text(encoding="utf-8"))
         rows = read_jsonl(out / "timeline.jsonl")
         sessions = read_jsonl(out / "sessions.jsonl")
-        # The version is the first key, so a reader sees it before the counts (#138).
+        # The version is the first key, so a reader sees it before the counts.
         self.assertEqual(next(iter(inv)), "doubleagent_version")
         self.assertEqual(inv["doubleagent_version"], VERSION)
         self.assertEqual(inv["rows"], len(rows))
@@ -391,8 +398,10 @@ CLAUDE_LOCAL_SETTINGS = {"permissions": {"allow": ["Bash(make lint)"]}}
 
 
 class Collected:
-    """An extracted collection written row by row: each file goes under
-    fs/ and gets a collected manifest row."""
+    """An extracted collection written row by row.
+
+    Each file goes under fs/ and gets a collected manifest row.
+    """
 
     def __init__(self, root: Path, projects: list[str] | None):
         self.root = root
@@ -429,7 +438,7 @@ class Collected:
 
 
 class ProjectAttributionTests(unittest.TestCase):
-    """Project bases and the agent of their files (issue 104)."""
+    """Project bases and the agent of their files."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-proj-test-"))
@@ -585,7 +594,7 @@ class TimelineProjectStatusTests(unittest.TestCase):
             {"/srv/empty": "collected", "/srv/gone": "referenced", "/srv/proj": "collected"},
         )
         # A collected project with no rows has zero counts; `status` comes
-        # first and the shared files last (issue 104).
+        # first and the shared files last.
         self.assertEqual(
             projects["/srv/empty"],
             {
@@ -671,78 +680,13 @@ class TimelineProjectStatusTests(unittest.TestCase):
         )
 
 
-# The rows build_home's secondary sources repeat from a primary store, or
-# from another secondary source, per agent (issue 122). Kept, because no
-# primary row matches: the Antigravity CLI history's "now the tests" (the
-# conversation database holds only "clean the logs"), the Gemini logs.json
-# "delete everything in /srv/proj" (a rewind removed it from the session),
-# the Qwen logs.json model_switch entry (a `system` row whose text no
-# session row has). The Muse tui-history.jsonl prompt and the Goose
-# history.txt "run the tests" record no time and match on text alone.
-# Aider's input history repeats both chat-history prompts at the very times
-# the chat rows take from it; its "delete the migrations folder" has no chat
-# line and is kept, and its LLM history pairs with nothing.
-# Antigravity: the history line "clean the logs" takes the database row
-# (project scope) and the CLI brain mirror's copy (session scope) meets it
-# under the broader scope; six more mirror rows of that conversation and
-# six of the app conversation's transcript.jsonl rows pair with database
-# rows within 600 seconds, the shortened tool output on its tool_use_id;
-# the orphan conversation's chunk rows have no database and are kept.
-# Claude Desktop's audit.jsonl repeats its transcript's "thanks" prompt and
-# `model: claude-fable-5-1` row; the Cowork record's undated initialMessage
-# "why does the test fail?" collapses onto the audit log's dated copy, which
-# is kept with the call the transcript lacks and the permission and result
-# lines.
-# Cline: the session-search.db index's plain-string "fix tests" (session
-# scope) takes the SDK session's user row and the CLI
-# user_input_history.jsonl's undated, unscoped copy collapses onto it; the
-# index's block-array messages and the history's "list the open ports" are
-# kept.
-# Codex CLI: the history line takes the rollout's prompt; the
-# thread_history_1.sqlite rows (the prompt, task_started, the shell call and
-# its result, the web search and its result, the answer, task_complete) pair
-# with the rollout or collapse onto the history line, and both state_5.sqlite first
-# prompts (no time) collapse onto a dated copy, the orphan thread's onto its
-# thread_history_1.sqlite prompt, which is kept. Open Interpreter: the
-# history line, and both state_5.sqlite first prompts the same way.
-# Hermes: the 12:00:04 state snapshot's six rows of the main session pair
-# with the live state.db's, its four rows of the pruned session with the
-# 11:00:00 snapshot's earlier copy, and the main session's divert repeats
-# the screenshot prompt; the pruned session (once), the two snapshot rows
-# and "and the hidden files?" are kept.
-# The Letta transcript.jsonl turn its messages.jsonl also holds pairs within
-# the one-hour window; the turn it lacks ("now delete the build directory"
-# and its reply) is kept.
-# nanobot: the WebUI mirror's user, tool_use, tool_result and assistant rows
-# of "show disk usage" pair with the session file's within the 15-hour
-# window, and the CLI history's "hello" with the legacy cli:direct
-# session's; the segment's older turn and the second CLI prompt are kept.
-# The frozen discord:555 JSONL's relay row, model row and four message
-# rows pair with sessions.sqlite3's; the jsonl-backup/ heartbeat turn the
-# database lost is kept.
-# OpenClaw: the deleted archive file's prompt (the blob holds it), the
-# pre-doctor backup's seven entry rows (the legacy file holds them) and the
-# checkpoint's three entry rows, which collapse onto the backup's copies of
-# the same entries; the backup's abandoned-branch prompt and every copy's
-# session-start row are kept.
-# The Roo CLI cli-history.json records no time or task and matches the task
-# rows on text alone; "/new" and "summarise the open issues" are kept.
-# Copilot CLI: the rewind snapshot's prompt pairs with the log's (the
-# nearer time) and the session-store.db turn's prompt collapses onto that
-# copy; the turn's reply pairs with the log's within the one-hour window;
-# the sessions row's "session name:" with workspace.yaml's; the history's
-# "fix the failing test" with the log's prompt and its "and run lint" with
-# the database turn, the only other copy of the prompt the cut log lost.
-# The turn "and run lint", "file changed:" and "rewind snapshot:" are kept.
-# OpenHands: the CLI prompt_history.json's "list the files" pairs with the
-# CLI conversation's prompt; its "and the hidden files?" is kept.
-# Tabby: the event log's completion prompt and choice (user_events copies
-# them), the later backup's thread 7 (the live database has it) and the
-# second backup copy of ephemeral thread 3.
+# The rows `timeline` drops from build_home's secondary sources, per agent, because a
+# primary store or another secondary source holds the same event; the comment on each
+# count names the copies dropped.
 FIXTURE_DEDUPLICATED = {
-    "agent-zero": 1,  # scheduler tasks.json: the task chat's reply (issue 204)
-    "aider": 2,  # "rename foo to bar", "/add b.py"
-    "antigravity": 14,  # history 1; brain mirror 7 (CLI) + 6 (app)
+    "agent-zero": 1,  # scheduler tasks.json: the task chat's reply
+    "aider": 2,  # input history "rename foo to bar", "/add b.py", at the chat rows' times
+    "antigravity": 14,  # history 1; brain mirror 7 (CLI) + 6 (app), within 600 s
     "claude-code": 2,  # .claude and .claude-work history.jsonl
     "claude-desktop": 3,  # audit.jsonl "thanks" and model row, record initialMessage
     "cline": 2,  # session-search.db and user_input_history.jsonl "fix tests"
@@ -751,12 +695,12 @@ FIXTURE_DEDUPLICATED = {
     "copilot-cli": 6,  # session-store.db 3, rewind snapshot 1, command history 2
     "cursor": 3,  # agent transcript: two prompts and a reply the bubbles hold
     "gemini-cli": 1,  # "list files in src"
-    "goose": 1,  # "run the tests", no timestamp
+    "goose": 1,  # history.txt "run the tests", no timestamp
     "hermes": 11,  # snapshot copies and the divert's screenshot prompt
-    "kiro": 1,  # .cli_bash_history "list the files here" (issue 212)
+    "kiro": 1,  # .cli_bash_history "list the files here"
     "letta": 4,  # transcript.jsonl turn: prompt, tool_use, tool_result, reply
     "little-coder": 17,  # v0.0.x session_latest.json 8, history.json 8, input_history 1
-    "muse-code": 1,  # "fix the failing test", no timestamp
+    "muse-code": 1,  # tui-history.jsonl "fix the failing test", no timestamp
     "nanobot": 11,  # four WebUI rows, CLI "hello", frozen JSONL 6 (sessions.sqlite3)
     "open-interpreter": 3,  # history.jsonl "list the files", state_5.sqlite 2
     "openclaw": 11,  # .jsonl.deleted.* 1, pre-doctor .bak 7, checkpoint 3
@@ -765,18 +709,20 @@ FIXTURE_DEDUPLICATED = {
     "pearai": 4,  # output log and dev_data/chat.jsonl: "add the target" and its reply
     "pi": 4,  # pi-debug.log: prompt, model row, tool_use, tool_result
     "qwen-code": 1,  # "run the tests"
-    "roo-code": 2,  # "rename the helper" and "yes", no timestamp
-    "shellgpt": 1,  # response cache: the answer the chat file holds (issue 189)
+    "roo-code": 2,  # cli-history.json "rename the helper" and "yes", no timestamp
+    "shellgpt": 1,  # response cache: the answer the chat file holds
     # completion prompt and choice, threads 7 and 3 in the backups, and
-    # each backup's copy of the GitHub integration row (issue 211)
+    # each backup's copy of the GitHub integration row
     "tabby": 10,
 }
 
 
 class SyncedSessionTests(unittest.TestCase):
-    """`sessions.jsonl` `synced` and `relayed`, the inventory's
-    `synced_sessions` and `relayed_sessions` keys and the `sessions:` line
-    (issues 151 and 153)."""
+    """The `synced` and `relayed` marks of sessions, projects and the summary.
+
+    `sessions.jsonl` `synced` and `relayed`, the inventory's `synced_sessions` and
+    `relayed_sessions` keys and the `sessions:` line.
+    """
 
     UNSYNCED = "5e55a0a1-0000-4000-8000-000000000002"
 
@@ -793,9 +739,9 @@ class SyncedSessionTests(unittest.TestCase):
         ]
         unsynced.write_text("\n".join(lines) + "\n", encoding="utf-8")
         # An empty log beside it: a session with no events.jsonl is a pool
-        # session, whose cwd is a scratch directory (issue 149).
+        # session, whose cwd is a scratch directory.
         (unsynced.parent / "events.jsonl").write_text("", encoding="utf-8")
-        # A Goose gateway session, relayed through Telegram (#153).
+        # A Goose gateway session, relayed through Telegram.
         con = sqlite3.connect(str(home / ".local/share/goose/sessions/sessions.db"))
         for sql in goose_gateway_records():
             con.execute(sql)
@@ -819,12 +765,12 @@ class SyncedSessionTests(unittest.TestCase):
         }
         self.assertEqual(by_id[("copilot-cli", COPILOT_SESSION)], "yes")
         self.assertEqual(by_id[("copilot-cli", self.UNSYNCED)], "no")
-        # Claude Code records Remote Control as sync since issue 256: the
-        # 2.1.309 session had a bridge, the older one did not.
+        # Claude Code records Remote Control as sync: the 2.1.309 session had a
+        # bridge, the older one did not.
         self.assertEqual(by_id[("claude-code", CLAUDE_309_SESSION)], "yes")
         self.assertEqual(by_id[("claude-code", CLAUDE_SESSION)], "no")
         # `synced` is "" for every agent whose parser records no sync state,
-        # and "yes" or "no" for the others (#153).
+        # and "yes" or "no" for the others.
         sync_agents = {parser.agent for parser in ALL if parser.records_sync}
         self.assertEqual(
             {value for (agent, _), value in by_id.items() if agent not in sync_agents}, {""}
@@ -872,7 +818,7 @@ class SyncedSessionTests(unittest.TestCase):
             for session in read_jsonl(out / "sessions.jsonl")
         }
         # The two Copilot cloud agent tasks began on GitHub's servers, and
-        # the two ChatGPT desktop account conversations on chatgpt.com (#49).
+        # the two ChatGPT desktop account conversations on chatgpt.com.
         for key, want in (
             (("vscode", "copilot-cloud-agent:/task/" + VSCODE_CLOUD_TASK), "remote"),
             (("vscode", "copilot-cloud-agent:/task/" + VSCODE_OLD_TASK), "remote"),
@@ -883,13 +829,12 @@ class SyncedSessionTests(unittest.TestCase):
             (("cursor", CURSOR_CLOUD), "remote"),
             (("cursor", CURSOR_CLOUD_LISTED), "remote"),
             (("copilot-cli", COPILOT_SESSION), ""),
-            # Claude Code records origin since the macOS round of issue 256;
-            # its fixture session is a local CLI one.
+            # Claude Code records origin; its fixture session is a local CLI one.
             (("claude-code", CLAUDE_SESSION), "local"),
         ):
             self.assertEqual(by_id[key], want, key)
         origin_agents = {parser.agent for parser in ALL if parser.records_origin}
-        # Cline records origin since issue 190; its fixture sessions are local.
+        # Cline records origin; its fixture sessions are local.
         self.assertEqual(
             origin_agents,
             {"vscode", "chatgpt-desktop", "cursor", "agent-zero", "cline", "claude-code"},
@@ -937,7 +882,7 @@ class SyncedSessionTests(unittest.TestCase):
             (("codex-cli", CODEX_SESSION), "no"),
             (("open-interpreter", OI_SESSION), "no"),
             (("qwen-code", QWEN_SESSION), "no"),
-            # The chat editing state is a secondary source since issue 210, and
+            # The chat editing state is a secondary source, and
             # holds only `system` rows: "no".
             (("vscode", VSCODE_SESSION), "no"),
             # The scheduler task's logged prompt survives only in tasks.json.
@@ -988,9 +933,9 @@ class SyncedSessionTests(unittest.TestCase):
         self.assertEqual(agy["recovered"], "partial")
         self.assertEqual(projects["/sessions/quiet-river-1234"]["recovered"], "yes")
         # nanobot's workspace is inside its own state directory, a scratch
-        # directory by the catalog rule (issue 149). Its memory journal's
+        # directory by the catalog rule. Its memory journal's
         # sessions are not recovered; the cron and trigger run records'
-        # session, gone from every store, is (issue 207).
+        # session, gone from every store, is.
         self.assertNotIn("/alice/.nanobot/workspace", projects)
         scratch = inv["scratch_directories"]
         self.assertEqual(scratch["/alice/.nanobot/workspace"]["recovered"], "partial")
@@ -1014,7 +959,7 @@ class SyncedSessionTests(unittest.TestCase):
 
         # Agent Zero: the Telegram chat is synced and relayed, the other chat
         # neither; both are of local origin, and the other chat keeps a
-        # scheduler prompt only tasks.json holds (issue 204).
+        # scheduler prompt only tasks.json holds.
         self.assertEqual(marks("/a0/usr/projects/demo"), ["partial", "partial", "local", "partial"])
         self.assertNotIn("synced_sessions", projects["/a0/usr/projects/demo"])
         # /srv/proj holds VS Code sessions, none of remote origin.
@@ -1090,9 +1035,9 @@ class SyncedSessionTests(unittest.TestCase):
         # The Agent Zero Telegram chat, the Goose gateway session, the two
         # Qwen Code channel routes, the three nanobot sessions keyed to or
         # routed through a messaging channel, the OpenClaw Telegram
-        # conversation (issue 206) and the Letta channel route (issue 202) are
-        # relayed; the other sessions of those agents are not. Crush (issue
-        # 195) and little-coder (issue 157) record relay, but no fixture
+        # conversation and the Letta channel route are
+        # relayed; the other sessions of those agents are not. Crush and
+        # little-coder record relay, but no fixture
         # session of theirs is relayed: little-coder's row names no session.
         for key, want in (
             (("agent-zero", AGENT_ZERO_TG_CHAT), "yes"),
@@ -1158,7 +1103,7 @@ class SyncedSessionTests(unittest.TestCase):
     def test_synced_codex_and_cline(self):
         # A `/feedback` report marks a Codex or Open Interpreter thread, and
         # `enterprise.blobUpload` or the upload queue a Cline session, as
-        # synced (#153).
+        # synced.
         build_cline_blob_upload(self.tmp / "home" / "alice")
         build_cline_sync_queue(self.tmp / "home" / "alice")
         out = self.tmp / "out"
@@ -1228,8 +1173,11 @@ class SyncedSessionTests(unittest.TestCase):
 
 
 class SyncedSessionOpenClawAgentZeroTests(unittest.TestCase):
-    """`synced` for the OpenClaw public share and the Agent Zero stored
-    responses, and none from the Hermes and Goose upload rows (issue 153)."""
+    """`synced` for the OpenClaw share and the Agent Zero responses.
+
+    `synced` for the OpenClaw public share and the Agent Zero stored responses, and none from the
+    Hermes and Goose upload rows.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-synced-153-test-"))
@@ -1259,7 +1207,7 @@ class SyncedSessionOpenClawAgentZeroTests(unittest.TestCase):
         self.assertEqual(agents["openclaw"]["synced_sessions"], 1)
         self.assertEqual(agents["agent-zero"]["synced_sessions"], 1)
         self.assertEqual(agents["hermes"]["synced_sessions"], 0)
-        # The Telegram chat is relayed as well as synced (#153); the build_home
+        # The Telegram chat is relayed as well as synced; the build_home
         # fixture has no Goose gateway session, so Goose counts none.
         relayed = {
             (session["agent"], session["session_id"]): session["relayed"]
@@ -1267,13 +1215,13 @@ class SyncedSessionOpenClawAgentZeroTests(unittest.TestCase):
         }
         self.assertEqual(relayed[("agent-zero", AGENT_ZERO_TG_CHAT)], "yes")
         self.assertEqual(relayed[("agent-zero", AGENT_ZERO_CHAT)], "no")
-        # Hermes records relay since issue 208; the CLI fixture session is not one.
+        # Hermes records relay; the CLI fixture session is not one.
         self.assertEqual(relayed[("hermes", HERMES_SESSION)], "no")
         self.assertEqual(agents["agent-zero"]["relayed_sessions"], 1)
         self.assertEqual(agents["goose"]["relayed_sessions"], 0)
         self.assertEqual(agents["qwen-code"]["relayed_sessions"], 2)
-        # The OpenClaw Telegram conversation (issue 206) and the Letta
-        # channel route (issue 202) are relayed too.
+        # The OpenClaw Telegram conversation and the Letta
+        # channel route are relayed too.
         self.assertEqual(agents["openclaw"]["relayed_sessions"], 1)
         self.assertEqual(agents["letta"]["relayed_sessions"], 1)
         self.assertEqual(agents["nanobot"]["relayed_sessions"], 3)
@@ -1281,9 +1229,10 @@ class SyncedSessionOpenClawAgentZeroTests(unittest.TestCase):
 
 
 class SyncedSessionB3Tests(unittest.TestCase):
-    """`sessions.jsonl` `synced` for the OpenCode, Kilo Code, pi, Letta and
-    VS Code sync rows (issue 153): one fixture session of each says "yes",
-    one without the marker "no"."""
+    """`sessions.jsonl` `synced` for the OpenCode, Kilo Code, pi, Letta and VS Code sync rows.
+
+    One fixture session of each says "yes", one without the marker "no".
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-synced-b3-test-"))
@@ -1320,8 +1269,11 @@ class SyncedSessionB3Tests(unittest.TestCase):
 
 
 class DeduplicationTimelineTests(unittest.TestCase):
-    """`timeline` drops secondary-source rows that a primary store also
-    records, and counts them on stdout and in inventory.json (issue 122)."""
+    """`timeline` drops secondary-source rows a primary store also records.
+
+    `timeline` drops secondary-source rows that a primary store also records, and counts them on
+    stdout and in inventory.json.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-dedup-cli-test-"))
@@ -1379,6 +1331,13 @@ class DeduplicationTimelineTests(unittest.TestCase):
         )
 
     def test_kept_secondary_rows(self):
+        """Rows that only a secondary source holds stay beside the primary rows.
+
+        The Antigravity CLI history's "now the tests" (the conversation database holds only
+        "clean the logs"), the Gemini logs.json prompt a rewind removed from the session and
+        the Copilot CLI prompt the cut log lost stay; the Muse prompt history's undated copy
+        matches on text alone and leaves the transcript's row.
+        """
         _, rows, _ = self.timeline()
         texts = {(row["agent"], row["text"]) for row in rows if row["turn_type"] == "user"}
         for kept in (
@@ -1415,11 +1374,14 @@ class DeduplicationTimelineTests(unittest.TestCase):
 
 
 class WindowsProjectPathTests(unittest.TestCase):
-    """One Windows project folder recorded under several spellings is one
-    `project_path` and one inventory.json project (issue 112)."""
+    """One Windows project folder under several spellings is one project.
 
-    # The spellings the Windows Antigravity round recorded (CLI 1.3.5 and
-    # app 2.23.1, 2026-10-14) and the folders collection.json listed.
+    One Windows project folder recorded under several spellings is one `project_path` and one
+    inventory.json project.
+    """
+
+    # The spellings a Windows Antigravity install recorded (CLI 1.3.5 and
+    # app 2.23.1) and the folders collection.json listed.
     SPELLINGS = ("c:/Users/sean/demo", "C:/users/sean/demo2", "C:\\users\\sean\\demo2")
     COLLECTED = ("C:\\Users\\sean\\demo", "C:\\users\\sean\\demo2")
 
@@ -1568,8 +1530,7 @@ GONE_REMOTE = "https://example.com/team/gone.git"
 
 
 def gone_rollout() -> str:
-    """The fixture rollout as a thread of `/srv/gone` whose session_meta
-    names `GONE_REMOTE`."""
+    """The fixture rollout as a thread of `/srv/gone` whose session_meta names `GONE_REMOTE`."""
     recs = codex_rollout_records(cwd="/srv/gone")
     recs[0]["payload"]["id"] = GONE_SESSION
     recs[0]["payload"]["git"]["repository_url"] = GONE_REMOTE
@@ -1580,8 +1541,11 @@ def gone_rollout() -> str:
 
 
 class GitRemotesTests(unittest.TestCase):
-    """The repository of each collected project in `detect` and
-    inventory.json, and the remotes the agents recorded (issue 253)."""
+    """The repository of each collected project and the remotes the agents recorded.
+
+    The repository of each collected project in `detect` and inventory.json, and the remotes the
+    agents recorded.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-remotes-test-"))
@@ -1670,7 +1634,7 @@ class GitRemotesTests(unittest.TestCase):
     def test_unreadable_repository_file_is_a_problem(self):
         # An unreadable .git/config is a problem: line on stdout, printed
         # before the counts, and in inventory.json and detect --json, not
-        # a project without remotes (pull request 254 review).
+        # a project without remotes.
         if os.name == "nt" or not hasattr(os, "geteuid") or os.geteuid() == 0:
             self.skipTest("chmod does not deny access as root or on Windows")
         col = self.build()
@@ -1724,9 +1688,11 @@ class GitRemotesTests(unittest.TestCase):
 
 
 class ProjectAgentsTests(unittest.TestCase):
-    """The agents used on each home and collected project, in `detect`,
-    `detect --json` and inventory.json; `project` is never shown as an
-    agent (issue 104)."""
+    """The agents used on each home and collected project.
+
+    The agents used on each home and collected project, in `detect`, `detect --json` and
+    inventory.json; `project` is never shown as an agent.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-projagents-test-"))
@@ -1829,7 +1795,7 @@ class ProjectAgentsTests(unittest.TestCase):
         exit_code, out = run_detect(root)
         self.assertEqual(exit_code, 0, out)
         lines = out.splitlines()
-        # The header lines and the first table, as before 0.12.0 (issue 104).
+        # The header lines and the first table.
         homes_fmt = "%-14s %-32s %-18s %8s %12s  %s"
         self.assertEqual(
             lines[:7],
@@ -1863,9 +1829,9 @@ class ProjectAgentsTests(unittest.TestCase):
         self.assertNotIn(" project ", out)
 
     def test_detect_text_first_table(self):
-        # The first table keeps its 0.11.0 layout: one line per user, home
+        # The first table has one line per user, home
         # and agent in the order the first file was met, which is not the
-        # sorted order of homes[].agents (issue 104).
+        # sorted order of homes[].agents.
         collected = Collected(self.tmp / "col", ["/srv/proj"])
         collected.add("alice", "/home/alice", "codex-cli", ".codex/config.toml", "x=1\n")
         collected.add("bob", "/home/bob", "claude-code", ".claude/settings.json", "{}")
@@ -1953,7 +1919,7 @@ class ProjectAgentsTests(unittest.TestCase):
         )
         for key in ("input", "kind", "host", "notes"):
             self.assertEqual(inv[key], doc[key], key)
-        # inventory.json's homes are detect's plus `synced_sessions` (issue 151)
+        # inventory.json's homes are detect's plus `synced_sessions`
         # and `relayed_sessions`, `remote_sessions` and `recovered_sessions`.
         for home in inv["homes"]:
             for agent in home["agents"]:
@@ -2170,7 +2136,7 @@ class ProjectAgentsTests(unittest.TestCase):
         self.assertEqual(json.loads(out)["projects"], [])
 
 
-# Synthetic ids and paths for the scratch directory tests (issue 149).
+# Synthetic ids and paths for the scratch directory tests.
 POOL_A = "9a9a9a9a-0000-4000-8000-000000000001"
 POOL_B = "9a9a9a9a-0000-4000-8000-000000000002"
 CHAT = "9a9a9a9a-0000-4000-8000-000000000003"
@@ -2203,8 +2169,10 @@ def pool_workspace(sid: str, cwd: str) -> str:
 
 
 class ScratchDirectoryTests(unittest.TestCase):
-    """inventory.json `scratch_directories`: the agent's own working
-    directories, kept apart from `projects` (issue 149)."""
+    """inventory.json `scratch_directories`.
+
+    The agent's own working directories, kept apart from `projects`.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-scratch-test-"))
@@ -2349,7 +2317,7 @@ class ScratchDirectoryTests(unittest.TestCase):
         self.assertFalse(scratch(project_key("C:\\Users\\sean\\src\\app"), windows_home, cat))
 
 
-# An agent's own worktrees inside a project (issue 227), one per agent
+# An agent's own worktrees inside a project, one per agent
 # whose source makes them there, beside paths the rule must leave alone.
 WORKTREE_PROJECT = "/srv/proj"
 AGENT_WORKTREES = [
@@ -2364,9 +2332,11 @@ NOT_WORKTREES = ["/srv/proj/src", "/srv/proj/.agents/x", "/srv/proj/.kilo"]
 
 
 class ProjectEntryScratchTests(unittest.TestCase):
-    """The project catalog entry rule for `scratch_directories`: a path
-    under a directory one agent's project catalog entry names inside a
-    project is that agent's own working directory (issue 227)."""
+    """The project catalog entry rule for `scratch_directories`.
+
+    A path under a directory one agent's project catalog entry names inside a project is that
+    agent's own working directory.
+    """
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-worktree-test-"))

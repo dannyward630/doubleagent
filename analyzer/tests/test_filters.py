@@ -1,3 +1,5 @@
+"""Tests of the time and text filters of `timeline`."""
+
 import contextlib
 import io
 import json
@@ -18,6 +20,8 @@ NOW = datetime(2026, 3, 31, 14, 5, 9, 123000, tzinfo=timezone.utc)
 
 
 class ParseBoundTests(unittest.TestCase):
+    """`parse_bound` reads the `--since` and `--until` forms and rejects the rest."""
+
     def both(self, text):
         return parse_bound(text, now=NOW), parse_bound(text, end=True, now=NOW)
 
@@ -98,6 +102,8 @@ def _row(timestamp, text="", turn_type="user", session="s1", tool_use_id=""):
 
 
 class RowFilterTests(unittest.TestCase):
+    """`RowFilter` keeps the rows in the window and the matches with their tool partners."""
+
     ROWS: ClassVar[list[Row]] = [
         _row("2026-10-01T08:59:59.999Z", "before"),
         _row("2026-10-01T09:00:00.000Z", "first"),
@@ -139,6 +145,8 @@ class RowFilterTests(unittest.TestCase):
 
 
 class TimelineFilterCliTests(unittest.TestCase):
+    """The filter options of `timeline` on the shared fixture home."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))

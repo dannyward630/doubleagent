@@ -1,3 +1,5 @@
+"""Tests of input detection: loose trees, disk images, collections and archives."""
+
 import json
 import os
 import shutil
@@ -23,6 +25,8 @@ COLLECTOR = REPO / "collectors" / "collect-agent-artifacts.sh"
 
 
 class LooseDetectTests(unittest.TestCase):
+    """Detection in a loose tree or disk image, without a manifest."""
+
     def setUp(self):
         self.cat = catalog.load()
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
@@ -183,13 +187,13 @@ class LooseDetectTests(unittest.TestCase):
             self.assertEqual(by_rel[".copilot/session-state/s1/events.jsonl"], "copilot-cli")
 
     def test_framework_agents_detected(self):
-        # Collector 1.10.0 (#64): CrewAI's run database sits in a data
+        # CrewAI's run database sits in a data
         # directory named after the project folder (a mid-path `*` entry),
         # its Windows directory is the class [Cc]rew[Aa][Ii], CAMEL shares
         # ~/.camel with Apache Camel JBang, and the legacy Open Interpreter
         # directories have spaces in their names. The two Windows spellings
         # sit in separate homes, because a case-insensitive filesystem
-        # (macOS, Windows) would fold them into one directory (#75).
+        # (macOS, Windows) would fold them into one directory.
         home = self.tmp / "home" / "alice"
         files = {
             ".local/share/myproj/latest_kickoff_task_outputs.db": "crewai",
@@ -230,7 +234,7 @@ class LooseDetectTests(unittest.TestCase):
         )
 
     def test_claude_code_cli_cache_detected(self):
-        # Collector 1.11.0 (#81): the CLI's MCP server logs in its env-paths
+        # The CLI's MCP server logs in its env-paths
         # cache directory; the Windows entry names the children of Cache/.
         home = self.tmp / "home" / "alice"
         line = {"cwd": "", "debug": "MCP server: connected", "sessionId": "s", "timestamp": "t"}
@@ -327,7 +331,7 @@ class LooseDetectTests(unittest.TestCase):
         self.assertEqual(out["homes"][0]["user"], "mallory")
         self.assertEqual(out["homes"][0]["agents"][0]["agent"], "codex-cli")
         self.assertTrue(out["homes"][0]["agents"][0]["parser"])
-        # Loose input marks no home as a project (issue 104).
+        # Loose input marks no home as a project.
         self.assertEqual(out["projects"], [])
 
     def test_missing_input(self):
@@ -335,7 +339,7 @@ class LooseDetectTests(unittest.TestCase):
 
 
 class GitDetectTests(unittest.TestCase):
-    """`remotes` and `head` of each project in `detect --json` (issue 253)."""
+    """`remotes` and `head` of each project in `detect --json`."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-gitdetect-test-"))
@@ -344,8 +348,10 @@ class GitDetectTests(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def collection(self) -> Path:
-        """An extracted collection with two collected projects: /srv/proj
-        with its repository files, /srv/plain with only AGENTS.md."""
+        """An extracted collection with two collected projects.
+
+        /srv/proj with its repository files, /srv/plain with only AGENTS.md.
+        """
         root = self.tmp / "col"
         files = [
             ("/srv/proj", ".git/config", PROJ_GIT_CONFIG),
@@ -398,8 +404,10 @@ class GitDetectTests(unittest.TestCase):
 
 
 class ArchiveTests(unittest.TestCase):
-    """Round trip through the sh collector when a POSIX shell is available:
-    collector archive in, attributed artifacts and timeline out."""
+    """Round trip through the sh collector when a POSIX shell is available.
+
+    Collector archive in, attributed artifacts and timeline out.
+    """
 
     def setUp(self):
         self.cat = catalog.load()
@@ -472,12 +480,12 @@ class ArchiveTests(unittest.TestCase):
         sessions = (self.tmp / "tl" / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual(list(json.loads(sessions[0])), model.SESSION_COLUMNS)
         self.assertTrue((self.tmp / "tl" / "inventory.json").exists())
-        # detect.json was folded into inventory.json in 0.12.0 (issue 104).
+        # No detect.json: inventory.json holds what it held.
         self.assertFalse((self.tmp / "tl" / "detect.json").exists())
         # host comes from collection.json, users from the manifest
         self.assertLessEqual({row["user"] for row in rows}, {"alice", "bob", "carol"})
         # The collector gathers /srv/proj's repository files, and the
-        # agents' own records of its remote join them (issue 253).
+        # agents' own records of its remote join them.
         inv = json.loads((self.tmp / "tl" / "inventory.json").read_text(encoding="utf-8"))
         proj = inv["projects"]["/srv/proj"]
         self.assertEqual(proj["status"], "collected")

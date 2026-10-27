@@ -1,3 +1,5 @@
+"""Tests of `doubleagent inventory`, the fleet inventory CSV."""
+
 import contextlib
 import csv
 import io
@@ -43,6 +45,8 @@ HOST_C = """\
 
 
 class InventoryTests(unittest.TestCase):
+    """`inventory` on synthetic captures and on the collector's own `--inventory` output."""
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-inventory-test-"))
         self.inputs = self.tmp / "captures"

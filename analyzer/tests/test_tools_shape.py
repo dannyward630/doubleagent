@@ -27,11 +27,13 @@ def shape(*args):
     if res.returncode != 0:
         raise AssertionError("shape.py exited %d: %s" % (res.returncode, res.stderr))
     # The `# <root>` header names the test's own temporary directory, whose random
-    # name can contain a token a leak check looks for (issue 229); it is not under test.
+    # name can contain a token a leak check looks for; it is not under test.
     return "".join(line for line in res.stdout.splitlines(True) if not line.startswith("# "))
 
 
 class ShapeBase(unittest.TestCase):
+    """A temporary root for the files a shape test writes."""
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -39,6 +41,8 @@ class ShapeBase(unittest.TestCase):
 
 
 class JsonTests(ShapeBase):
+    """The shape of a JSON file: keys and value types, never values."""
+
     def setUp(self):
         super().setUp()
         doc = {
@@ -112,6 +116,8 @@ class JsonTests(ShapeBase):
 
 
 class JsonlTests(ShapeBase):
+    """The shape of a JSONL file: line types, key sets and enum tokens."""
+
     def setUp(self):
         super().setUp()
         lines = [
@@ -194,6 +200,8 @@ class JsonlTests(ShapeBase):
 
 
 class RedactionTests(ShapeBase):
+    """Ids, paths and e-mail addresses print as their class, never as themselves."""
+
     def test_uuid_key_and_path(self):
         directory = self.root / "agent" / UUID
         directory.mkdir(parents=True)
@@ -252,6 +260,8 @@ class RedactionTests(ShapeBase):
 
 
 class WalkTests(ShapeBase):
+    """The directory walk: skipped subtrees, the size limit and symlinks it never follows."""
+
     def setUp(self):
         super().setUp()
         top = self.root / "top"

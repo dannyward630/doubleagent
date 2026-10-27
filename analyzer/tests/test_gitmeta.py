@@ -1,5 +1,4 @@
-"""`gitmeta`: the remotes and HEAD of a collected project's repository
-(issue 253)."""
+"""Tests of `gitmeta`: the remotes and HEAD of a collected project's repository."""
 
 import os
 import shutil
@@ -13,6 +12,8 @@ from fixtures import PROJ_GIT_CONFIG, PROJ_GIT_HEAD, PROJ_GIT_REMOTES
 
 
 class ParseRemotesTests(unittest.TestCase):
+    """`parse_remotes` reads a repository config as git does."""
+
     def test_fixture_config(self):
         self.assertEqual(gitmeta.parse_remotes(PROJ_GIT_CONFIG), PROJ_GIT_REMOTES)
 
@@ -61,8 +62,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_comment_backslash_does_not_continue(self):
         # A backslash that ends a full-line or a trailing comment is not a
-        # continuation, so the header after it keeps its own remote (pull
-        # request 254 review); one that ends a value still is.
+        # continuation, so the header after it keeps its own remote; one that
+        # ends a value still is.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git  # cloned from C:\\git\\\n"
@@ -87,8 +88,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_quoted_and_escaped_whitespace_is_kept(self):
         # Only bare whitespace around a value is trimmed, as git trims it; a
-        # quoted or escaped space is part of the path (pull request 254
-        # review). Bare whitespace before a comment still goes.
+        # quoted or escaped space is part of the path. Bare whitespace before a
+        # comment still goes.
         text = (
             '[remote "a"]\n'
             '\turl =   "/srv/mirror.git "  \n'
@@ -112,7 +113,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_unterminated_quote_is_dropped_and_reported(self):
         # A config cut inside a quoted value: git rejects the line, so the
         # partial text is not a destination; the pair is left out, the valid
-        # remotes stay, and the line is reported (pull request 254 review).
+        # remotes stay, and the line is reported.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git\n"
@@ -139,7 +140,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_unsupported_escape_is_dropped_and_reported(self):
         # git defines \\, \", \n, \t and \b and a backslash before a line
         # end; any other escape makes it reject the line, so the backslash
-        # is never dropped to invent a destination (pull request 254 review).
+        # is never dropped to invent a destination.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git\n"
@@ -164,7 +165,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_dotted_header_subsection_is_lower_cased(self):
         # The deprecated [section.subsection] form lower-cases its subsection
         # (git), so [remote.Origin] and [remote "origin"] are one remote; a
-        # quoted subsection keeps its case (pull request 254 review).
+        # quoted subsection keeps its case.
         text = (
             "[remote.Origin]\n"
             "\turl = https://h/origin.git\n"
@@ -187,8 +188,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_bom_crlf_and_unicode_line_separators(self):
         # git accepts a UTF-8 byte-order mark at the start of a config and
-        # ends a line at LF or CRLF only; a U+2028 or U+0085 inside a quoted
-        # path is part of the path (pull request 254 review).
+        # ends a line at LF or CRLF only; a LINE SEPARATOR or NEXT LINE inside a quoted
+        # path is part of the path.
         text = (
             '﻿[remote "origin"]\r\n'
             "\turl = https://h/origin.git\r\n"
@@ -210,7 +211,7 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_padded_value_is_trimmed_in_one_pass(self):
         # A value padded with many spaces, as untrusted evidence may be, is
-        # trimmed without a pop(0) per space (pull request 254 review).
+        # trimmed without a pop(0) per space.
         pad = " " * 200_000
         text = '[remote "p"]\n\turl =%s"https://h/p.git "%s\n' % (pad, pad)
         self.assertEqual(
@@ -219,8 +220,8 @@ class ParseRemotesTests(unittest.TestCase):
         )
 
     def test_pair_on_the_header_line(self):
-        # git allows a variable after its section header on the same line
-        # (pull request 254 review); a comment there is still a comment.
+        # git allows a variable after its section header on the same line; a
+        # comment there is still a comment.
         text = (
             '[remote "origin"] url = https://h/origin.git\n'
             '[remote "note"] # just a comment\n'
@@ -268,10 +269,11 @@ class ParseRemotesTests(unittest.TestCase):
 
 
 class ParseHeadTests(unittest.TestCase):
+    """`parse_head` reads a HEAD file: a branch, a detached commit or another ref."""
+
     def test_unicode_in_a_branch_name(self):
-        # A ref may hold U+2028 or a trailing U+00A0; the line ends at the
-        # line feed and only ASCII whitespace is trimmed (pull request 254
-        # review).
+        # A ref may hold a LINE SEPARATOR or a trailing NO-BREAK SPACE; the line ends at the
+        # line feed and only ASCII whitespace is trimmed.
         self.assertEqual(
             gitmeta.parse_head("ref: refs/heads/team\N{LINE SEPARATOR}release\N{NO-BREAK SPACE}\n"),
             "team\N{LINE SEPARATOR}release\N{NO-BREAK SPACE}",
@@ -296,6 +298,8 @@ class ParseHeadTests(unittest.TestCase):
 
 
 class ProjectGitTests(unittest.TestCase):
+    """`project_git` finds a collected project's repository files and reads them."""
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-gitmeta-test-"))
 
@@ -310,9 +314,11 @@ class ProjectGitTests(unittest.TestCase):
         return Artifact(disk, home.original + "/" + rel, rel, agent, home)
 
     def aside(self, home: Home, rel: str, text: str) -> Artifact:
-        """An artifact of `home` at `rel` whose copy is written apart from the
-        others, so two spellings of one name never share a file on a
-        case-insensitive volume."""
+        """An artifact of `home` at `rel` whose copy is written apart from the others.
+
+        An artifact of `home` at `rel` whose copy is written apart from the others, so two spellings
+        of one name never share a file on a case-insensitive volume.
+        """
         disk = (
             self.tmp
             / "aside"
@@ -358,8 +364,7 @@ class ProjectGitTests(unittest.TestCase):
         # keeps the on-disk spelling, on Windows and on a macOS volume alike,
         # so .GIT/CONFIG and .git/head are the repository's files when no
         # exact spelling was collected; where a case-sensitive volume holds
-        # both spellings, git's own wins whatever order the rows come in
-        # (pull request 254 review).
+        # both spellings, git's own wins whatever order the rows come in.
         win = Home(self.tmp / "c/proj", "C:\\proj", "alice", project=True)
         mac = Home(self.tmp / "Users/alice/proj", "/Users/alice/proj", "alice", project=True)
         both = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
@@ -406,8 +411,8 @@ class ProjectGitTests(unittest.TestCase):
         self.assertEqual(problems, ["/srv/proj/.git/config: not a regular file"])
 
     def test_unreadable_file_is_a_problem(self):
-        # A permission or I/O error is reported, never read as "no remotes"
-        # (pull request 254 review); the other project is still read.
+        # A permission or I/O error is reported, never read as "no remotes";
+        # the other project is still read.
         if os.name == "nt" or not hasattr(os, "geteuid") or os.geteuid() == 0:
             self.skipTest("chmod does not deny access as root or on Windows")
         proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
@@ -434,8 +439,7 @@ class ProjectGitTests(unittest.TestCase):
         self.assertEqual(alone["/srv/proj"]["remotes"], [])
 
     def test_whole_file_is_read(self):
-        # No size cap: a remote past the first MiB is read in full (pull
-        # request 254 review).
+        # No size cap: a remote past the first MiB is read in full.
         proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         text = (
             "# " + "x" * (1 << 20) + '\n[remote "far"]\n\turl = https://host/team/repository.git\n'

@@ -1,3 +1,5 @@
+"""Tests of the bundled catalog: glob matching, parsing and agreement with the docs."""
+
 import re
 import subprocess
 import unittest
@@ -11,6 +13,8 @@ COLLECTOR = REPO / "collectors" / "collect-agent-artifacts.sh"
 
 
 class GlobTests(unittest.TestCase):
+    """Catalog glob segments compile to the regular expressions the catalog rules need."""
+
     def pattern(self, glob):
         return catalog.glob_segment_to_regex(glob)
 
@@ -33,6 +37,8 @@ class GlobTests(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    """The bundled catalog parses and matches the collector's `--list` output."""
+
     def setUp(self):
         self.cat = catalog.load()
 
@@ -69,8 +75,11 @@ if __name__ == "__main__":
 
 
 class NoTranscriptsTests(unittest.TestCase):
-    """The `collected` rows of the table in docs/agents.md and the
-    NO_TRANSCRIPTS set the analyzer reports as collected only must agree."""
+    """The docs' `collected` agents and NO_TRANSCRIPTS agree.
+
+    The `collected` rows of the table in docs/agents.md and the NO_TRANSCRIPTS set the analyzer
+    reports as collected only must agree.
+    """
 
     def collected_rows(self) -> set[str]:
         text = (REPO / "docs" / "agents.md").read_text(encoding="utf-8")

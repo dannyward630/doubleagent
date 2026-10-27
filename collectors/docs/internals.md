@@ -362,7 +362,9 @@ The sh counters are the globals `DOCKER_SEEN`, `DOCKER_FOUND`,
 function that sets them runs in the main shell, never in a pipeline or a
 `$(...)`, where the assignments would be lost. The PowerShell collector
 keeps the same counts in `$script:Docker` and the inventory in
-`$script:InventoryDocker`.
+`$script:InventoryDocker`. A failure (an unreadable volumes directory, a
+volume that cannot be walked) is counted, noted in `collection.json` and
+printed in the summary, and never stops the collection.
 
 ## Project discovery
 

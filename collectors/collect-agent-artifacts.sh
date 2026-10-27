@@ -88,7 +88,7 @@ TOOL="collect-agent-artifacts"
 # and sorting, the base system's tools first on PATH, and output that only
 # the user running the collector can read. CDPATH is unset because cd
 # searches it for a relative -r or -o and then prints the directory, which
-# would resolve the wrong tree into a two-line path (#110).
+# would resolve the wrong tree into a two-line path.
 LC_ALL=C
 export LC_ALL
 unset CDPATH
@@ -1976,14 +1976,14 @@ hash_match() {
   [ "$_hm_name" = "$2" ]
 }
 # The characters json_escape handles, as globals, since POSIX sh has no $'\t'.
-TAB=$(printf '\t'); CR=$(printf '\r'); NEWLINE='
+TAB=$(printf '\t'); CARRIAGE_RETURN=$(printf '\r'); NEWLINE='
 '
-# json_escape TEXT -> TEXT escaped for a JSON string: backslash, double quote,
+# json_escape TEXT -> TEXT escaped as a JSON string body: backslash, double quote,
 # tab, carriage return and newline. TEXT with none of them is printed as is,
 # without starting awk.
 json_escape() {
   case "$1" in
-    *\\*|*'"'*|*"$TAB"*|*"$CR"*|*"$NEWLINE"*) ;;
+    *\\*|*'"'*|*"$TAB"*|*"$CARRIAGE_RETURN"*|*"$NEWLINE"*) ;;
     *) printf '%s' "$1"; return ;;
   esac
   printf '%s' "$1" | awk 'BEGIN{ORS=""} NR>1{printf "\\n"} {
@@ -2000,7 +2000,7 @@ to_number() { case "$1" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$1" ;; esa
 # (nothing to escape) forks nothing.
 json_escape_var() {
   case "$1" in
-    *\\*|*'"'*|*"$TAB"*|*"$CR"*|*"$NEWLINE"*) _ret_json=$(json_escape "$1") ;;
+    *\\*|*'"'*|*"$TAB"*|*"$CARRIAGE_RETURN"*|*"$NEWLINE"*) _ret_json=$(json_escape "$1") ;;
     *) _ret_json=$1 ;;
   esac
 }
@@ -2009,8 +2009,8 @@ to_number_var() { case "$1" in ''|*[!0-9]*) _ret_number=0 ;; *) _ret_number=$1 ;
 # relative to the collection base, matches any secret glob, else 1. Reads
 # SECRET_PATTERN, the globs joined with | that compile_secret_pattern builds
 # in the main shell and the workers get through the environment. One case
-# with every glob runs in the shell's own matcher; the loop of one case per
-# glob it replaces ran in the interpreter, which is slow under bash and posh.
+# with every glob runs in the shell's own matcher, which is much faster under
+# bash and posh than a loop of one case per glob.
 define_secret_test() {
   eval "is_secret() { case \"\$1\" in $SECRET_PATTERN) return 0 ;; esac; return 1; }"
 }
@@ -2110,8 +2110,8 @@ get_dir_read_error_var() {
   _ret_dir_error=${_ret_dir_error%%"$NEWLINE"*}
 }
 # write_read_error_row MANIFEST USER HOME AGENT DIR ERROR: one error_read row
-# for a directory that could not be walked, with its lstat metadata and size
-# 0, and a "read failed" log line. Temporaries: _wrer_.
+# about a directory that could not be walked, with its lstat metadata and
+# size 0, and a "read failed" log line. Temporaries: _wrer_.
 write_read_error_row() {
   _wrer_stat=$(stat_file "$5"); [ -n "$_wrer_stat" ] || _wrer_stat='0 0 0 0 0 0 0 0'
   case "$_wrer_stat" in ' '*) _wrer_stat="0$_wrer_stat" ;; esac
@@ -2129,55 +2129,22 @@ $_ret_heredoc_text"
 # ===========================================================================
 # Staging files
 # ===========================================================================
-# Why workers exist: every walk is a find(1), and find -exec cannot call a
-# shell function (functions are not inherited portably), so the per-file work
-# runs as a separate program: find ... -exec "$WORKER_SH" -c "$PROGRAM" sh
-# ARGS... {} +. Each <NAME>_WORKER below holds such a program.
-# How COMMON reaches them: each program is the text of COMMON (sections 3 and
-# 4) followed by the worker's own text, so the helpers are defined the same
-# way in the main shell, where COMMON is eval'd, and in every worker.
-# Why heredoc_var: each program is read from a quoted here-document with
-# heredoc_var, not with VAR=$(cat <<'EOF' ... EOF), because pdksh-derived
-# shells (posh) end a $(...) at the first `)`, even a case pattern's inside a
-# here-document. For the same reason a case pattern inside any $(...) in this
-# file is written with its opening parenthesis: (pattern).
-# Which shell runs them: WORKER_SH, set in the main program: COLLECTOR_SH when
-# it is set, else dash when it is on PATH (it starts and loops faster than
-# bash), else sh. A worker runs in its own process, so its variables need no
-# prefix; its first line names its positional arguments.
+# find -exec cannot call a shell function, so the per-file work runs as
+# programs held in <NAME>_WORKER: the text of COMMON followed by the worker's
+# own, started as find ... -exec "$WORKER_SH" -c "$PROGRAM" sh ARGS... {} +.
+# A worker's variables need no prefix; its first line names its arguments.
+# collectors/docs/internals.md, "Worker programs (sh)", has the design.
 
 # STAGE_FILES_WORKER: run by find -exec for every file to collect that is not
 # a directory: regular files, symlinks, and special files (sockets, FIFOs,
 # devices), which get a skipped_special row and are never opened.
 # Arguments: stage_dir root user home agent manifest files...
-#
-# The files are taken in chunks of at most 256 paths or about 64 KiB of
-# names, so no argument list built here is much longer than the one find
-# passed. Each chunk goes through five passes, in this order, which keeps
-# the per-file order of the forensic rules (lstat before copy, hash of the
-# staged copy, never follow a symlink):
-#   1. lstat_chunk: lstat every file with one stat call (stat_files), or with
-#      stat_file per file when that output does not have one line per file (a
-#      file vanished, stat failed, or there is no stat);
-#   2. plan_chunk: create the staging directories with one mkdir -p, recreate
-#      symlinks (readlink, ln -s), classify special files (skipped_special)
-#      and decide the secret and size skips;
-#   3. copy_chunk: copy with one cp -p per run of consecutive files from the
-#      same directory; a run whose cp fails or prints anything is redone per
-#      file, so each failing file gets its own error text and log line;
-#   4. hash_chunk: hash the staged copies with one hasher call (hash_files); a
-#      name the hashers would escape, or a file missing from their output, is
-#      hashed per file with hash_file, which gives "" when the copy is
-#      unreadable;
-#   5. write_chunk_rows: write the manifest rows, in the order find passed the
-#      files.
-# POSIX sh has no arrays, so the chunk is held in numbered variables set by
-# eval, for N from 1 to chunk_size: path_N the source path, stat_N its
-# stat_file line, status_N its manifest status (copy until pass 3 decides),
-# type_N its manifest type, secret_N true or false, target_N the symlink
-# target, copy_error_N the cp error text, hash_N the sha256 of the staged
-# copy. CAC_NO_BATCH=1, a test hook, takes the per-file path in passes 1, 3
-# and 4.
+# The files go in chunks of at most 256 paths or 64 KiB of names through five
+# passes, lstat, plan, copy, hash, write, which keep the forensic order. POSIX
+# sh has no arrays, so a chunk is held in numbered variables (path_N, stat_N,
+# status_N, type_N, secret_N, target_N, copy_error_N, hash_N). CAC_NO_BATCH=1,
+# a test hook, takes the per-file path. collectors/docs/internals.md, "Worker
+# programs (sh)", describes each pass.
 heredoc_var <<'EOF_STAGE_FILES_WORKER'
 stage_dir=$1; root=$2; user=$3; home=$4; agent=$5; manifest=$6; shift 6
 set -f
@@ -2213,8 +2180,8 @@ lstat_chunk() {
 # and size skips. Reads path_N, stat_N, NO_SECRETS, MAX_SIZE, and calls
 # is_secret (SECRET_PATTERN);
 # sets status_N (symlink, skipped_special, skipped_secret, skipped_size or
-# copy), type_N (file, symlink, or socket, fifo, device or other for a file
-# that exists but is not regular, which is never copied: cp would block on a
+# copy), type_N (file, symlink, or socket, fifo, device or other when a file
+# exists but is not regular, which is never copied: cp would block on a
 # FIFO), secret_N and target_N, and clears copy_error_N and hash_N. A file
 # that vanished since find listed it stays "copy" and becomes error_copy.
 # last_mkdir_dir carries over between chunks.
@@ -2325,7 +2292,10 @@ hash_chunk() {
       eval "status=\$status_$i; path=\$path_$i"
       if [ "$status" = collected ]; then
         dest="$stage_dir/fs${path#"$root"}"
-        case "$dest" in *\\* | *"$NEWLINE"* | *"$CR"*) ;; *) set -- "$@" "$dest" ;; esac
+        case "$dest" in
+          *\\* | *"$NEWLINE"* | *"$CARRIAGE_RETURN"*) ;;
+          *) set -- "$@" "$dest" ;;
+        esac
       fi
       i=$((i + 1))
     done
@@ -2513,18 +2483,14 @@ classify_case_matches() {
 }
 
 # fold_case_matches: classify_case_matches lines on stdin -> agent|glob|path
-# lines with spellings of one on-disk path folded together. On a
-# case-insensitive filesystem (macOS, Windows images, /mnt/c under WSL),
-# entries that differ only by case (.config/goose and .config/Goose) match the
-# same directory: a match that case-folds to an earlier match's path and has
-# its device and inode (file_id) is dropped, and the first catalog line wins;
-# in its place a #|message line tells collect_catalog what to log.
-# A match that case-folds to a path inside another match (.config/Cursor/User
-# inside .config/cursor) is respelled with that match's prefix when the prefix
-# is the same directory, so the nested claim prunes it from the enclosing
-# walk. Only paths that collide when case-folded are stat'ed, so on a
-# case-sensitive filesystem, where the ids differ, every match is kept as is.
-# Temporaries: _fcm_.
+# lines with spellings of one on-disk path folded together, for a
+# case-insensitive filesystem (macOS, Windows images, /mnt/c under WSL). A
+# match with an earlier match's device and inode (file_id) is dropped, the
+# first catalog line winning, and a #|message line tells collect_catalog what
+# to log; a match inside another match's differently spelled directory is
+# respelled with that match's prefix, so the nested claim prunes it. Only
+# colliding paths are stat'ed. collectors/docs/internals.md, "Claimed paths
+# and case variants", has the rules. Temporaries: _fcm_.
 fold_case_matches() {
   while IFS= read -r _fcm_line; do
     case "$_fcm_line" in
@@ -2532,16 +2498,16 @@ fold_case_matches() {
       ('^|'*) _fcm_prefix=${_fcm_line#??} ;;
       ('K|'*) printf '%s\n' "${_fcm_line#??}" ;;
       ('D|'*) _fcm_line=${_fcm_line#??}; _fcm_match=${_fcm_line#*|}; _fcm_match=${_fcm_match#*|}
-        _fcm_id=$(file_id "$_fcm_match")
+        _fcm_file_id=$(file_id "$_fcm_match")
         if [ "$_fcm_match" = "$_fcm_ref" ] ||
-          { [ -n "$_fcm_id" ] && [ "$_fcm_id" = "$(file_id "$_fcm_ref")" ]; }; then
+          { [ -n "$_fcm_file_id" ] && [ "$_fcm_file_id" = "$(file_id "$_fcm_ref")" ]; }; then
           printf '#|  [%s] %s: same file as %s (case-insensitive filesystem), collected there\n' \
             "${_fcm_line%%|*}" "$_fcm_match" "$_fcm_ref"
         else printf '%s\n' "$_fcm_line"; fi ;;
       ('R|'*) _fcm_line=${_fcm_line#??}; _fcm_agent=${_fcm_line%%|*}; _fcm_rest=${_fcm_line#*|}
         _fcm_glob=${_fcm_rest%%|*}; _fcm_rest=${_fcm_rest#*|}
-        _fcm_id=$(file_id "$_fcm_prefix")
-        if [ -n "$_fcm_id" ] && [ "$_fcm_id" = "$(file_id "$_fcm_ref")" ]; then
+        _fcm_file_id=$(file_id "$_fcm_prefix")
+        if [ -n "$_fcm_file_id" ] && [ "$_fcm_file_id" = "$(file_id "$_fcm_ref")" ]; then
           printf '%s|%s|%s%s\n' "$_fcm_agent" "$_fcm_glob" "$_fcm_ref" "$_fcm_rest"
         else printf '%s|%s|%s%s\n' "$_fcm_agent" "$_fcm_glob" "$_fcm_prefix" "$_fcm_rest"; fi ;;
     esac
@@ -2570,7 +2536,7 @@ expand_catalog() {
 # but are not walked. HEADER, when given, is logged once before the first
 # match, so a base with no matches leaves no progress line. Reads INVENTORY;
 # sets NESTED_CLAIMS for the duration of the call, in the subshell every
-# caller runs it in (the main program clears it, #106). Temporaries: _cc_.
+# caller runs it in (the main program clears it). Temporaries: _cc_.
 collect_catalog() {
   _cc_header=${4:-}
   _cc_matches=$(expand_catalog "$2" "$3")
@@ -2615,7 +2581,7 @@ test_excluded() {
 
 # collect_path USER HOME AGENT PATH: collects one matched PATH. A directory
 # (not a symlink to one) is walked with collect_tree; anything else is tested
-# against ACTIVE_EXCLUDES here, since find never sees it (#107), and gets one
+# against ACTIVE_EXCLUDES here, since find never sees it, and gets one
 # skipped_excluded row from EXCLUDED_PATHS_WORKER when it matches, or else is
 # staged by STAGE_FILES_WORKER, which records a symlink as a symlink and a
 # socket, FIFO or device as skipped_special. With --inventory the same walk
@@ -2628,7 +2594,7 @@ collect_path() {
     # A match that cannot be listed or entered gets its error_read row here,
     # not from the walk: BSD find applies no expression to a starting point
     # it cannot read and GNU find does, so the pre-check gives both one row
-    # and never two (#82).
+    # and never two.
     if [ "$INVENTORY" != 1 ] && _cp_dir_error=$(get_dir_read_error "$_cp_match"); then
       write_read_error_row "$MANIFEST" "$_cp_user" "$_cp_home" "$_cp_agent" "$_cp_match" \
         "$_cp_dir_error"
@@ -2648,19 +2614,15 @@ collect_path() {
   fi
 }
 
-# collect_tree USER HOME AGENT DIR: walks DIR with one find(1). The find
-# expression, built in the positional parameters since POSIX sh has no
-# arrays, is in this order: prune the NESTED_CLAIMS paths inside DIR (another
-# entry collects them); prune ACTIVE_EXCLUDES (globs relative to HOME) with
-# one skipped_excluded row each from EXCLUDED_PATHS_WORKER, or silently with
-# --inventory; give every directory to UNREADABLE_DIRS_WORKER for its
-# error_read check; give every other path (regular file, symlink or special
-# file) to STAGE_FILES_WORKER, or every regular file to
-# INVENTORY_FILES_WORKER with --inventory. find's own messages go to LOG.
-# Reads NESTED_CLAIMS, ACTIVE_EXCLUDES, INVENTORY, MANIFEST, STAGE, ROOT,
-# WORKER_SH, LOG. Both lists are split with globbing off, so a glob is never
-# expanded against the current directory before it reaches find (#109).
-# Temporaries: _ct_.
+# collect_tree USER HOME AGENT DIR: walks DIR with one find(1), whose
+# expression (built in the positional parameters) prunes the NESTED_CLAIMS
+# paths inside DIR, prunes ACTIVE_EXCLUDES (globs relative to HOME) with a
+# skipped_excluded row each (none with --inventory), gives every directory to
+# UNREADABLE_DIRS_WORKER and every other path to STAGE_FILES_WORKER (every
+# regular file to INVENTORY_FILES_WORKER with --inventory); find's messages go
+# to LOG. Both lists are split with globbing off, so no glob is expanded
+# against the current directory. Reads NESTED_CLAIMS, ACTIVE_EXCLUDES,
+# INVENTORY, MANIFEST, STAGE, ROOT, WORKER_SH, LOG. Temporaries: _ct_.
 collect_tree() {
   _ct_user=$1; _ct_home=$2; _ct_agent=$3
   set -- "$4"
@@ -2712,7 +2674,7 @@ collect_tree() {
 # under the usual home parents of macOS, Linux, the BSDs, Solaris and Windows
 # images. The home patterns are quoted so that they reach expand_glob as
 # patterns: unquoted, the shell would expand them against the current
-# directory first (#105). Reads MODE and ROOT. Temporaries: _eu_.
+# directory first. Reads MODE and ROOT. Temporaries: _eu_.
 enumerate_users() {
   {
     if [ "$MODE" = live ] && command -v getent >/dev/null 2>&1; then
@@ -2782,18 +2744,11 @@ collect_user_homes() {
 # ===========================================================================
 # Docker and Podman volumes
 # ===========================================================================
-# Enumerated from the filesystem, never with the docker binary, so the same
-# code covers live hosts and disk images. Each volume is <volumes
-# dir>/<name>/_data. A volume whose name matches DOCKER_VOLUMES is collected
-# whole as user "docker" with _data as its home; any other volume gets one
-# skipped_unmatched_volume row with its size. Failures (an unreadable volumes
-# directory, a volume that cannot be walked) are counted, noted in
-# collection.json and printed in the summary; they never stop the
-# collection. The counters are globals: DOCKER_SEEN (any Docker or Podman
-# data found), DOCKER_FOUND, DOCKER_COLLECTED, DOCKER_UNREADABLE,
-# DOCKER_DESKTOP; with --inventory, DOCKER_INV holds the M| and F| lines of
-# the collected volumes. Every function here that sets them runs in the main
-# shell, never in a pipeline or $(...).
+# Volumes are found on disk, never with the docker binary, so live hosts and
+# disk images are handled alike. The DOCKER_* counters and DOCKER_INV (the
+# inventory lines of collected volumes) are globals, so every function here
+# that sets them runs in the main shell, never in a pipeline or $(...).
+# collectors/docs/internals.md, "Docker and Podman volumes", has the flow.
 
 # get_docker_volume_rule NAME -> the first DOCKER_VOLUMES line (agent|glob)
 # whose glob matches NAME, or nothing. Globbing is off while the table is
@@ -2951,15 +2906,11 @@ EOF_DOCKER_DESKTOP_DIRS
 # ===========================================================================
 # Project discovery
 # ===========================================================================
-# Paths referenced by agent state files, prefixed with ROOT. discover_projects
-# emits "user:path"; the user is whoever's state referenced the path. Only
-# plain-text sources are read here (JSON/JSONL via grep); SQLite-backed agents
-# (Zed, Goose, OpenCode, Kilo, Cline db/) are left to the analyst-side parser.
-# The find_*_projects groups run in this order, and the sources inside each
-# in the order written, since the project list (and with it the manifest row
-# order) follows the order in which paths are first seen. Each group takes
-# the home as $1 and runs with IFS set to newline only (discover_projects
-# sets it), so its globs keep paths with spaces whole.
+# Project paths read with grep from the plain-text state of each home; SQLite
+# sources are left to the analyzer. The find_*_projects groups and the
+# sources inside each keep their order, which sets the manifest row order.
+# Each group takes the home as $1 and runs with IFS set to newline only.
+# collectors/docs/internals.md, "Project discovery", lists the groups.
 
 # test_inventory_secret FILE: returns 0 when --inventory is on and FILE,
 # relative to the home being scanned (DISCOVERY_HOME, set by
@@ -3001,12 +2952,10 @@ json_path_keys() {
 # abs_strings FILE... -> every quoted absolute path or file:// URI in the files
 # (JSON arrays of workspace paths, object keys, nested values alike). The
 # optional group is file:// so that the / after it is the path's own: a
-# file:///home/x URI yields /home/x (#91; from 1.3.0 to 1.11.x the group was
-# file:/// and no file:// URI ever matched). A Windows URI file:///C:/x (or
+# file:///home/x URI yields /home/x. A Windows URI file:///C:/x (or
 # file:///c%3A/x) yields the drive-relative /x, which image mode prefixes
 # with the root as ConvertTo-LocalPath does in the PowerShell collector; the
-# drive letter itself is dropped, since the sh collector keeps only paths
-# that start with /.
+# drive letter is dropped, since the sh collector keeps only paths from /.
 abs_strings() {
   eval "$INVENTORY_DROP_SECRETS"
   [ $# -gt 0 ] || return 0
@@ -3297,7 +3246,7 @@ collect_projects() {
 # Dates are UTC from the epoch with plain arithmetic (no date -d, no
 # strftime): iso() is the civil-from-days algorithm (Howard Hinnant's
 # chrono-compatible low-level date algorithms), with days counted from
-# 0000-03-01 so that the leap day ends a year. An mtime of 0 (stat
+# 1 March of year 0 so that the leap day ends a year. An mtime of 0 (stat
 # unavailable) is left out of first and last.
 aggregate_inventory() {
   awk -F'|' '
@@ -3720,7 +3669,7 @@ check_prerequisites() {
 # and STAT_MODE (gnu, gnu0 for a GNU stat without %W, bsd or none); and
 # WORKER_SH. The find -exec workers fork for every batch and do most of the
 # per-file work, so they run under dash when it is installed (Debian and
-# Ubuntu sh, /bin/dash on macOS since 10.15), which starts and loops faster
+# Ubuntu sh, /bin/dash on macOS), which starts and loops faster
 # than bash; COLLECTOR_SH overrides it. Temporaries: _dc_.
 detect_capabilities() {
   if command -v sha256sum >/dev/null 2>&1; then HASH_TOOL=sha256sum
@@ -3824,7 +3773,7 @@ log_start
 # (section 8) and the project list (section 9). NESTED_CLAIMS is cleared
 # too: collect_catalog sets it only inside the per-home pipeline subshell,
 # so the volume walks would otherwise prune whatever paths the environment
-# the collector was started with gave it (#106).
+# the collector was started with gave it.
 NOTES=
 DOCKER_SEEN=0; DOCKER_FOUND=0; DOCKER_COLLECTED=0; DOCKER_UNREADABLE=0; DOCKER_DESKTOP=0
 DOCKER_INV=

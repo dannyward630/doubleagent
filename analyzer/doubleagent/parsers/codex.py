@@ -40,6 +40,7 @@ from typing import cast
 
 import zstandard
 
+from ..errors import DoubleAgentError
 from ..inputs import Artifact, error_reason
 from ..model import GIT_REMOTE_PREFIX, Row, compact
 from ..timeutil import to_utc
@@ -121,7 +122,7 @@ def _decode_line(line_number: int, raw: bytes, errors: list) -> dict | None:
     return record if isinstance(record, dict) else None
 
 
-class TruncatedFrame(Exception):
+class TruncatedFrame(DoubleAgentError):
     """The zstd stream ends inside a frame."""
 
     pass

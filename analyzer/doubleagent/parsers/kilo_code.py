@@ -153,13 +153,13 @@ class KiloCodeParser(OpenCodeParser):
     agent = "kilo-code"
     name = "kilo-code"
     data_dir = ".local/share/kilo"
-    db_prefixes = ("kilo", "opencode")
+    database_prefixes = ("kilo", "opencode")
     # Kilo Code at 87cc35c has no `session_v2` table and no pre-release
     # database that a later build imports, so every database under its
     # directory, `opencode-next.db` included, is primary. Its one secondary
     # source is the terminal UI's `prompt-history.jsonl` (see `opencode.py`).
     has_secondary = True
-    next_db = ""
+    next_database = ""
     state_dir = ".local/state/kilo"
     # Kilo's terminal UI keeps no `session.json` of pinned sessions.
     pinned_sessions = False

@@ -306,9 +306,9 @@ class OpenCodeParser(Parser):
     # The pre-release 2.0 database (`opencode-next.db`) that 2.0 imports and
     # leaves in place is secondary to the database it was imported into.
     has_secondary = True
-    next_db = "opencode-next.db"
+    next_database = "opencode-next.db"
     data_dir = ".local/share/opencode"
-    db_prefixes: tuple[str, ...] = ("opencode",)
+    database_prefixes: tuple[str, ...] = ("opencode",)
     # The terminal UI's state directory: `prompt-history.jsonl` (secondary),
     # `prompt-stash.jsonl` and, for OpenCode, `session.json` (secondary).
     state_dir = ".local/state/opencode"
@@ -323,7 +323,7 @@ class OpenCodeParser(Parser):
         self.pinned_rx = re.compile(
             r"^%s/session\.json$" % state_dir if self.pinned_sessions else r"(?!)"
         )
-        prefixes = "|".join(re.escape(prefix) for prefix in self.db_prefixes)
+        prefixes = "|".join(re.escape(prefix) for prefix in self.database_prefixes)
         self.database_pattern = re.compile(r"^%s/(?:%s)(?:-[^/]+)?\.db$" % (data_dir, prefixes))
         self.session_pattern = re.compile(r"^%s/storage/session/([^/]+)/([^/]+)\.json$" % data_dir)
         self.message_pattern = re.compile(r"^%s/storage/message/([^/]+)/([^/]+)\.json$" % data_dir)
@@ -357,7 +357,8 @@ class OpenCodeParser(Parser):
         if self.history_pattern.match(rel) or self.pinned_rx.match(rel):
             return True
         return (
-            bool(self.database_pattern.match(rel)) and self.database_label(artifact) == self.next_db
+            bool(self.database_pattern.match(rel))
+            and self.database_label(artifact) == self.next_database
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:

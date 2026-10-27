@@ -57,11 +57,11 @@ ctr_running() { [ "$(docker container inspect -f '{{.State.Running}}' "$1" 2>/de
 
 need_up() { ctr_running "$agent_ctr" || die "sandbox is not running; run $0 up"; }
 
-cmd=${1:-help}
+subcommand=${1:-help}
 if [ $# -gt 0 ]; then shift; fi
-case "$cmd" in help|-h|--help) ;; *) need_docker ;; esac
+case "$subcommand" in help|-h|--help) ;; *) need_docker ;; esac
 
-case "$cmd" in
+case "$subcommand" in
   build)
     compose build
     if [ "$want_ollama" = 1 ]; then compose pull ollama; fi
@@ -134,6 +134,6 @@ case "$cmd" in
     awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
     ;;
   *)
-    die "unknown command '$cmd'; try $0 help"
+    die "unknown command '$subcommand'; try $0 help"
     ;;
 esac

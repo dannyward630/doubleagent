@@ -127,7 +127,7 @@ MakeFile 'Users/alice/.local/share/amp/history.jsonl' '{"cwd":"C:\\ampproj","pro
 MakeFile 'ampproj/.amp/settings.json' 'amp'
 MakeFile 'kiloproj/.kilo/worktrees/w1/f' 'wt'
 MakeFile 'Users/alice/.cline/data/sessions/s1/s2.json' '{"cwd":"C:\\kiloproj"}'
-# catalog cases: the same list as smoke.sh, kind|agent|path relative to
+# 2026-10-04 catalog cases: the same list as smoke.sh, kind|agent|path relative to
 # alice's profile.
 $CasesCatalog = @'
 excl||.pearai/extensions
@@ -530,7 +530,7 @@ MakeFile 'tabbyproj/AGENTS.md' '# tabby'
 MakeFile 'srv/tabbyunix/AGENTS.md' '# tabby'
 MakeFile 'Users/alice/.twinny/embeddings/twinproj/manifest.json' '{"files":{"C:\\twinproj\\src\\a.ts":{"hash":"h1"},"C:\\twinproj\\b.ts":{"hash":"h2"}}}'
 MakeFile 'twinproj/AGENTS.md' '# twin'
-# --- Docker volumes: a root volume matched to Agent Zero, an unmatched volume,
+# --- 2026-10-04 Docker volumes: a root volume matched to Agent Zero, an unmatched volume,
 # and a rootless volume in alice's profile.
 MakeFile 'var/lib/docker/volumes/a0_usr/_data/chats/ctx1/chat.json' '{"id":"ctx1","name":"chat","history":"[]"}'
 MakeFile 'var/lib/docker/volumes/a0_usr/_data/.env' 'API_KEY_OPENAI=sk-x'
@@ -1362,7 +1362,7 @@ Check 'amp history cwd discovers project' { (StatusOf 'ampproj/.amp/settings.jso
 Check 'project-level kilo worktrees excluded' { (StatusOf 'kiloproj/.kilo/worktrees') -eq 'skipped_excluded' }
 Check 'claude desktop mcp config flagged secret' { $row -and $row.secret -eq $true -and $row.status -eq 'collected' }
 Check 'claude desktop Cache excluded' { (StatusOf 'Roaming/Claude/Cache') -eq 'skipped_excluded' }
-# catalog cases
+# 2026-10-04 catalog cases
 foreach ($caseLine in $CasesCatalog) {
   $fields = @($caseLine -split '\|', 3); $row = Row "alice/$($fields[2])"
   switch ($fields[0]) {
@@ -1410,7 +1410,7 @@ Check 'nanobot instance config workspace discovers project' { (StatusOf 'nanocfg
 Check 'tabby config.toml file:// git_url (drive) discovers project' { (StatusOf 'tabbyproj/AGENTS.md') -eq 'collected' }
 Check 'tabby config.toml file:// git_url (unix) discovers project' { (StatusOf 'srv/tabbyunix/AGENTS.md') -eq 'collected' }
 Check 'twinny manifest common prefix discovers project' { (StatusOf 'twinproj/AGENTS.md') -eq 'collected' }
-# Docker volumes
+# 2026-10-04 Docker volumes
 $row = Row 'var/lib/docker/volumes/a0_usr/_data/chats/ctx1/chat.json'
 Check 'docker volume file collected as agent-zero, user docker' { $row -and $row.user -eq 'docker' -and $row.agent -eq 'agent-zero' -and $row.status -eq 'collected' -and ($row.home -replace '\\', '/').EndsWith('var/lib/docker/volumes/a0_usr/_data') }
 $row = Row 'var/lib/docker/volumes/a0_usr/_data/.env'

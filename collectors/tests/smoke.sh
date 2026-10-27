@@ -124,7 +124,7 @@ printf 'wt\n' >"$ROOT/srv/kiloproj/.kilo/worktrees/w1/f"
 printf '{"cwd":"/srv/kiloproj"}\n' >"$ROOT/home/alice/.cline/data/sessions/s1/s2.json"
 printf 'db\n' >"$ROOT/Users/bob/Library/Application Support/Ollama/db.sqlite"
 
-# --- catalog cases: one per exclusion, secret glob and attributed agent, as
+# --- 2026-10-04 catalog cases: one per exclusion, secret glob and attributed agent, as
 # kind|agent|path relative to alice's home. excl (a directory) and exclf (a
 # file) must be skipped_excluded, secret collected and flagged, agent collected
 # under that agent. The same list is in smoke.ps1.
@@ -542,7 +542,7 @@ printf '# tabby\n' >"$ROOT/srv/tabbyproj/AGENTS.md"
 printf '{"files":{"/srv/twinproj/src/a.ts":{"hash":"h1"},"/srv/twinproj/b.ts":{"hash":"h2"}}}\n' >"$ALICE/.twinny/embeddings/twinproj/manifest.json"
 printf '# twin\n' >"$ROOT/srv/twinproj/AGENTS.md"
 
-# --- Docker volumes: a root volume matched to Agent Zero, an unmatched volume,
+# --- 2026-10-04 Docker volumes: a root volume matched to Agent Zero, an unmatched volume,
 # and a rootless volume in alice's home.
 VOLUMES="$ROOT/var/lib/docker/volumes"
 mkdir -p "$VOLUMES/a0_usr/_data/chats/ctx1" "$VOLUMES/a0_usr/_data/tmp/playwright" "$VOLUMES/pgdata/_data" \
@@ -1329,7 +1329,7 @@ check "project-level kilo worktrees excluded" "[ \"\$(status_of \"$ROOT/srv/kilo
 check "ollama desktop app dir collected" "[ \"\$(status_of \"$ROOT/Users/bob/Library/Application Support/Ollama/db.sqlite\")\" = collected ]"
 check "cline taskHistory in globalStorage discovers project" "[ \"\$(status_of \"$ROOT/Users/bob/clineproj/.clinerules\")\" = collected ]"
 check "cline checkpoints in globalStorage excluded" "[ \"\$(status_of \"$ROOT/Users/bob/Library/Application Support/Cursor/User/globalStorage/saoudrizwan.claude-dev/checkpoints\")\" = skipped_excluded ]"
-# catalog cases
+# 2026-10-04 catalog cases
 printf '%s\n' "$CASES_CATALOG" >"$WORK/cases14"
 while IFS='|' read -r _kind _agent _relpath; do
   [ -n "$_relpath" ] || continue
@@ -1371,7 +1371,7 @@ check "nanobot .workspace marker discovers project" "[ \"\$(status_of \"$ROOT/sr
 check "nanobot instance config workspace discovers project" "[ \"\$(status_of \"$ROOT/srv/nanocfg/memory/MEMORY.md\")\" = collected ]"
 check "tabby config.toml file:// git_url discovers project" "[ \"\$(status_of \"$ROOT/srv/tabbyproj/AGENTS.md\")\" = collected ]"
 check "twinny manifest common prefix discovers project" "[ \"\$(status_of \"$ROOT/srv/twinproj/AGENTS.md\")\" = collected ]"
-# Docker volumes
+# 2026-10-04 Docker volumes
 AGENT_ZERO_VOLUME="$VOLUMES/a0_usr/_data"
 check "docker volume file collected as agent-zero, user docker" "row \"$AGENT_ZERO_VOLUME/chats/ctx1/chat.json\" | grep -q '\"user\":\"docker\",\"home\":\"$AGENT_ZERO_VOLUME\",\"agent\":\"agent-zero\".*\"status\":\"collected\"'"
 check "docker volume file archived under fs/<original path>" "tar -tzf \"\$ARCHIVE\" | grep -q '^./fs/var/lib/docker/volumes/a0_usr/_data/chats/ctx1/chat.json\$'"

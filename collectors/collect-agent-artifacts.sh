@@ -76,7 +76,8 @@
 # its result instead of printing it, to save a fork, sets _ret_<what>
 # (_ret_json, _ret_number) and its comment says so. A worker program is held
 # in <NAME>_WORKER and read from the here-document EOF_<NAME>_WORKER; its
-# variables need no prefix. No single-letter names except short loop indices.
+# variables need no prefix. A name is at least three characters after its
+# prefix, except a short loop index (i, j, k).
 #
 # Maintainer documentation, with the table of sh and PowerShell function
 # pairs: collectors/docs/internals.md.
@@ -88,7 +89,7 @@ TOOL="collect-agent-artifacts"
 # and sorting, the base system's tools first on PATH, and output that only
 # the user running the collector can read. CDPATH is unset because cd
 # searches it for a relative -r or -o and then prints the directory, which
-# would resolve the wrong tree into a two-line path (#110).
+# would resolve the wrong tree into a two-line path.
 LC_ALL=C
 export LC_ALL
 unset CDPATH
@@ -124,28 +125,25 @@ claude-code|.claude-*/daemon/pipe.key
 claude-code|.claude-*/daemon/roster.json
 claude-code|.claude-*/backups/.claude.json.*
 # Running-process credentials in a relocated config home: the IDE bridge
-# lock (authToken) and the Remote Control spawn MCP definition (2.1.310, #256)
+# lock (authToken) and the Remote Control spawn MCP definition
 claude-code|.claude-*/ide/*.lock
 claude-code|.claude-*/bridge-spawn/*/mcp.json
 claude-code|.local/share/claude
 # Claude Code version locks and its staging/ directory, home-relative on Linux
-# and Windows alike: locks/<version>.lock exists only while a session
-# runs (2.1.310, #256)
+# and Windows alike
 claude-code|.local/state/claude
 claude-code|.cache/claude
-# Claude Code CLI cache: MCP server logs per project (#81). The Windows
+# Claude Code CLI cache: MCP server logs per project. The Windows
 # entry names the children of Cache/: the PowerShell exclusion match ignores
 # case, so */Claude*/Cache would prune claude-cli-nodejs/Cache itself
 claude-code|Library/Caches/claude-cli-nodejs
 claude-code|.cache/claude-cli-nodejs
 claude-code|AppData/Local/claude-cli-nodejs/Cache/*
-# Claude Code Windows temp root, under the home: <slug>/<session>/ with
-# scratchpad/ and tasks/ (2.1.309, #256); the Linux and macOS roots are
-# outside every home (#163)
+# Claude Code Windows temp root, under the home (scratchpads and tasks); the
+# Linux and macOS roots are outside every home (research/claude-code.md)
 claude-code|AppData/Local/Temp/claude
-# Claude Code macOS URL handler: a two-file bundle registering the claude-cli:
-# URL scheme, written at the first exit, whose executable is a symlink to
-# ~/.local/bin/claude; install evidence that outlives ~/.local (2.1.310, #256)
+# Claude Code macOS URL handler: the bundle registering the claude-cli: URL
+# scheme, install evidence that outlives ~/.local
 claude-code|Applications/Claude Code URL Handler.app
 claude-desktop|Library/Application Support/Claude
 claude-desktop|Library/Application Support/Claude-3p
@@ -164,22 +162,12 @@ claude-desktop|AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude
 claude-desktop|AppData/Local/Packages/AnthropicPBC.Claude_*/LocalCache/Roaming/Claude
 claude-desktop|Claude
 claude-desktop|Documents/Claude
-# Google. The antigravity entries nest inside ~/.gemini and claim their
-# subtrees: .gemini/antigravity is the data directory of the desktop app
-# (2.x, the Electron app), antigravity-cli that of the CLI, antigravity-ide
-# that of the separately installed IDE, and antigravity-backup the backup
-# the app takes when it migrates IDE data. The Antigravity directory under
-# the Electron roots is the user-data directory of the desktop app; its
-# logs are in Library/Logs on macOS and in its logs/ subdirectory elsewhere
-# (#83). Its Cache exclusion names the three bases: the PowerShell match
-# ignores case, so */Antigravity/Cache would also prune
-# .gemini/antigravity/cache. The CLI keeps plugin secrets in a file store,
-# plugin-secrets.json, in a lower-case antigravity directory under the Go
-# os.UserConfigDir() root when no keychain is available (#90)
-# AppData/Local/antigravity is the Windows form of .cache/antigravity, the
-# marketplace staging directory under the Go os.UserCacheDir() root. The
-# line names one whole component, so it matches neither the installer in
-# AppData/Local/antigravity-updater nor the app in AppData/Local/Programs
+# Google: Gemini CLI and Antigravity (research/gemini-cli.md,
+# research/antigravity.md). The antigravity entries nest inside ~/.gemini and
+# claim their subtrees. The Antigravity Cache exclusion names its three bases:
+# the PowerShell match ignores case, so */Antigravity/Cache would also prune
+# .gemini/antigravity/cache. AppData/Local/antigravity names one whole
+# component, so it matches neither antigravity-updater nor the installed app.
 gemini-cli|.gemini
 gemini-cli|.cache/.gemini
 antigravity|.gemini/antigravity-cli
@@ -206,16 +194,15 @@ antigravity|AppData/Roaming/Antigravity IDE/logs
 # OpenAI
 codex-cli|.codex
 # Codex: the working directory the ChatGPT desktop app gives a thread with no
-# project, Documents/Codex/<date>/<slug> with work/ and outputs/ inside
-# (observed on Windows 2026-10-15 and macOS 2026-10-15 and 2026-10-18; #149)
+# project (research/codex-cli.md)
 codex-cli|Documents/Codex
 chatgpt-desktop|Library/Application Support/com.openai.chat
 chatgpt-desktop|AppData/Local/Packages/OpenAI.ChatGPT-Desktop_*/LocalCache/Roaming/ChatGPT
 chatgpt-desktop|AppData/Local/Packages/OpenAI.ChatGPT-Desktop_*/LocalState
-# ChatGPT desktop on Windows: the Store package was renamed OpenAI.Codex by
-# October 2026, and the app is a Chromium build whose user-data directory is
-# LocalCache/Roaming/Codex/web/Codex. Its profile and the files beside it are
-# named rather than the directory, so the Chromium component data is not walked.
+# ChatGPT desktop on Windows, Store package OpenAI.Codex: the profile and the
+# files beside it in the Chromium user-data directory are named rather than
+# the directory, so the Chromium component data is not walked
+# (research/chatgpt-desktop.md)
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Default
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Local State
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Last Version
@@ -223,10 +210,9 @@ chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/w
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/.codex-tpp-local-executor-installation-id
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Local/Codex
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/Settings
-# ChatGPT desktop on macOS: since 26.1007 the same Electron build, bundle id
-# com.openai.codex, with the Chromium user-data directory Application
-# Support/Codex (profile and files beside it named, as on Windows). The
-# com.openai.chat line above is kept for the former native app.
+# ChatGPT desktop on macOS, bundle id com.openai.codex: the profile and the
+# files beside it in Application Support/Codex are named, as on Windows. The
+# com.openai.chat line above is the former native app.
 chatgpt-desktop|Library/Application Support/com.openai.codex
 chatgpt-desktop|Library/Application Support/Codex/Default
 chatgpt-desktop|Library/Application Support/Codex/Local State
@@ -624,7 +610,7 @@ shared|.config/AGENTS.md
 shared|.config/agents
 # GitHub CLI login that agents use for source-host access (gh auth login):
 # the token in plaintext when the login keychain is unreachable, a token-less
-# host entry when it is in the keychain (macOS, Claude Code 2.1.310 round, #256)
+# host entry when it is in the keychain
 shared|.config/gh/hosts.yml
 shared|AppData/Roaming/GitHub CLI/hosts.yml
 # Ollama
@@ -1902,17 +1888,12 @@ nanobot|*nanobot*
 # ===========================================================================
 # Shared helpers
 # ===========================================================================
-# The helpers the worker programs also need (logging, hashing, stat, JSON
-# escaping, number checks) are kept as text in COMMON, which is eval'd here
-# and prepended to every worker program; the comment at the top of section 5,
-# "Staging files", says why. The helpers after COMMON run in the main shell
-# only.
+# The helpers the workers also need are text in COMMON, eval'd here and
+# prepended to every worker; the ones after COMMON run in the main shell only.
 
-# heredoc_var: reads a here-document on stdin into $_ret_heredoc_text without
-# its final newline, which is what VAR=$(cat <<'EOF' ...) gives. Sets
-# _ret_heredoc_text. Used instead of that form because pdksh-derived shells
-# (posh) scan a heredoc inside $(...) for parentheses and stop at the first
-# case pattern's `)`.
+# heredoc_var: reads a here-document on stdin into _ret_heredoc_text without its
+# final newline. VAR=$(cat <<'EOF' ...) cannot be used: posh ends a $(...) at the
+# first `)`, even a case pattern's inside a here-document.
 heredoc_var() {
   _ret_heredoc_text=
   while IFS= read -r _hv_line; do _ret_heredoc_text="$_ret_heredoc_text$_hv_line
@@ -1929,9 +1910,9 @@ log_line() {
   printf '%s %s\n' "$(utc_timestamp)" "$*" >>"$LOG"
   [ "${QUIET:-0}" = 1 ] || printf '%s\n' "$*" >&2
 }
-# hash_file FILE -> the sha256 of FILE in lower-case hex, or "" when FILE
-# cannot be read or HASH_TOOL is none. Reads HASH_TOOL. The file is read on
-# stdin, so its name never reaches the hasher's escaped output.
+# hash_file FILE -> the sha256 of FILE in lower-case hex, or "" when it cannot be
+# read or HASH_TOOL is none. Reads HASH_TOOL. FILE goes on stdin, so its name is
+# never escaped in the hasher's output.
 hash_file() {
   case "$HASH_TOOL" in
     sha256sum) sha256sum <"$1" 2>/dev/null | cut -d' ' -f1 ;;
@@ -1942,8 +1923,7 @@ hash_file() {
   esac
 }
 # stat_file FILE -> "size mtime atime ctime btime uid gid mode" of FILE itself
-# (lstat semantics), or nothing when stat fails. Reads STAT_MODE: gnu, gnu0
-# (GNU stat without %W birth time), bsd, or none (size from wc -c, the rest 0).
+# (lstat), or nothing when stat fails. Reads STAT_MODE.
 stat_file() {
   case "$STAT_MODE" in
     gnu)  stat -c '%s %Y %X %Z %W %u %g %a' "$1" 2>/dev/null ;;
@@ -1952,11 +1932,9 @@ stat_file() {
     *)    printf '%s 0 0 0 0 0 0 0\n' "$(wc -c <"$1" 2>/dev/null | tr -d ' ')" ;;
   esac
 }
-# stat_files FILE... -> one stat_file line per FILE, in order, from a single
-# stat call. The format has no file name, so any name is safe. A file stat
-# cannot read prints no line, so callers use the output only when it has
-# one line per file and fall back to stat_file otherwise. Returns 1 without
-# output when there is no stat. Reads STAT_MODE.
+# stat_files FILE... -> one stat_file line per FILE from a single stat call, or
+# return 1 when there is no stat. Reads STAT_MODE. A file stat cannot read prints
+# no line, so callers check the line count.
 stat_files() {
   case "$STAT_MODE" in
     gnu)  stat -c '%s %Y %X %Z %W %u %g %a' "$@" 2>/dev/null ;;
@@ -1965,10 +1943,9 @@ stat_files() {
     *)    return 1 ;;
   esac
 }
-# hash_files FILE... -> one "hash name" line per readable FILE, in order, from
-# a single hasher call; hash_match reads a line. The hashers escape a name
-# that contains a backslash, newline or carriage return, so callers hash such
-# names with hash_file instead. Returns 1 without output when HASH_TOOL is none.
+# hash_files FILE... -> one "hash name" line per readable FILE from a single
+# hasher call, or return 1 when HASH_TOOL is none. The hashers escape a name
+# holding a backslash, newline or carriage return, so such names use hash_file.
 hash_files() {
   case "$HASH_TOOL" in
     sha256sum) sha256sum "$@" 2>/dev/null ;;
@@ -1978,10 +1955,9 @@ hash_files() {
     *)         return 1 ;;
   esac
 }
-# hash_match LINE FILE -> 0, with the hash in $_ret_hash, when LINE is
-# hash_files' line for FILE: 64 hex digits, then "  name" or " *name"
-# (sha256sum, shasum, openssl) or " name" (sha256 -r). Reads HASH_TOOL.
-# Temporaries: _hm_.
+# hash_match LINE FILE -> 0, with the hash in _ret_hash, when LINE is hash_files'
+# line for FILE. Reads HASH_TOOL (sha256 -r puts one space before the name, the
+# others two or " *"). Temporaries: _hm_.
 hash_match() {
   _ret_hash=${1%% *}
   case "$_ret_hash" in '' | *[!0-9a-f]*) return 1 ;; esac
@@ -1991,14 +1967,13 @@ hash_match() {
   [ "$_hm_name" = "$2" ]
 }
 # The characters json_escape handles, as globals, since POSIX sh has no $'\t'.
-TAB=$(printf '\t'); CR=$(printf '\r'); NEWLINE='
+TAB=$(printf '\t'); CARRIAGE_RETURN=$(printf '\r'); NEWLINE='
 '
-# json_escape TEXT -> TEXT escaped for a JSON string: backslash, double quote,
-# tab, carriage return and newline. TEXT with none of them is printed as is,
-# without starting awk.
+# json_escape TEXT -> TEXT as a JSON string body (backslash, double quote, tab,
+# carriage return and newline escaped); awk starts only when one is present.
 json_escape() {
   case "$1" in
-    *\\*|*'"'*|*"$TAB"*|*"$CR"*|*"$NEWLINE"*) ;;
+    *\\*|*'"'*|*"$TAB"*|*"$CARRIAGE_RETURN"*|*"$NEWLINE"*) ;;
     *) printf '%s' "$1"; return ;;
   esac
   printf '%s' "$1" | awk 'BEGIN{ORS=""} NR>1{printf "\\n"} {
@@ -2010,22 +1985,18 @@ json_escape() {
 }
 # to_number VALUE -> VALUE when it is a non-negative integer, else 0
 to_number() { case "$1" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$1" ;; esac; }
-# json_escape_var VALUE / to_number_var VALUE: what json_escape and to_number
-# print, assigned to $_ret_json and $_ret_number instead, so the common case
-# (nothing to escape) forks nothing.
+# json_escape_var VALUE / to_number_var VALUE: json_escape and to_number,
+# assigned to _ret_json and _ret_number, so the common case forks nothing.
 json_escape_var() {
   case "$1" in
-    *\\*|*'"'*|*"$TAB"*|*"$CR"*|*"$NEWLINE"*) _ret_json=$(json_escape "$1") ;;
+    *\\*|*'"'*|*"$TAB"*|*"$CARRIAGE_RETURN"*|*"$NEWLINE"*) _ret_json=$(json_escape "$1") ;;
     *) _ret_json=$1 ;;
   esac
 }
 to_number_var() { case "$1" in ''|*[!0-9]*) _ret_number=0 ;; *) _ret_number=$1 ;; esac; }
-# define_secret_test: defines is_secret REL, which returns 0 when REL, a path
-# relative to the collection base, matches any secret glob, else 1. Reads
-# SECRET_PATTERN, the globs joined with | that compile_secret_pattern builds
-# in the main shell and the workers get through the environment. One case
-# with every glob runs in the shell's own matcher; the loop of one case per
-# glob it replaces ran in the interpreter, which is slow under bash and posh.
+# define_secret_test: defines is_secret REL, true when REL matches a secret glob.
+# Reads SECRET_PATTERN. One case pattern runs in the shell's own matcher, much
+# faster under bash and posh than a loop of one case per glob.
 define_secret_test() {
   eval "is_secret() { case \"\$1\" in $SECRET_PATTERN) return 0 ;; esac; return 1; }"
 }
@@ -2033,25 +2004,21 @@ EOF_COMMON_HELPERS
 COMMON=$_ret_heredoc_text
 eval "$COMMON"
 
-# add_note TEXT: appends TEXT to NOTES (the "notes" list of collection.json)
-# and logs it as "NOTE: TEXT". Sets NOTES, so call it in the main shell, never
-# in a pipeline or $(...).
+# add_note TEXT: appends TEXT to NOTES (collection.json "notes") and logs it.
+# Sets NOTES, so call it in the main shell, never in a pipeline or $(...).
 add_note() { NOTES="$NOTES
 $1"; log_line "NOTE: $1"; }
 
-# compile_secret_pattern: sets SECRET_PATTERN to every line of SECRET_GLOBS
-# joined with |, each space escaped with a backslash, so the alternation is
-# one case pattern for define_secret_test. Run once, in the main shell. The
-# globs hold no |, parenthesis, quote, $ or backslash that would need more;
-# tests/catalog-sync.sh checks that. Reads SECRET_GLOBS.
+# compile_secret_pattern: sets SECRET_PATTERN to the lines of SECRET_GLOBS joined
+# with |, spaces escaped, for define_secret_test. Reads SECRET_GLOBS.
+# tests/catalog-sync.sh checks the globs hold nothing else the pattern would read.
 compile_secret_pattern() {
   SECRET_PATTERN=$(printf '%s\n' "$SECRET_GLOBS" | sed 's/ /\\ /g' | tr '\n' '|')
   SECRET_PATTERN=${SECRET_PATTERN%|}
 }
 
-# file_id PATH -> device:inode of PATH itself (lstat), or the inode alone from
-# ls -di when stat is unavailable; empty when PATH cannot be stat'ed. Reads
-# STAT_MODE.
+# file_id PATH -> device:inode of PATH itself, or the inode alone from ls -di
+# without stat; empty when PATH cannot be stat'ed. Reads STAT_MODE.
 # shellcheck disable=SC2012 # ls -di is the POSIX inode; only its first field is read
 file_id() {
   case "$STAT_MODE" in
@@ -2068,9 +2035,8 @@ file_id() {
 heredoc_var <<'EOF_COMMON_MANIFEST'
 # write_manifest_row MANIFEST user home agent path archive_path type size
 #   mtime atime ctime btime uid gid mode sha256 secret status target error
-# Appends one JSON line to MANIFEST. The string fields are JSON-escaped; the
-# numeric fields become 0 when they are not numbers; type, mode, sha256,
-# secret and status are written as given. Temporaries: _wmr_.
+# Appends one JSON line to MANIFEST; a numeric field that is not a number is 0.
+# Temporaries: _wmr_.
 write_manifest_row() {
   json_escape_var "$2"; _wmr_user=$_ret_json
   json_escape_var "$3"; _wmr_home=$_ret_json
@@ -2094,17 +2060,14 @@ write_manifest_row() {
     "$_wmr_size" "$_wmr_mtime" "$_wmr_atime" "$_wmr_ctime" "$_wmr_btime" "$_wmr_uid" \
     "$_wmr_gid" "${15}" "${16}" "${17}" "${18}" "$_wmr_target" "$_wmr_error" >>"$1"
 }
-# get_dir_read_error DIR -> prints why DIR cannot be walked and returns 0, or
-# returns 1 when it can be both listed (-r) and entered (-x). The decision
-# comes from test(1); the text is the first line ls(1) printed for the same
-# access, so it is the OS error (Permission denied, No such file or directory).
+# get_dir_read_error DIR -> prints why DIR cannot be listed or entered and
+# returns 0, else returns 1. test(1) decides; the text is ls(1)'s OS error.
 get_dir_read_error() {
   get_dir_read_error_var "$1" || return 1
   printf '%s' "$_ret_dir_error"
 }
-# get_dir_read_error_var DIR: the same, but assigns the text to
-# $_ret_dir_error instead of printing it, so a walk's per-directory check
-# forks only when it fails.
+# get_dir_read_error_var DIR: get_dir_read_error, assigned to _ret_dir_error, so
+# the per-directory check forks only when it fails.
 get_dir_read_error_var() {
   if [ ! -d "$1" ]; then
     if [ -e "$1" ] || [ -L "$1" ]; then
@@ -2124,9 +2087,8 @@ get_dir_read_error_var() {
   fi
   _ret_dir_error=${_ret_dir_error%%"$NEWLINE"*}
 }
-# write_read_error_row MANIFEST USER HOME AGENT DIR ERROR: one error_read row
-# for a directory that could not be walked, with its lstat metadata and size
-# 0, and a "read failed" log line. Temporaries: _wrer_.
+# write_read_error_row MANIFEST USER HOME AGENT DIR ERROR: one error_read row for
+# DIR, with its lstat metadata and size 0, and a log line. Temporaries: _wrer_.
 write_read_error_row() {
   _wrer_stat=$(stat_file "$5"); [ -n "$_wrer_stat" ] || _wrer_stat='0 0 0 0 0 0 0 0'
   case "$_wrer_stat" in ' '*) _wrer_stat="0$_wrer_stat" ;; esac
@@ -2144,55 +2106,16 @@ $_ret_heredoc_text"
 # ===========================================================================
 # Staging files
 # ===========================================================================
-# Why workers exist: every walk is a find(1), and find -exec cannot call a
-# shell function (functions are not inherited portably), so the per-file work
-# runs as a separate program: find ... -exec "$WORKER_SH" -c "$PROGRAM" sh
-# ARGS... {} +. Each <NAME>_WORKER below holds such a program.
-# How COMMON reaches them: each program is the text of COMMON (sections 3 and
-# 4) followed by the worker's own text, so the helpers are defined the same
-# way in the main shell, where COMMON is eval'd, and in every worker.
-# Why heredoc_var: each program is read from a quoted here-document with
-# heredoc_var, not with VAR=$(cat <<'EOF' ... EOF), because pdksh-derived
-# shells (posh) end a $(...) at the first `)`, even a case pattern's inside a
-# here-document. For the same reason a case pattern inside any $(...) in this
-# file is written with its opening parenthesis: (pattern).
-# Which shell runs them: WORKER_SH, set in the main program: COLLECTOR_SH when
-# it is set, else dash when it is on PATH (it starts and loops faster than
-# bash), else sh. A worker runs in its own process, so its variables need no
-# prefix; its first line names its positional arguments.
+# find -exec cannot call a shell function, so the per-file work runs as
+# programs held in <NAME>_WORKER: the text of COMMON followed by the worker's
+# own, started as find ... -exec "$WORKER_SH" -c "$PROGRAM" sh ARGS... {} +.
+# A worker's variables need no prefix; its first line names its arguments.
+# collectors/docs/internals.md, "Worker programs (sh)", has the design.
 
-# STAGE_FILES_WORKER: run by find -exec for every file to collect that is not
-# a directory: regular files, symlinks, and special files (sockets, FIFOs,
-# devices), which get a skipped_special row and are never opened.
-# Arguments: stage_dir root user home agent manifest files...
-#
-# The files are taken in chunks of at most 256 paths or about 64 KiB of
-# names, so no argument list built here is much longer than the one find
-# passed. Each chunk goes through five passes, in this order, which keeps
-# the per-file order of the forensic rules (lstat before copy, hash of the
-# staged copy, never follow a symlink):
-#   1. lstat_chunk: lstat every file with one stat call (stat_files), or with
-#      stat_file per file when that output does not have one line per file (a
-#      file vanished, stat failed, or there is no stat);
-#   2. plan_chunk: create the staging directories with one mkdir -p, recreate
-#      symlinks (readlink, ln -s), classify special files (skipped_special)
-#      and decide the secret and size skips;
-#   3. copy_chunk: copy with one cp -p per run of consecutive files from the
-#      same directory; a run whose cp fails or prints anything is redone per
-#      file, so each failing file gets its own error text and log line;
-#   4. hash_chunk: hash the staged copies with one hasher call (hash_files); a
-#      name the hashers would escape, or a file missing from their output, is
-#      hashed per file with hash_file, which gives "" when the copy is
-#      unreadable;
-#   5. write_chunk_rows: write the manifest rows, in the order find passed the
-#      files.
-# POSIX sh has no arrays, so the chunk is held in numbered variables set by
-# eval, for N from 1 to chunk_size: path_N the source path, stat_N its
-# stat_file line, status_N its manifest status (copy until pass 3 decides),
-# type_N its manifest type, secret_N true or false, target_N the symlink
-# target, copy_error_N the cp error text, hash_N the sha256 of the staged
-# copy. CAC_NO_BATCH=1, a test hook, takes the per-file path in passes 1, 3
-# and 4.
+# STAGE_FILES_WORKER: stages every non-directory path find gives it and writes
+# its manifest row. Arguments: stage_dir root user home agent manifest files...
+# POSIX sh has no arrays, so each chunk of files is held in numbered variables
+# (path_N, stat_N, ...); internals.md, "Worker programs (sh)", has the passes.
 heredoc_var <<'EOF_STAGE_FILES_WORKER'
 stage_dir=$1; root=$2; user=$3; home=$4; agent=$5; manifest=$6; shift 6
 set -f
@@ -2224,15 +2147,9 @@ lstat_chunk() {
     done
   fi
 }
-# plan_chunk: pass 2, staging directories, symlinks, special files, secret
-# and size skips. Reads path_N, stat_N, NO_SECRETS, MAX_SIZE, and calls
-# is_secret (SECRET_PATTERN);
-# sets status_N (symlink, skipped_special, skipped_secret, skipped_size or
-# copy), type_N (file, symlink, or socket, fifo, device or other for a file
-# that exists but is not regular, which is never copied: cp would block on a
-# FIFO), secret_N and target_N, and clears copy_error_N and hash_N. A file
-# that vanished since find listed it stays "copy" and becomes error_copy.
-# last_mkdir_dir carries over between chunks.
+# plan_chunk: pass 2; makes the staging directories and symlinks and sets status_N,
+# type_N, secret_N and target_N. Reads path_N, stat_N, NO_SECRETS, MAX_SIZE. A
+# special file is never copied, since cp would block on a FIFO.
 plan_chunk() {
   set --
   i=1; while [ "$i" -le "$chunk_size" ]; do
@@ -2274,11 +2191,9 @@ plan_chunk() {
     i=$((i + 1))
   done
 }
-# copy_run FIRST LAST DIR: copies the files of chunk entries FIRST..LAST still
-# marked "copy" (all from one directory) into DIR, then marks each collected
-# or error_copy (with copy_error_N and a "copy failed" log line). One cp -p for
-# the run when it has more than one file, else, or when that cp fails or
-# prints anything, one cp -p per file.
+# copy_run FIRST LAST DIR: copies the "copy" entries FIRST..LAST of one directory
+# into DIR and sets their status_N and copy_error_N. A cp -p of the whole run is
+# redone per file when it fails, so each failing file gets its own error.
 copy_run() {
   copy_first=$1; copy_last=$2; copy_dir=$3; copy_batch_ok=0
   set --
@@ -2328,10 +2243,8 @@ copy_chunk() {
   done
   [ "$run_start" -eq 0 ] || copy_run "$run_start" "$run_end" "$run_dir"
 }
-# hash_chunk: pass 4, hashes the staged copy of every collected entry, with
-# one hasher call for the chunk. Reads status_N, path_N, HASH_TOOL; sets
-# hash_N. The hasher's lines are in file order; a file with no matching line
-# is hashed alone.
+# hash_chunk: pass 4; sets hash_N for every collected entry, with one hasher call
+# for the chunk. Reads status_N, path_N, HASH_TOOL.
 hash_chunk() {
   [ "$HASH_TOOL" != none ] || return 0
   set --
@@ -2340,7 +2253,10 @@ hash_chunk() {
       eval "status=\$status_$i; path=\$path_$i"
       if [ "$status" = collected ]; then
         dest="$stage_dir/fs${path#"$root"}"
-        case "$dest" in *\\* | *"$NEWLINE"* | *"$CR"*) ;; *) set -- "$@" "$dest" ;; esac
+        case "$dest" in
+          *\\* | *"$NEWLINE"* | *"$CARRIAGE_RETURN"*) ;;
+          *) set -- "$@" "$dest" ;;
+        esac
       fi
       i=$((i + 1))
     done
@@ -2398,11 +2314,8 @@ EOF_STAGE_FILES_WORKER
 STAGE_FILES_WORKER="$COMMON
 $_ret_heredoc_text"
 
-# EXCLUDED_PATHS_WORKER: run by find -exec for every pruned (excluded) path,
-# and by collect_path for an excluded match that is not a directory; one
-# skipped_excluded row each, with the size from du -sk for a directory
-# (its other metadata 0) and from lstat for a file.
-# Arguments: root user home agent manifest paths...
+# EXCLUDED_PATHS_WORKER: one skipped_excluded row per excluded path, a
+# directory's size from du -sk. Arguments: root user home agent manifest paths...
 heredoc_var <<'EOF_EXCLUDED_PATHS_WORKER'
 root=$1; user=$2; home=$3; agent=$4; manifest=$5; shift 5
 for path in "$@"; do
@@ -2422,10 +2335,9 @@ EOF_EXCLUDED_PATHS_WORKER
 EXCLUDED_PATHS_WORKER="$COMMON
 $_ret_heredoc_text"
 
-# UNREADABLE_DIRS_WORKER: run by find -exec for every directory in a walk; one
-# error_read row for each that cannot be listed or entered. find reports the
-# same directory in the log and goes on; the test, not find's localised
-# message, decides. Arguments: user home agent manifest dirs...
+# UNREADABLE_DIRS_WORKER: one error_read row per directory that cannot be listed
+# or entered, decided by test(1), since find's message is localised.
+# Arguments: user home agent manifest dirs...
 heredoc_var <<'EOF_UNREADABLE_DIRS_WORKER'
 user=$1; home=$2; agent=$3; manifest=$4; shift 4
 for dir in "$@"; do
@@ -2437,11 +2349,8 @@ EOF_UNREADABLE_DIRS_WORKER
 UNREADABLE_DIRS_WORKER="$COMMON
 $_ret_heredoc_text"
 
-# INVENTORY_FILES_WORKER: run by find -exec in --inventory mode for every
-# regular file under a matched path: prints F|agent|size|mtime and copies,
-# hashes and writes nothing. Arguments: agent files...
-# One stat call covers all the files when it prints one line per file;
-# otherwise each file gets its own stat_file, as in the stage worker.
+# INVENTORY_FILES_WORKER: prints F|agent|size|mtime per regular file under
+# --inventory and writes nothing. Arguments: agent files...
 heredoc_var <<'EOF_INVENTORY_FILES_WORKER'
 agent=$1; shift
 set -f
@@ -2475,17 +2384,12 @@ $_ret_heredoc_text"
 # ===========================================================================
 # Catalog walk
 # ===========================================================================
-# A table (CATALOG or PROJECT_CATALOG) is applied to one base directory (a
-# home, a project, or a Docker volume's _data) in two steps: expand_catalog
-# lists every match of every entry first, so that a match nested inside
-# another (.gemini/antigravity-cli inside .gemini) can be pruned from the
-# enclosing walk, then collect_catalog collects each match with collect_path,
-# which walks a matched directory with collect_tree.
+# A table is expanded in full before anything is walked, so a match nested in
+# another (.gemini/antigravity-cli in .gemini) is pruned from the outer walk.
 
-# expand_glob BASE PATTERN -> the paths matching BASE/PATTERN that exist (or
-# are symlinks, dangling or not), one per line. Temporaries: _eg_. The glob is
-# expanded with IFS set to newline only, so a BASE with spaces stays one
-# word; a pattern that matches nothing expands to itself and fails the test.
+# expand_glob BASE PATTERN -> the paths matching BASE/PATTERN that exist or are
+# symlinks, one per line. IFS is newline only, so a BASE with spaces stays one
+# word. Temporaries: _eg_.
 expand_glob() {
   _eg_saved_ifs=$IFS
   IFS='
@@ -2496,15 +2400,9 @@ expand_glob() {
   IFS=$_eg_saved_ifs
 }
 
-# classify_case_matches: agent|glob|path lines on stdin, in catalog order ->
-# one instruction line per match for fold_case_matches:
-#   K|agent|glob|path  keep the match as it is;
-#   @|path then D|agent|glob|path  the match case-folds to the earlier match
-#     at path: drop it if it is the same file;
-#   @|path then ^|prefix then R|agent|glob|rest  the match case-folds to a
-#     path inside the match at path, spelled differently: respell its prefix
-#     as that path's if prefix is the same directory.
-# The parent chosen for R is the shortest one.
+# classify_case_matches: agent|glob|path lines on stdin -> the K, D and R
+# instruction lines fold_case_matches reads; collectors/docs/internals.md,
+# "Claimed paths and case variants", lists them.
 classify_case_matches() {
   LC_ALL=C awk -F'|' '
     NF >= 3 { count++; line[count] = $0; agent[count] = $1; glob[count] = $2
@@ -2527,19 +2425,9 @@ classify_case_matches() {
       print "K|" line[i] } }'
 }
 
-# fold_case_matches: classify_case_matches lines on stdin -> agent|glob|path
-# lines with spellings of one on-disk path folded together. On a
-# case-insensitive filesystem (macOS, Windows images, /mnt/c under WSL),
-# entries that differ only by case (.config/goose and .config/Goose) match the
-# same directory: a match that case-folds to an earlier match's path and has
-# its device and inode (file_id) is dropped, and the first catalog line wins;
-# in its place a #|message line tells collect_catalog what to log.
-# A match that case-folds to a path inside another match (.config/Cursor/User
-# inside .config/cursor) is respelled with that match's prefix when the prefix
-# is the same directory, so the nested claim prunes it from the enclosing
-# walk. Only paths that collide when case-folded are stat'ed, so on a
-# case-sensitive filesystem, where the ids differ, every match is kept as is.
-# Temporaries: _fcm_.
+# fold_case_matches: classify_case_matches lines on stdin -> agent|glob|path lines
+# with the spellings of one on-disk path folded together, plus #|message lines
+# to log. Only colliding paths are stat'ed. Temporaries: _fcm_.
 fold_case_matches() {
   while IFS= read -r _fcm_line; do
     case "$_fcm_line" in
@@ -2547,26 +2435,25 @@ fold_case_matches() {
       ('^|'*) _fcm_prefix=${_fcm_line#??} ;;
       ('K|'*) printf '%s\n' "${_fcm_line#??}" ;;
       ('D|'*) _fcm_line=${_fcm_line#??}; _fcm_match=${_fcm_line#*|}; _fcm_match=${_fcm_match#*|}
-        _fcm_id=$(file_id "$_fcm_match")
+        _fcm_file_id=$(file_id "$_fcm_match")
         if [ "$_fcm_match" = "$_fcm_ref" ] ||
-          { [ -n "$_fcm_id" ] && [ "$_fcm_id" = "$(file_id "$_fcm_ref")" ]; }; then
+          { [ -n "$_fcm_file_id" ] && [ "$_fcm_file_id" = "$(file_id "$_fcm_ref")" ]; }; then
           printf '#|  [%s] %s: same file as %s (case-insensitive filesystem), collected there\n' \
             "${_fcm_line%%|*}" "$_fcm_match" "$_fcm_ref"
         else printf '%s\n' "$_fcm_line"; fi ;;
       ('R|'*) _fcm_line=${_fcm_line#??}; _fcm_agent=${_fcm_line%%|*}; _fcm_rest=${_fcm_line#*|}
         _fcm_glob=${_fcm_rest%%|*}; _fcm_rest=${_fcm_rest#*|}
-        _fcm_id=$(file_id "$_fcm_prefix")
-        if [ -n "$_fcm_id" ] && [ "$_fcm_id" = "$(file_id "$_fcm_ref")" ]; then
+        _fcm_file_id=$(file_id "$_fcm_prefix")
+        if [ -n "$_fcm_file_id" ] && [ "$_fcm_file_id" = "$(file_id "$_fcm_ref")" ]; then
           printf '%s|%s|%s%s\n' "$_fcm_agent" "$_fcm_glob" "$_fcm_ref" "$_fcm_rest"
         else printf '%s|%s|%s%s\n' "$_fcm_agent" "$_fcm_glob" "$_fcm_prefix" "$_fcm_rest"; fi ;;
     esac
   done
 }
 
-# expand_catalog BASE TABLE -> agent|glob|path for every match of every
-# agent|glob line of TABLE under BASE, in table order, case variants folded
-# (fold_case_matches), plus #|message lines to log. Comment and blank lines of
-# TABLE are skipped. Temporaries: _ec_.
+# expand_catalog BASE TABLE -> agent|glob|path for every match of TABLE under
+# BASE, in table order, case variants folded, plus #|message lines to log.
+# Temporaries: _ec_.
 expand_catalog() {
   printf '%s\n' "$2" | while IFS='|' read -r _ec_agent _ec_glob; do
     case "$_ec_agent" in (''|'#'*) continue ;; esac
@@ -2576,16 +2463,10 @@ expand_catalog() {
   done | classify_case_matches | fold_case_matches
 }
 
-# collect_catalog USER BASE TABLE [HEADER]: collects every match of TABLE
-# under BASE with collect_path, attributed to USER and to the agent of the
-# matching line. Every entry is expanded first so that each matched path can
-# be excluded from the walk of any enclosing match (NESTED_CLAIMS, read by
-# collect_tree). With --inventory, each match of an inventoried agent first
-# prints M|agent|glob on stdout, and shared matches still claim their paths
-# but are not walked. HEADER, when given, is logged once before the first
-# match, so a base with no matches leaves no progress line. Reads INVENTORY;
-# sets NESTED_CLAIMS for the duration of the call, in the subshell every
-# caller runs it in (the main program clears it, #106). Temporaries: _cc_.
+# collect_catalog USER BASE TABLE [HEADER]: collects every match of TABLE under
+# BASE, logging HEADER before the first one. Reads INVENTORY; sets NESTED_CLAIMS
+# while it runs, so a match inside another is collected once, under its own
+# agent. Temporaries: _cc_.
 collect_catalog() {
   _cc_header=${4:-}
   _cc_matches=$(expand_catalog "$2" "$3")
@@ -2608,11 +2489,8 @@ collect_catalog() {
   NESTED_CLAIMS=
 }
 
-# test_excluded HOME PATH: returns 0 when PATH, relative to HOME, matches a
-# glob of ACTIVE_EXCLUDES, as find -path "HOME/GLOB" does in collect_tree: a
-# case pattern, in which * also matches / and a leading dot. Globbing is off
-# while the table is split, so a glob is never expanded against the current
-# directory. Reads ACTIVE_EXCLUDES. Temporaries: _te_.
+# test_excluded HOME PATH: true when PATH matches HOME/GLOB for a glob of
+# ACTIVE_EXCLUDES, as find -path does. Reads ACTIVE_EXCLUDES. Temporaries: _te_.
 test_excluded() {
   _te_saved_ifs=$IFS
   IFS='
@@ -2628,22 +2506,17 @@ test_excluded() {
   return 1
 }
 
-# collect_path USER HOME AGENT PATH: collects one matched PATH. A directory
-# (not a symlink to one) is walked with collect_tree; anything else is tested
-# against ACTIVE_EXCLUDES here, since find never sees it (#107), and gets one
-# skipped_excluded row from EXCLUDED_PATHS_WORKER when it matches, or else is
-# staged by STAGE_FILES_WORKER, which records a symlink as a symlink and a
-# socket, FIFO or device as skipped_special. With --inventory the same walk
-# runs, but excluded paths are skipped without a manifest row and regular
-# files are only stat'ed by INVENTORY_FILES_WORKER. Reads INVENTORY,
-# ACTIVE_EXCLUDES, MANIFEST, STAGE, ROOT, WORKER_SH. Temporaries: _cp_.
+# collect_path USER HOME AGENT PATH: collects one catalog match, a directory
+# through collect_tree, anything else through the workers, since find never
+# tests a starting point against EXCLUDES. Reads INVENTORY, ACTIVE_EXCLUDES,
+# MANIFEST, STAGE, ROOT, WORKER_SH. Temporaries: _cp_.
 collect_path() {
   _cp_user=$1; _cp_home=$2; _cp_agent=$3; _cp_match=$4
   if [ -d "$_cp_match" ] && [ ! -L "$_cp_match" ]; then
     # A match that cannot be listed or entered gets its error_read row here,
     # not from the walk: BSD find applies no expression to a starting point
     # it cannot read and GNU find does, so the pre-check gives both one row
-    # and never two (#82).
+    # and never two.
     if [ "$INVENTORY" != 1 ] && _cp_dir_error=$(get_dir_read_error "$_cp_match"); then
       write_read_error_row "$MANIFEST" "$_cp_user" "$_cp_home" "$_cp_agent" "$_cp_match" \
         "$_cp_dir_error"
@@ -2663,19 +2536,10 @@ collect_path() {
   fi
 }
 
-# collect_tree USER HOME AGENT DIR: walks DIR with one find(1). The find
-# expression, built in the positional parameters since POSIX sh has no
-# arrays, is in this order: prune the NESTED_CLAIMS paths inside DIR (another
-# entry collects them); prune ACTIVE_EXCLUDES (globs relative to HOME) with
-# one skipped_excluded row each from EXCLUDED_PATHS_WORKER, or silently with
-# --inventory; give every directory to UNREADABLE_DIRS_WORKER for its
-# error_read check; give every other path (regular file, symlink or special
-# file) to STAGE_FILES_WORKER, or every regular file to
-# INVENTORY_FILES_WORKER with --inventory. find's own messages go to LOG.
-# Reads NESTED_CLAIMS, ACTIVE_EXCLUDES, INVENTORY, MANIFEST, STAGE, ROOT,
-# WORKER_SH, LOG. Both lists are split with globbing off, so a glob is never
-# expanded against the current directory before it reaches find (#109).
-# Temporaries: _ct_.
+# collect_tree USER HOME AGENT DIR: walks DIR with one find(1) that prunes the
+# claimed and excluded paths and hands the rest to the workers. Reads
+# NESTED_CLAIMS, ACTIVE_EXCLUDES, INVENTORY, MANIFEST, STAGE, ROOT, WORKER_SH,
+# LOG. Temporaries: _ct_.
 collect_tree() {
   _ct_user=$1; _ct_home=$2; _ct_agent=$3
   set -- "$4"
@@ -2683,9 +2547,7 @@ collect_tree() {
   IFS='
 '
   set -f
-  # Paths claimed by another catalog entry are left to that entry: a nested
-  # entry such as .gemini/antigravity-cli is attributed to its own agent and
-  # collected once, not swept up again by the enclosing .gemini entry.
+  # A path another catalog entry claimed is left to that entry.
   _ct_first=1
   for _ct_claim in $NESTED_CLAIMS; do
     case "$_ct_claim" in "$1"/*) ;; *) continue ;; esac
@@ -2721,13 +2583,10 @@ collect_tree() {
 # Users
 # ===========================================================================
 
-# enumerate_users -> user:home lines, home a full path including ROOT, from
-# every source in turn, duplicates left to filter_users: getent passwd (live
-# mode) or ROOT/etc/passwd; dscl on a live macOS host; then the directories
-# under the usual home parents of macOS, Linux, the BSDs, Solaris and Windows
-# images. The home patterns are quoted so that they reach expand_glob as
-# patterns: unquoted, the shell would expand them against the current
-# directory first (#105). Reads MODE and ROOT. Temporaries: _eu_.
+# enumerate_users -> user:home lines from passwd, dscl and the usual home
+# parents, duplicates included. The home patterns stay quoted, so the shell never
+# expands them against the current directory. Reads MODE and ROOT. Temporaries:
+# _eu_.
 enumerate_users() {
   {
     if [ "$MODE" = live ] && command -v getent >/dev/null 2>&1; then
@@ -2746,10 +2605,9 @@ enumerate_users() {
   done
 }
 
-# filter_users: user:home lines on stdin -> the same lines without system
-# accounts' homes (/, /bin, /dev/null, /nonexistent, /var/empty, ...) and
-# the shared Windows profiles, without users that -u did not name, and
-# without a home already listed. Reads ROOT and USERS.
+# filter_users: user:home lines on stdin -> the same lines without system and
+# shared profile homes, users -u did not name, and repeated homes. Reads ROOT and
+# USERS.
 filter_users() {
   awk -F: -v root="$ROOT" -v want="$USERS" '
     BEGIN { wanted_count=split(want, wanted, ",")
@@ -2769,20 +2627,17 @@ filter_users() {
 }
 
 # get_user_homes -> user:home lines for the homes to collect, in enumeration
-# order: enumerate_users, filtered by filter_users, keeping only homes that
-# are directories. Temporaries: _guh_.
+# order. Temporaries: _guh_.
 get_user_homes() {
   enumerate_users | filter_users | while IFS=: read -r _guh_user _guh_home; do
     [ -d "$_guh_home" ] && printf '%s:%s\n' "$_guh_user" "$_guh_home"
   done
 }
 
-# collect_user_homes: the main step for homes outside --inventory (which
-# walks them in write_inventory instead): collect_catalog with CATALOG for
-# every home in USER_LIST. A home that cannot be listed or entered gets one
-# error_read row. The catalog is still tried: a home that can be entered but
-# not listed (mode 711) still yields the entries that are not globs. Reads
-# USER_LIST, CATALOG, MANIFEST. Temporaries: _cuh_.
+# collect_user_homes: collects CATALOG in every home of USER_LIST, with an
+# error_read row for a home that cannot be read. The catalog is still tried, since
+# a home mode 711 yields its non-glob entries. Reads USER_LIST, CATALOG,
+# MANIFEST. Temporaries: _cuh_.
 collect_user_homes() {
   printf '%s\n' "$USER_LIST" | while IFS=: read -r _cuh_user _cuh_home; do
     [ -n "$_cuh_home" ] || continue
@@ -2797,23 +2652,11 @@ collect_user_homes() {
 # ===========================================================================
 # Docker and Podman volumes
 # ===========================================================================
-# Enumerated from the filesystem, never with the docker binary, so the same
-# code covers live hosts and disk images. Each volume is <volumes
-# dir>/<name>/_data. A volume whose name matches DOCKER_VOLUMES is collected
-# whole as user "docker" with _data as its home; any other volume gets one
-# skipped_unmatched_volume row with its size. Failures (an unreadable volumes
-# directory, a volume that cannot be walked) are counted, noted in
-# collection.json and printed in the summary; they never stop the
-# collection. The counters are globals: DOCKER_SEEN (any Docker or Podman
-# data found), DOCKER_FOUND, DOCKER_COLLECTED, DOCKER_UNREADABLE,
-# DOCKER_DESKTOP; with --inventory, DOCKER_INV holds the M| and F| lines of
-# the collected volumes. Every function here that sets them runs in the main
-# shell, never in a pipeline or $(...).
+# Volumes are found on disk, never with the docker binary. The functions that
+# set the DOCKER_* globals run in the main shell, never in a pipeline or $(...).
 
-# get_docker_volume_rule NAME -> the first DOCKER_VOLUMES line (agent|glob)
-# whose glob matches NAME, or nothing. Globbing is off while the table is
-# split on newlines, so a glob is only matched by case, never expanded
-# against the working directory. Temporaries: _gdvr_.
+# get_docker_volume_rule NAME -> the first DOCKER_VOLUMES line whose glob matches
+# NAME, or nothing. Temporaries: _gdvr_.
 get_docker_volume_rule() {
   _gdvr_saved_ifs=$IFS
   IFS='
@@ -2835,14 +2678,10 @@ get_docker_volume_rule() {
 # after its line LINE
 find_errors_since() { tail -n "+$(( $1 + 1 ))" "$LOG" 2>/dev/null | grep -c '^find: '; }
 
-# test_volume_root BASE REL: checks each component of the volumes directory
-# BASE/REL on the way down, so a data root the responder cannot enter
-# (/var/lib/docker and /var/lib/containers are root-only) or a symlinked one
-# is reported rather than silently skipped. Returns 0 and sets
-# _ret_volume_dir to BASE/REL when every component is a directory that can
-# be entered and the last one can also be listed; returns 1 silently when a
-# component is missing, and with a note when one is a symlink or unreadable
-# (DOCKER_SEEN, DOCKER_UNREADABLE). Temporaries: _tvr_.
+# test_volume_root BASE REL: returns 0 and sets _ret_volume_dir when every
+# component of BASE/REL can be entered and the last listed; else returns 1, with a
+# note for a symlink or unreadable component. Sets DOCKER_SEEN and
+# DOCKER_UNREADABLE. Temporaries: _tvr_.
 test_volume_root() {
   _tvr_dir=$1; _tvr_rest=$2/
   while [ -n "$_tvr_rest" ]; do
@@ -2863,13 +2702,9 @@ test_volume_root() {
   return 0
 }
 
-# collect_volume VOLUME: collects or records one volume directory
-# <volumes dir>/<name>. An unreadable volume is counted and noted; one
-# without a _data directory is logged and skipped; an unmatched one gets a
-# skipped_unmatched_volume row (nothing with --inventory); a matched one is
-# collected with collect_path as user docker, its _data the home, and a walk
-# that logged find errors is counted unreadable and noted. Sets DOCKER_*
-# counters, DOCKER_INV and NOTES. Temporaries: _cv_.
+# collect_volume VOLUME: collects one matched volume's _data as user docker, or
+# records an unmatched or unreadable one. Sets the DOCKER_* counters, DOCKER_INV
+# and NOTES. Temporaries: _cv_.
 collect_volume() {
   _cv_name=${1##*/}; _cv_data="$1/_data"
   _cv_rule=$(get_docker_volume_rule "$_cv_name")
@@ -2909,10 +2744,8 @@ $(collect_path docker "$_cv_data" "$_cv_agent" "$_cv_data" </dev/null)"
   fi
 }
 
-# collect_volume_dir BASE REL: every volume under the volumes directory
-# BASE/REL, after test_volume_root has checked the way down; each real
-# directory in it is counted in DOCKER_FOUND and given to collect_volume.
-# Sets DOCKER_SEEN. Temporaries: _cvd_.
+# collect_volume_dir BASE REL: collect_volume for every volume under BASE/REL.
+# Sets DOCKER_SEEN and DOCKER_FOUND. Temporaries: _cvd_.
 collect_volume_dir() {
   test_volume_root "$1" "$2" || return
   _cvd_dir=$_ret_volume_dir
@@ -2929,13 +2762,10 @@ $_cvd_list
 EOF_VOLUME_LIST
 }
 
-# collect_docker_volumes: the main step. The root Docker, root Podman and
-# Windows-container Docker data roots, then the rootless Docker and Podman
-# roots of each (selected) user in USER_LIST. Docker Desktop keeps Linux
-# volumes inside a VM disk that no file walk reaches, so its data
-# directories (system-wide, then each user's macOS and Windows ones) only
-# get a note. Sets DOCKER_SEEN, DOCKER_DESKTOP and the other DOCKER_*
-# counters and NOTES. Temporaries: _cdv_.
+# collect_docker_volumes: collects the volumes of the system and per-user Docker
+# and Podman data roots and notes Docker Desktop data, whose volumes are inside a
+# VM disk. Reads USER_LIST; sets the DOCKER_* counters and NOTES. Temporaries:
+# _cdv_.
 collect_docker_volumes() {
   collect_volume_dir "$ROOT/var/lib" docker/volumes </dev/null
   collect_volume_dir "$ROOT/var/lib" containers/storage/volumes </dev/null
@@ -2966,32 +2796,20 @@ EOF_DOCKER_DESKTOP_DIRS
 # ===========================================================================
 # Project discovery
 # ===========================================================================
-# Paths referenced by agent state files, prefixed with ROOT. discover_projects
-# emits "user:path"; the user is whoever's state referenced the path. Only
-# plain-text sources are read here (JSON/JSONL via grep); SQLite-backed agents
-# (Zed, Goose, OpenCode, Kilo, Cline db/) are left to the analyst-side parser.
-# The find_*_projects groups run in this order, and the sources inside each
-# in the order written, since the project list (and with it the manifest row
-# order) follows the order in which paths are first seen. Each group takes
-# the home as $1 and runs with IFS set to newline only (discover_projects
-# sets it), so its globs keep paths with spaces whole.
+# Project paths read with grep from each home's plain-text agent state. The
+# groups keep their order, which sets the manifest row order; internals.md,
+# "Project discovery", lists them.
 
-# test_inventory_secret FILE: returns 0 when --inventory is on and FILE,
-# relative to the home being scanned (DISCOVERY_HOME, set by
-# discover_projects), matches SECRET_GLOBS. Inventory never opens such a
-# file, so discovery sources that are credential files (.claude.json, the
-# OpenClaw and nanobot configs, Tabby's config.toml) are not read in that
-# mode. Reads INVENTORY, DISCOVERY_HOME, and calls is_secret
-# (SECRET_PATTERN). Temporaries: _tis_.
+# test_inventory_secret FILE: true under --inventory when FILE matches a secret
+# glob, so inventory never reads a credential file. Reads INVENTORY and
+# DISCOVERY_HOME. Temporaries: _tis_.
 test_inventory_secret() {
   [ "$INVENTORY" = 1 ] || return 1
   _tis_rel=${1#"$DISCOVERY_HOME"/}
   is_secret "$_tis_rel"
 }
-# Evaluated at the top of each discovery helper after its key is shifted off:
-# drops the files test_inventory_secret rejects from "$@". A string for eval,
-# not a function, because a function cannot change its caller's "$@".
-# Temporaries: _ids_.
+# Eval'd by each discovery helper to drop the files test_inventory_secret rejects
+# from "$@", which a function could not change. Temporaries: _ids_.
 # shellcheck disable=SC2016 # expanded where it is eval'd, not here
 INVENTORY_DROP_SECRETS='if [ "$INVENTORY" = 1 ]; then
   _ids_count=$#
@@ -3006,22 +2824,16 @@ json_vals() {
   [ $# -gt 0 ] || return 0
   grep -ho "\"$_jv_key\": *\"[^\"]*\"" "$@" 2>/dev/null | sed "s/^\"$_jv_key\": *\"//; s/\"\$//"
 }
-# json_path_keys FILE NEXT -> the keys of FILE that are absolute paths and are
-# followed by ": NEXT" (a basic regular expression: {, ", [tf]), when FILE is
-# a regular file that test_inventory_secret does not reject
+# json_path_keys FILE NEXT -> the keys of FILE that are absolute paths followed by
+# ": NEXT" (a basic regular expression), unless test_inventory_secret rejects
+# FILE.
 json_path_keys() {
   [ -f "$1" ] && ! test_inventory_secret "$1" &&
     grep -o "\"/[^\"]*\": *$2" "$1" 2>/dev/null | sed "s/^\"//; s/\": *$2\$//"
 }
-# abs_strings FILE... -> every quoted absolute path or file:// URI in the files
-# (JSON arrays of workspace paths, object keys, nested values alike). The
-# optional group is file:// so that the / after it is the path's own: a
-# file:///home/x URI yields /home/x (#91; from 1.3.0 to 1.11.x the group was
-# file:/// and no file:// URI ever matched). A Windows URI file:///C:/x (or
-# file:///c%3A/x) yields the drive-relative /x, which image mode prefixes
-# with the root as ConvertTo-LocalPath does in the PowerShell collector; the
-# drive letter itself is dropped, since the sh collector keeps only paths
-# that start with /.
+# abs_strings FILE... -> every quoted absolute path or file:// URI in the files.
+# A Windows file URI keeps only its drive-relative path, which image mode
+# prefixes with the root, as the PowerShell collector does.
 abs_strings() {
   eval "$INVENTORY_DROP_SECRETS"
   [ $# -gt 0 ] || return 0
@@ -3037,9 +2849,8 @@ yaml_vals() {
   [ $# -gt 0 ] || return 0
   grep -h "^$_yv_key: *" "$@" 2>/dev/null | sed "s/^$_yv_key: *//; s/^[\"']//; s/[\"']\$//"
 }
-# json5_vals KEY FILE... -> string values of KEY in JSON5 files, where the key
-# may be unquoted and the value single-quoted (OpenClaw config).
-# Temporaries: _j5v_.
+# json5_vals KEY FILE... -> string values of KEY in JSON5 files, where the key may
+# be unquoted and the value single-quoted. Temporaries: _j5v_.
 json5_vals() {
   _j5v_key=$1; shift
   eval "$INVENTORY_DROP_SECRETS"
@@ -3073,9 +2884,8 @@ session_cwds() {
     sed 's/^"cwd":"//; s/"$//'
 }
 
-# find_claude_code_projects HOME: Claude Code's prompt history, the project
-# keys of .claude.json, and both in config homes moved with
-# CLAUDE_CONFIG_DIR, which keep .claude.json inside. Temporaries: _fccp_.
+# find_claude_code_projects HOME: Claude Code projects, also in CLAUDE_CONFIG_DIR
+# homes. Temporaries: _fccp_.
 find_claude_code_projects() {
   json_vals project "$1/.claude/history.jsonl"
   json_path_keys "$1/.claude.json" '{'
@@ -3084,14 +2894,11 @@ find_claude_code_projects() {
     json_path_keys "$_fccp_config" '{'
   done
 }
-# find_cli_session_projects HOME: Codex, Qwen Code, Cline CLI, Cursor chats,
-# Continue, Goose sessions, OpenCode, Crush, and Agent Zero editor (ACP)
-# sessions, whose workspace and extra folders are a string and a JSON array
-# in chat.json. Temporaries: _fcsp_.
+# find_cli_session_projects HOME: projects of the CLI agents' session files
+# (group 2 of the internals.md discovery table). Temporaries: _fcsp_.
 find_cli_session_projects() {
-  # A Codex cwd in this home's Documents/Codex (the ChatGPT desktop app's projectless output
-  # directories, which the catalog collects whole) or .codex/worktrees (thread worktrees,
-  # excluded) is not a project. An archived thread's rollout is in archived_sessions.
+  # The ChatGPT desktop app's projectless directories (Documents/Codex, collected whole) and
+  # Codex thread worktrees (excluded) are not projects.
   for _fcsp_dir in "$1/.codex/sessions" "$1/.codex/archived_sessions"; do
     session_cwds "$_fcsp_dir" '*.jsonl'
   done | while IFS= read -r _fcsp_cwd; do
@@ -3113,9 +2920,7 @@ find_cli_session_projects() {
   grep -ho '"acp_additional_directories": *\[[^]]*\]' "$@" 2>/dev/null |
     grep -o '"/[^"]*"' | sed 's/^"//; s/"$//'
 }
-# find_gemini_projects HOME: Gemini CLI's projects, trusted folders and
-# project roots; the Antigravity CLI's history, settings and project cache;
-# Gemini config projects.
+# find_gemini_projects HOME: Gemini CLI and Antigravity CLI projects.
 find_gemini_projects() {
   json_path_keys "$1/.gemini/projects.json" '"'
   json_path_keys "$1/.gemini/trustedFolders.json" '"'
@@ -3124,9 +2929,8 @@ find_gemini_projects() {
   abs_strings "$1/.gemini/antigravity-cli/settings.json" \
     "$1/.gemini/antigravity-cli/cache/projects.json" "$1"/.gemini/config/projects/*.json
 }
-# find_agent_session_projects HOME: Amp, Factory, Kiro, Cursor ACP, Goose
-# recent directories, Copilot CLI, Hermes, Letta, pi, muse, Open Interpreter,
-# OpenHands and PearAI. Temporaries: _fasp_.
+# find_agent_session_projects HOME: projects of the other agents' session and
+# state files (group 4 of the internals.md discovery table). Temporaries: _fasp_.
 find_agent_session_projects() {
   json_vals cwd "$1/.local/share/amp/history.jsonl" "$1"/.factory/sessions/*/*.jsonl \
     "$1"/.factory/sessions/*.jsonl "$1"/.kiro/sessions/cli/*.json \
@@ -3135,9 +2939,8 @@ find_agent_session_projects() {
   abs_strings "$1"/.kiro/sessions/*/sess_*/session.json "$1/.config/Goose/recent-dirs.json" \
     "$1/Library/Application Support/Goose/recent-dirs.json" \
     "$1/AppData/Roaming/Goose/recent-dirs.json"
-  # A cwd under this home's .copilot (Copilot Desktop chats and worktrees) is not a project,
-  # nor is the cwd of a session with no events.jsonl: a pool or probe session Copilot Desktop
-  # pre-created and never prompted (on Windows its cwd is the app's install directory).
+  # A cwd under .copilot (Copilot Desktop chats and worktrees) is not a project, nor is that
+  # of a session without events.jsonl, which Copilot Desktop pre-created and never prompted.
   for _fasp_events in "$1"/.copilot/session-state/*/events.jsonl; do
     [ -f "$_fasp_events" ] && yaml_vals cwd "${_fasp_events%/events.jsonl}/workspace.yaml"
   done | while IFS= read -r _fasp_cwd; do
@@ -3154,8 +2957,7 @@ find_agent_session_projects() {
   json_path_keys "$1/.pi/agent/trust.json" '[tf]'
   json_path_keys "$1/.config/muse/trust.json" '{'
   json_vals workspace_root "$1"/.local/share/muse/sessions/*/*/*/*/session.jsonl
-  # A cwd under this home's .openinterpreter/worktrees (thread worktrees, excluded) is not a
-  # project.
+  # Open Interpreter thread worktrees (excluded) are not projects.
   for _fasp_dir in "$1/.openinterpreter/sessions" "$1/.openinterpreter/archived_sessions"; do
     session_cwds "$_fasp_dir" 'rollout-*.jsonl'
   done | while IFS= read -r _fasp_cwd; do
@@ -3184,10 +2986,8 @@ find_config_file_projects() {
     [ -f "$_fcfp_file" ] && abs_strings "$_fcfp_file" | common_dir
   done
 }
-# find_editor_projects HOME: every VS Code-family User directory (macOS,
-# Linux, Windows, and the remote servers' data directories): the folder of
-# each workspaceStorage workspace.json, and the task workspaces of Cline,
-# Roo Code and Kilo Code. Temporaries: _fep_.
+# find_editor_projects HOME: VS Code-family workspaces and the Cline, Roo Code and
+# Kilo Code task workspaces. Temporaries: _fep_.
 find_editor_projects() {
   for _fep_user_dir in "$1"/Library/Application\ Support/*/User "$1"/.config/*/User \
     "$1"/AppData/Roaming/*/User "$1"/.*-server*/data/User; do
@@ -3211,12 +3011,9 @@ get_project_owner() {
     if (index(project, home"/")==1) { print $1; exit } }'
 }
 
-# discover_projects -> user:path for every project path found in the state
-# of each home in USER_LIST (the find_*_projects groups, in order), then
-# owner:path for every -p directory (EXTRA_PROJECTS) with its owner from
-# get_project_owner. Only lines whose path starts with / are kept, \/ is
-# unescaped and ROOT is prefixed. Sets DISCOVERY_HOME in its own subshell.
-# Temporaries: _dp_.
+# discover_projects -> user:path for every project path in the state of each home
+# in USER_LIST, then owner:path for every -p directory, with ROOT prefixed. Sets
+# DISCOVERY_HOME in its own subshell. Temporaries: _dp_.
 discover_projects() {
   _dp_saved_ifs=$IFS
   IFS='
@@ -3263,9 +3060,8 @@ $USER_LIST" in (*":$_kpd_project
   done
 }
 
-# report_missing_projects: a -p value that is not a directory is left out of
-# PROJECT_LIST; it gets a log line and, outside --inventory, one error_read
-# row, so it is never dropped silently. Reads EXTRA_PROJECTS, INVENTORY,
+# report_missing_projects: logs every -p value that is not a directory and,
+# outside --inventory, writes its error_read row. Reads EXTRA_PROJECTS, INVENTORY,
 # MANIFEST. Temporaries: _rmp_.
 report_missing_projects() {
   printf '%s\n' "$EXTRA_PROJECTS" | while IFS= read -r _rmp_project; do
@@ -3278,11 +3074,8 @@ report_missing_projects() {
   done
 }
 
-# collect_projects: the main step for projects. Sets PROJECT_LIST (owner:path
-# lines) from discover_projects, reports missing -p values, and outside
-# --inventory collects PROJECT_CATALOG in every project, one error_read row
-# first for a project that cannot be listed or entered. Call it in the main
-# shell. Temporaries: _cpr_.
+# collect_projects: sets PROJECT_LIST and, outside --inventory, collects
+# PROJECT_CATALOG in every project. Call it in the main shell. Temporaries: _cpr_.
 collect_projects() {
   PROJECT_LIST=$(discover_projects | merge_project_owners | keep_project_dirs)
   report_missing_projects
@@ -3301,19 +3094,13 @@ collect_projects() {
 # ===========================================================================
 # Inventory output
 # ===========================================================================
-# With --inventory every line goes to stdout and nothing is written. The host
-# line comes first but its counts are known only after the walk, so the agent
-# lines are held in a variable until then.
+# The host line comes first but its counts are known only after the walk, so
+# the agent lines are held until then.
 
-# aggregate_inventory: M|agent|glob and F|agent|size|mtime lines on stdin ->
-# agent|files|bytes|first|last|evidence per agent with at least one file, in
-# order of first match. A match with no files of its own after exclusions and
-# nested claims (~/.gemini holding only antigravity-cli) gives no line.
-# Dates are UTC from the epoch with plain arithmetic (no date -d, no
-# strftime): iso() is the civil-from-days algorithm (Howard Hinnant's
-# chrono-compatible low-level date algorithms), with days counted from
-# 0000-03-01 so that the leap day ends a year. An mtime of 0 (stat
-# unavailable) is left out of first and last.
+# aggregate_inventory: M| and F| lines on stdin -> agent|files|bytes|first|last|
+# evidence per agent with at least one file, in order of first match. Dates come
+# from plain arithmetic (Howard Hinnant's civil-from-days algorithm), since POSIX
+# has no date -d.
 aggregate_inventory() {
   awk -F'|' '
     function iso(epoch,   days, secs, shifted, era, day_of_era, year_of_era, year,
@@ -3362,11 +3149,8 @@ write_inventory_lines() {
   done
 }
 
-# count_inventory_homes: sets USERS_SCANNED to the number of homes in
-# USER_LIST and USERS_UNREADABLE to those that cannot be both listed and
-# entered (test -r and -x on the directory itself; their catalog globs match
-# nothing), with a warning for each. Call it in the main shell.
-# Temporaries: _cih_.
+# count_inventory_homes: sets USERS_SCANNED and USERS_UNREADABLE from USER_LIST,
+# warning for each unreadable home. Call it in the main shell. Temporaries: _cih_.
 count_inventory_homes() {
   USERS_SCANNED=0; USERS_UNREADABLE=0
   while IFS=: read -r _cih_user _cih_home; do
@@ -3381,12 +3165,9 @@ $USER_LIST
 EOF_USER_LIST
 }
 
-# write_inventory: the --inventory main step. Walks every home in USER_LIST
-# with collect_catalog (no writes in this mode), then prints the host line,
-# one agent line per user and agent found (with the user's project count
-# from PROJECT_LIST), and the agent lines of the Docker volumes (DOCKER_INV).
-# Reads USER_LIST, PROJECT_LIST, CATALOG, DOCKER_INV, DOCKER_FOUND, HOST,
-# VERSION, MODE, START_TS. Temporaries: _wi_.
+# write_inventory: the --inventory step; walks every home and prints the host line
+# and the agent lines. Reads USER_LIST, PROJECT_LIST, CATALOG, DOCKER_INV,
+# DOCKER_FOUND, HOST, VERSION, MODE, START_TIME. Temporaries: _wi_.
 write_inventory() {
   count_inventory_homes
   _wi_agent_lines=$(printf '%s\n' "$USER_LIST" | while IFS=: read -r _wi_user _wi_home; do
@@ -3398,7 +3179,7 @@ write_inventory() {
   done)
   printf '{"type":"host","host":"%s","collector":"%s","mode":"%s","at":"%s",'\
 '"users_scanned":%s,"users_unreadable":%s,"docker_volumes":%s}\n' \
-    "$(json_escape "$HOST")" "$VERSION" "$MODE" "$START_TS" \
+    "$(json_escape "$HOST")" "$VERSION" "$MODE" "$START_TIME" \
     "$USERS_SCANNED" "$USERS_UNREADABLE" "$DOCKER_FOUND"
   [ -z "$_wi_agent_lines" ] || printf '%s\n' "$_wi_agent_lines"
   printf '%s\n' "$DOCKER_INV" | aggregate_inventory | write_inventory_lines docker 0
@@ -3412,9 +3193,8 @@ write_inventory() {
 # Reads MANIFEST.
 count_status() { to_number "$(grep -c "\"status\":\"$1\"" "$MANIFEST" 2>/dev/null)"; }
 
-# list_active_users -> user:home for the users whose home gave at least one
-# manifest row, in enumeration order. The error_read row for an unreadable
-# home itself does not count. Reads USER_LIST, MANIFEST. Temporaries: _lau_.
+# list_active_users -> user:home for the users whose home gave a manifest row
+# other than its own error_read. Reads USER_LIST, MANIFEST. Temporaries: _lau_.
 list_active_users() {
   printf '%s\n' "$USER_LIST" | while IFS=: read -r _lau_user _lau_home; do
     [ -n "$_lau_home" ] || continue
@@ -3455,14 +3235,9 @@ json_list() {
 # json_bool FLAG -> true when FLAG is 1, else false
 json_bool() { if [ "$1" = 1 ]; then printf true; else printf false; fi; }
 
-# write_summary ARCHIVE_NAME ARCHIVER: writes collection.json (SUMMARY) and
-# stages a copy. Called again before each archive fallback, so the archived
-# and the on-disk summary name the archive and the archiver actually used.
-# Reads TOOL, VERSION, HOST, MODE, ROOT, START_TS, END_TS, the option
-# variables, HASH_TOOL, STAT_MODE, WORKER_SH, USER_LIST, ACTIVE_USERS,
-# PROJECT_LIST, BYTES, the DOCKER_* counters, NOTES, STAGE. The long lines of
-# the here-document are continued with a backslash, which an unquoted
-# here-document removes together with the newline. Temporaries: _ws_.
+# write_summary ARCHIVE_NAME ARCHIVER: writes collection.json (SUMMARY) and stages
+# a copy; called again before each archive fallback. Reads the run globals and
+# counters. Temporaries: _ws_.
 write_summary() {
   _ws_platform="$(uname -s 2>/dev/null) $(uname -r 2>/dev/null) $(uname -m 2>/dev/null)"
   cat >"$SUMMARY" <<EOF_SUMMARY
@@ -3474,8 +3249,8 @@ write_summary() {
   "root": "$(json_escape "${ROOT:-/}")",
   "platform": "$(json_escape "$_ws_platform")",
   "run_as_uid": "$(id -u 2>/dev/null)",
-  "started": "$START_TS",
-  "finished": "$END_TS",
+  "started": "$START_TIME",
+  "finished": "$END_TIME",
   "options": {"full": $(json_bool "$FULL"), "no_secrets": $(json_bool "$NO_SECRETS"), \
 "max_file_size_bytes": $MAX_SIZE, "users_filter": "$(json_escape "$USERS")", \
 "no_docker": $(json_bool "$NO_DOCKER"), "no_projects": $(json_bool "$NO_PROJECTS"), \
@@ -3502,26 +3277,23 @@ EOF_SUMMARY
   cp "$SUMMARY" "$STAGE/collection.json"
 }
 
-# tar_gzip: writes ARCHIVE with tar -cf - | gzip; succeeds only when both do.
-# POSIX sh has no pipefail, so tar's exit status goes through a file under -o
-# (TAR_RC), outside the staging directory, and is removed before returning.
+# tar_gzip: writes ARCHIVE with tar -cf - | gzip, true only when both succeed.
+# POSIX sh has no pipefail, so tar's status goes through TAR_STATUS_FILE.
 # Temporaries: _tg_.
 tar_gzip() {
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
-  { tar -cf - -C "$STAGE" . 2>>"$LOG"; echo "$?" >"$TAR_RC"; } | gzip >"$ARCHIVE"
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
+  { tar -cf - -C "$STAGE" . 2>>"$LOG"; echo "$?" >"$TAR_STATUS_FILE"; } | gzip >"$ARCHIVE"
   _tg_gzip_status=$?
-  _tg_tar_status=$(cat "$TAR_RC" 2>/dev/null)
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
+  _tg_tar_status=$(cat "$TAR_STATUS_FILE" 2>/dev/null)
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
   [ "$_tg_gzip_status" = 0 ] && [ "$_tg_tar_status" = 0 ] && return 0
   [ "$_tg_tar_status" = 0 ] || log_line "tar | gzip: tar exited ${_tg_tar_status:-without a status}"
   return 1
 }
 
-# write_archive: the main step that writes the archive. Writes
-# collection.json, stages it with the manifest and the log, then archives
-# the staging directory with tar -czf, falling back to tar | gzip and then
-# to an uncompressed tar (which changes ARCHIVE to NAME.tar), rewriting
-# collection.json before each fallback. Exits 2 when no archive was written.
+# write_archive: stages collection.json, the manifest and the log, then archives
+# the staging directory with tar -czf, tar | gzip or plain tar. Exits 2 when no
+# archive was written.
 write_archive() {
   write_summary "$NAME.tar.gz" 'tar -z'
   log_line "Archiving"
@@ -3541,9 +3313,8 @@ write_archive() {
   [ -s "$ARCHIVE" ] || { log_line "FATAL: archive not written"; exit 2; }
 }
 
-# hash_archive: sets ARCHIVE_SHA and ARCHIVE_SIZE, writes ARCHIVE.sha256 and
-# logs the final "done" line. The archive's size and hash follow on stdout,
-# so stderr gets only "done".
+# hash_archive: sets ARCHIVE_SHA and ARCHIVE_SIZE, writes ARCHIVE.sha256 and logs
+# "done".
 hash_archive() {
   ARCHIVE_SHA=$(hash_file "$ARCHIVE")
   ARCHIVE_SIZE=$(stat_file "$ARCHIVE"); ARCHIVE_SIZE=${ARCHIVE_SIZE%% *}
@@ -3584,9 +3355,8 @@ print_result() {
 # ===========================================================================
 # Main program
 # ===========================================================================
-# Option parsing and validation, setup, then one call per step, in run order,
-# at the end of this section. The setup and step functions set globals, so
-# each is called in the main shell, never in a pipeline or $(...).
+# The setup and step functions set globals, so each is called in the main
+# shell, never in a pipeline or $(...).
 
 # usage: prints the help text to stdout
 usage() {
@@ -3618,15 +3388,12 @@ every user's home.
 EOF_USAGE
 }
 
-# need_value COUNT: exits 1 with the usage on stderr when an option that
-# takes a value has no argument after it (COUNT, the number of arguments
-# left including the option, is below 2)
+# need_value COUNT: exits 1 with the usage when an option's value is missing
+# (COUNT, the arguments left including the option, is below 2).
 need_value() { [ "$1" -ge 2 ] || { usage >&2; exit 1; }; }
 
-# parse_options ARGS...: sets the option globals (OUTDIR, OUTDIR_SET, ROOT,
-# USERS, EXTRA_PROJECTS (newline-separated), FULL, NO_SECRETS, NO_PROJECTS,
-# NO_DOCKER, MAX_MB, KEEP, LIST, INVENTORY, QUIET) from their defaults and
-# ARGS. Exits 0 after --version or --help, and 1 on an unknown option.
+# parse_options ARGS...: sets the option globals from ARGS. Exits 0 after
+# --version or --help, and 1 on an unknown option.
 parse_options() {
   OUTDIR=.; OUTDIR_SET=0; ROOT=; USERS=; EXTRA_PROJECTS=
   FULL=0; NO_SECRETS=0; NO_PROJECTS=0; NO_DOCKER=0; MAX_MB=256
@@ -3675,12 +3442,9 @@ set_max_size() {
   MAX_SIZE=$(( MAX_MB * 1024 * 1024 ))
 }
 
-# resolve_extra_projects: rewrites EXTRA_PROJECTS as absolute paths, each
-# kept once. A relative -p is resolved against the current directory, in
-# image mode too: -p is a path on the machine running the collector and is
-# never prefixed with the root. An existing directory is resolved with cd and
-# pwd (logical, so a symlink in the path keeps its name); any other value is
-# joined to the current directory as given. Temporaries: _rep_.
+# resolve_extra_projects: rewrites EXTRA_PROJECTS as absolute paths, each once,
+# resolved against the current directory and never prefixed with the root, since
+# -p names a path on the machine running the collector. Temporaries: _rep_.
 resolve_extra_projects() {
   _rep_resolved=
   while IFS= read -r _rep_project; do
@@ -3703,9 +3467,8 @@ EOF_EXTRA_PROJECTS
   EXTRA_PROJECTS=$_rep_resolved
 }
 
-# resolve_root: makes ROOT "" for live mode, or else an absolute path without
-# a trailing slash (exits 2 when it is not a directory), and sets MODE to
-# live or image
+# resolve_root: sets ROOT ("" or an absolute path; exits 2 when it is not a
+# directory) and MODE (live or image).
 resolve_root() {
   if [ -n "$ROOT" ]; then
     [ -d "$ROOT" ] || { printf 'Root is not a directory: %s\n' "$ROOT" >&2; exit 2; }
@@ -3715,10 +3478,8 @@ resolve_root() {
   if [ -n "$ROOT" ]; then MODE=image; else MODE=live; fi
 }
 
-# check_prerequisites: exits 2 unless find is installed and, outside
-# --inventory (which writes nothing: no output directory, staging or log),
-# the output directory exists or can be created, is writable, and tar is
-# installed. Sets OUTDIR to its absolute path.
+# check_prerequisites: exits 2 without find, or, outside --inventory, without
+# tar or a writable output directory. Sets OUTDIR to its absolute path.
 check_prerequisites() {
   if [ "$INVENTORY" != 1 ]; then
     [ -d "$OUTDIR" ] || mkdir -p "$OUTDIR" 2>/dev/null ||
@@ -3730,13 +3491,9 @@ check_prerequisites() {
   command -v find >/dev/null 2>&1 || { printf 'find not found\n' >&2; exit 2; }
 }
 
-# detect_capabilities: capability detection, done once, for the platform
-# wrappers in COMMON: HASH_TOOL (sha256sum, shasum, sha256, openssl or none)
-# and STAT_MODE (gnu, gnu0 for a GNU stat without %W, bsd or none); and
-# WORKER_SH. The find -exec workers fork for every batch and do most of the
-# per-file work, so they run under dash when it is installed (Debian and
-# Ubuntu sh, /bin/dash on macOS since 10.15), which starts and loops faster
-# than bash; COLLECTOR_SH overrides it. Temporaries: _dc_.
+# detect_capabilities: sets HASH_TOOL, STAT_MODE and WORKER_SH once. The workers
+# run under dash when it is installed, as it starts and loops faster than bash;
+# COLLECTOR_SH overrides it. Temporaries: _dc_.
 detect_capabilities() {
   if command -v sha256sum >/dev/null 2>&1; then HASH_TOOL=sha256sum
   elif command -v shasum >/dev/null 2>&1 && shasum -a 256 /dev/null >/dev/null 2>&1; then
@@ -3755,13 +3512,11 @@ detect_capabilities() {
   else WORKER_SH='sh'; fi
 }
 
-# set_output_names: sets START_TS, HOST and the output paths under OUTDIR:
-# NAME (host_stamp_agent-artifacts), STAGE (the staging directory), ARCHIVE,
-# LOG, MANIFEST, SUMMARY and TAR_RC (tar_gzip's status file). With
-# --inventory nothing is written: no STAGE or TAR_RC, and LOG and MANIFEST
-# are /dev/null.
+# set_output_names: sets START_TIME, HOST, NAME and the output paths under
+# OUTDIR; under --inventory STAGE and TAR_STATUS_FILE are empty and LOG and
+# MANIFEST are /dev/null.
 set_output_names() {
-  START_TS=$(utc_timestamp)
+  START_TIME=$(utc_timestamp)
   STAMP=$(date -u +%Y%m%dT%H%M%SZ)
   HOST=$(hostname 2>/dev/null || uname -n 2>/dev/null || printf unknown)
   HOST_SAFE=$(printf '%s' "$HOST" | tr -c 'A-Za-z0-9._-' '-')
@@ -3771,20 +3526,20 @@ set_output_names() {
   LOG="$OUTDIR/$NAME.log"
   MANIFEST="$OUTDIR/$NAME.manifest.jsonl"
   SUMMARY="$OUTDIR/$NAME.collection.json"
-  TAR_RC="$OUTDIR/.tar-status-$NAME"
+  TAR_STATUS_FILE="$OUTDIR/.tar-status-$NAME"
   if [ "$INVENTORY" = 1 ]; then
-    STAGE=; LOG=/dev/null; MANIFEST=/dev/null; TAR_RC=
+    STAGE=; LOG=/dev/null; MANIFEST=/dev/null; TAR_STATUS_FILE=
   fi
 }
 
 # cleanup: removes the staging directory (unless -k) and tar_gzip's status
-# file. Reads KEEP, STAGE, TAR_RC.
+# file. Reads KEEP, STAGE, TAR_STATUS_FILE.
 # shellcheck disable=SC2317,SC2329 # invoked from the traps in the main program
 cleanup() {
   if [ "$KEEP" != 1 ] && [ -n "$STAGE" ] && [ -d "$STAGE" ]; then
     rm -rf "$STAGE"
   fi
-  [ -z "$TAR_RC" ] || rm -f "$TAR_RC"
+  [ -z "$TAR_STATUS_FILE" ] || rm -f "$TAR_STATUS_FILE"
 }
 
 # create_output_files: outside --inventory, creates the staging directory
@@ -3796,9 +3551,8 @@ create_output_files() {
   fi
 }
 
-# log_start: the first log lines: version, host, mode and uid; the
-# capabilities and options; a warning when a live run is not root; a note
-# when --inventory ignores -o. Temporaries: _ls_.
+# log_start: writes the first log lines: version, host, mode, capabilities,
+# options and warnings. Temporaries: _ls_.
 log_start() {
   _ls_system="$(uname -s 2>/dev/null) $(uname -r 2>/dev/null)"
   _ls_mode="mode=$MODE root=${ROOT:-/} uid=$(id -u 2>/dev/null)"
@@ -3835,11 +3589,8 @@ create_output_files
 if [ "$FULL" = 1 ]; then ACTIVE_EXCLUDES=; else ACTIVE_EXCLUDES=$EXCLUDES; fi
 log_start
 
-# Globals the steps fill: notes for collection.json, the Docker counters
-# (section 8) and the project list (section 9). NESTED_CLAIMS is cleared
-# too: collect_catalog sets it only inside the per-home pipeline subshell,
-# so the volume walks would otherwise prune whatever paths the environment
-# the collector was started with gave it (#106).
+# Globals the steps fill. NESTED_CLAIMS is cleared so the volume walks never
+# prune paths an inherited environment variable named.
 NOTES=
 DOCKER_SEEN=0; DOCKER_FOUND=0; DOCKER_COLLECTED=0; DOCKER_UNREADABLE=0; DOCKER_DESKTOP=0
 DOCKER_INV=
@@ -3857,7 +3608,7 @@ if [ "$INVENTORY" = 1 ]; then
   exit 0
 fi
 
-END_TS=$(utc_timestamp)
+END_TIME=$(utc_timestamp)
 ACTIVE_USERS=$(list_active_users)
 BYTES=$(sum_collected_bytes)
 write_archive

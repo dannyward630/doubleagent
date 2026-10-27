@@ -211,7 +211,14 @@ case-insensitive filesystem ([coverage.md](coverage.md#case-variants)):
   device and inode (`file_id`) of the colliding paths only, drops a second
   spelling of the same file with a `#|` log line for `collect_catalog`, and
   respells a match inside another match's differently spelled directory
-  with that match's prefix, so the nested claim prunes it.
+  with that match's prefix, so the nested claim prunes it. The
+  instructions `classify_case_matches` prints, one per match in catalog
+  order, are `K|agent|glob|path` (keep it), `@|path` then
+  `D|agent|glob|path` (it folds to the earlier match at `path`: drop it if
+  it is the same file), and `@|path`, `^|prefix`, `R|agent|glob|rest` (it
+  folds to a path inside the match at `path`, spelled differently: respell
+  `prefix` as that path's if it is the same directory; the shortest such
+  parent is chosen).
 - PowerShell: `Get-OnDiskName` returns the on-disk spelling of a literal
   segment, so two such lines expand to the same path, and `Expand-Catalog`
   keeps the first and lists the other with an empty agent, which
@@ -302,7 +309,7 @@ that starts `PATH="/usr/bin:`, the other the text `command -v sha256sum `
 
 The sh archiver chain is fixed, in `write_archive`: `tar -czf`, then
 `tar_gzip` (`tar -cf - | gzip`, with `tar`'s exit status passed through
-the `TAR_RC` file since POSIX sh has no `pipefail`) when `gzip` is on the
+the `TAR_STATUS_FILE` file since POSIX sh has no `pipefail`) when `gzip` is on the
 `PATH`, then an uncompressed `tar`. `write_summary` runs before each try so
 `collection.json` names the archive and archiver used.
 
@@ -362,7 +369,9 @@ The sh counters are the globals `DOCKER_SEEN`, `DOCKER_FOUND`,
 function that sets them runs in the main shell, never in a pipeline or a
 `$(...)`, where the assignments would be lost. The PowerShell collector
 keeps the same counts in `$script:Docker` and the inventory in
-`$script:InventoryDocker`.
+`$script:InventoryDocker`. A failure (an unreadable volumes directory, a
+volume that cannot be walked) is counted, noted in `collection.json` and
+printed in the summary, and never stops the collection.
 
 ## Project discovery
 
@@ -461,8 +470,10 @@ PowerShell:
   `ShouldProcess` support (the `-WhatIf` and `-Confirm` plumbing) for
   those verbs.
 
-Both: no single-letter names except a loop index whose scope is a few
-lines, and variables that fill a manifest field are named like the field.
+Both: a name says what the value holds, in words, and is at least three
+characters after its temporaries prefix, except a loop index (`i`, `j`,
+`k`) whose scope is a few lines; variables that fill a manifest field are
+named like the field.
 
 ## Function pairs
 

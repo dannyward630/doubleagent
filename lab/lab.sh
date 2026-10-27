@@ -33,8 +33,8 @@ need_docker() {
 }
 
 want_ollama=0
-for a in "$@"; do
-  if [ "$a" = "--ollama" ]; then want_ollama=1; fi
+for argument in "$@"; do
+  if [ "$argument" = "--ollama" ]; then want_ollama=1; fi
 done
 
 # Compose invocation: add the Ollama profile when asked, and the GPU
@@ -57,11 +57,11 @@ ctr_running() { [ "$(docker container inspect -f '{{.State.Running}}' "$1" 2>/de
 
 need_up() { ctr_running "$agent_ctr" || die "sandbox is not running; run $0 up"; }
 
-cmd=${1:-help}
+subcommand=${1:-help}
 if [ $# -gt 0 ]; then shift; fi
-case "$cmd" in help|-h|--help) ;; *) need_docker ;; esac
+case "$subcommand" in help|-h|--help) ;; *) need_docker ;; esac
 
-case "$cmd" in
+case "$subcommand" in
   build)
     compose build
     if [ "$want_ollama" = 1 ]; then compose pull ollama; fi
@@ -102,17 +102,17 @@ case "$cmd" in
     printf 'lab: collecting\n'
     "$collector" -r "$image" -o "$out/collection" -q
     archive=
-    for f in "$out/collection"/*.tar.gz; do
-      if [ -f "$f" ]; then archive=$f; break; fi
+    for file in "$out/collection"/*.tar.gz; do
+      if [ -f "$file" ]; then archive=$file; break; fi
     done
     if [ -n "$archive" ] && command -v python3 >/dev/null 2>&1; then
       printf 'lab: analyzing\n'
-      rc=0
-      PYTHONPATH="$repo/analyzer" python3 -m doubleagent timeline "$archive" -o "$out/analysis" || rc=$?
-      case $rc in
+      exit_code=0
+      PYTHONPATH="$repo/analyzer" python3 -m doubleagent timeline "$archive" -o "$out/analysis" || exit_code=$?
+      case $exit_code in
         0) ;;
         1) printf 'lab: no parseable transcripts yet; run an agent for a few turns, then collect again\n' ;;
-        *) printf 'lab: analyzer exited %s; the collection is still in %s\n' "$rc" "$out/collection" >&2 ;;
+        *) printf 'lab: analyzer exited %s; the collection is still in %s\n' "$exit_code" "$out/collection" >&2 ;;
       esac
     fi
     printf 'lab: done. Output under %s (contains any credentials the agents wrote; delete when finished)\n' "$out"
@@ -134,6 +134,6 @@ case "$cmd" in
     awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0"
     ;;
   *)
-    die "unknown command '$cmd'; try $0 help"
+    die "unknown command '$subcommand'; try $0 help"
     ;;
 esac

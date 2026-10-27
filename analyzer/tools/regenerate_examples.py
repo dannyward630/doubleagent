@@ -17,7 +17,7 @@ every run, platform and Python version. "Regenerating the output examples" in
 analyzer/docs/development.md documents the collection and the options.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
-stale block, 2 when a marker is missing or duplicated.
+stale block, 2 when a marker is missing, duplicated or out of order.
 """
 
 from __future__ import annotations
@@ -148,7 +148,8 @@ FILES: list[tuple[str, str, str, str, str]] = [
 # Collected rows whose file is left out of fs/, as if it was lost after the collection.
 MISSING = {"/home/bob/.gemini/tmp/chats/gone.json"}
 UIDS = {"alice": 1000, "bob": 1001}
-# A manifest row cut short, as a collection copied while the collector was writing it would be.
+# A manifest row cut short, as a collection copied while the collector was writing it would be;
+# it goes between the home rows and the project rows.
 CUT_ROW = '{"user":"bob","home":"/home/bob","agent":"ollama","path":"/home/bob/.ollama/con'
 
 
@@ -199,7 +200,8 @@ def build_collection(root: Path) -> Path:
         disk.parent.mkdir(parents=True, exist_ok=True)
         disk.write_bytes(data)
         os.utime(disk, (mtime, mtime))
-    rows.insert(len(rows) - 4, CUT_ROW)
+    first_project = next(i for i, entry in enumerate(FILES) if entry[1].startswith("/srv/"))
+    rows.insert(first_project, CUT_ROW)
     (collection / "manifest.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
     summary = {
         "tool": "collect-agent-artifacts",

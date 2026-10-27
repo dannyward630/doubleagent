@@ -85,7 +85,8 @@ python3 analyzer/tools/regenerate_examples.py --check   # print a diff per stale
 ```
 
 `--check` writes nothing and exits 1 when a block differs from a fresh
-run, 0 when every block matches; a missing or repeated comment exits 2.
+run, 0 when every block matches; in either mode a missing, repeated or
+out-of-order comment exits 2 and leaves the document unchanged.
 `tests/test_examples.py` fails the same way, so the suite catches a stale
 example. Run the script after any change to what `detect --json` prints
 or `inventory.json` holds, and at every `VERSION` bump, since

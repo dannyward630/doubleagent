@@ -616,8 +616,8 @@ plan, and the parser is written from them.
    "Files read:" and "Validated against:" (platform, version and date of
    every real install). Move the agent out of every example showing it
    under `detected but not parsed`, `collected only` or `parser: false`.
-   Bump `VERSION` in `doubleagent/__init__.py` and run
-   `analyzer/tests/run.sh`.
+   Bump `VERSION` in `doubleagent/__init__.py`, run
+   `analyzer/tools/regenerate_examples.py`, then `analyzer/tests/run.sh`.
 
 The backlog may be delegated one parser per subagent, in parallel. A
 subagent changes no assertion outside its own test class, and the merge
@@ -1498,6 +1498,10 @@ documentation-only change needs only the last two rows and markdownlint.
   release tag, later work goes into that version's changelog entry, dated
   at tag time, and `VERSION` is not bumped again unless the user says so.
   A documentation-only change bumps nothing and needs no changelog line.
+  An analyzer bump, or a change to what `detect --json` prints or
+  `inventory.json` holds, is followed by a run of
+  `analyzer/tools/regenerate_examples.py`; `tests/test_examples.py` fails
+  until then.
 - Every `VERSION` bump has an entry in
   [`collectors/CHANGELOG.md`](collectors/CHANGELOG.md) or
   [`analyzer/CHANGELOG.md`](analyzer/CHANGELOG.md) in Keep a Changelog

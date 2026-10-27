@@ -42,7 +42,7 @@ def test_check_reports_a_stale_block(tmp_path):
     document = tmp_path / "output.md"
     text = examples.DOCUMENT.read_text(encoding="utf-8")
     stale = text.replace('"kind": "collected"', '"kind": "loose"', 1)
-    document.write_text(stale, encoding="utf-8")
+    document.write_bytes(stale.encode("utf-8"))
     status, stdout, _ = run_main("--check", "--document", str(document))
     assert status == 1
     assert '-  "kind": "loose",' in stdout and "detect-json" in stdout
@@ -80,7 +80,7 @@ def test_every_marker_fault_fails_and_writes_nothing(tmp_path):
     assert len(cases) == 23 + 4 + 4 + 1
     document = tmp_path / "output.md"
     for case, broken in cases.items():
-        document.write_text(broken, encoding="utf-8")
+        document.write_bytes(broken.encode("utf-8"))
         for mode in ([], ["--check"]):
             status, stdout, stderr = run_main(*mode, "--document", str(document))
             assert status == 2, (case, mode)
@@ -135,15 +135,17 @@ def test_rewrite_keeps_the_file_mode(tmp_path):
     document = tmp_path / "output.md"
     document.write_bytes(examples.DOCUMENT.read_bytes())
     document.chmod(0o640)
+    # Windows keeps only the read-only bit, so compare with what the file reports.
+    mode = stat.S_IMODE(document.stat().st_mode)
     assert run_main("--document", str(document))[0] == 0
-    assert stat.S_IMODE(document.stat().st_mode) == 0o640
+    assert stat.S_IMODE(document.stat().st_mode) == mode
     assert [path.name for path in tmp_path.iterdir()] == ["output.md"], "temporary file left"
 
 
 def test_symlinked_document_rewrites_its_target(tmp_path):
     target = tmp_path / "output.md"
     text = examples.DOCUMENT.read_text(encoding="utf-8")
-    target.write_text(text.replace('"kind": "collected"', '"kind": "loose"', 1), encoding="utf-8")
+    target.write_bytes(text.replace('"kind": "collected"', '"kind": "loose"', 1).encode("utf-8"))
     link = tmp_path / "link.md"
     try:
         link.symlink_to(target)

@@ -3,3 +3,5 @@
 * text=auto
 *.ps1 text eol=crlf
 *.sh text eol=lf
+# The output examples regenerator rewrites only LF documents.
+analyzer/docs/output.md text eol=lf

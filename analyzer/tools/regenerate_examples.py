@@ -17,8 +17,8 @@ every run, platform and Python version. "Regenerating the output examples" in
 analyzer/docs/development.md documents the collection and the options.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
-stale block, 2 when the marker lines are not each block's begin and end, in order, or a
-run fails.
+stale block, 2 when the marker lines are not each block's begin and end, in order, the
+document cannot be read as UTF-8, or a run fails.
 """
 
 from __future__ import annotations
@@ -350,7 +350,7 @@ def main(argv: list[str] | None = None) -> int:
             regenerate(args.document)
             return 0
         diffs = check(args.document)
-    except (MarkerError, RunError) as error:
+    except (MarkerError, RunError, OSError, UnicodeDecodeError) as error:
         print("error: %s" % error, file=sys.stderr)
         return 2
     for diff in diffs:

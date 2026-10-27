@@ -114,8 +114,8 @@ With `--json`, `detect` prints the same data as one JSON object, indented
 by two spaces, and exits `0` even when nothing was found. This example
 is a real run with `--json --files` on a small synthetic collection of
 host `ws01`; the `files` key appears only with `--files`. Alice has Amp
-settings and Claude Code's prompt history and two transcripts, Bob
-Gemini CLI settings and an Ollama prompt history; the project
+settings and Claude Code's prompt history and two transcripts, and Bob
+has Gemini CLI settings and an Ollama prompt history; the project
 `/srv/proj` holds Aider and Cursor files and a shared file, and
 `/srv/shared` one shared file. One manifest line is cut short, which
 gives the note, and Bob's `.gemini/tmp/chats/gone.json` has a collected

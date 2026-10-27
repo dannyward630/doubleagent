@@ -84,3 +84,14 @@ def test_every_marker_fault_fails_and_writes_nothing(tmp_path):
             assert status == 2, (case, mode)
             assert stdout == "" and "error: markers must be" in stderr, (case, mode)
             assert document.read_text(encoding="utf-8") == broken, (case, mode)
+
+
+def test_unreadable_document_exits_2(tmp_path):
+    cases = {"missing": tmp_path / "absent.md", "not UTF-8": tmp_path / "latin1.md"}
+    cases["not UTF-8"].write_bytes(b"caf\xe9\n")
+    for case, document in cases.items():
+        for mode in ([], ["--check"]):
+            status, stdout, stderr = run_main(*mode, "--document", str(document))
+            assert (status, stdout) == (2, ""), (case, mode)
+            assert stderr.startswith("error: "), (case, mode)
+    assert cases["not UTF-8"].read_bytes() == b"caf\xe9\n"

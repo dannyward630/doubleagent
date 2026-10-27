@@ -49,8 +49,8 @@ from .codex import guardian_text, guardian_verdict, item_rows
 if TYPE_CHECKING:
     from .codex import RolloutParser
 
-STATE_DB = "state_5.sqlite"
-THREAD_HISTORY_DB = "thread_history_1.sqlite"
+STATE_DATABASE = "state_5.sqlite"
+THREAD_HISTORY_DATABASE = "thread_history_1.sqlite"
 
 THREAD_COLUMNS = (
     "id",
@@ -110,7 +110,7 @@ TURN_ITEM_KEYS = {
 }
 SKIPPED_ITEMS = ("hookPrompt", "contextCompaction")
 # `key=value` in a tracing body: a bare value or a quoted string.
-LOG_FIELD_RX = re.compile(r'(?:^|\s)([A-Za-z_][A-Za-z0-9_.]*)=("(?:[^"\\]|\\.)*"|\S+)')
+LOG_FIELD_PATTERN = re.compile(r'(?:^|\s)([A-Za-z_][A-Za-z0-9_.]*)=("(?:[^"\\]|\\.)*"|\S+)')
 
 
 def _select(connection: sqlite3.Connection, table: str, wanted: tuple[str, ...]) -> list[dict]:
@@ -350,7 +350,7 @@ def _sibling_threads(artifact: Artifact) -> dict[str, dict]:
 
     The result is {} when there is no such database or it cannot be read.
     """
-    path = artifact.disk_path.parent / STATE_DB
+    path = artifact.disk_path.parent / STATE_DATABASE
     if not is_sqlite(path):
         return {}
     try:
@@ -550,7 +550,7 @@ NO_THREAD_PREFIX = "no-active-thread-"
 def _log_fields(body: str) -> dict[str, str]:
     """Return the `key=value` fields of a `feedback_log_body`, a quoted value unquoted."""
     out: dict[str, str] = {}
-    for match in LOG_FIELD_RX.finditer(body):
+    for match in LOG_FIELD_PATTERN.finditer(body):
         value = match.group(2)
         if len(value) >= 2 and value[0] == value[-1] == '"':
             value = value[1:-1]
@@ -565,7 +565,7 @@ def _log_fields(body: str) -> dict[str, str]:
 # request, with only a request id.
 EXEC_APPROVAL_TARGET = "codex_core::session::handlers"
 EXEC_APPROVAL_MARK = "op=ExecApproval {"
-EXEC_APPROVAL_RX = re.compile(
+EXEC_APPROVAL_PATTERN = re.compile(
     r'op=ExecApproval \{ id: "([^"]*)"(?:, turn_id: (?:Some\("([^"]*)"\)|None))?'
     r".*?decision: ([A-Za-z_]+)"
 )
@@ -573,15 +573,15 @@ EXEC_APPROVAL_RX = re.compile(
 # governed `FileChange` item's id and no turn (research/codex-cli.md,
 # Standing grants and approval records).
 PATCH_APPROVAL_MARK = "op=PatchApproval {"
-PATCH_APPROVAL_RX = re.compile(r'op=PatchApproval \{ id: "([^"]*)".*?decision: ([A-Za-z_]+)')
+PATCH_APPROVAL_PATTERN = re.compile(r'op=PatchApproval \{ id: "([^"]*)".*?decision: ([A-Za-z_]+)')
 REQUEST_APPROVAL_TARGET = "codex_app_server::outgoing_message"
 REQUEST_APPROVAL_MARK = "CommandExecutionRequestApproval {"
-REQUEST_APPROVAL_RX = re.compile(
+REQUEST_APPROVAL_PATTERN = re.compile(
     r'CommandExecutionRequestApproval \{ request_id: (?:[A-Za-z]+\()?"?([^,)"]*)"?\)?,'
     r".*?decision: ([A-Za-z_]+)"
 )
 GUARDIAN_SPAN_MARK = "guardian_review{"
-GUARDIAN_SPAN_RX = re.compile(r"guardian_review\{([^}]*)\}")
+GUARDIAN_SPAN_PATTERN = re.compile(r"guardian_review\{([^}]*)\}")
 LOG_KINDS = (
     (LOGS_TARGET, LOGS_MESSAGE, "feedback"),
     (EXEC_APPROVAL_TARGET, EXEC_APPROVAL_MARK, "exec"),
@@ -666,7 +666,7 @@ def guardian_calls(home: Path, parent: str, start: str, end: str) -> list[str]:
         except sqlite3.DatabaseError:
             continue
         for body in bodies:
-            for match in GUARDIAN_SPAN_RX.finditer(body):
+            for match in GUARDIAN_SPAN_PATTERN.finditer(body):
                 fields = _log_fields(match.group(1))
                 call = fields.get("tool_call_id", "")
                 if fields.get("thread_id") == parent and call and call not in calls:
@@ -704,7 +704,9 @@ def _approval_match(record: dict, kind: str, errors: list) -> re.Match | None:
     if record["kind"] != kind:
         return None
     body = str(record.get("body") or "")
-    pattern = {"exec": EXEC_APPROVAL_RX, "patch": PATCH_APPROVAL_RX}.get(kind, REQUEST_APPROVAL_RX)
+    pattern = {"exec": EXEC_APPROVAL_PATTERN, "patch": PATCH_APPROVAL_PATTERN}.get(
+        kind, REQUEST_APPROVAL_PATTERN
+    )
     match = pattern.search(body)
     if not match:
         errors.append(

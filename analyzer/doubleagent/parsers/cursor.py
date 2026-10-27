@@ -59,13 +59,13 @@ from .base import (
 
 IDE = r"(?:Library/Application Support|\.config|AppData/Roaming)/Cursor"
 IDE_PARENTS = ("Library/Application Support/Cursor", ".config/Cursor", "AppData/Roaming/Cursor")
-STATE_RX = re.compile(r"^%s/User/globalStorage/state\.vscdb$" % IDE)
-SEARCH_RX = re.compile(r"^%s/User/globalStorage/conversation-search\.db$" % IDE)
-TRANSCRIPT_RX = re.compile(r"^\.cursor/projects/[^/]+/agent-transcripts/[^/]+/([^/]+)\.jsonl$")
-TRACKING_RX = re.compile(r"^\.cursor/ai-tracking/ai-code-tracking\.db$")
-CLI_CONFIG_RX = re.compile(r"^\.cursor/cli-config\.json$")
-PERMISSIONS_RX = re.compile(r"^\.cursor/permissions\.json$")
-ATTEMPT_RX = re.compile(r"^%s/User/globalStorage/mcp-oauth-attempts/([^/]+\.json)$" % IDE)
+STATE_PATTERN = re.compile(r"^%s/User/globalStorage/state\.vscdb$" % IDE)
+SEARCH_PATTERN = re.compile(r"^%s/User/globalStorage/conversation-search\.db$" % IDE)
+TRANSCRIPT_PATTERN = re.compile(r"^\.cursor/projects/[^/]+/agent-transcripts/[^/]+/([^/]+)\.jsonl$")
+TRACKING_PATTERN = re.compile(r"^\.cursor/ai-tracking/ai-code-tracking\.db$")
+CLI_CONFIG_PATTERN = re.compile(r"^\.cursor/cli-config\.json$")
+PERMISSIONS_PATTERN = re.compile(r"^\.cursor/permissions\.json$")
+ATTEMPT_PATTERN = re.compile(r"^%s/User/globalStorage/mcp-oauth-attempts/([^/]+\.json)$" % IDE)
 
 SETTINGS_KEY = (
     "src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl"
@@ -132,17 +132,17 @@ MCP_AUTH_SOURCE = "(from state.vscdb cloudAgentRepository.mcpAuthResolution, fil
 # selected.
 MCP_GLOBAL_PREFIX = "mcpOAuth.global."
 MCP_SECRET_PREFIX = "mcpOAuth.secret."
-MCP_KEY_RX = re.compile(r"^\[(.+)\] (\S+)$")
+MCP_KEY_PATTERN = re.compile(r"^\[(.+)\] (\S+)$")
 MCP_TOKENS = " tokens=stored (ciphertext, not read)"
 PLUGINS_PREFIX = "cursor.plugins.installedIds."
 PLUGINS_SOURCE = "(from state.vscdb cursor.plugins.installedIds, file mtime)"
 
 # `<timestamp>Thursday, Oct 1, <year>, 6:00 AM (UTC-4)</timestamp>` LF
 # `<user_query>Q</user_query>`, the worker's wrapper of a user text block.
-WRAPPER_RX = re.compile(
+WRAPPER_PATTERN = re.compile(
     r"^<timestamp>([^<]*)</timestamp>\s*<user_query>(.*)</user_query>\s*$", re.DOTALL
 )
-TAG_RX = re.compile(
+TAG_PATTERN = re.compile(
     r"^\s*[A-Za-z]+,\s+([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),\s+(\d{4}),\s+(\d{1,2}):(\d{2})"
     r"\s*([AaPp][Mm])\s*\(UTC(?:([+-])(\d{1,2})(?::?(\d{2}))?)?\)\s*$"
 )
@@ -183,7 +183,7 @@ def tag_time(tag: str) -> str:
 
     The tag is local time to the minute with its UTC offset in parentheses.
     """
-    match = TAG_RX.match(tag)
+    match = TAG_PATTERN.match(tag)
     if not match:
         return ""
     month, day, year, hour, minute, meridiem, sign, offset_hours, offset_minutes = match.groups()
@@ -206,7 +206,7 @@ def unwrap_query(text: str) -> tuple[str, str]:
     The query is the text inside `<user_query>` and the time the tag's, or the whole text and ""
     when the wrapper or its tag does not parse.
     """
-    match = WRAPPER_RX.match(text)
+    match = WRAPPER_PATTERN.match(text)
     if match:
         when = tag_time(match.group(1))
         if when:
@@ -511,19 +511,19 @@ class CursorParser(Parser):
         return any(
             pattern.match(rel)
             for pattern in (
-                STATE_RX,
-                SEARCH_RX,
-                TRANSCRIPT_RX,
-                TRACKING_RX,
-                CLI_CONFIG_RX,
-                PERMISSIONS_RX,
-                ATTEMPT_RX,
+                STATE_PATTERN,
+                SEARCH_PATTERN,
+                TRANSCRIPT_PATTERN,
+                TRACKING_PATTERN,
+                CLI_CONFIG_PATTERN,
+                PERMISSIONS_PATTERN,
+                ATTEMPT_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return whether the artifact is an agent transcript, which repeats the store's events."""
-        return bool(TRANSCRIPT_RX.match(artifact.rel))
+        return bool(TRANSCRIPT_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return 60 seconds: the transcript's tag has minute precision."""
@@ -532,15 +532,15 @@ class CursorParser(Parser):
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one artifact, by the file it is."""
         rel = artifact.rel
-        if STATE_RX.match(rel):
+        if STATE_PATTERN.match(rel):
             yield from self._database(artifact, self._state, opts)
-        elif SEARCH_RX.match(rel):
+        elif SEARCH_PATTERN.match(rel):
             yield from self._database(artifact, self._search, opts)
-        elif TRACKING_RX.match(rel):
+        elif TRACKING_PATTERN.match(rel):
             yield from self._database(artifact, self._tracking, opts)
-        elif TRANSCRIPT_RX.match(rel):
+        elif TRANSCRIPT_PATTERN.match(rel):
             yield from self._transcript(artifact)
-        elif ATTEMPT_RX.match(rel):
+        elif ATTEMPT_PATTERN.match(rel):
             yield from self._attempt(artifact)
         else:
             yield from self._settings_file(artifact)
@@ -1114,7 +1114,7 @@ class CursorParser(Parser):
     # -- transcript JSONL -------------------------------------------------
 
     def _transcript(self, artifact: Artifact) -> Iterator[Row]:
-        match = TRANSCRIPT_RX.match(artifact.rel)
+        match = TRANSCRIPT_PATTERN.match(artifact.rel)
         session_id = match.group(1) if match else ""
         path, branch = home_projects(artifact).get(session_id, ("", ""))
         errors: list = []
@@ -1169,7 +1169,7 @@ class CursorParser(Parser):
         if not isinstance(document, dict):
             yield self._row(artifact, "system", "parser: %s is not a JSON object" % rel)
             return
-        match = ATTEMPT_RX.match(rel)
+        match = ATTEMPT_PATTERN.match(rel)
         source = "mcp-oauth-attempts/" + (match.group(1) if match else "")
         created = document.get("createdAtMs")
         if created in (None, ""):
@@ -1197,7 +1197,7 @@ class CursorParser(Parser):
         if not isinstance(document, dict):
             yield self._row(artifact, "system", "parser: %s is not a JSON object" % rel)
             return
-        if CLI_CONFIG_RX.match(rel):
+        if CLI_CONFIG_PATTERN.match(rel):
             settings = cli_config_settings(document)
         else:
             settings = permissions_settings(document)
@@ -1240,7 +1240,7 @@ def mcp_key_name(key: str, prefix: str) -> tuple[str, str] | None:
         name = base64.urlsafe_b64decode(suffix + "=" * (-len(suffix) % 4)).decode("utf-8")
     except ValueError:
         return None
-    match = MCP_KEY_RX.match(name)
+    match = MCP_KEY_PATTERN.match(name)
     return (match.group(1), match.group(2)) if match else None
 
 

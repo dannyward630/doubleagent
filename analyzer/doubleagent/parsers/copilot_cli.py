@@ -56,16 +56,16 @@ from .base import (
 
 HOME = r"(?:\.copilot|\.local/state/\.copilot|\.config/\.copilot)"
 SESSION_DIR = HOME + r"/session-state/([0-9a-f-]{36})/"
-EVENTS_RX = re.compile("^" + SESSION_DIR + r"events\.jsonl$")
-WORKSPACE_RX = re.compile("^" + SESSION_DIR + r"workspace\.yaml$")
-SNAPSHOTS_RX = re.compile("^" + SESSION_DIR + r"rewind-file-snapshots/index\.json$")
-STORE_RX = re.compile("^(" + HOME + r")/session-store\.db$")
-HISTORY_RX = re.compile("^" + HOME + r"/command-history-state\.json$")
-PERMISSIONS_RX = re.compile("^" + HOME + r"/permissions-config\.json$")
-SETTINGS_RX = re.compile("^" + HOME + r"/settings\.json$")
-SIDEBAR_RX = re.compile("^" + HOME + r"/sidebar-sessions-state/[0-9a-f]{64}\.json$")
-LOG_RX = re.compile("^" + HOME + r"/logs/process-\d+-\d+\.log$")
-HOME_PREFIX_RX = re.compile("^(" + HOME + ")/")
+EVENTS_PATTERN = re.compile("^" + SESSION_DIR + r"events\.jsonl$")
+WORKSPACE_PATTERN = re.compile("^" + SESSION_DIR + r"workspace\.yaml$")
+SNAPSHOTS_PATTERN = re.compile("^" + SESSION_DIR + r"rewind-file-snapshots/index\.json$")
+STORE_PATTERN = re.compile("^(" + HOME + r")/session-store\.db$")
+HISTORY_PATTERN = re.compile("^" + HOME + r"/command-history-state\.json$")
+PERMISSIONS_PATTERN = re.compile("^" + HOME + r"/permissions-config\.json$")
+SETTINGS_PATTERN = re.compile("^" + HOME + r"/settings\.json$")
+SIDEBAR_PATTERN = re.compile("^" + HOME + r"/sidebar-sessions-state/[0-9a-f]{64}\.json$")
+LOG_PATTERN = re.compile("^" + HOME + r"/logs/process-\d+-\d+\.log$")
+HOME_PREFIX_PATTERN = re.compile("^(" + HOME + ")/")
 
 # `turns.timestamp` and the snapshot time are stamped at the end of a turn
 # (or at a time not measured against the prompt's), so the prompt and the
@@ -108,9 +108,9 @@ CHECKPOINT_COLUMNS = (
     "important_files",
     "next_steps",
 )
-SIGNED_IN_RX = re.compile(r"Signed in to (\S+) as (.+?)\.?\s*$")
-WORKSPACE_LINE_RX = re.compile(r"Workspace initialized: ([0-9a-f-]{36})")
-LOG_TIME_RX = re.compile(r"^(\d{4}-\d{2}-\d{2}T\S+Z)\s")
+SIGNED_IN_PATTERN = re.compile(r"Signed in to (\S+) as (.+?)\.?\s*$")
+WORKSPACE_LINE_PATTERN = re.compile(r"Workspace initialized: ([0-9a-f-]{36})")
+LOG_TIME_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}T\S+Z)\s")
 
 
 def _dict(value) -> dict:
@@ -271,48 +271,50 @@ class CopilotCliParser(Parser):
         return any(
             pattern.match(rel)
             for pattern in (
-                EVENTS_RX,
-                WORKSPACE_RX,
-                SNAPSHOTS_RX,
-                STORE_RX,
-                HISTORY_RX,
-                PERMISSIONS_RX,
-                SETTINGS_RX,
-                SIDEBAR_RX,
-                LOG_RX,
+                EVENTS_PATTERN,
+                WORKSPACE_PATTERN,
+                SNAPSHOTS_PATTERN,
+                STORE_PATTERN,
+                HISTORY_PATTERN,
+                PERMISSIONS_PATTERN,
+                SETTINGS_PATTERN,
+                SIDEBAR_PATTERN,
+                LOG_PATTERN,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return whether the artifact repeats events of the session logs."""
         rel = artifact.rel
-        return bool(STORE_RX.match(rel) or HISTORY_RX.match(rel) or SNAPSHOTS_RX.match(rel))
+        return bool(
+            STORE_PATTERN.match(rel) or HISTORY_PATTERN.match(rel) or SNAPSHOTS_PATTERN.match(rel)
+        )
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
         """Return the pairing window: a turn's length for the store and the snapshots."""
-        if STORE_RX.match(artifact.rel) or SNAPSHOTS_RX.match(artifact.rel):
+        if STORE_PATTERN.match(artifact.rel) or SNAPSHOTS_PATTERN.match(artifact.rel):
             return TURN_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one artifact, by the file it is."""
         rel = artifact.rel
-        match = EVENTS_RX.match(rel)
+        match = EVENTS_PATTERN.match(rel)
         if match:
             yield from self._parse_events(artifact, match.group(1), opts)
-        elif match := WORKSPACE_RX.match(rel):
+        elif match := WORKSPACE_PATTERN.match(rel):
             yield from self._parse_workspace(artifact, match.group(1))
-        elif match := SNAPSHOTS_RX.match(rel):
+        elif match := SNAPSHOTS_PATTERN.match(rel):
             yield from self._parse_snapshots(artifact, match.group(1))
-        elif STORE_RX.match(rel):
+        elif STORE_PATTERN.match(rel):
             yield from self._parse_store(artifact)
-        elif HISTORY_RX.match(rel):
+        elif HISTORY_PATTERN.match(rel):
             yield from self._parse_history(artifact)
-        elif PERMISSIONS_RX.match(rel):
+        elif PERMISSIONS_PATTERN.match(rel):
             yield from self._parse_permissions(artifact)
-        elif SETTINGS_RX.match(rel):
+        elif SETTINGS_PATTERN.match(rel):
             yield from self._parse_settings(artifact)
-        elif LOG_RX.match(rel):
+        elif LOG_PATTERN.match(rel):
             yield from self._parse_log(artifact)
         # sidebar-sessions-state files give no rows of their own; they are
         # read as a join by `_sidebar`.
@@ -336,7 +338,7 @@ class CopilotCliParser(Parser):
 
         The result is {} when there are none; symlinks are not read.
         """
-        match = HOME_PREFIX_RX.match(artifact.rel)
+        match = HOME_PREFIX_PATTERN.match(artifact.rel)
         if not match:
             return {}
         directory = artifact.home.disk_path / match.group(1) / "sidebar-sessions-state"
@@ -988,14 +990,17 @@ class CopilotCliParser(Parser):
         except OSError:
             return
         sessions = {
-            match.group(1) for line in lines for match in [WORKSPACE_LINE_RX.search(line)] if match
+            match.group(1)
+            for line in lines
+            for match in [WORKSPACE_LINE_PATTERN.search(line)]
+            if match
         }
         session_id = next(iter(sessions)) if len(sessions) == 1 else ""
         for line_number, line in enumerate(lines, 1):
-            match = SIGNED_IN_RX.search(line)
+            match = SIGNED_IN_PATTERN.search(line)
             if not match:
                 continue
-            time_match = LOG_TIME_RX.match(line)
+            time_match = LOG_TIME_PATTERN.match(line)
             yield self._row(
                 artifact,
                 line_number,

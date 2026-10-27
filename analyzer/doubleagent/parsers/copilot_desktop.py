@@ -38,8 +38,8 @@ from ..sqlite_util import is_sqlite, open_copy, table_names
 from ..timeutil import to_utc
 from .base import Options, Parser, compact_json, file_mtime
 
-DB_RX = re.compile(r"^\.copilot/data\.db$")
-REF_RX = re.compile(
+DATABASE_PATTERN = re.compile(r"^\.copilot/data\.db$")
+REF_PATTERN = re.compile(
     r"^\.copilot/repos/[^/]+/\.git/refs/copilot/checkpoints/"
     r"([0-9a-f-]{36})/(\d+)/([0-9a-f-]{36})$"
 )
@@ -67,11 +67,11 @@ class CopilotDesktopParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         """Return whether the artifact is `data.db` or a checkpoint ref."""
-        return bool(DB_RX.match(artifact.rel) or REF_RX.match(artifact.rel))
+        return bool(DATABASE_PATTERN.match(artifact.rel) or REF_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of `data.db`, or the one row of a checkpoint ref."""
-        ref = REF_RX.match(artifact.rel)
+        ref = REF_PATTERN.match(artifact.rel)
         if ref:
             yield self._ref_row(artifact, ref)
             return

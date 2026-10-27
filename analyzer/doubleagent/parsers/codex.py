@@ -62,13 +62,13 @@ LOGS_TMPL = r"^%s/logs_[0-9]+\.sqlite$"
 RULES_TMPL = r"^%s/rules/[^/]+\.rules$"
 MEMORY_SUMMARY_TMPL = r"^%s/memories/rollout_summaries/[^/]+\.md$"
 BACKUP_STATE_TMPL = r"^%s/db-backups/[^/]+/state_5\.sqlite$"
-ROLLOUT_RX = re.compile(ROLLOUT_TMPL % re.escape(".codex"))
+ROLLOUT_PATTERN = re.compile(ROLLOUT_TMPL % re.escape(".codex"))
 HISTORY_REL = ".codex/history.jsonl"
 GLOBAL_STATE_NAME = ".codex-global-state.json"
 UUID = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 # `rollout-<time>-<thread id>.jsonl`, or `...-<thread id>_<rollout id>.jsonl`
 # for a reverted thread; group 1 is the thread id either way.
-UUID_TAIL_RX = re.compile(r"(%s)(?:_%s)?\.jsonl(?:\.zst)?$" % (UUID, UUID))
+UUID_TAIL_PATTERN = re.compile(r"(%s)(?:_%s)?\.jsonl(?:\.zst)?$" % (UUID, UUID))
 
 CALL_TYPES = ("function_call", "custom_tool_call", "local_shell_call", "web_search_call")
 OUTPUT_TYPES = ("function_call_output", "custom_tool_call_output", "local_shell_call_output")
@@ -556,9 +556,9 @@ def item_rows(item: dict, payload: dict) -> list[tuple[str, object, dict, str]]:
     return [("system", completed, {}, "item %s: %s" % (item_type, compact_json(rest)))]
 
 
-TOML_KEY_RX = re.compile(r"([A-Za-z0-9_-]+)\s*=\s*(.*)")
-TOML_BASIC_RX = re.compile(r'"((?:[^"\\]|\\.)*)"')
-TOML_ESCAPE_RX = re.compile(r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", re.S)
+TOML_KEY_PATTERN = re.compile(r"([A-Za-z0-9_-]+)\s*=\s*(.*)")
+TOML_BASIC_PATTERN = re.compile(r'"((?:[^"\\]|\\.)*)"')
+TOML_ESCAPE_PATTERN = re.compile(r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", re.S)
 TOML_ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
 
 
@@ -574,7 +574,7 @@ def _toml_unescape(body: str) -> str:
             raise ValueError("bad escape \\%s" % escape)
         return TOML_ESCAPES[escape]
 
-    return TOML_ESCAPE_RX.sub(one, body)
+    return TOML_ESCAPE_PATTERN.sub(one, body)
 
 
 def _toml_value(raw: str) -> object:
@@ -584,7 +584,7 @@ def _toml_value(raw: str) -> object:
         ValueError: the value is not a basic or literal string, an integer or a boolean.
     """
     if raw.startswith('"'):
-        match = TOML_BASIC_RX.match(raw)
+        match = TOML_BASIC_PATTERN.match(raw)
         if not match:
             raise ValueError("unterminated string")
         return _toml_unescape(match.group(1))
@@ -615,7 +615,7 @@ def flat_toml(text: str) -> dict:
             continue
         if stripped.startswith("["):
             break
-        match = TOML_KEY_RX.fullmatch(stripped)
+        match = TOML_KEY_PATTERN.fullmatch(stripped)
         if not match:
             raise ValueError("not a key = value line")
         key, raw = match.group(1), match.group(2).strip()
@@ -635,7 +635,7 @@ def flat_toml(text: str) -> dict:
     return out
 
 
-TOML_PART_RX = re.compile(r"""\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*""")
+TOML_PART_PATTERN = re.compile(r"""\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*""")
 
 
 def _toml_dotted(text: str) -> list[str] | None:
@@ -647,7 +647,7 @@ def _toml_dotted(text: str) -> list[str] | None:
     parts: list[str] = []
     position = 0
     while True:
-        match = TOML_PART_RX.match(text, position)
+        match = TOML_PART_PATTERN.match(text, position)
         if not match:
             return None
         part = match.group(1)
@@ -1087,7 +1087,7 @@ class RolloutParser(Parser):
 
     def _parse_rollout(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        match = UUID_TAIL_RX.search(artifact.rel)
+        match = UUID_TAIL_PATTERN.search(artifact.rel)
         session_id = match.group(1) if match else ""  # until session_meta says otherwise
         if artifact.rel.endswith(".zst"):
             records = list(iter_zst_jsonl(artifact.disk_path, errors))

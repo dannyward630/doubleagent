@@ -43,20 +43,20 @@ from ..sqlite_util import is_sqlite, open_copy, table_names
 from ..timeutil import to_utc
 from .base import Options, Parser, compact_json, error_rows, file_mtime, setting_value
 
-DB_RX = re.compile(r"(^|/)\.crush/crush\.db$")
-PROJECTS_RX = re.compile(r"^(\.local/share/crush|AppData/Local/crush)/projects\.json$")
-ORIGINAL_RX = re.compile(r"^(.*)[\\/]\.crush[\\/]crush\.db$")
+DATABASE_PATTERN = re.compile(r"(^|/)\.crush/crush\.db$")
+PROJECTS_PATTERN = re.compile(r"^(\.local/share/crush|AppData/Local/crush)/projects\.json$")
+ORIGINAL_PATTERN = re.compile(r"^(.*)[\\/]\.crush[\\/]crush\.db$")
 # Every crush.json scope the catalog collects: the global config, the global
 # data file, the workspace file in a data directory, and a project's own.
-CONFIG_RX = re.compile(
+CONFIG_PATTERN = re.compile(
     r"^(\.config/crush/crush\.json|\.local/share/crush/crush\.json"
     r"|AppData/Local/crush/crush\.json|\.crush/crush\.json|\.?crush\.json)$"
 )
 # The global shell config beside crush.json, and a project's crushrc or .crushrc.
-CRUSHRC_RX = re.compile(r"^(\.config/crush/crushrc|\.?crushrc)$")
-CONFIG_ORIGINAL_RX = re.compile(r"^(.*)[\\/]\.crush[\\/]crush\.json$")
-CHANNEL_RX = re.compile(r"^<channel\s([^>]*)>")
-ATTR_RX = re.compile(r'([A-Za-z_][\w.-]*)="([^"]*)"')
+CRUSHRC_PATTERN = re.compile(r"^(\.config/crush/crushrc|\.?crushrc)$")
+CONFIG_ORIGINAL_PATTERN = re.compile(r"^(.*)[\\/]\.crush[\\/]crush\.json$")
+CHANNEL_PATTERN = re.compile(r"^<channel\s([^>]*)>")
+ATTRIBUTE_PATTERN = re.compile(r'([A-Za-z_][\w.-]*)="([^"]*)"')
 DENIED = "User denied permission"
 HOOK_PREFIXES = (("Tool call blocked by hook.", "deny"), ("Turn halted by hook.", "halt"))
 MCP_TABLES = ("mcp_enabled_servers", "mcp_disabled_servers")
@@ -151,11 +151,12 @@ def _relay_text(text: str, message_id: str) -> tuple[str, str]:
     The message starts `<channel source="<server>" <meta>>`; the key is the part of the text that
     identifies the relay (source, sender, group). Any other message gives ("", "").
     """
-    match = CHANNEL_RX.match(text)
+    match = CHANNEL_PATTERN.match(text)
     if not match:
         return "", ""
     attributes = {
-        attribute: html.unescape(value) for attribute, value in ATTR_RX.findall(match.group(1))
+        attribute: html.unescape(value)
+        for attribute, value in ATTRIBUTE_PATTERN.findall(match.group(1))
     }
     key = "session relayed: channel %s" % attributes.get("source", "")
     for name in ("sender", "group"):
@@ -166,7 +167,7 @@ def _relay_text(text: str, message_id: str) -> tuple[str, str]:
 
 def project_of(original: str) -> str:
     """Return the project directory of a `crush.db` from its original path, or ""."""
-    match = ORIGINAL_RX.match(original or "")
+    match = ORIGINAL_PATTERN.match(original or "")
     return match.group(1) if match else ""
 
 
@@ -181,22 +182,22 @@ class CrushParser(Parser):
         """Return whether the artifact is one of the files this parser reads."""
         rel = artifact.rel
         return bool(
-            DB_RX.search(rel)
-            or PROJECTS_RX.match(rel)
-            or CONFIG_RX.match(rel)
-            or CRUSHRC_RX.match(rel)
+            DATABASE_PATTERN.search(rel)
+            or PROJECTS_PATTERN.match(rel)
+            or CONFIG_PATTERN.match(rel)
+            or CRUSHRC_PATTERN.match(rel)
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one artifact, by the file it is."""
-        if PROJECTS_RX.match(artifact.rel):
+        if PROJECTS_PATTERN.match(artifact.rel):
             yield from self._parse_projects(artifact, opts)
-        elif CONFIG_RX.match(artifact.rel):
+        elif CONFIG_PATTERN.match(artifact.rel):
             yield from self._parse_config(artifact)
-        elif CRUSHRC_RX.match(artifact.rel):
+        elif CRUSHRC_PATTERN.match(artifact.rel):
             yield from self._parse_crushrc(artifact)
         else:
-            yield from self._parse_db(artifact, opts)
+            yield from self._parse_database(artifact, opts)
 
     def _system(self, artifact: Artifact, text: str, line: int = 0) -> Row:
         row = self.base_row(artifact)
@@ -235,7 +236,7 @@ class CrushParser(Parser):
         A workspace `crush.json` belongs to the directory holding its `.crush`, a project-catalog
         file to its project directory.
         """
-        match = CONFIG_ORIGINAL_RX.match(artifact.original or "")
+        match = CONFIG_ORIGINAL_PATTERN.match(artifact.original or "")
         if match:
             return match.group(1)
         return artifact.home.original if artifact.home.project else ""
@@ -321,7 +322,7 @@ class CrushParser(Parser):
         yield from error_rows(self, artifact, errors, "", self._config_project(artifact))
 
     # -- .crush/crush.db ---------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         project_path = project_of(artifact.original)
         if not is_sqlite(artifact.disk_path):
             row = self._system(artifact, "parser: not a SQLite database")

@@ -50,13 +50,13 @@ from .base import (
 )
 from .cline_legacy import iter_array_at
 
-SESSION_RX = re.compile(r"^(?:.*/)?\.continue/sessions/([^/]+)\.json$")
-DEV_DATA_RX = re.compile(
+SESSION_PATTERN = re.compile(r"^(?:.*/)?\.continue/sessions/([^/]+)\.json$")
+DEV_DATA_PATTERN = re.compile(
     r"^(?:.*/)?\.continue/dev_data/(?:[^/]+/)?"
     r"(chatInteraction|toolUsage|editInteraction|editOutcome|chatFeedback)\.jsonl$"
 )
 INDEX_NAME = "sessions.json"
-CN_LOG_RX = re.compile(r"^\.continue/logs/cn[0-9]*\.log$")
+CN_LOG_PATTERN = re.compile(r"^\.continue/logs/cn[0-9]*\.log$")
 INPUT_HISTORY_REL = ".continue/input_history.json"
 PERMISSIONS_REL = ".continue/permissions.yaml"
 # The secondary sources' window. Session rows carry the session's creation
@@ -66,7 +66,7 @@ PERMISSIONS_REL = ".continue/permissions.yaml"
 ANY_TIME_SECONDS = 10 * 366 * 86400.0
 # `cn review` worktree basename, `cn-review-<epoch ms>-<n>`
 # (extensions/cli/src/commands/review/worktree.ts:15-20).
-REVIEW_WORKTREE_RX = re.compile(r"(?:^|[/\\])cn-review-[0-9]+-[0-9]+[/\\]?$")
+REVIEW_WORKTREE_PATTERN = re.compile(r"(?:^|[/\\])cn-review-[0-9]+-[0-9]+[/\\]?$")
 # The CLI's denial texts in a canceled state's output, by `denialReason`
 # (extensions/cli/src/stream/streamChatResponse.helpers.ts:519-527).
 DENIAL_REASONS = {
@@ -76,24 +76,24 @@ DENIAL_REASONS = {
 # The output item the extension gives a call its policy disables
 # (gui/src/redux/thunks/evaluateToolPolicies.ts:93-117).
 POLICY_VIOLATION = "Security Policy Violation"
-POLICY_ADDED_RX = re.compile(r"^Added policy rule to permissions\.yaml: (.*)$")
+POLICY_ADDED_PATTERN = re.compile(r"^Added policy rule to permissions\.yaml: (.*)$")
 # permissions.yaml: the three list keys the CLI reads and writes
 # (permissionsYamlLoader.ts:15-19, :162-171; policyWriter.ts:57-66), each
 # empty (`[]`, `null`, `~` or nothing) or followed by `- <rule>` lines.
-YAML_KEY_RX = re.compile(r"^(allow|ask|exclude):[ \t]*(\[[ \t]*\]|null|~)?[ \t]*(?:#.*)?$")
-YAML_ITEM_RX = re.compile(r"^[ \t]*-[ \t]+(.*?)[ \t]*$")
-LOG_LINE_RX = re.compile(
+YAML_KEY_PATTERN = re.compile(r"^(allow|ask|exclude):[ \t]*(\[[ \t]*\]|null|~)?[ \t]*(?:#.*)?$")
+YAML_ITEM_PATTERN = re.compile(r"^[ \t]*-[ \t]+(.*?)[ \t]*$")
+LOG_LINE_PATTERN = re.compile(
     r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) \[([0-9a-fA-F]{8})\] \[[A-Za-z]+\]: (.*)$"
 )
-METADATA_POST_RX = re.compile(r"^\[metadata\] POST (\S+)(?: (\{.*\}))?$")
+METADATA_POST_PATTERN = re.compile(r"^\[metadata\] POST (\S+)(?: (\{.*\}))?$")
 # `[metadata]` result lines (extensions/cli/src/util/metadata.ts:144-180):
 # the status word, then the URL, which ends `/metadata`, followed on a
 # `Failed` line by the response as JSON.
-METADATA_RESULT_RX = re.compile(
+METADATA_RESULT_PATTERN = re.compile(
     r"^\[metadata\] (Success|Unexpected response|Auth required|Failed|Error)\b.* "
     r"(\S+/metadata)(?: \{.*\})?$"
 )
-AGENT_URL_RX = re.compile(r"/agents/([^/]+)/metadata$")
+AGENT_URL_PATTERN = re.compile(r"/agents/([^/]+)/metadata$")
 STORAGE_SKIPPED = "Storage sync requested but no Continue API key"
 HEADER_KEYS = ("sessionId", "title", "workspaceDirectory", "mode", "chatModelTitle")
 
@@ -178,11 +178,11 @@ def read_permissions(text: str) -> tuple[list[tuple[int, str, str]], str]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or stripped == "---":
             continue
-        key = YAML_KEY_RX.match(line)
+        key = YAML_KEY_PATTERN.match(line)
         if key:
             current = "" if key.group(2) else key.group(1)
             continue
-        item = YAML_ITEM_RX.match(line)
+        item = YAML_ITEM_PATTERN.match(line)
         value = yaml_scalar(item.group(1)) if item and current else None
         if value is None:
             return [], "unsupported YAML at line %d" % line_number
@@ -305,9 +305,9 @@ class ContinueParser(Parser):
         # sessions.json too, for the rows that say what the index lost
         """Return whether the artifact is one of the files this parser reads."""
         return bool(
-            SESSION_RX.match(artifact.rel)
-            or DEV_DATA_RX.match(artifact.rel)
-            or CN_LOG_RX.match(artifact.rel)
+            SESSION_PATTERN.match(artifact.rel)
+            or DEV_DATA_PATTERN.match(artifact.rel)
+            or CN_LOG_PATTERN.match(artifact.rel)
             or artifact.rel in (INPUT_HISTORY_REL, PERMISSIONS_REL)
         )
 
@@ -318,7 +318,7 @@ class ContinueParser(Parser):
         """
         if artifact.rel == INPUT_HISTORY_REL:
             return True
-        match = DEV_DATA_RX.match(artifact.rel)
+        match = DEV_DATA_PATTERN.match(artifact.rel)
         return bool(match and match.group(1) == "chatFeedback")
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
@@ -331,7 +331,7 @@ class ContinueParser(Parser):
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one artifact, by the file it is."""
-        if CN_LOG_RX.match(artifact.rel):
+        if CN_LOG_PATTERN.match(artifact.rel):
             yield from self._parse_cn_log(artifact)
             return
         if artifact.rel == INPUT_HISTORY_REL:
@@ -340,7 +340,7 @@ class ContinueParser(Parser):
         if artifact.rel == PERMISSIONS_REL:
             yield from self._parse_permissions(artifact)
             return
-        match = DEV_DATA_RX.match(artifact.rel)
+        match = DEV_DATA_PATTERN.match(artifact.rel)
         if match and match.group(1) in ("chatInteraction", "chatFeedback"):
             yield from self._parse_chat_interaction(artifact, opts, match.group(1))
         elif match and match.group(1) == "editInteraction":
@@ -389,7 +389,7 @@ class ContinueParser(Parser):
         session, problem = load_session(raw)
         session_id = session.get("sessionId")
         if not session_id:
-            match = SESSION_RX.match(artifact.rel)
+            match = SESSION_PATTERN.match(artifact.rel)
             assert match is not None  # wants() accepted only matching paths
             session_id = match.group(1)
         session_id = str(session_id)
@@ -440,7 +440,7 @@ class ContinueParser(Parser):
             row.turn_type = "system"
             row.text = "permission mode: " + mode
             yield row
-        if REVIEW_WORKTREE_RX.search(project):
+        if REVIEW_WORKTREE_PATTERN.search(project):
             row = base(0, session_model)
             row.turn_type = "system"
             row.text = "scratch directory: %s (cn review worktree)" % project
@@ -669,7 +669,7 @@ class ContinueParser(Parser):
         errors: list = []
         for line_number, record in iter_jsonl(artifact.disk_path, errors):
 
-            def val(key: str, record=record) -> str:
+            def field_value(key: str, record=record) -> str:
                 value = record.get(key)
                 return "-" if value is None or value == "" else setting_value(value)
 
@@ -679,10 +679,10 @@ class ContinueParser(Parser):
             row.turn_type = "system"
             row.model = str(record.get("modelTitle") or record.get("modelName") or "")
             row.text = "permission decision: edit accepted=%s file=%s lines %s -> %s" % (
-                val("accepted"),
-                val("filepath"),
-                val("previousCodeLines"),
-                val("newCodeLines"),
+                field_value("accepted"),
+                field_value("filepath"),
+                field_value("previousCodeLines"),
+                field_value("newCodeLines"),
             )
             yield row
         yield from error_rows(self, artifact, errors)
@@ -819,7 +819,7 @@ class ContinueParser(Parser):
         try:
             with open(artifact.disk_path, "rb") as handle:
                 for line_number, raw in enumerate(handle, 1):
-                    match = LOG_LINE_RX.match(line_text(raw))
+                    match = LOG_LINE_PATTERN.match(line_text(raw))
                     if not match:
                         continue
                     when, process_id, message = match.groups()
@@ -831,7 +831,7 @@ class ContinueParser(Parser):
                             )
                         )
                         continue
-                    added = POLICY_ADDED_RX.match(message)
+                    added = POLICY_ADDED_PATTERN.match(message)
                     if added:
                         text = "permission decision: allow always rule=%s (from %s, %s)" % (
                             added.group(1),
@@ -840,14 +840,14 @@ class ContinueParser(Parser):
                         )
                         rows.append(self._log_row(artifact, line_number, when, text))
                         continue
-                    post = METADATA_POST_RX.match(message)
+                    post = METADATA_POST_PATTERN.match(message)
                     if post:
                         row = self._log_row(artifact, line_number, when, "")
                         posts.append([process_id, post.group(1), post.group(2), "-", row])
                         pending.append(posts[-1])
                         rows.append(row)
                         continue
-                    result = METADATA_RESULT_RX.match(message)
+                    result = METADATA_RESULT_PATTERN.match(message)
                     if result:
                         self._settle(pending, process_id, result.group(2), result.group(1))
         except OSError as error:
@@ -885,7 +885,7 @@ class ContinueParser(Parser):
         document = document if isinstance(document, dict) else {}
         agent = document.get("agentId")
         if not isinstance(agent, str) or not agent:
-            match = AGENT_URL_RX.search(url)
+            match = AGENT_URL_PATTERN.search(url)
             agent = match.group(1) if match else "-"
         keys = document.get("metadataKeys")
         keys = ",".join(str(key) for key in keys) if isinstance(keys, list) and keys else "-"

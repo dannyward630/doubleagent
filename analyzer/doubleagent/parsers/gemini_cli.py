@@ -58,25 +58,25 @@ from .base import (
 )
 from .codex import load_toml
 
-SESSION_RX = re.compile(
+SESSION_PATTERN = re.compile(
     r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/chats/(?:.*/)?[^/]+\.jsonl?$"
 )
-LOGS_RX = re.compile(r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/logs\.json$")
-TRUSTED_RX = re.compile(r"^(?:\.cache/)?\.gemini/trustedFolders\.json$")
+LOGS_PATTERN = re.compile(r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/logs\.json$")
+TRUSTED_PATTERN = re.compile(r"^(?:\.cache/)?\.gemini/trustedFolders\.json$")
 # Past use beside the session files, in the per-project temp directory.
-TMP_BASE = r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/"
-SHELL_RX = re.compile(TMP_BASE + r"shell_history$")
-CHECKPOINT_RX = re.compile(TMP_BASE + r"checkpoint-(?P<tag>[^/]+)\.json$")
-BUG_RX = re.compile(TMP_BASE + r"bug-report-history-(?P<ms>[0-9]+)\.json$")
+TEMP_BASE = r"^(?P<base>(?:\.cache/)?\.gemini)/tmp/(?P<slug>[^/]+)/"
+SHELL_PATTERN = re.compile(TEMP_BASE + r"shell_history$")
+CHECKPOINT_PATTERN = re.compile(TEMP_BASE + r"checkpoint-(?P<tag>[^/]+)\.json$")
+BUG_PATTERN = re.compile(TEMP_BASE + r"bug-report-history-(?P<ms>[0-9]+)\.json$")
 # Standing permission files. `settings.json` and the policy files are read in
 # the home's `.gemini` and in a project's; the other two exist only in the home.
-SETTINGS_RX = re.compile(r"^\.gemini/settings\.json$")
-POLICY_RX = re.compile(r"^\.gemini/policies/[^/]+\.toml(?:\.bak)?$")
-HOOKS_RX = re.compile(r"^\.gemini/trusted_hooks\.json$")
-AGENTS_ACK_RX = re.compile(r"^\.gemini/acknowledgments/agents\.json$")
+SETTINGS_PATTERN = re.compile(r"^\.gemini/settings\.json$")
+POLICY_PATTERN = re.compile(r"^\.gemini/policies/[^/]+\.toml(?:\.bak)?$")
+HOOKS_PATTERN = re.compile(r"^\.gemini/trusted_hooks\.json$")
+AGENTS_ACK_PATTERN = re.compile(r"^\.gemini/acknowledgments/agents\.json$")
 # The start of a `/chat save` checkpoint as `JSON.stringify({history, authType})`
 # writes it, for reading the history array of a file cut mid-write.
-HISTORY_OBJ_RX = re.compile(r'\s*\{\s*"history"\s*:\s*')
+HISTORY_OBJECT_PATTERN = re.compile(r'\s*\{\s*"history"\s*:\s*')
 
 # `settings.json` keys that hold standing permission or sandbox state
 # (`settingsSchema.ts`): one row per list entry, one row per scalar.
@@ -104,7 +104,7 @@ SETTING_SCALARS = (
     "security.enableConseca",
 )
 RETENTION_KEYS = ("enabled", "maxAge", "maxCount", "minRetention")
-HEX64_RX = re.compile(r"^[0-9a-f]{64}$")
+HEX64_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 MESSAGE_TYPES = ("user", "gemini", "info", "error", "warning")
 FAILED_STATUSES = ("error", "cancelled")
@@ -221,7 +221,9 @@ def resolve_project(base: Path, slug: str, project_hash: str = "") -> str:
     for path, project_slug in projects.items():
         if project_slug == slug:
             return str(path)
-    wanted = {digest for digest in (slug if HEX64_RX.match(slug) else "", project_hash) if digest}
+    wanted = {
+        digest for digest in (slug if HEX64_PATTERN.match(slug) else "", project_hash) if digest
+    }
     if wanted:
         for path in projects:
             if hashlib.sha256(str(path).encode("utf-8")).hexdigest() in wanted:
@@ -403,7 +405,7 @@ def history_items(text: str, errors: list) -> tuple[list, dict]:
     except ValueError as error:
         if text.lstrip().startswith("["):
             return kilo_code.iter_json_array(text, errors), {}
-        match = HISTORY_OBJ_RX.match(text)
+        match = HISTORY_OBJECT_PATTERN.match(text)
         if match:
             return kilo_code.iter_json_array(text[match.end() :], errors), {}
         errors.append((1, "unparseable chat history (%s)" % error, ""))
@@ -429,47 +431,47 @@ class GeminiCliParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return whether the artifact is one of the files this parser reads."""
         rel = artifact.rel
-        if HOOKS_RX.match(rel) or AGENTS_ACK_RX.match(rel):
+        if HOOKS_PATTERN.match(rel) or AGENTS_ACK_PATTERN.match(rel):
             return not artifact.home.project
         return bool(
-            SESSION_RX.match(rel)
-            or LOGS_RX.match(rel)
-            or TRUSTED_RX.match(rel)
-            or SHELL_RX.match(rel)
-            or CHECKPOINT_RX.match(rel)
-            or BUG_RX.match(rel)
-            or SETTINGS_RX.match(rel)
-            or POLICY_RX.match(rel)
+            SESSION_PATTERN.match(rel)
+            or LOGS_PATTERN.match(rel)
+            or TRUSTED_PATTERN.match(rel)
+            or SHELL_PATTERN.match(rel)
+            or CHECKPOINT_PATTERN.match(rel)
+            or BUG_PATTERN.match(rel)
+            or SETTINGS_PATTERN.match(rel)
+            or POLICY_PATTERN.match(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return whether the artifact repeats events of the session files."""
         rel = artifact.rel
         return bool(
-            LOGS_RX.match(rel)
-            or SHELL_RX.match(rel)
-            or CHECKPOINT_RX.match(rel)
-            or BUG_RX.match(rel)
+            LOGS_PATTERN.match(rel)
+            or SHELL_PATTERN.match(rel)
+            or CHECKPOINT_PATTERN.match(rel)
+            or BUG_PATTERN.match(rel)
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one artifact, by the file it is."""
         rel = artifact.rel
-        if TRUSTED_RX.match(rel):
+        if TRUSTED_PATTERN.match(rel):
             yield from trusted_folder_rows(self, artifact)
-        elif SETTINGS_RX.match(rel):
+        elif SETTINGS_PATTERN.match(rel):
             yield from self._parse_settings(artifact)
-        elif POLICY_RX.match(rel):
+        elif POLICY_PATTERN.match(rel):
             yield from self._parse_policy(artifact)
-        elif HOOKS_RX.match(rel) or AGENTS_ACK_RX.match(rel):
+        elif HOOKS_PATTERN.match(rel) or AGENTS_ACK_PATTERN.match(rel):
             yield from self._parse_project_grants(artifact)
-        elif match := LOGS_RX.match(rel):
+        elif match := LOGS_PATTERN.match(rel):
             yield from self._parse_logs(artifact, opts, match)
-        elif match := SHELL_RX.match(rel):
+        elif match := SHELL_PATTERN.match(rel):
             yield from self._parse_shell_history(artifact, match)
-        elif match := CHECKPOINT_RX.match(rel) or BUG_RX.match(rel):
+        elif match := CHECKPOINT_PATTERN.match(rel) or BUG_PATTERN.match(rel):
             yield from self._parse_history_copy(artifact, opts, match)
-        elif match := SESSION_RX.match(rel):
+        elif match := SESSION_PATTERN.match(rel):
             yield from self._parse_session(artifact, opts, match)
 
     # -- standing permission files --
@@ -582,7 +584,7 @@ class GeminiCliParser(Parser):
             return
         timestamp = file_mtime(artifact)
         source = "(from %s, file mtime)" % artifact.rel
-        hooks = bool(HOOKS_RX.match(artifact.rel))
+        hooks = bool(HOOKS_PATTERN.match(artifact.rel))
         for project, value in document.items():
             if hooks:
                 entries = value if isinstance(value, list) else [value]
@@ -776,7 +778,7 @@ class GeminiCliParser(Parser):
         starts: list[tuple[int, str, str, str]] = []  # (line, ts, session_id, text)
         events: list[tuple[int, str, str, str]] = []
         session_id = ""
-        latest_ts = ""
+        latest_timestamp = ""
 
         def put(message: dict, line: int) -> None:
             message_id = message["id"]
@@ -802,7 +804,7 @@ class GeminiCliParser(Parser):
                 events.append(
                     (
                         line_number,
-                        latest_ts,
+                        latest_timestamp,
                         session_id,
                         "rewind to %s: %d message(s) dropped" % (target, dropped),
                     )
@@ -820,7 +822,7 @@ class GeminiCliParser(Parser):
                     events.append(
                         (
                             line_number,
-                            latest_ts,
+                            latest_timestamp,
                             session_id,
                             "patch removed %d message(s)" % dropped,
                         )
@@ -833,7 +835,7 @@ class GeminiCliParser(Parser):
                         messages.move_to_end(i)
             elif isinstance(record.get("id"), str):
                 timestamp = to_utc(record.get("timestamp"))
-                latest_ts = max(latest_ts, timestamp)
+                latest_timestamp = max(latest_timestamp, timestamp)
                 put(record, line_number)
             elif isinstance(record.get("$set"), dict):
                 changes = record["$set"]
@@ -843,11 +845,13 @@ class GeminiCliParser(Parser):
                     messages.clear()
                     for message in changes["messages"]:
                         if isinstance(message, dict) and isinstance(message.get("id"), str):
-                            latest_ts = max(latest_ts, to_utc(message.get("timestamp")))
+                            latest_timestamp = max(
+                                latest_timestamp, to_utc(message.get("timestamp"))
+                            )
                             put(message, line_number)
                 metadata.update({key: value for key, value in changes.items() if key != "messages"})
                 if changes.get("summary"):
-                    timestamp = to_utc(changes.get("lastUpdated")) or latest_ts
+                    timestamp = to_utc(changes.get("lastUpdated")) or latest_timestamp
                     events.append(
                         (line_number, timestamp, session_id, "summary: %s" % changes["summary"])
                     )
@@ -855,7 +859,7 @@ class GeminiCliParser(Parser):
                 metadata.update({key: value for key, value in record.items() if key != "messages"})
                 session_id = record["sessionId"] or session_id
                 timestamp = to_utc(record.get("startTime"))
-                latest_ts = max(latest_ts, timestamp)
+                latest_timestamp = max(latest_timestamp, timestamp)
                 text = "session start: kind=%s projectHash=%s" % (
                     record.get("kind") or "main",
                     record.get("projectHash") or "",
@@ -865,7 +869,7 @@ class GeminiCliParser(Parser):
                 starts.append((line_number, timestamp, session_id, text))
                 for message in record.get("messages") or []:  # legacy ConversationRecord
                     if isinstance(message, dict) and isinstance(message.get("id"), str):
-                        latest_ts = max(latest_ts, to_utc(message.get("timestamp")))
+                        latest_timestamp = max(latest_timestamp, to_utc(message.get("timestamp")))
                         put(message, line_number)
 
         project = resolve_project(base, slug, str(metadata.get("projectHash") or ""))

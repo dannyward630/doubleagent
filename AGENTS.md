@@ -1039,21 +1039,22 @@ another build is a new cell, never a confirmation of the old one.
    it with `python3 -I`; write no ad-hoc script that prints values. Nothing
    from a real install goes into the repository, an issue or a report
    beyond file names, key names, types, sizes, file modes, modification
-   times, enum values and log lines with ids redacted.
+   times, enum values, credential-store item names (the service, and the
+   account as its class, such as the OS user) and log lines with ids
+   redacted.
 3. **Exercise every surface separately.** Each item is its own step with
    its own listing diff, run for every kind of task the surface offers.
    - Before the baseline, check the brief's step table against this list and
      the previous cell's lessons, and fix it. Before the first prompt,
      record the REPL's `?` shortcut list and `/help`.
-   - The first prompt of the round, before any prompt about files or a
-     repository, is a question the model answers without a tool
-     (`what is 17 + 25?`), so the round records a turn with no tool call.
+   - The first prompt is a question the model answers without a tool
+     (`what is 17 + 25?`), so the round records a turn with no tool call;
+     if the agent calls one, the repeat comes before any other prompt.
    - A prompt that needs a web search (a fact newer than the model can
      know, such as the latest release of a named package), so the round
      records how the agent stores a call of its own web search or fetch
      tool and its results. A `curl` through the shell is a missed prompt,
-     kept and repeated as the brief's rule below says; an agent without a
-     web tool records the step as not exercised.
+     kept and repeated as the missed-prompt rule below says.
    - A session with a tool call, a task that writes files, a scheduled or
      automated task, a plugin or MCP server, a resumed session, and a short
      and a long paste as prompts, each paste its own step.
@@ -1086,14 +1087,14 @@ another build is a new cell, never a confirmation of the old one.
      below, and run `gh auth logout` before the VM is released; the logout
      removes only the local token, and the grant itself is revoked under
      the account's authorized OAuth apps.
-   - An agent driven over SSH may not reach the OS credential store and
+   - An agent driven over SSH may fail to reach the OS credential store and
      write a file fallback instead (Claude Code 2.1.310 on macOS:
      `~/.claude/.credentials.json`, mode 0600). On every platform, record
      where its credentials land over SSH, then sign out, as its own step
-     with a listing, and have the person sign in from a terminal in the
-     VM's GUI, with a listing before and after; that sign-in comes after
-     the last step driven over SSH. The same holds for any tool preferring
-     an OS credential store. Once per tool and platform; later cells cite
+     with a listing; then the person signs in from a terminal in the VM's
+     GUI, with a listing after, once the last step driven over SSH is
+     done. A source-host CLI the agent leans on follows the same order.
+     Once per tool and platform; later cells cite
      the research document.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to

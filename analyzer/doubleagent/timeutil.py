@@ -27,34 +27,34 @@ def to_utc(value: object) -> str:
             return ""
         if isinstance(value, (int, float)):
             return _from_epoch(float(value))
-        s = str(value).strip()
-        if s.replace(".", "", 1).isdigit():
-            return _from_epoch(float(s))
-        if s.endswith("Z") or s.endswith("z"):
-            s = s[:-1] + "+00:00"
+        text = str(value).strip()
+        if text.replace(".", "", 1).isdigit():
+            return _from_epoch(float(text))
+        if text.endswith("Z") or text.endswith("z"):
+            text = text[:-1] + "+00:00"
         # SQLite CURRENT_TIMESTAMP text, nanosecond fractions (Go) and
         # fractions with trailing zeros trimmed (go-sqlite3's `.5-08:00`) are
         # not accepted by fromisoformat before Python 3.11, which wants
         # exactly three or six digits.
-        if len(s) > 10 and s[10] == " ":
-            s = s[:10] + "T" + s[11:]
-        s = _FRACTION_RX.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), s, count=1)
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return format_utc(dt.astimezone(timezone.utc))
+        if len(text) > 10 and text[10] == " ":
+            text = text[:10] + "T" + text[11:]
+        text = _FRACTION_RX.sub(lambda match: "." + match.group(1)[:6].ljust(6, "0"), text, count=1)
+        moment = datetime.fromisoformat(text)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return format_utc(moment.astimezone(timezone.utc))
     except (ValueError, OverflowError, OSError):
         return ""
 
 
-def _from_epoch(n: float) -> str:
-    if n > 1e11:
-        n = n / 1000.0
-    return format_utc(datetime.fromtimestamp(n, tz=timezone.utc))
+def _from_epoch(seconds: float) -> str:
+    if seconds > 1e11:
+        seconds = seconds / 1000.0
+    return format_utc(datetime.fromtimestamp(seconds, tz=timezone.utc))
 
 
-def format_utc(dt: datetime) -> str:
-    return dt.strftime(OUT_FMT)[:-3] + "Z"
+def format_utc(moment: datetime) -> str:
+    return moment.strftime(OUT_FMT)[:-3] + "Z"
 
 
 def epoch_ms(value: str) -> int | None:
@@ -64,14 +64,14 @@ def epoch_ms(value: str) -> int | None:
     if not value:
         return None
     try:
-        dt = datetime.strptime(value, OUT_FMT + "Z")
+        moment = datetime.strptime(value, OUT_FMT + "Z")
     except ValueError:
         return None
-    return (dt.replace(tzinfo=timezone.utc) - _EPOCH) // timedelta(milliseconds=1)
+    return (moment.replace(tzinfo=timezone.utc) - _EPOCH) // timedelta(milliseconds=1)
 
 
 def first_nonempty(*values: str | None) -> str:
-    for v in values:
-        if v:
-            return v
+    for value in values:
+        if value:
+            return value
     return ""

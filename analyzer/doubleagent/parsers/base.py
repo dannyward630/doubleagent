@@ -91,20 +91,20 @@ def iter_jsonl(path, errors: list) -> Iterator[tuple[int, dict]]:
     whose format holds such lines reads them itself. `raw_text` is the line
     as read, decoded UTF-8 with `errors="replace"`, less only its trailing
     line terminator, for `error_rows` to report in full (issue 136)."""
-    with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
+    with open(path, "rb") as handle:
+        for line_number, raw in enumerate(handle, 1):
             stripped = raw.strip()
             if not stripped:
                 continue
             try:
-                rec = json.loads(stripped.decode("utf-8", errors="replace"))
-            except ValueError as e:
-                errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                record = json.loads(stripped.decode("utf-8", errors="replace"))
+            except ValueError as error:
+                errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                 continue
-            if not isinstance(rec, dict):
-                errors.append((n, "unparseable line (not a JSON object)", line_text(raw)))
+            if not isinstance(record, dict):
+                errors.append((line_number, "unparseable line (not a JSON object)", line_text(raw)))
                 continue
-            yield n, rec
+            yield line_number, record
 
 
 def line_text(raw: bytes) -> str:
@@ -118,13 +118,13 @@ def line_text(raw: bytes) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def tail_text(s: str, start: int) -> str:
+def tail_text(text: str, start: int) -> str:
     """`s` from `start` to its end as error row text, its trailing `\n` and
     then `\r` removed, nothing else stripped, as `line_text` treats a line:
     the record a JSON array reader failed to decode at `start`, with
     everything after it that was never decoded, since a broken record has
     no boundary of its own."""
-    tail = s[start:]
+    tail = text[start:]
     if tail.endswith("\n"):
         tail = tail[:-1]
     if tail.endswith("\r"):
@@ -175,28 +175,28 @@ def text_of(content) -> str:
         return content
     if isinstance(content, list):
         parts = []
-        for b in content:
-            if isinstance(b, str):
-                parts.append(b)
-            elif isinstance(b, dict):
-                t = b.get("text")
-                if isinstance(t, str):
-                    parts.append(t)
-                elif b.get("type") == "image":
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                elif block.get("type") == "image":
                     parts.append("[image]")
         return "\n".join(parts)
     if isinstance(content, dict):
-        t = content.get("text")
-        return t if isinstance(t, str) else json.dumps(content, ensure_ascii=False)
+        text = content.get("text")
+        return text if isinstance(text, str) else json.dumps(content, ensure_ascii=False)
     return str(content)
 
 
 def compact_json(value) -> str:
     try:
-        s = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        text = json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     except (TypeError, ValueError):
-        s = str(value)
-    return s
+        text = str(value)
+    return text
 
 
 def file_mtime(artifact: Artifact) -> str:
@@ -204,23 +204,23 @@ def file_mtime(artifact: Artifact) -> str:
     pre-copy `mtime` when the collection has a manifest, else the file's
     own. Standing settings rows (`permission setting: ... (from <file>,
     file mtime)`) are timestamped with this."""
-    t = (artifact.manifest or {}).get("mtime")
-    if isinstance(t, (int, float)) and not isinstance(t, bool) and t > 0:
-        return to_utc(t)
+    mtime = (artifact.manifest or {}).get("mtime")
+    if isinstance(mtime, (int, float)) and not isinstance(mtime, bool) and mtime > 0:
+        return to_utc(mtime)
     try:
         return to_utc(artifact.disk_path.lstat().st_mtime)
     except OSError:
         return ""
 
 
-def setting_value(v) -> str:
+def setting_value(value) -> str:
     """A setting as row text: a bool as `true`/`false`, a string as it is,
     anything else as compact JSON."""
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, str):
-        return v
-    return compact_json(v)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, str):
+        return value
+    return compact_json(value)
 
 
 def track_change(label: str, seen: dict, key, value: str) -> str:

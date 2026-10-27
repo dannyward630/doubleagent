@@ -2891,6 +2891,125 @@ class CodexTests(ParserBase):
             [row.text for row in rows], ["parser: memory summary has no thread_id header"]
         )
 
+    def test_toml_line_ends_at_lf_or_crlf_only(self):
+        from doubleagent.parsers.codex import scan_toml
+
+        # A U+2028 inside a string or a quoted key is part of it, not a line end.
+        self.assertEqual(flat_toml('prompt = "a\u2028b"\n'), {"prompt": "a\u2028b"})
+        self.assertEqual(
+            scan_toml('[projects."/srv/a\u2028b"]\ntrust_level = "trusted"\n'),
+            {"projects": {"/srv/a\u2028b": {"trust_level": "trusted"}}},
+        )
+        with_lf = 'id = "x"\nprompt = """a\nb"""\n[projects."/srv/proj"]\ntrust_level = "trusted"\n'
+        with_crlf = with_lf.replace("\n", "\r\n")
+        self.assertEqual(flat_toml(with_crlf), flat_toml(with_lf))
+        self.assertEqual(flat_toml(with_lf), {"id": "x", "prompt": "a\nb"})
+        self.assertEqual(scan_toml(with_crlf), scan_toml(with_lf))
+
+    def test_toml_trims_space_and_tab_only(self):
+        from doubleagent.parsers.codex import scan_toml
+
+        # TOML whitespace is space and tab: a U+00A0 ending a multi-line string's first line
+        # is the string's, and one leading a line is no key.
+        text = 'prompt = """x\u00a0\nend"""\n'
+        self.assertEqual(flat_toml(text), {"prompt": "x\u00a0\nend"})
+        if sys.version_info >= (3, 11):
+            import tomllib
+
+            self.assertEqual(tomllib.loads(text), flat_toml(text))
+        self.assertEqual(scan_toml('[a]\n\u00a0trust_level = "trusted"\n'), {"a": {}})
+        with self.assertRaisesRegex(ValueError, "not a key = value line"):
+            flat_toml("k\u00a0= 1\n")
+        with self.assertRaises(ValueError):
+            flat_toml("k = \u00a01\n")
+        with self.assertRaises(ValueError):
+            flat_toml("flag = true\u00a0\n")
+        # A line of U+00A0, or a key line led by one, is no blank and no key.
+        for text in ("\u00a0\nk = 1\n", "\u00a0# note\nk = 1\n", "\u00a0k = 1\n"):
+            with self.assertRaises(ValueError, msg=text):
+                flat_toml(text)
+        # An integer is ASCII digits with no leading zero and no padding but space and tab.
+        self.assertEqual(
+            flat_toml("a = 1_000\nb = -5\nc = 0\nd = 7 \t# c\n"),
+            {"a": 1000, "b": -5, "c": 0, "d": 7},
+        )
+        for text in ("k = 1\u00a0\n", "k = 0012\n", "k = \u0661\n", "k = 1__0\n"):
+            with self.assertRaises(ValueError, msg=text):
+                flat_toml(text)
+        self.assertEqual(scan_toml("[a]\nk = true\u00a0\n"), {"a": {}})
+        self.assertEqual(scan_toml("[a\u00a0.b]\nk = 1\n"), {})
+        # Spaces before a multi-line string's first line end are the string's.
+        multi = 'p = """a  \nb"""\nq = """\t\nc"""\n'
+        self.assertEqual(flat_toml(multi), {"p": "a  \nb", "q": "\t\nc"})
+        if sys.version_info >= (3, 11):
+            import tomllib
+
+            self.assertEqual(tomllib.loads(multi), flat_toml(multi))
+
+    def test_toml_line_ending_backslash(self):
+        # The backslash removes spaces, tabs and line ends up to the next character, a
+        # no-break space included in what stays; a backslash an earlier one escapes is a
+        # backslash, not a continuation.
+        cases = {
+            'p = """a\\  \n  \n  b"""\n': "ab",
+            'p = """a\\\n\u00a0b"""\n': "a\u00a0b",
+            'p = """a\\\\\nb"""\n': "a\\\nb",
+            'p = """a\\\\\\\n  b"""\n': "a\\b",
+        }
+        # A backslash and a space, a tab or a CR with no line end after it is a bad escape.
+        for text in ('p = "a\\ b"\n', 'p = "a\\\tb"\n', 'p = """a\\ b"""\n'):
+            with self.assertRaisesRegex(ValueError, "bad escape", msg=text):
+                flat_toml(text)
+        for text, want in cases.items():
+            self.assertEqual(flat_toml(text), {"p": want}, text)
+            if sys.version_info >= (3, 11):
+                import tomllib
+
+                self.assertEqual(tomllib.loads(text), {"p": want}, text)
+
+    def test_rule_statements_line_ends_and_trims(self):
+        from doubleagent.parsers.codex import rule_statements
+
+        statement = 'prefix_rule(pattern=["a\u2028b"], decision="allow")'
+        self.assertEqual(rule_statements(statement + "\n", []), [(1, statement)])
+        # A line of U+00A0 is not blank in Starlark, so it is kept as text to report.
+        self.assertEqual(rule_statements("\u00a0\n", []), [(1, "\u00a0")])
+        with_lf = 'prefix_rule(\n    pattern=["git"],\n)\nnetwork_rule(host="x")\n'
+        self.assertEqual(
+            rule_statements(with_lf.replace("\n", "\r\n"), []), rule_statements(with_lf, [])
+        )
+        self.assertEqual(
+            rule_statements(with_lf, []),
+            [(1, 'prefix_rule( pattern=["git"], )'), (4, 'network_rule(host="x")')],
+        )
+        # A U+00A0 ending a line inside an open string is the string's.
+        self.assertEqual(
+            rule_statements('prefix_rule(pattern=["""a\u00a0\nb"""])\n', []),
+            [(1, 'prefix_rule(pattern=["""a\u00a0 b"""])')],
+        )
+
+    def test_memory_summary_line_ends_and_trims(self):
+        from doubleagent.parsers.codex import memory_summary
+
+        self.assertEqual(
+            memory_summary("cwd: /srv/a\u2028b\n\nsummary\n"),
+            ({"cwd": "/srv/a\u2028b"}, "summary"),
+        )
+        self.assertEqual(
+            memory_summary("cwd: /srv/proj\u00a0\n\nsummary\n"),
+            ({"cwd": "/srv/proj\u00a0"}, "summary"),
+        )
+        # A line of U+00A0 is not blank, and a key padded with one is no header key.
+        self.assertEqual(
+            memory_summary("thread_id: t\n\u00a0\nbody\n"), ({"thread_id": "t"}, "\u00a0\nbody")
+        )
+        self.assertEqual(memory_summary("cwd\u00a0: /x\n\nbody\n"), ({}, "cwd\u00a0: /x\n\nbody"))
+        with_lf = "thread_id: t\ncwd: /srv/proj\n\nline one\nline two\n"
+        self.assertEqual(memory_summary(with_lf.replace("\n", "\r\n")), memory_summary(with_lf))
+        self.assertEqual(
+            memory_summary(with_lf), ({"thread_id": "t", "cwd": "/srv/proj"}, "line one\nline two")
+        )
+
     def test_database_backup_is_a_secondary_state_copy(self):
         self._standing()
         parser = CodexParser()
@@ -7933,6 +8052,43 @@ class GooseTests(ParserBase):
         )
         self.assertEqual((rows[-1].turn_type, rows[-1].timestamp_utc), ("system", ""))
 
+    def test_permission_yaml_line_ends_and_trims(self):
+        rel = ".config/goose/permission.yaml"
+        build_goose_standing(self.home)
+        path = self.home / rel
+
+        def tools(text):
+            path.write_text(text, encoding="utf-8", newline="")
+            self.col = open_input(self.tmp / "home", self.cat, host="h1")
+            return [
+                (row.source_line, row.text.split(" (from")[0])
+                for row in self.rows_for(GooseParser(), rel)
+            ]
+
+        prefix = "permission setting: user.always_allow="
+        self.assertEqual(
+            tools("user:\n  always_allow:\n  - developer__shell\u00a0\n"),
+            [(3, prefix + "developer__shell\u00a0")],
+        )
+        self.assertEqual(
+            tools("user:\n  always_allow:\n  - a\u2028b\n"), [(3, prefix + "a\u2028b")]
+        )
+        self.assertEqual(
+            tools(GOOSE_PERMISSION_YAML.replace("\n", "\r\n")), tools(GOOSE_PERMISSION_YAML)
+        )
+        # A U+00A0 around a category, a level or an empty value is part of the text.
+        self.assertEqual(
+            tools("user\u00a0:\n  always_allow:\n  - x\n"),
+            [(3, "permission setting: user\u00a0.always_allow=x")],
+        )
+        self.assertEqual(
+            tools("user:\n  always_allow\u00a0:\n  - x\n"),
+            [(3, "permission setting: user.always_allow\u00a0=x")],
+        )
+        self.assertNotIn((3, prefix + "x"), tools("user:\n  always_allow: \u00a0\n  - x\n"))
+        # Only one LF or CRLF ends a line; a CR before it stays in the text.
+        self.assertEqual(tools("user:\n  always_allow:\n  - x\r\r\n"), [(3, prefix + "x\r")])
+
     def test_roaming_trust_rows(self):
         rel = ".config/goose/roaming_trust.json"
         rows = self._standing(rel)
@@ -8262,6 +8418,34 @@ class ContinueTests(ParserBase):
         self.assertEqual(
             [row.text.split(" (from")[0] for row in self.rows_for(ContinueParser(), self.PERMS)],
             ["permission setting: allow=it's", 'permission setting: allow=a"b'],
+        )
+
+    def test_permissions_yaml_line_ends_and_trims(self):
+        path = self.home / self.PERMS
+
+        def rules(text):
+            path.write_text(text, encoding="utf-8", newline="")
+            return [
+                (row.source_line, row.text.split(" (from")[0])
+                for row in self.rows_for(ContinueParser(), self.PERMS)
+            ]
+
+        self.assertEqual(
+            rules('allow:\n  - "a\u2028b"\n'), [(2, "permission setting: allow=a\u2028b")]
+        )
+        with_lf = "# rules\nallow:\n  - Read\nexclude:\n  - Bash(rm*)\n"
+        self.assertEqual(rules(with_lf.replace("\n", "\r\n")), rules(with_lf))
+        self.assertEqual(len(rules(with_lf)), 2)
+        # A line of U+00A0 is not YAML whitespace, so not a blank line.
+        self.assertEqual(
+            rules("allow:\n  - Read\n\u00a0\n"),
+            [
+                (
+                    0,
+                    "parser: unsupported YAML at line 3 (only allow, ask and exclude lists"
+                    " of strings are read)",
+                )
+            ],
         )
 
     HISTORY = ".continue/input_history.json"
@@ -16360,6 +16544,39 @@ class HermesTests(ParserBase):
             art = self.hermes_art(rel, self.hermes_file(rel, text))
             self.assertEqual(list(parser.parse(art, Options())), [], text)
 
+    def test_allowlist_line_ends_and_trims(self):
+        from doubleagent.parsers.hermes import read_flat_list, yaml_scalar
+        from doubleagent.textlines import split_lines
+
+        key = "command_allowlist"
+        parser = HermesParser()
+        rel = ".hermes/config.yaml"
+
+        def patterns(text):
+            art = self.hermes_art(rel, self.hermes_file(rel, text))
+            return [
+                (row.source_line, row.text.split(" (from")[0])
+                for row in parser.parse(art, Options())
+            ]
+
+        prefix = "permission setting: command_allowlist="
+        self.assertEqual(patterns("command_allowlist:\n  - a\u2028b\n"), [(2, prefix + "a\u2028b")])
+        self.assertEqual(patterns("command_allowlist:\n  - rm\u00a0\n"), [(2, prefix + "rm\u00a0")])
+        with_lf = "model: x\ncommand_allowlist:\n  - one\n  - 'two'\nother: 1\n"
+        self.assertEqual(patterns(with_lf.replace("\n", "\r\n")), patterns(with_lf))
+        self.assertEqual(patterns(with_lf), [(3, prefix + "one"), (4, prefix + "two")])
+        self.assertEqual(yaml_scalar("x\u00a0"), "x\u00a0")
+        # A U+00A0 is not YAML indentation or a blank after the key.
+        self.assertEqual(
+            read_flat_list(split_lines("command_allowlist:\n  - one\n\u00a0- two\n"), key),
+            ([(2, "one")], ""),
+        )
+        self.assertEqual(
+            read_flat_list(split_lines("command_allowlist:\u00a0\n  - one\n"), key),
+            ([], "line 1: command_allowlist is not a block list"),
+        )
+        self.assertIsNone(yaml_scalar("'x'\u00a0"))
+
     def test_desktop_connections(self):
         from fixtures import HERMES_CONNECTIONS
 
@@ -23039,6 +23256,56 @@ class CopilotCliTests(ParserBase):
                     COPILOT_SESSION,
                 )
             ],
+        )
+
+    def test_workspace_yaml_line_ends_and_trims(self):
+        from doubleagent.parsers.copilot_cli import read_flat_yaml
+
+        path = self.home / "workspace-line-ends.yaml"
+        path.write_text(
+            "cwd: /srv/proj\u00a0\nsummary: a\u2028b\nname: n\n", encoding="utf-8", newline=""
+        )
+        self.assertEqual(
+            read_flat_yaml(path), {"cwd": "/srv/proj\u00a0", "summary": "a\u2028b", "name": "n"}
+        )
+        path.write_text("cwd\u00a0: /srv/proj\n", encoding="utf-8", newline="")
+        self.assertEqual(read_flat_yaml(path), {"cwd\u00a0": "/srv/proj"})
+        with_lf = "id: x\ncwd: '/srv/proj'\nsummary: ~\n"
+        path.write_text(with_lf, encoding="utf-8", newline="")
+        expected = read_flat_yaml(path)
+        self.assertEqual(expected, {"id": "x", "cwd": "/srv/proj", "summary": None})
+        path.write_text(with_lf.replace("\n", "\r\n"), encoding="utf-8", newline="")
+        self.assertEqual(read_flat_yaml(path), expected)
+
+    def test_log_line_ends_and_trims(self):
+        from doubleagent.parsers.copilot_cli import LOG_TIME_PATTERN, SIGNED_IN_PATTERN
+
+        # The log's spacing is space and tab: a no-break space after the login is the login's.
+        login = SIGNED_IN_PATTERN.search("Signed in to https://github.com as octo\u00a0 ")
+        self.assertEqual(login and login.group(2), "octo\u00a0")
+        self.assertIsNone(LOG_TIME_PATTERN.match("2026-10-01T08:59:59.400Z\u00a0[INFO] x"))
+        self.assertIsNone(LOG_TIME_PATTERN.match("2026-10-01T08:59:59.400\u00a0Z [INFO] x"))
+        # The time is digits, colons and a decimal point only.
+        self.assertIsNone(LOG_TIME_PATTERN.match("2026-10-01T08h59:59Z [INFO] x"))
+        path = self.home / COPILOT_LOG_REL
+        with_lf = path.read_text(encoding="utf-8")
+        expected = [
+            (row.source_line, row.timestamp_utc, row.text)
+            for row in self.rows_for(CopilotCliParser(), COPILOT_LOG_REL)
+        ]
+        path.write_text(with_lf.replace("\n", "\r\n"), encoding="utf-8", newline="")
+        got = self.rows_for(CopilotCliParser(), COPILOT_LOG_REL)
+        self.assertEqual([(row.source_line, row.timestamp_utc, row.text) for row in got], expected)
+        # A U+2028 before the sign-in keeps it on its timestamped line.
+        path.write_text(
+            "2026-10-01T08:59:59.400Z [INFO] note\u2028Signed in to https://github.com as"
+            " octo-user\n",
+            encoding="utf-8",
+        )
+        got = self.rows_for(CopilotCliParser(), COPILOT_LOG_REL)
+        self.assertEqual(
+            [(row.source_line, row.timestamp_utc, row.text) for row in got],
+            [(1, "2026-10-01T08:59:59.400Z", "signed in: https://github.com as octo-user")],
         )
 
     def test_not_wanted(self):

@@ -38,6 +38,7 @@ from collections.abc import Iterator
 from ..inputs import Artifact
 from ..model import Row, compact
 from ..sqlite_util import is_sqlite, open_copy, table_names
+from ..textlines import SPACE_OR_TAB, without_terminator
 from ..timeutil import to_utc
 from .base import (
     Options,
@@ -194,23 +195,24 @@ def permission_entries(path, errors: list) -> Iterator[tuple[int, str, str, str]
     category = level = ""
     with open(path, "rb") as handle:
         for line_number, raw in enumerate(handle, 1):
-            text = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            body = text.strip()
+            text = without_terminator(raw.decode("utf-8", errors="replace"))
+            body = text.strip(SPACE_OR_TAB)
             if not body or body.startswith("#") or body in ("---", "{}"):
                 continue
             indent = len(text) - len(text.lstrip(" "))
             if body.startswith("- ") or body == "-":
-                tool = _unquote(body[1:].strip())
+                tool = _unquote(body[1:].strip(SPACE_OR_TAB))
                 if category and level and tool:
                     yield line_number, category, level, tool
                     continue
             elif body.endswith(":") and indent == 0:
-                category, level = _unquote(body[:-1].strip()), ""
+                category, level = _unquote(body[:-1].strip(SPACE_OR_TAB)), ""
                 continue
             elif indent > 0 and category:
                 key, separator, value = body.partition(":")
-                if separator and value.strip() in ("", "[]") and key.strip():
-                    level = _unquote(key.strip())
+                key = key.strip(SPACE_OR_TAB)
+                if separator and value.strip(SPACE_OR_TAB) in ("", "[]") and key:
+                    level = _unquote(key)
                     continue
             errors.append(
                 (

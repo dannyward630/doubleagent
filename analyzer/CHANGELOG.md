@@ -181,6 +181,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (<reason>): <record>` row with the chat's session id, beside the rows
   of the chats it recovered; the record was dropped silently before
   ([#280]).
+- Detection recognises the section headings of the bundled catalog by
+  their full text, so a comment inside a table that starts with a
+  heading's first words (`excluded`, `credential files`) can no longer
+  move the lines after it into another table and leave their agents
+  undetected ([#285]).
 
 ## [0.20.1] - 2026-10-21
 
@@ -2079,6 +2084,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#285]: https://github.com/seanthegeek/doubleagent/issues/285
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256

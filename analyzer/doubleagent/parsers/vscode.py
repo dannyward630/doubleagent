@@ -1,183 +1,33 @@
-"""VS Code chat sessions (GitHub Copilot Chat and other chat participants).
+"""Parse VS Code chat sessions (GitHub Copilot Chat and other participants) and chat state.
 
-Validated against source, microsoft/vscode at d7622a529314 (see
-`research/vscode.md`), with a synthetic fixture; no real install
-was checked. The store is VS Code's own, so the same parser covers every
-editor data directory the catalog attributes to `vscode`: Code, Code -
-Insiders, VSCodium, Positron and Trae under `.config`, `Library/Application
-Support` or `AppData/Roaming`, and the remote-server layout
-`.vscode-server*/data`, `.vscodium-server*/data`, `.positron-server/data`.
-Files, relative to that directory's `User/`:
+Follows `research/vscode.md`. Validated against source, microsoft/vscode at
+d7622a529314 and 4d22f4f922eb (model options, permission levels, standing
+grants, settings, the GitHub account and the chat editing state), with a
+synthetic fixture; no real install. The store is VS Code's own, so the parser
+covers every data directory the catalog attributes to `vscode` (`USER_DIR`).
+Files read, under `User/`:
 
-* `workspaceStorage/<hash>/chatSessions/<sessionId>.jsonl` (1.109 and
-  later) or `.json` (earlier), with `workspaceStorage/<hash>/workspace.json`
-  (`folder` or `workspace`, a file URI) beside it;
-* `globalStorage/emptyWindowChatSessions/<sessionId>.jsonl` or `.json`;
-* `globalStorage/transferredChatSessions/<sessionId>.json`.
-
-`.jsonl` files are an object mutation log replayed in order: `{"kind": 0,
-"v": <session>}` sets the whole object, `{"kind": 1, "k": [path], "v"}`
-sets a value, `{"kind": 2, "k": [path], "v": [items], "i"?}` pushes items
-(truncating to `i` first), `{"kind": 3, "k": [path]}` deletes. `.json`
-files are the session object itself.
-
-Session fields: `sessionId`, `creationDate` (ms), `responderUsername`,
-`initialLocation`, `customTitle`, `workingDirectory` (URI), `requests[]`.
-Request fields: `requestId`, `timestamp` (ms), `message` (`{text}` or a
-string), `variableData.variables[].name`, `modelId`,
-`isSystemInitiated`, `isCanceled`, `response[]`, `responseTimestamp` (ms),
-`result.errorDetails.message`. Response parts: a bare `{value}` markdown
-string (or `{kind: "markdownContent", content: {value}}`), `{kind:
-"inlineReference", name?, inlineReference}`, `{kind: "thinking", value}`
-(string or list), `{kind: "toolInvocationSerialized", toolCallId, toolId,
-invocationMessage, pastTenseMessage, isComplete, toolSpecificData
-(`commandLine.original` or `rawInput`), resultDetails (`{input, output:
-[{value}], isError}` or a list of URIs), resultError}`, `{kind:
-"textEditGroup", uri}`. Legacy `response` may be a string or a list of
-strings. Other part kinds (progress, undo stops, code block URIs) are
-skipped.
-
-Model and permission rows, all `system`: the request `modelId` gives
-`model: <id>` at the first request that names one and
-`model: <old> -> <new>` on every later change, and the request
-`modeInfo.telemetryModeId` (`ask`, `agent`, `edit`, `custom`) gives
-`permission mode: <mode>` and `permission mode: <old> -> <new>` the same
-way; both precede the request's user row and take its timestamp. Since
-issue 210 (source-derived from microsoft/vscode at 4d22f4f922eb, not
-observed on any real install) the request's `modelConfiguration`, a
-dictionary of the model's options, is tracked with the model and printed
-after its id as sorted `key=value` pairs (`model: <id> <k>=<v>`), and
-`modeInfo.permissionLevel` (`default`, `assisted`, `autoApprove`,
-`autopilot`) gives `permission level: <level>` and
-`permission level: <old> -> <new>` after the mode row. A tool
-invocation's `isConfirmed` (a boolean before 1.104, else a
-`ConfirmedReason` object whose numeric `type` is a `ToolConfirmKind`,
-printed `<Name>(<n>)`, with its `source`, `id`, `scope`, `selectedButton`,
-`selectedButtonKind` or `reason` beside it) becomes
-`permission decision: confirmed=<value> ...` after the `tool_result` row,
-with the invocation's own `source.type` (where the tool came from:
-`extension`, `mcp`, `user`, `internal`, `external`) as `tool_source=`. A
-`{kind: "confirmation", title, message, buttons, isUsed}` response part
-becomes `permission decision: confirmation isUsed=<bool> buttons=<list>
-title=<title>` followed by its message, and a request whose
-`confirmation` string is set (the label of the button the user clicked,
-which also sent the request) gets `permission decision:
-confirmation=<label>` after its user row.
-
-The values of `modelId` (the `model` column) and `responderUsername` (in
-the session-start row) have not been checked against the Copilot Chat
-source, so they are passed through as opaque strings; `agent.id` is not
-used. User rows carry
-the request `timestamp`, response rows `responseTimestamp` (falling back to
-the request time). Contiguous markdown and inline references become one
-`assistant` row; each tool invocation becomes a `tool_use` and a
-`tool_result` row sharing `toolCallId`. There is no git branch.
-`source_line` is the log line that created the request (`.jsonl`) or 0
-(`.json`).
-
-The project path (issue 185) is the session's own `workingDirectory`
-when it is set, else the `folder` of the sibling `workspace.json`, else
-empty. A `workspace.json` `workspace` value is never the project: it names
-a `.code-workspace` file, not a directory, and the Agents window opens
-`User/agent-sessions.code-workspace` in the editor's own data directory
-(microsoft/vscode at 4d22f4f, `environmentService.ts:280-281`), which the
-inventory would class as a scratch directory and so hide the chat's real
-project. The workspace file is named in the session-start row instead,
-`workspace=<path>`. A `workspace.json` that cannot be read or is not a
-JSON object gives one `parser: workspace.json not read (<reason>)` or
-`parser: workspace.json is not a JSON object` row at the session's end.
-
-Sync rows (issue 153), so `records_sync` is set; both sources are
-written by the Copilot Chat extension:
-
-* `globalStorage/github.copilot-chat/cloudSessions.json`, a JSON object
-  `{<chat session id>: {cloudSessionId, cloudTaskId}}`, the sessions
-  Copilot Chat's session sync uploaded to the user's GitHub account. The
-  file is rewritten on each change and an entry may name a session no
-  longer on disk, or one uploaded from another machine. One `system` row
-  per entry at the file's modification time, `session_id` the key:
-  `session synced: remote session <cloudSessionId> task <cloudTaskId>
-  (from User/globalStorage/github.copilot-chat/cloudSessions.json, file
-  mtime)`. A file that is not a JSON object is one `parser:` row.
-* `globalStorage/state.vscdb`, read through `vscode_state.read_item`:
-  the `ItemTable` row keyed `GitHub.copilot-chat` (the extension's global
-  state) holds `github.copilot.cloudAgent.ownedTasks`, `{<taskId>:
-  {recordedAt (ms), application?}}` or, in the older form, `{<taskId>:
-  <recordedAt>}`, the cloud agent tasks this install started on GitHub's
-  servers. One `system` row per task at `recordedAt`, `session_id`
-  `copilot-cloud-agent:/task/<taskId>`: `session synced: cloud agent
-  task <taskId> application=<application> (from state.vscdb
-  GitHub.copilot-chat github.copilot.cloudAgent.ownedTasks, recordedAt)`.
-  The task began on GitHub's servers rather than being uploaded from
-  here, but GitHub holds its copy all the same, so it is a sync row and
-  the task's session reads `synced` `yes`. Its origin is a second row at
-  the same time and session: `session origin: remote GitHub cloud agent
-  (from state.vscdb GitHub.copilot-chat
-  github.copilot.cloudAgent.ownedTasks, recordedAt)`, so `records_origin`
-  is set and the task's session reads `origin` `remote`, every other VS
-  Code session `local`. A damaged database or a value that is not JSON is
-  one `parser:` row; no other key is read.
-
-An absent value prints `-` in both.
-
-Standing grants, settings, the GitHub account and the chat editing state
-(issue 210), all source-derived from microsoft/vscode at 4d22f4f922eb and
-not observed on any real install; every row is `system`:
-
-* `state.vscdb` of the default profile (`globalStorage/`), of another
-  profile (`profiles/<id>/globalStorage/`, `profiles/builtin/agents/` for
-  the Agents window) and of a workspace (`workspaceStorage/<hash>/`):
-  the `ItemTable` keys `chat/autoconfirm`, `chat/autoconfirm-post`,
-  `chat/servers/autoconfirm`, `chat/servers/autoconfirm-post` and
-  `chat/autoconfirm-combination` (each an object keyed by tool or server
-  id whose value is `true`, a label or `{label, arguments}`, or the older
-  array of ids), `chat.tools.global.autoApprove.optIn` and
-  `chat.externalPath.workspaceAllowlist` (an array of folder URIs) give
-  one `permission setting: <key>.<id>=<value>`,
-  `permission setting: chat.tools.global.autoApprove.optIn=<value>` or
-  `permission setting: chat.externalPath.workspaceAllowlist=<path>` row
-  per entry, ending `(from User/<path>/state.vscdb, file mtime)`, at the
-  file's modification time, with the workspace's folder as the project of
-  a workspace database's rows. A key whose value is another JSON type is
-  one `parser:` row.
-* In a profile's database only: `userSelectedRepositories` in the
-  Copilot Chat global state (`[{name, timestamp}]`, the repositories
-  picked for cloud agent tasks in the last week) gives `source host
-  repository: <name> type=cloud agent selection (from state.vscdb
-  GitHub.copilot-chat userSelectedRepositories, timestamp)` at
-  `timestamp`, and each `github-<login>-usages` or
-  `github-<login>-mcpserver-usages` key (VS Code's record of which
-  extension or MCP server used the GitHub account, `[{extensionId` or
-  `mcpServerId, scopes, lastUsed}]`; `github-enterprise-<label>` for
-  GitHub Enterprise, whose label ends ` - <host>`) gives `source host:
-  <host> account <login> extension=<id>` (or `mcp_server=<id>`)
-  `scopes=<a,b> (from state.vscdb <key>, lastUsed)` at `lastUsed`. The
-  token itself is a `secret://` row and never read.
-* `settings.json` of the default or another profile (JSONC): each key
-  matching `chat.tools.*autoApprov*` and `chat.permissions.default` gives
-  `permission setting: <key>=<value>`, or one row per entry
-  (`<key>.<entry>=<value>`) of a non-empty object, and
-  `chat.defaultModel` gives `model setting: chat.defaultModel=<value>`,
-  each ending `(from User/<path>/settings.json, file mtime)`, at the
-  file's modification time. A file that is not a JSON object is one
-  `parser:` row.
-* `workspaceStorage/<hash>/chatEditingSessions/<key>/state.json`, a
-  secondary source (`secondary()`), `{version, recentSnapshot: {stopId,
-  entries: [{resource, state, telemetryInfo: {requestId, modelId},
-  isDeleted?}]}}`: one `edit state: <Modified|Accepted|Rejected>
-  <path> request=<requestId> model=<modelId>[ deleted=true] (from
-  chatEditingSessions state.json, file mtime)` row per entry, with the
-  folder's `<key>` (the chat session id for a local chat) as `session_id`
-  and the workspace's folder as project, at the file's modification time.
-  It survives the chat's deletion. A file that does not decode or is not
-  a JSON object is one whole-file `parser:` row.
-
-Errors (issue 136), after the session's other rows, each a `system` row
-through `error_rows` in `base.py`: a `.jsonl` line that does not decode, or
-that decodes but whose mutation cannot be applied, carries the line in full
-with its line number, as `parser: unparseable line (<reason>): <line>` or
-`parser: mutation not applied (<why>): <line>`; a `.json` file that does not
-decode is `parser: file is not valid JSON (<reason>)`.
+- `workspaceStorage/<hash>/chatSessions/<id>.jsonl` (1.109 and later) or
+  `.json`, `globalStorage/emptyWindowChatSessions/` and
+  `globalStorage/transferredChatSessions/`. A `.jsonl` file is a mutation
+  log (`kind` 0 sets, 1 sets at path `k`, 2 pushes after truncating to `i`,
+  3 deletes) replayed by `apply_mutation`. Session fields: `sessionId`,
+  `creationDate`, `responderUsername`, `initialLocation`, `customTitle`,
+  `workingDirectory`, `requests[]`; request fields: `timestamp`, `message`,
+  `variableData`, `modelId`, `modelConfiguration`, `modeInfo`,
+  `confirmation`, `isSystemInitiated`, `isCanceled`, `response[]`,
+  `responseTimestamp`, `result.errorDetails`. The project is
+  `workingDirectory`, else the sibling `workspace.json` `folder`.
+- `globalStorage/github.copilot-chat/cloudSessions.json` and the
+  `GitHub.copilot-chat` row of `state.vscdb` (`ownedTasks`,
+  `userSelectedRepositories`): `session synced:`, `session origin:` and
+  `source host repository:` rows, so `records_sync` and `records_origin` are set.
+- Every profile's and workspace's `state.vscdb`: the `GRANT_KEYS`,
+  `OPT_IN_KEY` and `ALLOWLIST_KEY` grants and, in a profile, the GitHub
+  account usage keys (`USAGE_KEY_RX`); `secret://` rows are never read.
+- A profile's `settings.json` (JSONC): the auto-approve keys and the default model.
+- `chatEditingSessions/<key>/state.json`, a secondary source (a file
+  repeating which files a request edited) that survives the chat's delete.
 """
 
 from __future__ import annotations
@@ -256,7 +106,7 @@ EDIT_STATES = ("Modified", "Accepted", "Rejected")
 
 
 class MutationError(ValueError):
-    pass
+    """A mutation-log record that cannot be applied to the session state."""
 
 
 def apply_mutation(state, rec: dict):
@@ -324,7 +174,7 @@ def _set(parent, key, value):
 
 
 def md_text(value) -> str:
-    """An IMarkdownString (`{value}`), a plain string or a list of either."""
+    """Return the text of an IMarkdownString (`{value}`), a plain string or a list of either."""
     if value is None:
         return ""
     if isinstance(value, str):
@@ -338,8 +188,11 @@ def md_text(value) -> str:
 
 
 def uri_text(uri) -> str:
-    """A serialized URI (`{scheme, path, ...}` or `{$mid, fsPath}`), a URI
-    string, or a location `{uri, range}`."""
+    """Return a URI as a path or URI string.
+
+    The URI is serialized (`{scheme, path, ...}` or `{$mid, fsPath}`), a URI
+    string, or a location `{uri, range}`.
+    """
     if isinstance(uri, str):
         return uri_to_path(uri)
     if isinstance(uri, dict):
@@ -352,6 +205,7 @@ def uri_text(uri) -> str:
 
 
 def tool_call_text(part: dict) -> str:
+    """Return a tool invocation's command line or raw input, else its invocation message."""
     tsd = part.get("toolSpecificData")
     if isinstance(tsd, dict):
         command_line = tsd.get("commandLine")
@@ -385,8 +239,7 @@ TOOL_CONFIRM_KINDS = (
 
 
 def confirmed_text(part: dict) -> str:
-    """The `permission decision:` text for a tool invocation's `isConfirmed`,
-    or "" when the invocation records none."""
+    """Return the `permission decision:` text of a tool invocation's `isConfirmed`, else ""."""
     confirmed = part.get("isConfirmed")
     if confirmed is None:
         return ""
@@ -416,7 +269,7 @@ def confirmed_text(part: dict) -> str:
 
 
 def confirmation_part_text(part: dict) -> str:
-    """The `permission decision:` text for a `confirmation` response part."""
+    """Return the `permission decision:` text of a `confirmation` response part."""
     pairs = ["permission decision: confirmation"]
     if "isUsed" in part:
         pairs.append("isUsed=%s" % setting_value(bool(part.get("isUsed"))))
@@ -429,6 +282,7 @@ def confirmation_part_text(part: dict) -> str:
 
 
 def tool_result_text(part: dict) -> str:
+    """Return a tool invocation's result text, `[error] ` first when it failed."""
     result_details = part.get("resultDetails")
     text = ""
     is_error = bool(part.get("resultError"))
@@ -461,18 +315,20 @@ def tool_result_text(part: dict) -> str:
 
 
 def user_rel(rel: str) -> str:
-    """`rel` from its `User/` component on, as row text names the file."""
+    """Return `rel` from its `User/` component on, as row text names the file."""
     i = rel.find("/User/")
     return rel[i + 1 :] if i >= 0 else rel
 
 
 def grant_texts(values: dict, problems: list) -> Iterator[str]:
-    """`permission setting:` texts, without the source, for the standing
-    grants of one `state.vscdb`: one per entry of each `ToolConfirmStore`
-    key (an object keyed by tool or server id whose value is `true`, a
-    label or `{label, arguments}`, or the older array of ids), the global
-    auto-approve opt-in, and one per external path allowed in the
-    workspace. A value of another JSON type is added to `problems`."""
+    """Yield the `permission setting:` texts, without the source, of one `state.vscdb`'s grants.
+
+    One per entry of each `ToolConfirmStore` key (an object keyed by tool or
+    server id whose value is `true`, a label or `{label, arguments}`, or the
+    older array of ids), the global auto-approve opt-in, and one per
+    external path allowed in the workspace. A value of another JSON type is
+    added to `problems`.
+    """
     for key in GRANT_KEYS:
         value = values.get(key)
         if value is None or isinstance(value, str):
@@ -497,9 +353,11 @@ def grant_texts(values: dict, problems: list) -> Iterator[str]:
 
 
 def setting_texts(key: str, value) -> Iterator[str]:
-    """`permission setting:` texts for one `settings.json` key: one per
-    entry of a non-empty object value (`<key>.<entry>=<value>`), else one
-    (`<key>=<value>`)."""
+    """Yield the `permission setting:` texts of one `settings.json` key.
+
+    A non-empty object value gives one per entry (`<key>.<entry>=<value>`),
+    any other value one (`<key>=<value>`).
+    """
     if isinstance(value, dict) and value:
         for entry, setting in value.items():
             yield "permission setting: %s.%s=%s" % (key, entry, setting_value(setting))
@@ -508,8 +366,7 @@ def setting_texts(key: str, value) -> Iterator[str]:
 
 
 def edit_state_text(entry: dict) -> str:
-    """The `edit state:` text for one snapshot entry of a chat editing
-    `state.json`."""
+    """Return the `edit state:` text of one snapshot entry of a chat editing `state.json`."""
     state = entry.get("state")
     if isinstance(state, int) and not isinstance(state, bool) and 0 <= state < len(EDIT_STATES):
         name = EDIT_STATES[state]
@@ -529,6 +386,8 @@ def edit_state_text(entry: dict) -> str:
 
 
 class VsCodeParser(Parser):
+    """Parse VS Code chat sessions, cloud session markers, state databases and settings."""
+
     agent = "vscode"
     name = "vscode"
     records_sync = True
@@ -536,6 +395,7 @@ class VsCodeParser(Parser):
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a chat session, `cloudSessions.json`, state, settings or edit state."""
         rel = artifact.rel
         return bool(
             SESSION_RX.match(rel)
@@ -546,10 +406,11 @@ class VsCodeParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
-        """The chat editing state repeats which files a request edited."""
+        """Return True for a chat editing state, which repeats which files a request edited."""
         return bool(EDITING_RX.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one VS Code file."""
         if CLOUD_SESSIONS_RX.match(artifact.rel):
             yield from self._parse_cloud_sessions(artifact)
             return
@@ -627,9 +488,10 @@ class VsCodeParser(Parser):
         return row
 
     def _parse_cloud_sessions(self, artifact: Artifact) -> Iterator[Row]:
-        """`cloudSessions.json`: one sync row per entry at the file's
-        modification time, or one `parser:` row when it is not a JSON
-        object."""
+        """Yield one sync row per `cloudSessions.json` entry at the file's mtime.
+
+        A file that is not a JSON object gives one `parser:` row.
+        """
         timestamp = file_mtime(artifact)
         try:
             with open(artifact.disk_path, "rb") as handle:
@@ -658,11 +520,13 @@ class VsCodeParser(Parser):
             yield row
 
     def _parse_state(self, artifact: Artifact) -> Iterator[Row]:
-        """`state.vscdb` of a profile or a workspace: the cloud agent task,
-        selected repository and source-host rows (profile scope only), then
-        one `permission setting:` row per standing grant at the file's
-        modification time, then a `parser:` row per problem reading the
-        database or a value."""
+        """Yield the rows of a profile's or a workspace's `state.vscdb`.
+
+        The cloud agent task, selected repository and source-host rows come
+        first (profile scope only), then one `permission setting:` row per
+        standing grant at the file's mtime, then a `parser:` row per problem
+        reading the database or a value.
+        """
         scope = STATE_RX.match(artifact.rel)
         workspace = bool(scope and scope.group("scope").startswith("workspaceStorage/"))
         keys = [*GRANT_KEYS, OPT_IN_KEY, ALLOWLIST_KEY]
@@ -694,9 +558,7 @@ class VsCodeParser(Parser):
         yield from error_rows(self, artifact, errors, "", project)
 
     def _selected_repo_rows(self, artifact: Artifact, repos) -> Iterator[Row]:
-        """A `source host repository:` row per repository the user picked
-        for a cloud agent task in the last week, at the entry's
-        `timestamp`."""
+        """Yield a `source host repository:` row per repository picked for a cloud agent task."""
         source = "(from state.vscdb %s %s, timestamp)" % (COPILOT_STATE_KEY, SELECTED_REPOS_KEY)
         for entry in repos if isinstance(repos, list) else ():
             if isinstance(entry, dict) and entry.get("name"):
@@ -710,10 +572,11 @@ class VsCodeParser(Parser):
 
     @staticmethod
     def _usage_items(path: Path) -> tuple[list[tuple[str, object]], list[str]]:
-        """`(key, decoded value)` for each `ItemTable` row that is an
-        authentication usage record of the GitHub provider, and problems.
+        """Return `(key, decoded value)` of each GitHub authentication usage row, and problems.
+
         `secret://` rows never match the pattern. A database `read_items`
-        could not open gives nothing here, since it reported it."""
+        could not open gives nothing here, since it reported it.
+        """
         if path.is_symlink() or not sqlite_util.is_sqlite(path):
             return [], []
         try:
@@ -740,9 +603,11 @@ class VsCodeParser(Parser):
         return out, problems
 
     def _source_host_rows(self, artifact: Artifact, usages) -> Iterator[Row]:
-        """A `source host:` row per extension or MCP server that used a
-        GitHub account, at the usage's `lastUsed`. The account label is the
-        GitHub login; a GitHub Enterprise label ends ` - <host><path>`."""
+        """Yield a `source host:` row per extension or MCP server that used a GitHub account.
+
+        The row is at the usage's `lastUsed`. The account label is the GitHub
+        login; a GitHub Enterprise label ends ` - <host><path>`.
+        """
         for key, entries in usages:
             match = USAGE_KEY_RX.match(key)
             if not match or not isinstance(entries, list):
@@ -775,11 +640,13 @@ class VsCodeParser(Parser):
                 )
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """`settings.json` of the default or another profile: a `permission
-        setting:` row per auto-approve setting or entry and for the default
-        permission level, and a `model setting:` row for the default model,
-        at the file's modification time; one `parser:` row when the file is
-        not a JSON object."""
+        """Yield the standing permission and default model rows of a profile's `settings.json`.
+
+        A `permission setting:` row per auto-approve setting or entry and for
+        the default permission level, and a `model setting:` row for the
+        default model, at the file's mtime; one `parser:` row when the file
+        is not a JSON object.
+        """
         timestamp, src = file_mtime(artifact), user_rel(artifact.rel)
         try:
             doc = parse_jsonc(artifact.disk_path.read_bytes())
@@ -805,11 +672,12 @@ class VsCodeParser(Parser):
                 yield row
 
     def _parse_editing(self, artifact: Artifact) -> Iterator[Row]:
-        """`chatEditingSessions/<key>/state.json`: an `edit state:` row per
-        file of the most recent snapshot, at the file's modification time,
-        with the folder's name as the session id and the workspace's folder
-        as the project; a whole-file `parser:` row when it does not decode
-        or is not a JSON object."""
+        """Yield an `edit state:` row per file of a chat editing state's latest snapshot.
+
+        The rows are at the file's mtime, with the folder's name as the
+        session id and the workspace's folder as the project; a whole-file
+        `parser:` row when it does not decode or is not a JSON object.
+        """
         match = EDITING_RX.match(artifact.rel)
         session_id = match.group("key") if match else ""
         errors: list = []
@@ -834,9 +702,7 @@ class VsCodeParser(Parser):
         yield from error_rows(self, artifact, errors, session_id, project)
 
     def _owned_task_rows(self, artifact: Artifact, tasks) -> Iterator[Row]:
-        """A `session synced:` and a `session origin: remote` row per cloud
-        agent task in the Copilot Chat global state's `ownedTasks`, at
-        `recordedAt`."""
+        """Yield a `session synced:` and a `session origin: remote` row per owned cloud task."""
         for task_id, entry in tasks.items() if isinstance(tasks, dict) else ():
             if isinstance(entry, dict):
                 recorded, application = entry.get("recordedAt"), entry.get("application")
@@ -859,11 +725,13 @@ class VsCodeParser(Parser):
             )
 
     def _replay(self, artifact: Artifact, req_lines: dict[int, int], errors: list):
-        """Replay a `.jsonl` mutation log and return the session state. A
-        line that does not decode, or whose mutation does not apply, is
+        """Replay a `.jsonl` mutation log and return the session state.
+
+        A line that does not decode, or whose mutation does not apply, is
         appended to `errors` as (line, reason, line text) and skipped;
         `iter_jsonl` is not used because a mutation error needs the line's
-        text too."""
+        text too.
+        """
         state = None
         with open(artifact.disk_path, "rb") as handle:
             for line_number, raw in enumerate(handle, 1):
@@ -915,10 +783,10 @@ class VsCodeParser(Parser):
 
     @staticmethod
     def _workspace_folder(artifact: Artifact, errors: list) -> tuple[str, str]:
-        """The sibling `workspace.json`'s `folder` and `workspace` as paths.
+        """Return the sibling `workspace.json`'s `folder` and `workspace` as paths.
 
         Returns `(folder, workspace_file)`, either empty when absent; only
-        the folder may become the project path (issue 185). A
+        the folder may become the project path. A
         `workspace.json` that cannot be read or is not a JSON object adds
         one whole-file entry to `errors`.
         """
@@ -929,9 +797,11 @@ class VsCodeParser(Parser):
 
     @staticmethod
     def _workspace_json(ws_dir: Path, errors: list) -> tuple[str, str]:
-        """`(folder, workspace_file)` from `<ws_dir>/workspace.json`, as
-        `_workspace_folder` describes; also read for a workspace's
-        `state.vscdb` and chat editing state."""
+        """Return `(folder, workspace_file)` from `<ws_dir>/workspace.json`.
+
+        As `_workspace_folder` describes; also read for a workspace's
+        `state.vscdb` and chat editing state.
+        """
         workspace_file = ws_dir / "workspace.json"
         try:
             if workspace_file.is_symlink() or not workspace_file.is_file():

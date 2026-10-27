@@ -1,163 +1,33 @@
-"""Zed agent panel threads.
+"""Parse Zed agent panel threads, the sidebar database and the permission settings.
 
-Validated against source, zed-industries/zed at a84689073d29 and, for
-the settings, `db.sqlite` stores, denials, scratch directories and drafts,
-at 9cd14daad768 (see `research/zed.md`), with a synthetic fixture; no real
-install was checked, and every row the 9cd14daad768 review added is
-source-derived, not observed on any real install. Files, relative to the
-Zed data directory (`.local/share/zed`, `Library/Application Support/Zed`,
-`AppData/Local/Zed`, or the Flatpak `.var/app/dev.zed.Zed*/data/zed`), and
-to the config directory (`.config/zed`, `AppData/Roaming/Zed`, or
-`.var/app/dev.zed.Zed*/config/zed`):
+Follows `research/zed.md`. Validated against source, zed-industries/zed at
+a84689073d29 and 9cd14daad768 (settings, `db.sqlite` stores, denials, scratch
+directories and drafts), with a synthetic fixture; no real install. Paths are
+under the data directory (`DATA_DIR`) or the config directory (`CONFIG_DIR`):
 
-* `threads/threads.db` (rollback journal, so a `-journal` may sit beside it):
-  table `threads(id, summary, updated_at, data_type, data, parent_id,
-  folder_paths, folder_paths_order, created_at)`. `id` is the session id,
-  `folder_paths` the project paths joined by newlines, `updated_at` and
-  `created_at` RFC 3339. `data` is zstd-compressed JSON when `data_type` is
-  `zstd` (decoded with the `zstandard` package) and raw UTF-8 JSON when
-  `json`.
-  The thread JSON, `version` `0.3.0`: `title`, `updated_at`,
-  `initial_project_snapshot.timestamp`,
-  `initial_project_snapshot.worktree_snapshots[].worktree_path`,
-  `.git_state.current_branch` and `.git_state.remote_url`, `model.provider`, `model.model`,
-  `subagent_context.parent_thread_id`, and `messages[]`, externally tagged:
-  - `{"User": {"id", "content": [{"Text"}, {"Mention": {"uri"}}, {"Image"}]}}`
-  - `{"Agent": {"content": [{"Text"}, {"Thinking": {"text"}},
-    {"RedactedThinking"}, {"ToolUse": {"id", "name", "raw_input",
-    "input"}}], "tool_results": {<id>: {"tool_use_id", "tool_name",
-    "is_error", "content": [{"Text"}]}}}}`
-  - `"Resume"`, `{"Compaction": {"Summary"}}` or
-    `{"Compaction": {"ProviderNative"}}`.
-  Versions `0.1.0` and `0.2.0` (`messages[].role`, `segments[]` with
-  `type` text/thinking/RedactedThinking, `tool_uses[]`, `tool_results[]`)
-  and the unversioned legacy shape (`messages[].role`, `.text`) are read
-  on a best-effort basis; their role spelling was not confirmed.
-  The blob's `sandboxed_terminal_temp_dir` (macOS only) is a
-  `scratch directory: <path> (sandboxed terminal temp directory of thread
-  <id>) (thread blob, as of updated_at)` row after the grant rows, with the
-  path as `project_path` and no `session_id`, so the thread stays counted
-  under its project; its `draft_prompt` (a list of ACP `ContentBlock`s,
-  `type` `text`, `resource_link`, `resource`, `image`, `audio`) is an
-  `unsent draft: <text> (thread blob, as of updated_at)` row after the
-  messages.
-* `db/0-<channel>/db.sqlite` (WAL), all `system` rows:
-  - table `sidebar_threads(thread_id, session_id, agent_id, title,
-    title_override, updated_at, interacted_at, folder_paths, archived,
-    main_worktree_paths)`. A row with `agent_id` set is an external ACP agent
-    thread whose transcript is not in `threads.db`: `external agent thread
-    (no transcript in threads.db): agent=<id> title=<title>[ archived]` at
-    `interacted_at`, else `updated_at`. A native row (`agent_id` NULL) with a
-    `session_id` is the thread's sidebar state: `sidebar thread:
-    title=<title> archived=<true|false> interacted_at=<time|-> main_worktree=
-    <path|->` at `updated_at`, with the thread id. It is not a secondary
-    source: it repeats no event of `threads.db` and is deleted with the
-    thread. A native row with no `session_id` is a draft and has no row of
-    its own.
-  - table `trusted_worktrees(absolute_path, user_name, host_name)`:
-    `permission setting: trusted_worktrees.<path>=true[ host=<user>@<host>]
-    (from <file> trusted_worktrees, file mtime)`, `project_path` the path.
-  - table `scoped_kv_store(namespace, key, value)`, namespace
-    `agent_draft_prompts` (key the hyphenated `sidebar_threads.thread_id`,
-    value a JSON array of ACP `ContentBlock`s): `unsent draft: <text>` at
-    the draft's sidebar `updated_at`, `project_path` its first folder, or
-    with ` (from <file> agent_draft_prompts, file mtime)` at the file's
-    modification time when the sidebar row is gone; namespace
-    `created_git_worktrees` (key `<host>` newline `<worktree path>`, `local`
-    for this machine, value `{created_at_seconds, created_at_subsec_nanos}`):
-    `scratch directory: <path> (Zed-created git worktree[ of <main>][
-    host=<host>]) (from <file> created_git_worktrees, created_at)` at that
-    time, `project_path` the worktree, `<main>` the
-    `sidebar_threads.main_worktree_paths` of a thread whose `folder_paths`
-    holds the worktree, else the `archived_git_worktrees.main_repo_path`.
-  - tables `archived_git_worktrees(id, worktree_path, main_repo_path,
-    branch_name, staged_commit_hash, unstaged_commit_hash,
-    original_commit_hash)` and `thread_archived_worktrees(thread_id,
-    archived_worktree_id)`: `archived worktree: <worktree_path> of
-    <main_repo_path> branch=<b> staged=<hash> unstaged=<hash>
-    original=<hash> ref=refs/archived-worktrees/<id> (from <file>
-    archived_git_worktrees, file mtime)`, one per linked thread with its
-    `session_id`, `project_path` the main repository; the archive time is not
-    recorded.
-  - table `sidebar_terminal_threads(title, custom_title, created_at,
-    working_directory, folder_paths)`: `sidebar terminal: <title> cwd=<dir>`
-    at `created_at`, `project_path` the first folder, no `session_id`.
-  A value in `scoped_kv_store` that does not decode is `parser: unparseable
-  record <rowid> (<namespace ...>: <reason>): <value>` at the end of the file.
-* `settings.json` and `global_settings.json` in the config directory (JSONC,
-  read with `parse_jsonc`): one `permission setting: <key>=<value> (from
-  <file>, file mtime)` row per leaf of `agent.tool_permissions` (`default`,
-  `tools.<tool>.default`, one per `always_allow`, `always_deny` and
-  `always_confirm` entry `{pattern, case_sensitive}` as compact JSON) and of
-  `agent.sandbox_permissions` (one per `network_hosts` and `write_paths`
-  entry), and per `agent.always_allow_tool_actions` (the legacy boolean),
-  `agent_servers.<id>.default_mode` and `session.trust_all_worktrees`, in
-  the top level and in each `dev`, `nightly`, `preview`, `stable`, `macos`,
-  `linux`, `windows` and `profiles.<name>.settings` block, whose name
-  prefixes the key. A project's `.zed/settings.json` cannot hold these keys
-  (it parses as `ProjectSettingsContent`) and is not read. A file that is
-  not a JSON object is one `parser: <file> is not a JSON object` row.
+- `threads/threads.db`, table `threads(id, summary, updated_at, data_type,
+  data, parent_id, folder_paths, created_at)`; `data` is JSON, zstd-compressed
+  when `data_type` is `zstd`. The thread JSON (`version` 0.3.0): `title`,
+  `updated_at`, `initial_project_snapshot` (`timestamp`,
+  `worktree_snapshots[].worktree_path` and `git_state.{current_branch,
+  remote_url}`), `model.{provider, model}`, `subagent_context`, `profile`,
+  `sandbox_grants`, `sandboxed_terminal_temp_dir`, `draft_prompt` and
+  `messages[]`, externally tagged `User`, `Agent` (`content[]`,
+  `tool_results`), `Resume` or `Compaction`. Versions 0.1.0 and 0.2.0
+  (`role`, `segments[]`, `tool_uses[]`, `tool_results[]`) and the
+  unversioned legacy shape are read on a best-effort basis.
+- `db/0-<channel>/db.sqlite`: `sidebar_threads`, `trusted_worktrees`, the
+  `agent_draft_prompts` and `created_git_worktrees` namespaces of
+  `scoped_kv_store`, `archived_git_worktrees` with
+  `thread_archived_worktrees`, and `sidebar_terminal_threads`: `system` rows.
+- `settings.json` and `global_settings.json` (JSONC): the standing
+  permission keys `_settings_entries` lists, in every override block.
 
-There are no per-message timestamps. Every message row carries the thread's
-`updated_at` (approximate: it is the last write, not the message time); the
-thread-start row carries `initial_project_snapshot.timestamp`, falling back
-to `created_at`. `source_line` is the SQLite `rowid` of the thread or
-sidebar row. The git branch is the one captured at thread start, and so
-is the remote: the `git_state.remote_url` of the snapshot whose
-`worktree_path` is the thread's project (else of the first snapshot, as
-for the branch) is a `system` row `git remote: <url>` at the thread-start
-time, right after the thread-start row (issue 253).
-
-Model and permission rows (issues 96 and 97), all `system`, after the
-thread-start row and before the first message:
-
-* `model: <model.model> provider=<model.provider>` once per thread, at the
-  thread-start time. The blob holds one `model` per thread, so a switch
-  inside a thread is not recorded and there is no change row.
-* `permission setting: <key>=<value> (thread blob, as of updated_at)`, one
-  row per entry of `profile`, `sandbox_grants.write_paths[]` (a path string,
-  or an object in newer blobs, printed as compact JSON) and
-  `sandbox_grants.network_hosts[]`, and one per `sandbox_grants` flag
-  `network_any_host`, `allow_fs_write_all`, `unsandboxed` and
-  `sandbox_fallback` that is `true`. These are the grants the user gave
-  "for the rest of this thread", stored in the blob, so the row carries the
-  thread id as `session_id` and the thread's `updated_at` as its time (the
-  last write, not the moment of the grant, which is not recorded).
-
-Per-call decisions: a failed tool result (`is_error` true) whose text is
-`Permission to run tool denied by user` is followed by `permission
-decision: denied`, and one whose text is a rule's automatic denial
-(`Blocked by global default: deny`, `Command blocked by security rule for
-<tool> tool`, `<tool> tool is disabled`, `Blocked by built-in security
-rule. ...`, the invalid-terminal-command, invalid-regex and
-unsupported-shell messages) by `permission decision: auto_denied
-reason=<text>`, each with the call's `tool_name` and `tool_use_id`. An
-approval, once or always, leaves no record in the thread, so it has no row;
-an "always" choice shows only as the settings rows above.
-
-Bad files and records (issues 136 and 168). A file that is not SQLite is
-one `parser: not a SQLite database` row, and a SQLite error while reading
-one `parser: SQLite error: <error>` row. Inside `threads.db`, each record
-that does not decode is a `system` row with an empty `timestamp_utc`, the
-thread's `session_id` and `project_path`, and `source_line` the `threads`
-rowid:
-
-* A `data` blob that does not decode to a JSON object is
-  `parser: unparseable record <rowid> (<reason>): <stored value>`, the
-  stored value being a `json` row's text, or a `zstd` row's compressed
-  bytes as lowercase hex (a truncated frame can decompress to nothing, so
-  the bytes are what is carried), its reason then ending `stored zstd
-  blob as hex`.
-* A `messages[]` item of no known variant (not `User`, `Agent`,
-  `Compaction` with `Summary` or `ProviderNative`, a string or a legacy
-  `role` message), an `Agent` content item of no known variant, a content
-  or `segments[]` item that is not an object, or a `tool_uses[]` or
-  `tool_results` entry that is not an object is
-  `parser: unparseable record <N> (<reason>): <item as JSON>`, N the
-  message's 1-based position in `messages[]` and the reason naming the
-  item's place inside it. These rows follow the thread's other rows. An
-  unknown `User` content object stays in the prompt text as JSON, as
-  before.
+Messages carry no time: each row takes the thread's `updated_at`, and the
+thread-start, `git remote:` and `model:` rows the snapshot's time. The blob
+holds one model per thread, so a switch is not recorded. Denials are read
+from failed tool results' texts (`USER_DENIAL`, `AUTO_DENIAL_RX`); an
+approval leaves no record. `source_line` is the SQLite `rowid`.
 """
 
 from __future__ import annotations
@@ -204,6 +74,7 @@ AUTO_DENIAL_RX = re.compile(
 
 
 def decompress(blob: bytes) -> bytes:
+    """Return a zstd frame's content, streaming it when the header records no size."""
     dctx = zstandard.ZstdDecompressor()
     try:
         return dctx.decompress(blob)
@@ -220,8 +91,10 @@ def decompress(blob: bytes) -> bytes:
 
 
 def record_json(value) -> str:
-    """A decoded blob item as error row text: compact JSON in the blob's own
-    key order, non-ASCII kept, so the item is carried in full."""
+    """Return a decoded blob item as error row text, in full.
+
+    The text is compact JSON in the blob's own key order, non-ASCII kept.
+    """
     try:
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     except (TypeError, ValueError):
@@ -229,8 +102,11 @@ def record_json(value) -> str:
 
 
 def content_text(content) -> str:
-    """Text of a tool result `content`: a list of `{"Text": ...}` /
-    `{"Image": ...}` items, a single such item, or a plain string."""
+    """Return the text of a tool result `content`.
+
+    The content is a list of `{"Text": ...}` or `{"Image": ...}` items, a
+    single such item, or a plain string.
+    """
     if content is None:
         return ""
     if isinstance(content, str):
@@ -256,6 +132,7 @@ def content_text(content) -> str:
 
 
 def mention_text(mention) -> str:
+    """Return a `Mention` content item as `[mention] <uri>`."""
     if not isinstance(mention, dict):
         return "[mention]"
     uri = mention.get("uri")
@@ -263,6 +140,7 @@ def mention_text(mention) -> str:
 
 
 def tool_input_text(tool_use: dict) -> str:
+    """Return a tool use's `input` as text, else its `raw_input`."""
     inp = tool_use.get("input")
     if isinstance(inp, dict) and set(inp) <= {"type", "value"} and "value" in inp:
         inp = inp["value"]
@@ -273,6 +151,7 @@ def tool_input_text(tool_use: dict) -> str:
 
 
 def first_folder(folder_paths) -> str:
+    """Return the first of the newline-joined `folder_paths`, else ""."""
     if not isinstance(folder_paths, str):
         return ""
     for path in folder_paths.split("\n"):
@@ -282,9 +161,11 @@ def first_folder(folder_paths) -> str:
 
 
 def acp_blocks_text(blocks) -> str:
-    """Text of a list of ACP `ContentBlock`s (`{"type": "text", "text"}`,
-    `resource_link` and `resource` by URI, `image` and `audio` as markers),
-    as a draft prompt stores them; another block is compact JSON."""
+    """Return the text of a draft prompt's ACP `ContentBlock`s.
+
+    A `text` block gives its text, `resource_link` and `resource` their URI,
+    `image` and `audio` a marker; another block is compact JSON.
+    """
     if isinstance(blocks, dict):
         blocks = [blocks]
     if not isinstance(blocks, list):
@@ -309,9 +190,11 @@ def acp_blocks_text(blocks) -> str:
 
 
 def denial_text(res: dict) -> str:
-    """The `permission decision:` row text for a failed tool result whose
-    text is one Zed writes when a call is denied, else "". An approval
-    leaves no record, so only denials have a row."""
+    """Return the `permission decision:` text of a failed tool result Zed wrote for a denial.
+
+    Any other result gives "": an approval leaves no record, so only denials
+    have a row.
+    """
     if not res.get("is_error"):
         return ""
     text = content_text(res.get("content")).strip()
@@ -323,16 +206,17 @@ def denial_text(res: dict) -> str:
 
 
 def thread_key(blob) -> str:
-    """A `sidebar_threads.thread_id` (16 raw UUID bytes) as the hyphenated
-    string the key-value store keys drafts by, else ""."""
+    """Return a `sidebar_threads.thread_id` (16 raw UUID bytes) as a hyphenated UUID.
+
+    That is the string the key-value store keys drafts by.
+    """
     if isinstance(blob, (bytes, bytearray)) and len(blob) == 16:
         return str(uuid.UUID(bytes=bytes(blob)))
     return str(blob or "")
 
 
 def flatten_setting(key: str, value) -> Iterator[tuple[str, object]]:
-    """(dotted key, value) per leaf of a settings value: one per object
-    member, recursively, and one per list entry."""
+    """Yield (dotted key, value) per leaf of a settings value, one per list entry."""
     if isinstance(value, dict):
         for member, member_value in value.items():
             yield from flatten_setting("%s.%s" % (key, member), member_value)
@@ -344,14 +228,18 @@ def flatten_setting(key: str, value) -> Iterator[tuple[str, object]]:
 
 
 class ZedParser(Parser):
+    """Parse Zed's thread database, sidebar database and user settings files."""
+
     agent = "zed"
     name = "zed"
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for `threads.db`, a channel's `db.sqlite` or a user settings file."""
         rel = artifact.rel
         return bool(THREADS_RX.match(rel) or SIDEBAR_RX.match(rel) or SETTINGS_RX.match(rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Zed file."""
         if SETTINGS_RX.match(artifact.rel):
             yield from self._parse_settings(artifact)
             return
@@ -367,7 +255,7 @@ class ZedParser(Parser):
             yield self._file_error(artifact, "SQLite error: %s" % error)
 
     def _file_error(self, artifact: Artifact, message: str) -> Row:
-        """The one `parser: <message>` row for a file that cannot be read."""
+        """Return the one `parser: <message>` row for a file that cannot be read."""
         row = self.base_row(artifact)
         row.turn_type = "system"
         row.text = "parser: " + message
@@ -382,7 +270,7 @@ class ZedParser(Parser):
         session_id: str = "",
         project: str = "",
     ) -> Row:
-        """A `system` row of `artifact` with the given text and context."""
+        """Return a `system` row of `artifact` with the given text and context."""
         row = self.base_row(artifact)
         row.source_line = source_line
         row.session_id = session_id
@@ -394,8 +282,7 @@ class ZedParser(Parser):
 
     # -- settings.json, global_settings.json ----------------------------------------
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting:` row per standing permission entry of a
-        user settings file, at the file's modification time."""
+        """Yield one `permission setting:` row per standing permission, at the file's mtime."""
         try:
             raw = artifact.disk_path.read_bytes()
         except OSError as error:
@@ -421,12 +308,14 @@ class ZedParser(Parser):
 
     @staticmethod
     def _settings_entries(doc: dict) -> Iterator[tuple[str, object]]:
-        """(dotted key, value) per entry of `agent.tool_permissions`,
-        `agent.sandbox_permissions`, the legacy
-        `agent.always_allow_tool_actions`, `agent_servers.<id>.default_mode`
-        and `session.trust_all_worktrees`, in the top level, each
-        release-channel and platform override block and each
-        `profiles.<name>.settings`, the key prefixed with the block's."""
+        """Yield (dotted key, value) per standing permission entry of a settings object.
+
+        The entries are those of `agent.tool_permissions`,
+        `agent.sandbox_permissions`, the legacy `agent.always_allow_tool_actions`,
+        `agent_servers.<id>.default_mode` and `session.trust_all_worktrees`, in
+        the top level, each release-channel and platform override block and
+        each `profiles.<name>.settings`, the key prefixed with the block's.
+        """
         layers: list[tuple[str, dict]] = [("", doc)]
         for name in SETTINGS_OVERRIDES:
             if isinstance(doc.get(name), dict):
@@ -519,15 +408,17 @@ class ZedParser(Parser):
 
     @staticmethod
     def _select(con: sqlite3.Connection, tables: set, table: str, sql: str) -> list[dict]:
-        """The rows of `sql` as dicts, or [] when `table` does not exist."""
+        """Return the rows of `sql` as dicts, or [] when `table` does not exist."""
         if table not in tables:
             return []
         return [dict(row) for row in con.execute(sql)]
 
     def _sidebar_row(self, artifact: Artifact, row: dict) -> Iterator[Row]:
-        """An external agent's thread (no transcript in `threads.db`), or the
-        sidebar state of a native thread; a draft (no `session_id`) has no
-        row of its own, only its draft prompt."""
+        """Yield an external agent's thread or a native thread's sidebar state.
+
+        An external agent's thread has no transcript in `threads.db`; a draft
+        (no `session_id`) has no row of its own, only its draft prompt.
+        """
         title = row.get("title_override") or row.get("title") or ""
         project = first_folder(row.get("folder_paths"))
         session_id = str(row.get("session_id") or "")
@@ -550,7 +441,7 @@ class ZedParser(Parser):
             yield self._state_row(artifact, text, timestamp, row["_rowid"], session_id, project)
 
     def _trusted_row(self, artifact: Artifact, row: dict) -> Row:
-        """The `permission setting:` row of one trusted project path."""
+        """Return the `permission setting:` row of one trusted project path."""
         path = str(row.get("absolute_path") or "")
         host = str(row.get("host_name") or "")
         if host and row.get("user_name"):
@@ -564,9 +455,11 @@ class ZedParser(Parser):
         return self._state_row(artifact, text + " file mtime)", timestamp, row["_rowid"], "", path)
 
     def _draft(self, artifact: Artifact, row: dict, by_key: dict, errors: list) -> Iterator[Row]:
-        """`unsent draft: <text>` for an `agent_draft_prompts` entry, at the
-        draft's sidebar `updated_at`, or at the file's modification time,
-        saying so, when the draft has no sidebar row."""
+        """Yield `unsent draft: <text>` for an `agent_draft_prompts` entry.
+
+        The row is at the draft's sidebar `updated_at`, or at the file's
+        modification time, saying so, when the draft has no sidebar row.
+        """
         rowid, key, value = row["_rowid"], str(row["key"]), row["value"]
         try:
             blocks = json.loads(value)
@@ -594,9 +487,11 @@ class ZedParser(Parser):
     def _created_worktree(
         self, artifact: Artifact, row: dict, sidebar: list, archived: list, errors: list
     ) -> Iterator[Row]:
-        """`scratch directory:` for a `created_git_worktrees` entry, at the
-        worktree's recorded creation time, `project_path` the worktree, and
-        the main repository from the sidebar or the archived worktrees."""
+        """Yield `scratch directory:` for a `created_git_worktrees` entry, at its creation time.
+
+        `project_path` is the worktree; the main repository comes from the
+        sidebar or the archived worktrees.
+        """
         rowid, value = row["_rowid"], row["value"]
         host, _, path = str(row["key"]).partition("\n")
         try:
@@ -636,7 +531,7 @@ class ZedParser(Parser):
         yield self._state_row(artifact, text, to_utc(seconds), rowid, "", path)
 
     def _archived_worktree(self, artifact: Artifact, row: dict, by_key: dict) -> Row:
-        """The row of one archived worktree and one thread linked to it."""
+        """Return the row of one archived worktree and one thread linked to it."""
         side = by_key.get(thread_key(row.get("_thread"))) if row.get("_thread") else None
         session_id = str((side or {}).get("session_id") or "")
         text = (
@@ -795,9 +690,12 @@ class ZedParser(Parser):
 
     @staticmethod
     def _grants(thread: dict) -> Iterator[tuple[str, object]]:
-        """(dotted key, value) per thread-scoped grant: the agent profile,
-        each granted write path and network host, and each sandbox escape
-        flag that is set (`DbSandboxGrants`, db.rs:91-122 at a84689073d29)."""
+        """Yield (dotted key, value) per thread-scoped grant.
+
+        The grants are the agent profile, each granted write path and network
+        host, and each sandbox escape flag that is set (`DbSandboxGrants`,
+        db.rs:91-122 at a84689073d29).
+        """
         if thread.get("profile") not in (None, ""):
             yield "profile", thread["profile"]
         grants = thread.get("sandbox_grants")
@@ -814,12 +712,14 @@ class ZedParser(Parser):
 
     @staticmethod
     def _decode(row: dict) -> tuple[dict | None, str, str]:
-        """(thread, "", "") for a blob that decodes to a JSON object, else
-        (None, reason, the stored value as text). A `json` row's stored
-        value is its text, decoded UTF-8 with `errors="replace"`; a `zstd`
-        row's is its compressed bytes as lowercase hex, since they have no
-        faithful text form and a truncated frame can decompress to nothing,
-        and its reason ends `stored zstd blob as hex`."""
+        """Return (thread, "", "") for a blob holding a JSON object, else (None, reason, raw).
+
+        A `json` row's raw value is its text, decoded UTF-8 with
+        `errors="replace"`; a `zstd` row's is its compressed bytes as
+        lowercase hex, since they have no faithful text form and a truncated
+        frame can decompress to nothing, and its reason ends `stored zstd
+        blob as hex`.
+        """
         data = row.get("data")
         if data is None:
             return None, "no data", ""
@@ -845,11 +745,13 @@ class ZedParser(Parser):
     def _messages(
         self, thread: dict, rowid: int, errors: list
     ) -> Iterator[tuple[str, str, str, str]]:
-        """(turn_type, text, tool_name, tool_use_id) in transcript order. A
-        `messages[]` item, or a content, segment, tool use or tool result
-        item inside one, of a shape not recognised is appended to `errors`
-        as (rowid, `unparseable record <N> (<reason>)`, the item as JSON),
-        N the message's 1-based position in `messages[]`."""
+        """Yield (turn_type, text, tool_name, tool_use_id) in transcript order.
+
+        A `messages[]` item, or a content, segment, tool use or tool result
+        item inside one, of a shape not recognised is appended to `errors` as
+        (rowid, `unparseable record <N> (<reason>)`, the item as JSON), N the
+        message's 1-based position in `messages[]`.
+        """
         messages = thread.get("messages")
         if messages is None:
             return

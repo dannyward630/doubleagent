@@ -34,18 +34,20 @@ FORMS_HELP = (
     "or a relative time such as 45m, 36h, 3d, 2w, 6mo, 1y, optionally followed by 'ago'"
 )
 
-_YEAR_RX = re.compile(r"^\d{4}$")
-_MONTH_RX = re.compile(r"^\d{4}-\d{2}$")
+_YEAR_PATTERN = re.compile(r"^\d{4}$")
+_MONTH_PATTERN = re.compile(r"^\d{4}-\d{2}$")
 # The time of day after the T or space, extended (09:30:15) or basic
 # (093015) format, to find the precision the value was written to.
-_TIME_RX = re.compile(r"\d[T ](\d{2})(?::?(\d{2})(?::?(\d{2})(\.\d+)?)?)?", re.IGNORECASE)
+_TIME_PATTERN = re.compile(r"\d[T ](\d{2})(?::?(\d{2})(?::?(\d{2})(\.\d+)?)?)?", re.IGNORECASE)
 # dateutil messages worth passing on; the rest describe its internals.
-_RANGE_MSG_RX = re.compile(r"must be in|invalid hours|invalid minutes|out of range", re.IGNORECASE)
+_RANGE_MESSAGE_PATTERN = re.compile(
+    r"must be in|invalid hours|invalid minutes|out of range", re.IGNORECASE
+)
 # An offset after a space, which isoparse does not accept; it is moved onto
 # the time before parsing.
-_SPACED_OFFSET_RX = re.compile(r"^(.*\d) (z|utc|[+-]\d{2}(?::?\d{2})?)$", re.IGNORECASE)
-_EPOCH_RX = re.compile(r"^\d{9,}(\.\d+)?$")
-_RELATIVE_RX = re.compile(
+_SPACED_OFFSET_PATTERN = re.compile(r"^(.*\d) (z|utc|[+-]\d{2}(?::?\d{2})?)$", re.IGNORECASE)
+_EPOCH_PATTERN = re.compile(r"^\d{9,}(\.\d+)?$")
+_RELATIVE_PATTERN = re.compile(
     r"^(\d+) ?(m|min|mins|minutes?|h|hours?|d|days?|w|weeks?|mo|months?|y|years?)(?: ago)?$",
     re.IGNORECASE,
 )
@@ -84,7 +86,7 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
         if lowered == "yesterday":
             day -= timedelta(days=1)
         return _bound(day, timedelta(days=1), end)
-    match = _RELATIVE_RX.match(text_value)
+    match = _RELATIVE_PATTERN.match(text_value)
     if match:
         amounts = {unit: 0 for unit in _UNIT.values()}
         amounts[_UNIT[match.group(2).lower()]] = int(match.group(1))
@@ -100,24 +102,24 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
             return format_utc(now - ago)
         except (ValueError, OverflowError):
             raise BoundError("%r is out of range" % text) from None
-    if _EPOCH_RX.match(text_value):
+    if _EPOCH_PATTERN.match(text_value):
         out = to_utc(text_value)
         if not out:
             raise BoundError("%r is out of range as epoch seconds or milliseconds" % text)
         return out
-    match = _SPACED_OFFSET_RX.match(text_value)
+    match = _SPACED_OFFSET_PATTERN.match(text_value)
     if match:
         offset = match.group(2)
         text_value = match.group(1) + ("Z" if offset.lower() == "utc" else offset)
     try:
         moment = isoparse(text_value)
     except (ValueError, OverflowError) as error:
-        reason = " (%s)" % error if _RANGE_MSG_RX.search(str(error)) else ""
+        reason = " (%s)" % error if _RANGE_MESSAGE_PATTERN.search(str(error)) else ""
         raise BoundError("cannot read %r as a time%s; %s" % (text, reason, FORMS_HELP)) from None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     moment = moment.astimezone(timezone.utc)
-    time_match = _TIME_RX.search(text_value)
+    time_match = _TIME_PATTERN.search(text_value)
     if time_match:
         _hour, minute, second, fraction = time_match.groups()
         if fraction:
@@ -127,9 +129,9 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
         if minute:
             return _bound(moment, timedelta(minutes=1), end)
         return _bound(moment, timedelta(hours=1), end)
-    if _YEAR_RX.match(text_value):
+    if _YEAR_PATTERN.match(text_value):
         return _bound(moment, relativedelta(years=1), end)
-    if _MONTH_RX.match(text_value):
+    if _MONTH_PATTERN.match(text_value):
         return _bound(moment, relativedelta(months=1), end)
     return _bound(moment, timedelta(days=1), end)
 

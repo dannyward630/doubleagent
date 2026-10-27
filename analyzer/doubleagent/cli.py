@@ -250,9 +250,9 @@ def main(argv: list[str] | None = None) -> int:
     """Run the command with the given arguments and return its exit code."""
     args = build_parser().parse_args(argv)
     if args.command == "catalog":
-        return cmd_catalog(args)
+        return run_catalog(args)
     if args.command == "inventory":
-        return cmd_inventory(args)
+        return run_inventory(args)
     if args.command == "timeline":
         # Checked before an archive is extracted, so a typo fails at once.
         # ValueError here and below is the standard library refusing a value,
@@ -277,19 +277,19 @@ def main(argv: list[str] | None = None) -> int:
                 if not home.user:
                     home.user = args.user
         if args.command == "detect":
-            return cmd_detect(args, collection)
-        return cmd_timeline(args, collection)
+            return run_detect(args, collection)
+        return run_timeline(args, collection)
     finally:
         if not args.keep_extracted:
             collection.cleanup()
-        elif collection._tmp:
-            print("extracted to: %s" % collection._tmp, file=sys.stderr)
+        elif collection._extracted_dir:
+            print("extracted to: %s" % collection._extracted_dir, file=sys.stderr)
 
 
 # ---- catalog --------------------------------------------------------------------
 
 
-def cmd_catalog(args: argparse.Namespace) -> int:
+def run_catalog(args: argparse.Namespace) -> int:
     """Print the bundled catalog, or its agents and whether each has a parser."""
     catalog = catalog_mod.load()
     if not args.agents:
@@ -304,7 +304,7 @@ def cmd_catalog(args: argparse.Namespace) -> int:
 # ---- inventory ------------------------------------------------------------------
 
 
-def cmd_inventory(args: argparse.Namespace) -> int:
+def run_inventory(args: argparse.Namespace) -> int:
     """Merge inventory files into the fleet CSV and print the per-agent rollup."""
     try:
         files = inventory_mod.input_files(args.input)
@@ -546,7 +546,7 @@ def remotes_text(remotes: list[Remote]) -> str:
     return ", ".join(parts)
 
 
-def cmd_detect(args: argparse.Namespace, collection: Collection) -> int:
+def run_detect(args: argparse.Namespace, collection: Collection) -> int:
     """Print the homes, agents and projects of the input, as tables or JSON."""
     detection = detect_object(collection)
     if args.json:
@@ -1067,7 +1067,7 @@ def synced_homes(homes: list[HomeEntry], sessions: list[SessionSummary]) -> list
     ]
 
 
-def cmd_timeline(args: argparse.Namespace, collection: Collection) -> int:
+def run_timeline(args: argparse.Namespace, collection: Collection) -> int:
     """Write timeline.jsonl, sessions.jsonl and inventory.json, and print the summary."""
     opts = Options(include_thinking=args.include_thinking)
     row_filter: RowFilter = args.row_filter

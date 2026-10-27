@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 OUT_FMT = "%Y-%m-%dT%H:%M:%S.%f"
-_FRACTION_RX = re.compile(r"\.(\d+)")
+_FRACTION_PATTERN = re.compile(r"\.(\d+)")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
@@ -38,7 +38,9 @@ def to_utc(value: object) -> str:
         # nanoseconds and go-sqlite3's trimmed `.5-08:00` are rewritten first.
         if len(text) > 10 and text[10] == " ":
             text = text[:10] + "T" + text[11:]
-        text = _FRACTION_RX.sub(lambda match: "." + match.group(1)[:6].ljust(6, "0"), text, count=1)
+        text = _FRACTION_PATTERN.sub(
+            lambda match: "." + match.group(1)[:6].ljust(6, "0"), text, count=1
+        )
         moment = datetime.fromisoformat(text)
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)

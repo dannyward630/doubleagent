@@ -19,28 +19,25 @@ claude-code|.claude-*/daemon/pipe.key
 claude-code|.claude-*/daemon/roster.json
 claude-code|.claude-*/backups/.claude.json.*
 # Running-process credentials in a relocated config home: the IDE bridge
-# lock (authToken) and the Remote Control spawn MCP definition (2.1.310, #256)
+# lock (authToken) and the Remote Control spawn MCP definition
 claude-code|.claude-*/ide/*.lock
 claude-code|.claude-*/bridge-spawn/*/mcp.json
 claude-code|.local/share/claude
 # Claude Code version locks and its staging/ directory, home-relative on Linux
-# and Windows alike: locks/<version>.lock exists only while a session
-# runs (2.1.310, #256)
+# and Windows alike
 claude-code|.local/state/claude
 claude-code|.cache/claude
-# Claude Code CLI cache: MCP server logs per project (#81). The Windows
+# Claude Code CLI cache: MCP server logs per project. The Windows
 # entry names the children of Cache/: the PowerShell exclusion match ignores
 # case, so */Claude*/Cache would prune claude-cli-nodejs/Cache itself
 claude-code|Library/Caches/claude-cli-nodejs
 claude-code|.cache/claude-cli-nodejs
 claude-code|AppData/Local/claude-cli-nodejs/Cache/*
-# Claude Code Windows temp root, under the home: <slug>/<session>/ with
-# scratchpad/ and tasks/ (2.1.309, #256); the Linux and macOS roots are
-# outside every home (#163)
+# Claude Code Windows temp root, under the home (scratchpads and tasks); the
+# Linux and macOS roots are outside every home (research/claude-code.md)
 claude-code|AppData/Local/Temp/claude
-# Claude Code macOS URL handler: a two-file bundle registering the claude-cli:
-# URL scheme, written at the first exit, whose executable is a symlink to
-# ~/.local/bin/claude; install evidence that outlives ~/.local (2.1.310, #256)
+# Claude Code macOS URL handler: the bundle registering the claude-cli: URL
+# scheme, install evidence that outlives ~/.local
 claude-code|Applications/Claude Code URL Handler.app
 claude-desktop|Library/Application Support/Claude
 claude-desktop|Library/Application Support/Claude-3p
@@ -59,22 +56,12 @@ claude-desktop|AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude
 claude-desktop|AppData/Local/Packages/AnthropicPBC.Claude_*/LocalCache/Roaming/Claude
 claude-desktop|Claude
 claude-desktop|Documents/Claude
-# Google. The antigravity entries nest inside ~/.gemini and claim their
-# subtrees: .gemini/antigravity is the data directory of the desktop app
-# (2.x, the Electron app), antigravity-cli that of the CLI, antigravity-ide
-# that of the separately installed IDE, and antigravity-backup the backup
-# the app takes when it migrates IDE data. The Antigravity directory under
-# the Electron roots is the user-data directory of the desktop app; its
-# logs are in Library/Logs on macOS and in its logs/ subdirectory elsewhere
-# (#83). Its Cache exclusion names the three bases: the PowerShell match
-# ignores case, so */Antigravity/Cache would also prune
-# .gemini/antigravity/cache. The CLI keeps plugin secrets in a file store,
-# plugin-secrets.json, in a lower-case antigravity directory under the Go
-# os.UserConfigDir() root when no keychain is available (#90)
-# AppData/Local/antigravity is the Windows form of .cache/antigravity, the
-# marketplace staging directory under the Go os.UserCacheDir() root. The
-# line names one whole component, so it matches neither the installer in
-# AppData/Local/antigravity-updater nor the app in AppData/Local/Programs
+# Google: Gemini CLI and Antigravity (research/gemini-cli.md,
+# research/antigravity.md). The antigravity entries nest inside ~/.gemini and
+# claim their subtrees. The Antigravity Cache exclusion names its three bases:
+# the PowerShell match ignores case, so */Antigravity/Cache would also prune
+# .gemini/antigravity/cache. AppData/Local/antigravity names one whole
+# component, so it matches neither antigravity-updater nor the installed app.
 gemini-cli|.gemini
 gemini-cli|.cache/.gemini
 antigravity|.gemini/antigravity-cli
@@ -101,16 +88,15 @@ antigravity|AppData/Roaming/Antigravity IDE/logs
 # OpenAI
 codex-cli|.codex
 # Codex: the working directory the ChatGPT desktop app gives a thread with no
-# project, Documents/Codex/<date>/<slug> with work/ and outputs/ inside
-# (observed on Windows 2026-10-15 and macOS 2026-10-15 and 2026-10-18; #149)
+# project (research/codex-cli.md)
 codex-cli|Documents/Codex
 chatgpt-desktop|Library/Application Support/com.openai.chat
 chatgpt-desktop|AppData/Local/Packages/OpenAI.ChatGPT-Desktop_*/LocalCache/Roaming/ChatGPT
 chatgpt-desktop|AppData/Local/Packages/OpenAI.ChatGPT-Desktop_*/LocalState
-# ChatGPT desktop on Windows: the Store package was renamed OpenAI.Codex by
-# October 2026, and the app is a Chromium build whose user-data directory is
-# LocalCache/Roaming/Codex/web/Codex. Its profile and the files beside it are
-# named rather than the directory, so the Chromium component data is not walked.
+# ChatGPT desktop on Windows, Store package OpenAI.Codex: the profile and the
+# files beside it in the Chromium user-data directory are named rather than
+# the directory, so the Chromium component data is not walked
+# (research/chatgpt-desktop.md)
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Default
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Local State
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/Last Version
@@ -118,10 +104,9 @@ chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/w
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Roaming/Codex/web/Codex/.codex-tpp-local-executor-installation-id
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/LocalCache/Local/Codex
 chatgpt-desktop|AppData/Local/Packages/OpenAI.Codex_*/Settings
-# ChatGPT desktop on macOS: since 26.1007 the same Electron build, bundle id
-# com.openai.codex, with the Chromium user-data directory Application
-# Support/Codex (profile and files beside it named, as on Windows). The
-# com.openai.chat line above is kept for the former native app.
+# ChatGPT desktop on macOS, bundle id com.openai.codex: the profile and the
+# files beside it in Application Support/Codex are named, as on Windows. The
+# com.openai.chat line above is the former native app.
 chatgpt-desktop|Library/Application Support/com.openai.codex
 chatgpt-desktop|Library/Application Support/Codex/Default
 chatgpt-desktop|Library/Application Support/Codex/Local State
@@ -519,7 +504,7 @@ shared|.config/AGENTS.md
 shared|.config/agents
 # GitHub CLI login that agents use for source-host access (gh auth login):
 # the token in plaintext when the login keychain is unreachable, a token-less
-# host entry when it is in the keychain (macOS, Claude Code 2.1.310 round, #256)
+# host entry when it is in the keychain
 shared|.config/gh/hosts.yml
 shared|AppData/Roaming/GitHub CLI/hosts.yml
 # Ollama

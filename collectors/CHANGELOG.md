@@ -76,6 +76,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Claude Code's `.claude/paste-cache` is no longer excluded: it holds the
   text of each long pasted prompt, which `history.jsonl` names only by
   hash ([#256]).
+- The comment lines of the catalog tables, which `--list` and `-List`
+  print, are shorter: each names what its lines cover and the research
+  document to read, without issue numbers, dates or build histories. No
+  catalog line changed ([#277]).
 
 ## [1.18.0] - 2026-10-21
 
@@ -1153,6 +1157,7 @@ stdout `errors:` line now reads `errors:     N (X error_copy, Y error_read)`.
 [1.1.0]: https://github.com/seanthegeek/doubleagent/compare/collector-v1.0.0...collector-v1.1.0
 [1.0.0]: https://github.com/seanthegeek/doubleagent/releases/tag/collector-v1.0.0
 
+[#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256
 [#253]: https://github.com/seanthegeek/doubleagent/issues/253
 [#242]: https://github.com/seanthegeek/doubleagent/issues/242

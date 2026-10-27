@@ -145,36 +145,36 @@ class _Bucket:
         self.undated: list[int] = []
 
 
-def _has_id(r: Row) -> bool:
+def _has_id(row: Row) -> bool:
     """Whether `r` is a tool call or result with a `tool_use_id`."""
-    return r.turn_type in _TOOL_TYPES and bool(r.tool_use_id)
+    return row.turn_type in _TOOL_TYPES and bool(row.tool_use_id)
 
 
-def _by_text(r: Row) -> tuple[str, ...]:
-    form = MATCH_FORMS.get(r.agent)
-    turn_type, text = form(r) if form else (r.turn_type, r.text)
-    return (r.host, r.user, r.agent, turn_type, "text", text)
+def _by_text(row: Row) -> tuple[str, ...]:
+    form = MATCH_FORMS.get(row.agent)
+    turn_type, text = form(row) if form else (row.turn_type, row.text)
+    return (row.host, row.user, row.agent, turn_type, "text", text)
 
 
-def _by_id(r: Row) -> tuple[str, ...]:
-    return (r.host, r.user, r.agent, r.turn_type, "id", r.tool_use_id)
+def _by_id(row: Row) -> tuple[str, ...]:
+    return (row.host, row.user, row.agent, row.turn_type, "id", row.tool_use_id)
 
 
-def _is_parser_row(r: Row) -> bool:
+def _is_parser_row(row: Row) -> bool:
     """Whether `r` is a `parser:` row about its own `source_file`, which
     neither pairs nor is paired with (issue 135)."""
-    return r.turn_type == "system" and r.text.startswith("parser:")
+    return row.turn_type == "system" and row.text.startswith("parser:")
 
 
-def _scope_rank(r: Row) -> int:
+def _scope_rank(row: Row) -> int:
     """0 for a row with a `session_id`, 1 for one with only a
     `project_path`, 2 for one with neither."""
-    if r.session_id:
+    if row.session_id:
         return 0
-    return 1 if r.project_path else 2
+    return 1 if row.project_path else 2
 
 
-def _lookups(r: Row, broaden: bool) -> list[tuple[tuple, bool, bool]]:
+def _lookups(row: Row, broaden: bool) -> list[tuple[tuple, bool, bool]]:
     """The keys secondary row `r` looks under, in order, each with whether
     it is a broader scope than the row's own and whether only candidates
     without a `tool_use_id` may be taken there. A row with an id looks
@@ -183,38 +183,40 @@ def _lookups(r: Row, broaden: bool) -> list[tuple[tuple, bool, bool]]:
     project, else none) and, with `broaden`, then its project when it has
     one and its identity alone."""
     scopes: list[tuple] = []
-    if r.session_id:
-        scopes.append(("session", r.session_id))
-    if r.project_path:
-        scopes.append(("project", r.project_path))
+    if row.session_id:
+        scopes.append(("session", row.session_id))
+    if row.project_path:
+        scopes.append(("project", row.project_path))
     scopes.append(("any",))
     if not broaden:
         scopes = scopes[:1]
-    idents = [(_by_id(r), False), (_by_text(r), True)] if _has_id(r) else [(_by_text(r), False)]
+    identities = (
+        [(_by_id(row), False), (_by_text(row), True)] if _has_id(row) else [(_by_text(row), False)]
+    )
     return [
-        ((*ident, *scope), n > 0, idless)
-        for n, scope in enumerate(scopes)
-        for ident, idless in idents
+        ((*identity, *scope), depth > 0, idless)
+        for depth, scope in enumerate(scopes)
+        for identity, idless in identities
     ]
 
 
-def _add(buckets: dict[tuple, _Bucket], r: Row, i: int, ms: int | None) -> None:
+def _add(buckets: dict[tuple, _Bucket], row: Row, index: int, time_ms: int | None) -> None:
     """File candidate `r`, row index `i`, under its text and, with a
     `tool_use_id`, its id, each under its session, its project and alone,
     keeping each bucket's timestamps sorted."""
-    idents = [_by_text(r), _by_id(r)] if _has_id(r) else [_by_text(r)]
-    for ident in idents:
-        for scope in (("session", r.session_id), ("project", r.project_path), ("any",)):
-            bucket = buckets.setdefault((*ident, *scope), _Bucket())
-            if ms is None:
-                bucket.undated.append(i)
+    identities = [_by_text(row), _by_id(row)] if _has_id(row) else [_by_text(row)]
+    for identity in identities:
+        for scope in (("session", row.session_id), ("project", row.project_path), ("any",)):
+            bucket = buckets.setdefault((*identity, *scope), _Bucket())
+            if time_ms is None:
+                bucket.undated.append(index)
             else:
-                insort(bucket.dated, (ms, i))
+                insort(bucket.dated, (time_ms, index))
 
 
 def _nearest(
     dated: _Dated,
-    ms: int,
+    time_ms: int,
     back_ms: int,
     forward_ms: int,
     used: Container[int],
@@ -227,36 +229,36 @@ def _nearest(
     The bound is the candidate's own (`_Bounds.upper`), so the scan runs
     to the end of the window rather than stopping at one time."""
     best: tuple[int, int] | None = None
-    k = bisect_left(dated, (ms - back_ms, -1))
-    while k < len(dated) and dated[k][0] <= ms + forward_ms:
-        t, i = dated[k]
-        k += 1
-        if i in used:
+    position = bisect_left(dated, (time_ms - back_ms, -1))
+    while position < len(dated) and dated[position][0] <= time_ms + forward_ms:
+        candidate_ms, index = dated[position]
+        position += 1
+        if index in used:
             continue
         if upper is not None:
-            limit = upper(i)
-            if limit is not None and t >= limit:
+            limit = upper(index)
+            if limit is not None and candidate_ms >= limit:
                 continue
-        if best is None or abs(t - ms) < best[0]:
-            best = (abs(t - ms), i)
+        if best is None or abs(candidate_ms - time_ms) < best[0]:
+            best = (abs(candidate_ms - time_ms), index)
     return best[1] if best else None
 
 
 def _earliest(bucket: _Bucket, used: Container[int]) -> int | None:
     """The index of the earliest-timestamped unused row in `bucket`, the
     undated ones last in input order; None when every one is used."""
-    for _, i in bucket.dated:
-        if i not in used:
-            return i
-    for i in bucket.undated:
-        if i not in used:
-            return i
+    for _, index in bucket.dated:
+        if index not in used:
+            return index
+    for index in bucket.undated:
+        if index not in used:
+            return index
     return None
 
 
 def _pair(
     bucket: _Bucket | None,
-    r: Row,
+    row: Row,
     tolerance: float,
     used: Container[int],
     upper: _Upper | None = None,
@@ -268,12 +270,12 @@ def _pair(
     is given, or None."""
     if bucket is None:
         return None
-    ms = epoch_ms(r.timestamp_utc)
-    if ms is None:
+    time_ms = epoch_ms(row.timestamp_utc)
+    if time_ms is None:
         return _earliest(bucket, used)
     back_ms = int(tolerance * 1000)
     forward_ms = back_ms if forward is None else int(forward * 1000)
-    return _nearest(bucket.dated, ms, back_ms, forward_ms, used, upper)
+    return _nearest(bucket.dated, time_ms, back_ms, forward_ms, used, upper)
 
 
 def _processing_order(secondary: list[tuple[Row, float]], by_scope: bool) -> list[int]:
@@ -283,17 +285,17 @@ def _processing_order(secondary: list[tuple[Row, float]], by_scope: bool) -> lis
     `parser:` rows are left out, so they are never dropped."""
     stamped = []
     undated = []
-    for j, (r, _) in enumerate(secondary):
-        if _is_parser_row(r):
+    for index, (row, _) in enumerate(secondary):
+        if _is_parser_row(row):
             continue
-        ms = epoch_ms(r.timestamp_utc)
-        if ms is None:
-            undated.append(j)
+        time_ms = epoch_ms(row.timestamp_utc)
+        if time_ms is None:
+            undated.append(index)
         else:
-            stamped.append((ms, j))
+            stamped.append((time_ms, index))
     if by_scope:
-        undated.sort(key=lambda j: _scope_rank(secondary[j][0]))
-    return [j for _, j in sorted(stamped)] + undated
+        undated.sort(key=lambda index: _scope_rank(secondary[index][0]))
+    return [index for _, index in sorted(stamped)] + undated
 
 
 class _Unavailable:
@@ -304,34 +306,38 @@ class _Unavailable:
     the row's own, those whose session or project differs from one `r`
     records."""
 
-    def __init__(self, rows: list[Row], used: set[int], r: Row, same_file: bool) -> None:
+    def __init__(self, rows: list[Row], used: set[int], row: Row, same_file: bool) -> None:
         self.rows = rows
         self.used = used
-        self.row = r
+        self.row = row
         self.same_file = same_file
         self.broad = False
         self.idless = False
 
-    def __contains__(self, i: object) -> bool:
-        if not isinstance(i, int) or i in self.used:
+    def __contains__(self, index: object) -> bool:
+        if not isinstance(index, int) or index in self.used:
             return True
-        c, r = self.rows[i], self.row
-        if self.same_file and c.source_file == r.source_file:
+        candidate, row = self.rows[index], self.row
+        if self.same_file and candidate.source_file == row.source_file:
             return True
-        if self.idless and _has_id(c):
+        if self.idless and _has_id(candidate):
             return True
         if not self.broad:
             return False
-        session_differs = bool(r.session_id and c.session_id and c.session_id != r.session_id)
+        session_differs = bool(
+            row.session_id and candidate.session_id and candidate.session_id != row.session_id
+        )
         project_differs = bool(
-            r.project_path and c.project_path and c.project_path != r.project_path
+            row.project_path
+            and candidate.project_path
+            and candidate.project_path != row.project_path
         )
         return session_differs or project_differs
 
 
 def _find(
     buckets: dict[tuple, _Bucket],
-    r: Row,
+    row: Row,
     tolerance: float,
     unavailable: _Unavailable,
     broaden: bool,
@@ -341,21 +347,21 @@ def _find(
     """The candidate row `r` pairs with, trying its lookups in order,
     before each candidate's bound from `upper` and within `forward`
     seconds after `r` when given."""
-    for key, broad, idless in _lookups(r, broaden):
+    for key, broad, idless in _lookups(row, broaden):
         unavailable.broad, unavailable.idless = broad, idless
-        i = _pair(buckets.get(key), r, tolerance, unavailable, upper, forward)
-        if i is not None:
-            return i
+        index = _pair(buckets.get(key), row, tolerance, unavailable, upper, forward)
+        if index is not None:
+            return index
     return None
 
 
-def _scope(r: Row) -> tuple:
+def _scope(row: Row) -> tuple:
     """The scope a row matches under: its session, else its project, else
     none (the first of `_lookups`)."""
-    if r.session_id:
-        return ("session", r.session_id)
-    if r.project_path:
-        return ("project", r.project_path)
+    if row.session_id:
+        return ("session", row.session_id)
+    if row.project_path:
+        return ("project", row.project_path)
     return ("any",)
 
 
@@ -380,22 +386,22 @@ class _Bounds:
         self.by_session: dict[tuple, list[int]] = {}
         self.by_project_free: dict[tuple, list[int]] = {}
         self.by_none: dict[tuple, list[int]] = {}
-        for r, _ in secondary:
-            ms = epoch_ms(r.timestamp_utc)
-            if ms is None or _is_parser_row(r):
+        for row, _ in secondary:
+            time_ms = epoch_ms(row.timestamp_utc)
+            if time_ms is None or _is_parser_row(row):
                 continue
-            text = _by_text(r)
-            if r.session_id:
-                self.by_session.setdefault((text, r.session_id), []).append(ms)
-            elif r.project_path:
-                self.by_project_free.setdefault((text, r.project_path), []).append(ms)
+            text = _by_text(row)
+            if row.session_id:
+                self.by_session.setdefault((text, row.session_id), []).append(time_ms)
+            elif row.project_path:
+                self.by_project_free.setdefault((text, row.project_path), []).append(time_ms)
             else:
-                self.by_none.setdefault(text, []).append(ms)
+                self.by_none.setdefault(text, []).append(time_ms)
         for index in (self.by_session, self.by_project_free, self.by_none):
             for times in index.values():
                 times.sort()
 
-    def upper(self, text: tuple, ms: int, candidate: Row) -> int | None:
+    def upper(self, text: tuple, time_ms: int, candidate: Row) -> int | None:
         """The bound for a widened row of match `text` at `ms` against
         `candidate`, a primary row: the next time after `ms` among the
         secondary rows that could take `candidate`, or None."""
@@ -408,20 +414,20 @@ class _Bounds:
         for times in lists:
             if not times:
                 continue
-            k = bisect_right(times, ms)
-            if k < len(times) and (later is None or times[k] < later):
-                later = times[k]
+            position = bisect_right(times, time_ms)
+            if position < len(times) and (later is None or times[position] < later):
+                later = times[position]
         return later
 
 
-def _candidate_bound(bounds: _Bounds, primary: list[Row], r: Row) -> _Upper | None:
+def _candidate_bound(bounds: _Bounds, primary: list[Row], row: Row) -> _Upper | None:
     """The bound function for widened secondary row `r` over the rows of
     `primary`, by candidate index; None when `r` has no timestamp."""
-    ms = epoch_ms(r.timestamp_utc)
-    if ms is None:
+    time_ms = epoch_ms(row.timestamp_utc)
+    if time_ms is None:
         return None
-    text = _by_text(r)
-    return lambda i: bounds.upper(text, ms, primary[i])
+    text = _by_text(row)
+    return lambda index: bounds.upper(text, time_ms, primary[index])
 
 
 def _against_primary(
@@ -435,19 +441,21 @@ def _against_primary(
     to that many seconds after it instead of its tolerance, taking no
     candidate at or after the bound `bounds` gives for it."""
     buckets: dict[tuple, _Bucket] = {}
-    for i, r in enumerate(primary):
-        if not _is_parser_row(r):
-            _add(buckets, r, i, epoch_ms(r.timestamp_utc))
+    for index, row in enumerate(primary):
+        if not _is_parser_row(row):
+            _add(buckets, row, index, epoch_ms(row.timestamp_utc))
     used: set[int] = set()
     matched: list[int] = []
-    for j in _processing_order(secondary, by_scope=True):
-        r, tolerance = secondary[j]
-        fwd = forward.get(j) if forward else None
-        upper = _candidate_bound(bounds, primary, r) if bounds and fwd is not None else None
-        i = _find(buckets, r, tolerance, _Unavailable(primary, used, r, False), False, upper, fwd)
-        if i is not None:
-            used.add(i)
-            matched.append(j)
+    for secondary_index in _processing_order(secondary, by_scope=True):
+        row, tolerance = secondary[secondary_index]
+        window = forward.get(secondary_index) if forward else None
+        upper = _candidate_bound(bounds, primary, row) if bounds and window is not None else None
+        index = _find(
+            buckets, row, tolerance, _Unavailable(primary, used, row, False), False, upper, window
+        )
+        if index is not None:
+            used.add(index)
+            matched.append(secondary_index)
     return matched
 
 
@@ -456,21 +464,21 @@ def _among_secondary(secondary: list[tuple[Row, float]], matched: set[int]) -> l
     pair with another secondary row from a different `source_file`: one a
     primary row took, or one tested before it. Each candidate is taken
     once; a row looks under its own scope, then the broader ones."""
-    rows = [r for r, _ in secondary]
+    rows = [row for row, _ in secondary]
     buckets: dict[tuple, _Bucket] = {}
-    for j in sorted(matched):
-        _add(buckets, rows[j], j, epoch_ms(rows[j].timestamp_utc))
+    for index in sorted(matched):
+        _add(buckets, rows[index], index, epoch_ms(rows[index].timestamp_utc))
     used: set[int] = set()
     copies: list[int] = []
-    for j in _processing_order(secondary, by_scope=False):
-        if j in matched:
+    for index in _processing_order(secondary, by_scope=False):
+        if index in matched:
             continue
-        r, tolerance = secondary[j]
-        i = _find(buckets, r, tolerance, _Unavailable(rows, used, r, True), True)
-        if i is not None:
-            used.add(i)
-            copies.append(j)
-        _add(buckets, r, j, epoch_ms(r.timestamp_utc))
+        row, tolerance = secondary[index]
+        candidate_index = _find(buckets, row, tolerance, _Unavailable(rows, used, row, True), True)
+        if candidate_index is not None:
+            used.add(candidate_index)
+            copies.append(index)
+        _add(buckets, row, index, epoch_ms(row.timestamp_utc))
     return copies
 
 
@@ -479,11 +487,11 @@ def _forward_windows(secondary: list[tuple[Row, float]]) -> dict[int, float]:
     window wider than their own, with that window: how far after the row a
     primary row may be and still match."""
     windows: dict[int, float] = {}
-    for j, (r, tolerance) in enumerate(secondary):
-        window = MATCH_TOLERANCES.get(r.agent)
-        wider = window(r) if window else None
+    for index, (row, tolerance) in enumerate(secondary):
+        window = MATCH_TOLERANCES.get(row.agent)
+        wider = window(row) if window else None
         if wider is not None and wider > tolerance:
-            windows[j] = wider
+            windows[index] = wider
     return windows
 
 
@@ -506,9 +514,9 @@ def deduplicate(
     bounds = _Bounds(secondary) if forward else None
     matched = set(_against_primary(primary, secondary, bounds, forward))
     dropped = matched | set(_among_secondary(secondary, matched))
-    counts: Counter[str] = Counter(secondary[j][0].agent for j in dropped)
-    survivors = [r for j, (r, _) in enumerate(secondary) if j not in dropped]
-    for r in survivors:
-        if r.turn_type != "system":
-            r.recovered = "yes"
+    counts: Counter[str] = Counter(secondary[index][0].agent for index in dropped)
+    survivors = [row for index, (row, _) in enumerate(secondary) if index not in dropped]
+    for row in survivors:
+        if row.turn_type != "system":
+            row.recovered = "yes"
     return list(primary) + survivors, counts

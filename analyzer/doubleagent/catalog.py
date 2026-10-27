@@ -47,14 +47,14 @@ class Catalog:
     @property
     def agents(self) -> list[str]:
         seen: dict[str, None] = {}
-        for e in self.entries:
-            seen.setdefault(e.agent)
+        for entry in self.entries:
+            seen.setdefault(entry.agent)
         return list(seen)
 
     def first_segment_regexes(self) -> list[re.Pattern[str]]:
         seen: dict[str, re.Pattern[str]] = {}
-        for e in self.entries:
-            seen.setdefault(e.first_segment, e.regexes[0])
+        for entry in self.entries:
+            seen.setdefault(entry.first_segment, entry.regexes[0])
         return list(seen.values())
 
     def project_agent_for(self, rel: str) -> str:
@@ -65,14 +65,17 @@ class Catalog:
         attributes a file. Used to re-attribute rows that collectors before
         1.12.0 recorded with agent `project`; the result is `project` for a
         file the catalog still leaves to no single agent (`AGENTS.md`)."""
-        parts = [p for p in rel.replace("\\", "/").split("/") if p]
+        parts = [part for part in rel.replace("\\", "/").split("/") if part]
         best: Entry | None = None
-        for e in self.project_entries:
-            n = len(e.segments)
-            if n > len(parts) or (best is not None and n <= len(best.segments)):
+        for entry in self.project_entries:
+            depth = len(entry.segments)
+            if depth > len(parts) or (best is not None and depth <= len(best.segments)):
                 continue
-            if all(rx.fullmatch(p) for rx, p in zip(e.regexes, parts[:n], strict=True)):
-                best = e
+            if all(
+                pattern.fullmatch(part)
+                for pattern, part in zip(entry.regexes, parts[:depth], strict=True)
+            ):
+                best = entry
         return best.agent if best is not None else ""
 
     def claims_home_path(self, rel: str, windows: bool = False) -> str:
@@ -88,17 +91,17 @@ class Catalog:
         matched without regard to case, as Windows compares file names.
         Used to tell an agent's own working directory (a scratch
         directory) from a project in inventory.json (issue 149)."""
-        sep = "\\" if windows else "/"
-        parts = [p for p in rel.split(sep) if p]
+        separator = "\\" if windows else "/"
+        parts = [part for part in rel.split(separator) if part]
         flags = re.IGNORECASE if windows else 0
         best: Entry | None = None
-        for e in self.entries:
-            n = len(e.segments)
-            if n > len(parts) or (best is not None and n <= len(best.segments)):
+        for entry in self.entries:
+            depth = len(entry.segments)
+            if depth > len(parts) or (best is not None and depth <= len(best.segments)):
                 continue
-            pairs = zip(e.regexes, parts[:n], strict=True)
-            if all(re.fullmatch(rx.pattern, p, flags) for rx, p in pairs):
-                best = e
+            pairs = zip(entry.regexes, parts[:depth], strict=True)
+            if all(re.fullmatch(pattern.pattern, part, flags) for pattern, part in pairs):
+                best = entry
         return best.agent if best is not None else ""
 
     def nested_matches(self, agent_dir: Path, onerror=None) -> Iterator[tuple[Entry, Path]]:
@@ -126,30 +129,30 @@ class Catalog:
                 yield entry, hit
 
 
-def glob_segment_to_regex(seg: str) -> re.Pattern[str]:
+def glob_segment_to_regex(segment: str) -> re.Pattern[str]:
     """Convert one glob path segment to a regex. `*` and `?` never match `/`;
     `[...]` passes through with `!` meaning negation as in sh."""
     out = []
     i = 0
-    while i < len(seg):
-        c = seg[i]
-        if c == "*":
+    while i < len(segment):
+        character = segment[i]
+        if character == "*":
             out.append("[^/]*")
-        elif c == "?":
+        elif character == "?":
             out.append("[^/]")
-        elif c == "[":
-            j = seg.find("]", i + 1)
+        elif character == "[":
+            j = segment.find("]", i + 1)
             if j == -1:
-                out.append(re.escape(c))
+                out.append(re.escape(character))
             else:
-                body = seg[i + 1 : j]
+                body = segment[i + 1 : j]
                 if body.startswith("!"):
                     body = "^" + body[1:]
                 body = body.replace("\\", "\\\\")
                 out.append("[" + body + "]")
                 i = j
         else:
-            out.append(re.escape(c))
+            out.append(re.escape(character))
         i += 1
     return re.compile("".join(out))
 
@@ -167,15 +170,15 @@ def _expand(
     if names is None:
         try:
             names = os.listdir(base)
-        except OSError as e:
+        except OSError as error:
             names = []
             if onerror is not None:
-                onerror(e)
+                onerror(error)
         cache[base] = names
-    rx = regexes[0]
+    pattern = regexes[0]
     rest = regexes[1:]
     for name in names:
-        if rx.fullmatch(name) is None:
+        if pattern.fullmatch(name) is None:
             continue
         child = base / name
         if rest:
@@ -186,8 +189,10 @@ def _expand(
 
 
 def _make_entry(agent: str, glob: str) -> Entry:
-    segments = tuple(s for s in glob.split("/") if s)
-    return Entry(agent, glob, segments, tuple(glob_segment_to_regex(s) for s in segments))
+    segments = tuple(segment for segment in glob.split("/") if segment)
+    return Entry(
+        agent, glob, segments, tuple(glob_segment_to_regex(segment) for segment in segments)
+    )
 
 
 def load(path: Path = CATALOG_FILE) -> Catalog:
@@ -196,7 +201,7 @@ def load(path: Path = CATALOG_FILE) -> Catalog:
 
 
 def parse(text: str) -> Catalog:
-    cat = Catalog(text=text)
+    catalog = Catalog(text=text)
     section = "home"
     for raw in text.splitlines():
         line = raw.rstrip("\n")
@@ -217,15 +222,15 @@ def parse(text: str) -> Catalog:
             continue
         if section == "home":
             agent, _, glob = line.partition("|")
-            cat.entries.append(_make_entry(agent, glob))
+            catalog.entries.append(_make_entry(agent, glob))
         elif section == "project":
             agent, _, glob = line.partition("|")
-            cat.project_entries.append(_make_entry(agent, glob))
+            catalog.project_entries.append(_make_entry(agent, glob))
         elif section == "exclude":
-            cat.excludes.append(line)
+            catalog.excludes.append(line)
         elif section == "docker":
             agent, _, glob = line.partition("|")
-            cat.docker_volumes.append(_make_entry(agent, glob))
+            catalog.docker_volumes.append(_make_entry(agent, glob))
         else:
-            cat.secrets.append(line)
-    return cat
+            catalog.secrets.append(line)
+    return catalog

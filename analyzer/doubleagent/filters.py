@@ -104,64 +104,64 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
     --until (`end` True) value in one of the forms in the module docstring.
     A value naming a whole period gives its first millisecond for --since
     and its last for --until."""
-    s = " ".join(text.split())
-    low = s.lower()
+    text_value = " ".join(text.split())
+    lowered = text_value.lower()
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    if low == "now":
+    if lowered == "now":
         return format_utc(now)
-    if low in ("today", "yesterday"):
+    if lowered in ("today", "yesterday"):
         day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        if low == "yesterday":
+        if lowered == "yesterday":
             day -= timedelta(days=1)
         return _bound(day, timedelta(days=1), end)
-    m = _RELATIVE_RX.match(s)
-    if m:
-        n = {u: 0 for u in _UNIT.values()}
-        n[_UNIT[m.group(2).lower()]] = int(m.group(1))
+    match = _RELATIVE_RX.match(text_value)
+    if match:
+        amounts = {unit: 0 for unit in _UNIT.values()}
+        amounts[_UNIT[match.group(2).lower()]] = int(match.group(1))
         try:
             ago = relativedelta(
-                years=n["years"],
-                months=n["months"],
-                weeks=n["weeks"],
-                days=n["days"],
-                hours=n["hours"],
-                minutes=n["minutes"],
+                years=amounts["years"],
+                months=amounts["months"],
+                weeks=amounts["weeks"],
+                days=amounts["days"],
+                hours=amounts["hours"],
+                minutes=amounts["minutes"],
             )
             return format_utc(now - ago)
         except (ValueError, OverflowError):
             raise BoundError("%r is out of range" % text) from None
-    if _EPOCH_RX.match(s):
-        out = to_utc(s)
+    if _EPOCH_RX.match(text_value):
+        out = to_utc(text_value)
         if not out:
             raise BoundError("%r is out of range as epoch seconds or milliseconds" % text)
         return out
-    m = _SPACED_OFFSET_RX.match(s)
-    if m:
-        offset = m.group(2)
-        s = m.group(1) + ("Z" if offset.lower() == "utc" else offset)
+    match = _SPACED_OFFSET_RX.match(text_value)
+    if match:
+        offset = match.group(2)
+        text_value = match.group(1) + ("Z" if offset.lower() == "utc" else offset)
     try:
-        dt = isoparse(s)
-    except (ValueError, OverflowError) as e:
-        reason = " (%s)" % e if _RANGE_MSG_RX.search(str(e)) else ""
+        moment = isoparse(text_value)
+    except (ValueError, OverflowError) as error:
+        reason = " (%s)" % error if _RANGE_MSG_RX.search(str(error)) else ""
         raise BoundError("cannot read %r as a time%s; %s" % (text, reason, FORMS_HELP)) from None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    dt = dt.astimezone(timezone.utc)
-    t = _TIME_RX.search(s)
-    if t:
-        _hour, minute, second, fraction = t.groups()
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    moment = moment.astimezone(timezone.utc)
+    time_match = _TIME_RX.search(text_value)
+    if time_match:
+        _hour, minute, second, fraction = time_match.groups()
         if fraction:
-            return format_utc(dt)
+            return format_utc(moment)
         if second:
-            return _bound(dt, timedelta(seconds=1), end)
+            return _bound(moment, timedelta(seconds=1), end)
         if minute:
-            return _bound(dt, timedelta(minutes=1), end)
-        return _bound(dt, timedelta(hours=1), end)
-    if _YEAR_RX.match(s):
-        return _bound(dt, relativedelta(years=1), end)
-    if _MONTH_RX.match(s):
-        return _bound(dt, relativedelta(months=1), end)
-    return _bound(dt, timedelta(days=1), end)
+            return _bound(moment, timedelta(minutes=1), end)
+        return _bound(moment, timedelta(hours=1), end)
+    if _YEAR_RX.match(text_value):
+        return _bound(moment, relativedelta(years=1), end)
+    if _MONTH_RX.match(text_value):
+        return _bound(moment, relativedelta(months=1), end)
+    return _bound(moment, timedelta(days=1), end)
 
 
 def _bound(start: datetime, length, end: bool) -> str:
@@ -188,12 +188,12 @@ class RowFilter:
     def in_window(self, row: Row) -> bool:
         if not (self.since or self.until):
             return True
-        ts = row.timestamp_utc
-        if not ts:
+        timestamp = row.timestamp_utc
+        if not timestamp:
             if not self.keep_undated:
                 self.dropped_undated += 1
             return self.keep_undated
-        if (self.since and ts < self.since) or (self.until and ts > self.until):
+        if (self.since and timestamp < self.since) or (self.until and timestamp > self.until):
             self.dropped_window += 1
             return False
         return True
@@ -202,20 +202,20 @@ class RowFilter:
         """Rows inside the window that match a pattern. A matched tool_use
         keeps its tool_result, and a matched result its call, by session and
         tool_use_id, when the partner is inside the window too."""
-        kept = [r for r in rows if self.in_window(r)]
+        kept = [row for row in rows if self.in_window(row)]
         if not self.patterns:
             return kept
-        hit = [any(p.search(r.text) for p in self.patterns) for r in kept]
+        hit = [any(pattern.search(row.text) for pattern in self.patterns) for row in kept]
         pairs = {
-            (r.session_id, r.source_file if not r.session_id else "", r.tool_use_id)
-            for r, h in zip(kept, hit, strict=True)
-            if h and r.tool_use_id
+            (row.session_id, row.source_file if not row.session_id else "", row.tool_use_id)
+            for row, is_hit in zip(kept, hit, strict=True)
+            if is_hit and row.tool_use_id
         }
         out = []
-        for r, h in zip(kept, hit, strict=True):
-            key = (r.session_id, r.source_file if not r.session_id else "", r.tool_use_id)
-            if h or (r.tool_use_id and key in pairs):
-                out.append(r)
+        for row, is_hit in zip(kept, hit, strict=True):
+            key = (row.session_id, row.source_file if not row.session_id else "", row.tool_use_id)
+            if is_hit or (row.tool_use_id and key in pairs):
+                out.append(row)
             else:
                 self.dropped_match += 1
         return out

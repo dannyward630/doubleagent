@@ -65,11 +65,11 @@ def read_text(path: Path) -> tuple[str, str]:
     try:
         if not stat.S_ISREG(os.lstat(path).st_mode):
             return "", "not a regular file"
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        with os.fdopen(fd, "rb") as fh:
-            data = fh.read()
-    except OSError as e:
-        return "", e.strerror or type(e).__name__
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(descriptor, "rb") as handle:
+            data = handle.read()
+    except OSError as error:
+        return "", error.strerror or type(error).__name__
     return data.decode("utf-8", errors="replace"), ""
 
 
@@ -89,10 +89,10 @@ def _physical_lines(text: str) -> list[str]:
     lines = text.split("\n")
     if lines and lines[-1] == "":
         lines.pop()
-    return [ln[:-1] if ln.endswith("\r") else ln for ln in lines]
+    return [line[:-1] if line.endswith("\r") else line for line in lines]
 
 
-def _parse_value(lines: list[str], i: int, text: str) -> tuple[str, int, str]:
+def _parse_value(lines: list[str], index: int, text: str) -> tuple[str, int, str]:
     """The value that starts with `text` on line `i` of `lines`, with quotes
     and escapes resolved, a trailing comment removed and only the bare
     whitespace around it trimmed, the index of the last line it used, and
@@ -108,30 +108,30 @@ def _parse_value(lines: list[str], i: int, text: str) -> tuple[str, int, str]:
     out: list[tuple[str, bool]] = []
     quoted = False
     while True:
-        j = 0
+        position = 0
         continued = False
-        while j < len(text):
-            c = text[j]
-            if c == "\\":
-                if j + 1 < len(text):
-                    if text[j + 1] not in _ESCAPES:
+        while position < len(text):
+            character = text[position]
+            if character == "\\":
+                if position + 1 < len(text):
+                    if text[position + 1] not in _ESCAPES:
                         # git rejects the line; the value is not evidence.
-                        return "", i, "unsupported escape \\" + text[j + 1]
-                    out.append((_ESCAPES[text[j + 1]], True))
-                    j += 2
+                        return "", index, "unsupported escape \\" + text[position + 1]
+                    out.append((_ESCAPES[text[position + 1]], True))
+                    position += 2
                     continue
                 continued = True
                 break
-            if c == '"':
+            if character == '"':
                 quoted = not quoted
-            elif c in "#;" and not quoted:
+            elif character in "#;" and not quoted:
                 break
             else:
-                out.append((c, quoted))
-            j += 1
-        if continued and i + 1 < len(lines):
-            i += 1
-            text = lines[i]
+                out.append((character, quoted))
+            position += 1
+        if continued and index + 1 < len(lines):
+            index += 1
+            text = lines[index]
             continue
         # One pass from each end, since the file is untrusted and a value
         # padded with kilobytes of spaces must not cost a pop(0) per space.
@@ -140,10 +140,10 @@ def _parse_value(lines: list[str], i: int, text: str) -> tuple[str, int, str]:
             first += 1
         while last > first and out[last - 1][0] in _ASCII_SPACE and not out[last - 1][1]:
             last -= 1
-        value = "".join(c for c, _ in out[first:last])
+        value = "".join(character for character, _ in out[first:last])
         # A quote still open at the end is a value the file ends inside: git
         # rejects the line, and the text so far is not the destination.
-        return value, i, "unterminated quoted value" if quoted else ""
+        return value, index, "unterminated quoted value" if quoted else ""
 
 
 def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
@@ -157,38 +157,38 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
     (`line <n>: unterminated quoted value`, `line <n>: unsupported escape
     \\q`), since its text is not the value git would have read."""
     lines = _physical_lines(text)
-    i = 0
-    while i < len(lines):
+    index = 0
+    while index < len(lines):
         # Only leading whitespace is dropped here: a value's trailing
         # whitespace is _parse_value's to judge, since `\ ` at the end of a
         # line is an escaped space, not a continuation.
-        line = lines[i].lstrip(_ASCII_SPACE)
+        line = lines[index].lstrip(_ASCII_SPACE)
         if line.startswith("["):
-            m = _HEADER_RX.match(line)
-            if m is None:
+            match = _HEADER_RX.match(line)
+            if match is None:
                 yield "[", line.rstrip(_ASCII_SPACE)  # unterminated or malformed
-                i += 1
+                index += 1
                 continue
-            yield "[", m.group(0)
-            line = line[m.end() :].lstrip(_ASCII_SPACE)
+            yield "[", match.group(0)
+            line = line[match.end() :].lstrip(_ASCII_SPACE)
         if not line or line[0] in "#;":
-            i += 1
+            index += 1
             continue
-        m = _KEY_RX.match(line)
-        if m is None:
-            i += 1
+        match = _KEY_RX.match(line)
+        if match is None:
+            index += 1
             continue
-        if m.group(2) is None:
-            yield m.group(1).lower(), None
-            i += 1
+        if match.group(2) is None:
+            yield match.group(1).lower(), None
+            index += 1
             continue
-        start = i + 1
-        value, i, error = _parse_value(lines, i, m.group(2))
+        start = index + 1
+        value, index, error = _parse_value(lines, index, match.group(2))
         if error:
             errors.append("line %d: %s" % (start, error))
         else:
-            yield m.group(1).lower(), value
-        i += 1
+            yield match.group(1).lower(), value
+        index += 1
 
 
 def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
@@ -203,14 +203,14 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
     current: str | None = None
     for key, value in _entries(text, [] if errors is None else errors):
         if key == "[":
-            m = _HEADER_RX.match(value or "")
+            match = _HEADER_RX.match(value or "")
             current = None
-            if m is None:
+            if match is None:
                 continue  # unterminated or malformed: its keys belong to no section
-            section, sub = m.group(1).lower(), m.group(2)
-            if sub is not None:
+            section, subsection = match.group(1).lower(), match.group(2)
+            if subsection is not None:
                 if section == "remote":
-                    current = re.sub(r"\\(.)", r"\1", sub)
+                    current = re.sub(r"\\(.)", r"\1", subsection)
             elif section.startswith("remote.") and len(section) > len("remote."):
                 # git lower-cases the dotted form's subsection, so
                 # [remote.Origin] and [remote "origin"] are one remote.
@@ -220,7 +220,7 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
             continue
         remote = remotes.setdefault(current, {"name": current, "urls": [], "pushurls": []})
         remote[key + "s"].append(value)
-    return [r for _, r in sorted(remotes.items())]
+    return [remote for _, remote in sorted(remotes.items())]
 
 
 def parse_head(text: str) -> str:
@@ -228,8 +228,8 @@ def parse_head(text: str) -> str:
     full ref for any other symbolic ref, else the detached commit hash; ""
     for an empty text. The first line ends at a line feed, and only ASCII
     whitespace is trimmed, since a ref may hold other whitespace."""
-    lines = [ln.strip(_ASCII_SPACE) for ln in _physical_lines(text)]
-    first = next((ln for ln in lines if ln), "")
+    lines = [line.strip(_ASCII_SPACE) for line in _physical_lines(text)]
+    first = next((line for line in lines if line), "")
     if first.startswith("ref:"):
         ref = first[len("ref:") :].strip(_ASCII_SPACE)
         return ref[len("refs/heads/") :] if ref.startswith("refs/heads/") else ref
@@ -252,33 +252,33 @@ def project_git(
     be read, or a pair in it git would reject, is appended to `problems`,
     when given, as `<original path>: <reason>` (once per path)."""
     chosen: dict[str, dict[str, Artifact]] = {}
-    for a in artifacts:
-        if not a.home.project or a.agent != PROJECT_AGENT:
+    for artifact in artifacts:
+        if not artifact.home.project or artifact.agent != PROJECT_AGENT:
             continue
-        lower = a.rel.lower()
+        lower = artifact.rel.lower()
         if lower == CONFIG_REL:
-            field, exact = "remotes", a.rel == CONFIG_REL
+            field, exact = "remotes", artifact.rel == CONFIG_REL
         elif lower == HEAD_REL.lower():
-            field, exact = "head", a.rel == HEAD_REL
+            field, exact = "head", artifact.rel == HEAD_REL
         else:
             continue
-        path = a.home.original or str(a.home.disk_path)
+        path = artifact.home.original or str(artifact.home.disk_path)
         fields = chosen.setdefault(path, {})
-        if field not in fields or (exact and fields[field].rel != a.rel):
-            fields[field] = a
+        if field not in fields or (exact and fields[field].rel != artifact.rel):
+            fields[field] = artifact
     out: dict[str, dict] = {}
     for path, fields in chosen.items():
         entry = out[path] = {"remotes": [], "head": ""}
-        for field, a in fields.items():
-            text, error = read_text(a.disk_path)
+        for field, artifact in fields.items():
+            text, error = read_text(artifact.disk_path)
             errors = [error] if error else []
             if not error:
                 if field == "head":
                     entry[field] = parse_head(text)
                 else:
                     entry[field] = parse_remotes(text, errors)
-            for e in errors:
-                line = "%s: %s" % (a.original, e)
+            for message in errors:
+                line = "%s: %s" % (artifact.original, message)
                 if problems is not None and line not in problems:
                     problems.append(line)
     return out

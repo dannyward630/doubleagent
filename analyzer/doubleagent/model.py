@@ -90,10 +90,10 @@ class Row:
     recovered: str = ""
 
     def as_dict(self) -> dict[str, object]:
-        return {c: getattr(self, c) for c in TIMELINE_COLUMNS}
+        return {column: getattr(self, column) for column in TIMELINE_COLUMNS}
 
 
-assert [f.name for f in fields(Row)] == TIMELINE_COLUMNS
+assert [row_field.name for row_field in fields(Row)] == TIMELINE_COLUMNS
 
 
 @dataclass
@@ -208,29 +208,32 @@ def summarise(
     (`Parser.has_secondary`) and "" for the others; `system` rows are left
     out of the count, so a session of only such rows is never "yes"."""
     out: dict[tuple, SessionSummary] = {}
-    for r in rows:
-        if not r.session_id:
+    for row in rows:
+        if not row.session_id:
             continue
-        key = (r.host, r.user, r.agent, r.session_id)
-        s = out.get(key)
-        if s is None:
-            s = SessionSummary(r.host, r.user, r.agent, r.session_id)
-            out[key] = s
-        s.add(r)
-    for s in out.values():
-        if not s.project_path:
-            s.project_path = s._scratch_path
-        if not s.synced and s.agent in sync_agents:
-            s.synced = "no"
-        if not s.relayed and s.agent in relay_agents:
-            s.relayed = "no"
-        if not s.origin and s.agent in origin_agents:
-            s.origin = "local"
-        if s._recovered_rows:
-            s.recovered = "yes" if s._recovered_rows == s._rows else "partial"
-        elif s.agent in secondary_agents:
-            s.recovered = "no"
-    return sorted(out.values(), key=lambda s: (s.first_timestamp_utc, s.agent, s.session_id))
+        key = (row.host, row.user, row.agent, row.session_id)
+        summary = out.get(key)
+        if summary is None:
+            summary = SessionSummary(row.host, row.user, row.agent, row.session_id)
+            out[key] = summary
+        summary.add(row)
+    for summary in out.values():
+        if not summary.project_path:
+            summary.project_path = summary._scratch_path
+        if not summary.synced and summary.agent in sync_agents:
+            summary.synced = "no"
+        if not summary.relayed and summary.agent in relay_agents:
+            summary.relayed = "no"
+        if not summary.origin and summary.agent in origin_agents:
+            summary.origin = "local"
+        if summary._recovered_rows:
+            summary.recovered = "yes" if summary._recovered_rows == summary._rows else "partial"
+        elif summary.agent in secondary_agents:
+            summary.recovered = "no"
+    return sorted(
+        out.values(),
+        key=lambda summary: (summary.first_timestamp_utc, summary.agent, summary.session_id),
+    )
 
 
 def compact(text: object | None) -> str:
@@ -239,8 +242,8 @@ def compact(text: object | None) -> str:
     still stays on one line of the JSONL output."""
     if text is None:
         return ""
-    s = text if isinstance(text, str) else str(text)
-    return s.strip()
+    value = text if isinstance(text, str) else str(text)
+    return value.strip()
 
 
 # A drive-letter path (`C:\x`, `c:/x`) and the extended-length prefixes
@@ -252,14 +255,14 @@ _EXTENDED = re.compile(r"\\\\\?\\(UNC\\)?", re.IGNORECASE)
 def _windows_path(path: str) -> str | None:
     """`path` in the canonical Windows form `canonical_project_path`
     describes, or None when it is not a Windows form."""
-    m = _EXTENDED.match(path)
-    if m:
-        path = ("\\\\" if m.group(1) else "") + path[m.end() :]
+    match = _EXTENDED.match(path)
+    if match:
+        path = ("\\\\" if match.group(1) else "") + path[match.end() :]
     if _DRIVE.match(path):
-        parts = [p for p in path[2:].replace("/", "\\").split("\\") if p]
+        parts = [part for part in path[2:].replace("/", "\\").split("\\") if part]
         return path[0].upper() + ":\\" + "\\".join(parts)
     if path.startswith("\\\\"):
-        parts = [p for p in path[2:].replace("/", "\\").split("\\") if p]
+        parts = [part for part in path[2:].replace("/", "\\").split("\\") if part]
         if parts:
             return "\\\\" + "\\".join(parts)
     return None
@@ -289,8 +292,8 @@ def canonical_project_path(path: str) -> str:
     by the parser that reads them."""
     if not path:
         return path
-    win = _windows_path(path)
-    return path if win is None else win
+    windows_form = _windows_path(path)
+    return path if windows_form is None else windows_form
 
 
 def project_key(path: str) -> str:
@@ -298,5 +301,5 @@ def project_key(path: str) -> str:
     canonical form from `canonical_project_path`, lower-cased when it is a
     Windows form, because Windows file names are case-insensitive; any
     other path unchanged, compared exactly."""
-    win = _windows_path(path) if path else None
-    return path if win is None else win.lower()
+    windows_form = _windows_path(path) if path else None
+    return path if windows_form is None else windows_form.lower()

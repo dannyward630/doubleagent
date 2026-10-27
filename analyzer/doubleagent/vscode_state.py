@@ -46,29 +46,29 @@ def read_items(path: Path, keys: Iterable[str]) -> tuple[dict[str, object], list
     keys present in the database. A value that is not valid JSON is returned
     as its text and noted in problems, so a caller can still try to recover
     from it."""
-    wanted = [k for k in keys if isinstance(k, str) and not k.startswith(SECRET_PREFIX)]
+    wanted = [key for key in keys if isinstance(key, str) and not key.startswith(SECRET_PREFIX)]
     path = Path(path)
     out: dict[str, object] = {}
     problems: list[str] = []
     if not wanted or path.is_symlink() or not sqlite_util.is_sqlite(path):
         return out, problems
     try:
-        with sqlite_util.open_copy(path) as con:
-            if "ItemTable" not in sqlite_util.table_names(con):
+        with sqlite_util.open_copy(path) as connection:
+            if "ItemTable" not in sqlite_util.table_names(connection):
                 return out, problems
             sql = "select key, value from ItemTable where key in (%s)" % ",".join("?" * len(wanted))
-            rows = [(r[0], r[1]) for r in con.execute(sql, wanted)]
-    except (sqlite3.DatabaseError, OSError) as e:
-        return out, ["state.vscdb unreadable: %s" % e]
+            rows = [(row[0], row[1]) for row in connection.execute(sql, wanted)]
+    except (sqlite3.DatabaseError, OSError) as error:
+        return out, ["state.vscdb unreadable: %s" % error]
     for key, value in rows:
         if not isinstance(key, str) or key.startswith(SECRET_PREFIX):
             continue
         text = _text(value)
         try:
             out[key] = json.loads(text)
-        except ValueError as e:
+        except ValueError as error:
             out[key] = text
-            problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, e))
+            problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, error))
     return out, problems
 
 

@@ -47,9 +47,18 @@ Work is split by model to keep Fable for the parts that need it.
   what is wrong, then commits, pushes and opens the pull request; the user
   merges and tags ([Conventions](AGENTS.md#conventions)). A subagent's
   report is evidence, not approval: a claim that tests pass is re-run.
+- **Opus reads it cold.** After the main session commits and before it
+  opens the pull request, one Opus subagent with nothing from the session
+  reviews the committed diff from a bare prompt: read AGENTS.md, read every
+  changed file whole, run the gates the change needs under the notes
+  above, ask whether the hunks agree with each other, label each
+  finding substantive or wording. A substantive finding is fixed and the
+  round repeated until one finds only wording. Copilot's review on the pull
+  request is the second cold reader, never the first.
 
 The brief is one file in the scratchpad that every subagent of a round
-reads, so the rules are identical and each prompt is only its assignment.
+reads, the cold reader excepted, so the rules are identical and each
+prompt is only its assignment.
 It names the files to read first, the rules that must hold, the files the
 agent may and may not touch, and the report format.
 

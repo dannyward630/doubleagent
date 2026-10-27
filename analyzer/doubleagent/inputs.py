@@ -91,13 +91,13 @@ class Collection:
     # "<path>: <reason>" for each directory or file inside the input that
     # could not be read while the input was opened.
     problems: list[str] = field(default_factory=list)
-    _tmp: str | None = None
+    _extracted_dir: str | None = None
 
     def cleanup(self) -> None:
         """Remove the directory an archive was extracted to, if any."""
-        if self._tmp and os.path.isdir(self._tmp):
-            shutil.rmtree(self._tmp, ignore_errors=True)
-            self._tmp = None
+        if self._extracted_dir and os.path.isdir(self._extracted_dir):
+            shutil.rmtree(self._extracted_dir, ignore_errors=True)
+            self._extracted_dir = None
 
     def artifacts_for(self, agent: str) -> list[Artifact]:
         """Return the artifacts attributed to one agent."""
@@ -184,7 +184,7 @@ def _open_archive(path: Path, work_dir: Path | None) -> Collection:
     else:
         dest = Path(tempfile.mkdtemp(prefix="cac-analyzer-"))
     collection = Collection(source=path, kind="archive", root=dest)
-    collection._tmp = str(dest)
+    collection._extracted_dir = str(dest)
     try:
         sidecar = Path(str(path) + ".sha256")
         if sidecar.is_file():

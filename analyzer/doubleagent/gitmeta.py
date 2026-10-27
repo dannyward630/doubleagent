@@ -36,8 +36,8 @@ from .inputs import PROJECT_AGENT, Artifact
 CONFIG_REL = ".git/config"
 HEAD_REL = ".git/HEAD"
 
-_HEADER_RX = re.compile(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]')
-_KEY_RX = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$")
+_HEADER_PATTERN = re.compile(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]')
+_KEY_PATTERN = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$")
 _ESCAPES = {"\\": "\\", '"': '"', "n": "\n", "t": "\t", "b": "\b"}
 
 
@@ -160,7 +160,7 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
         # line is an escaped space, not a continuation.
         line = lines[index].lstrip(_ASCII_SPACE)
         if line.startswith("["):
-            match = _HEADER_RX.match(line)
+            match = _HEADER_PATTERN.match(line)
             if match is None:
                 yield "[", line.rstrip(_ASCII_SPACE)  # unterminated or malformed
                 index += 1
@@ -170,7 +170,7 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
         if not line or line[0] in "#;":
             index += 1
             continue
-        match = _KEY_RX.match(line)
+        match = _KEY_PATTERN.match(line)
         if match is None:
             index += 1
             continue
@@ -199,7 +199,7 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[Remote]:
     current: str | None = None
     for key, value in _entries(text, [] if errors is None else errors):
         if key == "[":
-            match = _HEADER_RX.match(value or "")
+            match = _HEADER_PATTERN.match(value or "")
             current = None
             if match is None:
                 continue  # unterminated or malformed: its keys belong to no section

@@ -17,7 +17,7 @@ Notes for Claude Code on this workstation:
   `analyzer/tests/run.sh` fails at import. Make a venv in the scratchpad
   (`python3 -m venv venv && venv/bin/pip install -r analyzer/requirements-dev.txt
   ruff==0.16.10 pyright==1.1.414`), run the suite from `analyzer/` with
-  `venv/bin/python -m unittest discover -s tests -t tests`, and pyright with
+  `venv/bin/python -m pytest`, and pyright with
   `--pythonpath venv/bin/python`.
 - This Mac has `/bin/dash` but no busybox, posh, pwsh, uvx, shellcheck or
   shfmt; CI runs those gates. Its `/bin/sh` is bash 3.2, the one shell CI

@@ -89,7 +89,7 @@ PERMISSION_KEYS = ("OPENAI_USE_FUNCTIONS", "DEFAULT_EXECUTE_SHELL_CMD", "SHELL_I
 MODEL_KEY = "DEFAULT_MODEL"
 
 
-def _d(value) -> dict:
+def _dict_or_empty(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
@@ -98,25 +98,25 @@ def load_messages(raw: str) -> tuple[list[dict], str]:
     decoded element by element so the messages before the cut survive."""
     try:
         data = json.loads(raw)
-    except ValueError as e:
-        err = str(e)
+    except ValueError as error:
+        err = str(error)
     else:
         if isinstance(data, list):
-            return [m for m in data if isinstance(m, dict)], ""
+            return [message for message in data if isinstance(message, dict)], ""
         return [], "not a JSON array"
-    s = raw.lstrip()
-    if not s.startswith("["):
+    text = raw.lstrip()
+    if not text.startswith("["):
         return [], err
     dec = json.JSONDecoder()
     out: list[dict] = []
     i = 1
     while True:
-        while i < len(s) and s[i] in " \t\r\n,":
+        while i < len(text) and text[i] in " \t\r\n,":
             i += 1
-        if i >= len(s) or s[i] == "]":
+        if i >= len(text) or text[i] == "]":
             break
         try:
-            value, i = dec.raw_decode(s, i)
+            value, i = dec.raw_decode(text, i)
         except ValueError:
             break
         if isinstance(value, dict):
@@ -147,15 +147,15 @@ def read_sgptrc(raw: str, errors: list) -> list[tuple[str, str]]:
     kept, since the file holds the API key."""
     out = []
     lines = raw.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    for n, line in enumerate(lines, 1):
+    for line_number, line in enumerate(lines, 1):
         if not line.strip() or line.startswith("#"):
             continue
         if "=" not in line:
             errors.append(
                 (
-                    n,
+                    line_number,
                     'unparseable line %d (no "=" separator; not shown, the file holds the API key)'
-                    % n,
+                    % line_number,
                     "",
                 )
             )
@@ -183,23 +183,23 @@ class ShellGptParser(Parser):
     def secondary(self, artifact: Artifact) -> bool:
         return bool(CACHE_RX.search(artifact.rel))
 
-    def _system(self, artifact: Artifact, ts: str, text: str) -> Row:
+    def _system(self, artifact: Artifact, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.turn_type = "system"
         row.source_line = 1
         row.text = text
         return row
 
     def _parse_sgptrc(self, artifact: Artifact) -> Iterator[Row]:
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         errors: list = []
-        with open(artifact.disk_path, "rb") as fh:
-            raw = fh.read().decode("utf-8", errors="replace")
+        with open(artifact.disk_path, "rb") as handle:
+            raw = handle.read().decode("utf-8", errors="replace")
         for key, value in read_sgptrc(raw, errors):
             if key == MODEL_KEY:
                 text = "model: %s (configured default, from %s, file mtime)" % (value, artifact.rel)
-                row = self._system(artifact, ts, text)
+                row = self._system(artifact, timestamp, text)
                 row.model = value
             else:
                 text = "permission setting: %s=%s (from %s, file mtime)" % (
@@ -207,7 +207,7 @@ class ShellGptParser(Parser):
                     value,
                     artifact.rel,
                 )
-                row = self._system(artifact, ts, text)
+                row = self._system(artifact, timestamp, text)
             yield row
         yield from error_rows(self, artifact, errors)
 
@@ -220,8 +220,8 @@ class ShellGptParser(Parser):
         yield self._system(artifact, file_mtime(artifact), text)
 
     def _parse_cache(self, artifact: Artifact) -> Iterator[Row]:
-        with open(artifact.disk_path, "rb") as fh:
-            text = fh.read().decode("utf-8", errors="replace")
+        with open(artifact.disk_path, "rb") as handle:
+            text = handle.read().decode("utf-8", errors="replace")
         if not text.strip():
             return
         row = self.base_row(artifact)
@@ -243,7 +243,7 @@ class ShellGptParser(Parser):
             return
         session_id = artifact.disk_path.name
 
-        def mk(turn_type: str, text: str, tool_name: str = "", tool_use_id: str = "") -> Row:
+        def make_row(turn_type: str, text: str, tool_name: str = "", tool_use_id: str = "") -> Row:
             row = self.base_row(artifact)
             row.session_id = session_id
             row.turn_type = turn_type
@@ -252,40 +252,47 @@ class ShellGptParser(Parser):
             row.text = compact(text)
             return row
 
-        with open(artifact.disk_path, "rb") as fh:
-            raw = fh.read().decode("utf-8", errors="replace")
+        with open(artifact.disk_path, "rb") as handle:
+            raw = handle.read().decode("utf-8", errors="replace")
         messages, error = load_messages(raw)
-        if not any("role" in m for m in messages):
-            yield mk("system", "parser: not a ShellGPT chat file" + (": " + error if error else ""))
+        if not any("role" in message for message in messages):
+            yield make_row(
+                "system", "parser: not a ShellGPT chat file" + (": " + error if error else "")
+            )
             return
 
         names = {}  # tool call id -> function name
         pending = ("", "")  # (synthetic id, name) of a legacy function_call awaiting its result
-        for i, m in enumerate(messages):
-            role = str(m.get("role") or "")
-            content = text_of(m.get("content"))
+        for i, message in enumerate(messages):
+            role = str(message.get("role") or "")
+            content = text_of(message.get("content"))
             prev, pending = pending, ("", "")
             if role in ("system", "user"):
-                yield mk(role, content)
+                yield make_row(role, content)
             elif role == "assistant":
                 if content.strip():
-                    yield mk("assistant", content)
-                for call in m.get("tool_calls") or []:
-                    call = _d(call)
-                    fn = _d(call.get("function"))
-                    call_id, name = str(call.get("id") or ""), str(fn.get("name") or "")
+                    yield make_row("assistant", content)
+                for call in message.get("tool_calls") or []:
+                    call = _dict_or_empty(call)
+                    function = _dict_or_empty(call.get("function"))
+                    call_id, name = str(call.get("id") or ""), str(function.get("name") or "")
                     names[call_id] = name
-                    yield mk("tool_use", call_text(fn.get("arguments")), name, call_id)
-                fc = m.get("function_call")
-                if isinstance(fc, dict):
-                    pending = ("function_call_%d" % i, str(fc.get("name") or ""))
-                    yield mk("tool_use", call_text(fc.get("arguments")), pending[1], pending[0])
+                    yield make_row("tool_use", call_text(function.get("arguments")), name, call_id)
+                function_call = message.get("function_call")
+                if isinstance(function_call, dict):
+                    pending = ("function_call_%d" % i, str(function_call.get("name") or ""))
+                    yield make_row(
+                        "tool_use",
+                        call_text(function_call.get("arguments")),
+                        pending[1],
+                        pending[0],
+                    )
             elif role == "tool":
-                call_id = str(m.get("tool_call_id") or "")
-                yield mk("tool_result", content, names.get(call_id, ""), call_id)
+                call_id = str(message.get("tool_call_id") or "")
+                yield make_row("tool_result", content, names.get(call_id, ""), call_id)
             elif role == "function":
-                yield mk("tool_result", content, str(m.get("name") or prev[1]), prev[0])
+                yield make_row("tool_result", content, str(message.get("name") or prev[1]), prev[0])
             else:
-                yield mk("system", "%s: %s" % (role or "message", content))
+                yield make_row("system", "%s: %s" % (role or "message", content))
         if error:
-            yield mk("system", "parser: " + error)
+            yield make_row("system", "parser: " + error)

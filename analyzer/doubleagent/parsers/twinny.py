@@ -171,9 +171,9 @@ def split_think(content: str):
     """(text without reasoning blocks, [reasoning texts])."""
     thoughts: list[str] = []
 
-    def keep(m):
-        if m.group(2).strip():
-            thoughts.append(m.group(2).strip())
+    def keep(match):
+        if match.group(2).strip():
+            thoughts.append(match.group(2).strip())
         return ""
 
     return THINK_RX.sub(keep, content).strip(), thoughts
@@ -199,14 +199,14 @@ def flatten(prefix: str, value) -> Iterator[tuple[str, str]]:
     """(dotted key, value text) per leaf of `value`; a list gives one pair
     per entry under its own key."""
     if isinstance(value, dict):
-        for k, v in value.items():
-            yield from flatten("%s.%s" % (prefix, k), v)
+        for member, item in value.items():
+            yield from flatten("%s.%s" % (prefix, member), item)
     elif isinstance(value, list):
-        for v in value:
-            if isinstance(v, (dict, list)):
-                yield prefix, compact_json(v)
+        for item in value:
+            if isinstance(item, (dict, list)):
+                yield prefix, compact_json(item)
             else:
-                yield prefix, setting_value(v)
+                yield prefix, setting_value(item)
     elif value is not None:
         yield prefix, setting_value(value)
 
@@ -246,11 +246,11 @@ class TwinnyParser(Parser):
                 yield from self._global_rows(artifact, state, opts)
         elif state is not None:
             problems = problems or ["%s value is not a JSON object" % ITEM_KEY]
-        for p in problems:
+        for problem in problems:
             row = self.base_row(artifact)
             row.turn_type = "system"
             # never echo the value itself: it holds provider apiKeys
-            row.text = "parser: " + p.split(" (", 1)[0]
+            row.text = "parser: " + problem.split(" (", 1)[0]
             yield row
 
     def _global_rows(self, artifact: Artifact, state: dict, opts: Options) -> Iterator[Row]:
@@ -262,41 +262,41 @@ class TwinnyParser(Parser):
             if isinstance(convs, list)
             else []
         )
-        convs = [c for c in convs if isinstance(c, dict)]
+        convs = [conversation for conversation in convs if isinstance(conversation, dict)]
         active = state.get(ACTIVE)
-        ids = {str(c.get("id")) for c in convs}
+        ids = {str(conversation.get("id")) for conversation in convs}
         if isinstance(active, dict) and active.get("messages") and str(active.get("id")) not in ids:
             convs.append(active)
         for conv in convs:
             yield from self._conversation(artifact, conv, opts)
         yield from self._standing_rows(artifact, state)
 
-    def _system_row(self, artifact: Artifact, ts: str, text: str) -> Row:
+    def _system_row(self, artifact: Artifact, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.turn_type = "system"
         row.text = text
         return row
 
     def _standing_rows(self, artifact: Artifact, state: dict) -> Iterator[Row]:
         """Standing grants and the team policy, at the file's mtime."""
-        ts = ""
+        timestamp = ""
         for key in STANDING_KEYS:
             value = state.get(GLOBAL_PREFIX + key)
             if value is None:
                 continue
-            ts = ts or file_mtime(artifact)
+            timestamp = timestamp or file_mtime(artifact)
             label = "permission mode" if key == "agentMode" else "permission setting"
             values = value if isinstance(value, list) else [value]
-            for v in values:
-                text = "%s: %s=%s %s" % (label, key, setting_value(v), STANDING_SOURCE)
-                yield self._system_row(artifact, ts, text)
+            for item in values:
+                text = "%s: %s=%s %s" % (label, key, setting_value(item), STANDING_SOURCE)
+                yield self._system_row(artifact, timestamp, text)
         policy = state.get(TEAM_POLICY)
         if isinstance(policy, dict):
-            ts = ts or file_mtime(artifact)
+            timestamp = timestamp or file_mtime(artifact)
             for key, value in flatten(TEAM_POLICY, policy):
                 text = "permission setting: %s=%s %s" % (key, value, STANDING_SOURCE)
-                yield self._system_row(artifact, ts, text)
+                yield self._system_row(artifact, timestamp, text)
 
     def _workspace_rows(self, artifact: Artifact, state: dict) -> Iterator[Row]:
         """The repository the pull request review tab last listed."""
@@ -313,13 +313,15 @@ class TwinnyParser(Parser):
         """`file changed:` rows of one agent-changes record."""
         try:
             raw = artifact.disk_path.read_bytes()
-        except OSError as e:
-            yield from error_rows(self, artifact, [(0, "unreadable (%s)" % error_reason(e), "")])
+        except OSError as error:
+            yield from error_rows(
+                self, artifact, [(0, "unreadable (%s)" % error_reason(error), "")]
+            )
             return
         try:
             record = json.loads(raw.decode("utf-8", errors="replace"))
-        except ValueError as e:
-            msg = "agent-changes record is not valid JSON (%s)" % e
+        except ValueError as error:
+            msg = "agent-changes record is not valid JSON (%s)" % error
             yield from error_rows(self, artifact, [(0, msg, "")])
             return
         if not isinstance(record, dict):
@@ -328,12 +330,12 @@ class TwinnyParser(Parser):
             return
         root = record.get("root")
         root = root if isinstance(root, str) else ""
-        ts = to_utc(record.get("createdAt"))
+        timestamp = to_utc(record.get("createdAt"))
         files = record.get("files")
         for entry in files if isinstance(files, list) else []:
             if not isinstance(entry, dict):
                 continue
-            row = self._system_row(artifact, ts, file_change_text(record.get("id"), entry))
+            row = self._system_row(artifact, timestamp, file_change_text(record.get("id"), entry))
             row.project_path = root
             yield row
 
@@ -344,51 +346,57 @@ class TwinnyParser(Parser):
         entries: list[tuple[int, str, str, str, list[str]]] = []
         more: list[str] | None = None  # the open entry's continuation lines
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                for n, raw in enumerate(fh, 1):
+            with open(artifact.disk_path, "rb") as handle:
+                for line_number, raw in enumerate(handle, 1):
                     line = line_text(raw)
-                    m = LOG_HEADER_RX.match(line)
-                    if m:
+                    match = LOG_HEADER_RX.match(line)
+                    if match:
                         more = []
-                        entries.append((n, m.group(1), m.group(2), m.group(3), more))
+                        entries.append(
+                            (line_number, match.group(1), match.group(2), match.group(3), more)
+                        )
                     elif more is not None and (not line or line[0] in " \t"):
                         more.append(line[4:] if line.startswith("    ") else line)
                     elif line:
-                        errors.append((n, "unparseable line (no log line header)", line))
+                        errors.append((line_number, "unparseable line (no log line header)", line))
                         more = None  # a continuation after a bad line has no entry
-        except OSError as e:
-            yield from error_rows(self, artifact, [(0, "unreadable (%s)" % error_reason(e), "")])
+        except OSError as error:
+            yield from error_rows(
+                self, artifact, [(0, "unreadable (%s)" % error_reason(error), "")]
+            )
             return
-        for n, when, level, message, lines in entries:
+        for line_number, when, level, message, lines in entries:
             head = "log %s: %s (from %s, log line time, host-local)" % (level, message, name)
             row = self._system_row(artifact, to_utc(when), "\n".join([head, *lines]))
-            row.source_line = n
+            row.source_line = line_number
             yield row
         yield from error_rows(self, artifact, errors)
 
     def _conversation(self, artifact: Artifact, conv: dict, opts: Options) -> Iterator[Row]:
-        ts = to_utc(conv.get("updatedAt"))
+        timestamp = to_utc(conv.get("updatedAt"))
         sid = str(conv.get("id") or "")
         messages = conv.get("messages")
         messages = (
-            [m for m in messages if isinstance(m, dict)] if isinstance(messages, list) else []
+            [message for message in messages if isinstance(message, dict)]
+            if isinstance(messages, list)
+            else []
         )
 
         def row(turn: str, text, model: str = "", name: str = "", tid: str = "") -> Row:
-            r = self.base_row(artifact)
-            r.timestamp_utc = ts
-            r.session_id = sid
-            r.turn_type = turn
-            r.model = model
-            r.tool_name = name
-            r.tool_use_id = tid
-            r.text = compact(text)
-            return r
+            result = self.base_row(artifact)
+            result.timestamp_utc = timestamp
+            result.session_id = sid
+            result.turn_type = turn
+            result.model = model
+            result.tool_name = name
+            result.tool_use_id = tid
+            result.text = compact(text)
+            return result
 
         yield row(
             "system",
             "conversation: %s | messages=%d%s"
-            % (conv.get("title") or "", len(messages), "" if ts else " | updatedAt unknown"),
+            % (conv.get("title") or "", len(messages), "" if timestamp else " | updatedAt unknown"),
         )
         seen: dict = {}  # per conversation, so the tracked key needs no session id
         for msg in messages:
@@ -398,15 +406,15 @@ class TwinnyParser(Parser):
                 meta = {}
             model = str(meta.get("model") or "")
             if role == "assistant":
-                t = track_change("model", seen, "model", model)
-                if t:
-                    yield row("system", t, model)
+                change = track_change("model", seen, "model", model)
+                if change:
+                    yield row("system", change, model)
             content = msg.get("content")
             text = content if isinstance(content, str) else text_of(content)
             text, thoughts = split_think(text)
             if opts.include_thinking:
-                for t in thoughts:
-                    yield row("thinking", t, model)
+                for thought in thoughts:
+                    yield row("thinking", thought, model)
             images = msg.get("images")
             if isinstance(images, list) and images:
                 text = ("%s\n[%d image(s)]" % (text, len(images))).strip()

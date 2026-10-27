@@ -176,16 +176,16 @@ class SessionFile:
 
 
 def read_session(path) -> SessionFile:
-    s = SessionFile()
+    session = SessionFile()
     first = True
-    for n, rec in iter_jsonl(path, s.errors):
+    for line_number, rec in iter_jsonl(path, session.errors):
         if first:
             first = False
             if rec.get("type") == "session":
-                s.header, s.header_line = rec, n
+                session.header, session.header_line = rec, line_number
                 continue
-        s.entries.append((n, rec))
-    return s
+        session.entries.append((line_number, rec))
+    return session
 
 
 def entry_keys(path) -> set[tuple[str, str]]:
@@ -201,9 +201,9 @@ def args_summary(args) -> str:
     """The most identifying tool argument, else the arguments as JSON."""
     if isinstance(args, dict):
         for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, ""):
-                return v if isinstance(v, str) else compact_json(v)
+            value = args.get(k)
+            if value not in (None, ""):
+                return value if isinstance(value, str) else compact_json(value)
         return compact_json(args)
     if args in (None, ""):
         return ""
@@ -249,7 +249,7 @@ def entry_rows(
     (id, timestamp) keys to drop (entries a fork copied from its parent)."""
     skip = skip or set()
     seen: dict = {}  # the model in use, for the `model:` rows
-    for n, rec in session.entries:
+    for line_number, rec in session.entries:
         if skip and (str(rec.get("id") or ""), str(rec.get("timestamp") or "")) in skip:
             continue
         etype = rec.get("type")
@@ -258,7 +258,7 @@ def entry_rows(
 
         def base(model: str = "") -> Row:
             row = parser.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.timestamp_utc = to_utc(rec.get("timestamp")) or to_utc(msg.get("timestamp"))
             row.session_id = session_id
             row.project_path = project_path
@@ -335,8 +335,8 @@ def bug_report_text(data) -> str:
         return ""
 
     def val(key: str) -> str:
-        v = data.get(key)
-        return "-" if v in (None, "") else setting_value(v)
+        value = data.get(key)
+        return "-" if value in (None, "") else setting_value(value)
 
     src = "(from session entry %s, entry timestamp)" % BUG_REPORT
     if data.get("delivery") == "upload":
@@ -448,27 +448,27 @@ def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
     the artifact's home, or None. Tried relative to the home's original path,
     then from the last `marker` segment (loose input whose home path is not
     the host's). Symlinks are never followed."""
-    p = original.replace("\\", "/")
+    path = original.replace("\\", "/")
     rels = []
-    h = artifact.home.original.replace("\\", "/").rstrip("/")
-    if h and p.startswith(h + "/"):
-        rels.append(p[len(h) + 1 :])
-    i = p.rfind("/" + marker)
+    home = artifact.home.original.replace("\\", "/").rstrip("/")
+    if home and path.startswith(home + "/"):
+        rels.append(path[len(home) + 1 :])
+    i = path.rfind("/" + marker)
     if i >= 0:
-        rels.append(p[i + 1 :])
+        rels.append(path[i + 1 :])
     root = artifact.home.disk_path
     for rel in rels:
-        parts = [x for x in rel.split("/") if x]
+        parts = [part for part in rel.split("/") if part]
         if not parts or ".." in parts:
             continue
         cur = root
-        ok = True
-        for x in parts:
-            cur = cur / x
+        safe = True
+        for part in parts:
+            cur = cur / part
             if cur.is_symlink():
-                ok = False
+                safe = False
                 break
-        if ok and cur.is_file():
+        if safe and cur.is_file():
             return cur
     return None
 
@@ -508,25 +508,25 @@ class PiParser(Parser):
         if artifact.rel == CRASHES_REL:
             yield from self._parse_crashes(artifact)
             return
-        m = META_RX.match(artifact.rel)
-        if m:
-            yield from self._parse_meta(artifact, m.group(1), opts)
+        match = META_RX.match(artifact.rel)
+        if match:
+            yield from self._parse_meta(artifact, match.group(1), opts)
             return
         session = read_session(artifact.disk_path)
-        h = session.header
-        if not h:
+        header = session.header
+        if not header:
             if not session.entries:
                 yield from error_rows(self, artifact, session.errors)
             return
-        sid = str(h.get("id") or "")
-        cwd = str(h.get("cwd") or "")
-        parent = str(h.get("parentSession") or "")
+        sid = str(header.get("id") or "")
+        cwd = str(header.get("cwd") or "")
+        parent = str(header.get("parentSession") or "")
 
         row = self.base_row(artifact)
         row.source_line = session.header_line
-        row.timestamp_utc = to_utc(h.get("timestamp"))
+        row.timestamp_utc = to_utc(header.get("timestamp"))
         row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
-        text = "session start: version=%s cwd=%s" % (h.get("version") or 1, cwd)
+        text = "session start: version=%s cwd=%s" % (header.get("version") or 1, cwd)
         if parent:
             text += " parentSession=%s" % parent
         row.text = compact(text)
@@ -534,22 +534,22 @@ class PiParser(Parser):
 
         skip: set[tuple[str, str]] = set()
         if parent:
-            pf = home_file(artifact, parent, ".pi/")
-            if pf is not None and pf != artifact.disk_path:
-                if pf not in self._parent_cache:
-                    self._parent_cache[pf] = entry_keys(pf)
-                skip = self._parent_cache[pf]
+            parent_file = home_file(artifact, parent, ".pi/")
+            if parent_file is not None and parent_file != artifact.disk_path:
+                if parent_file not in self._parent_cache:
+                    self._parent_cache[parent_file] = entry_keys(parent_file)
+                skip = self._parent_cache[parent_file]
         dropped = 0
         if skip:
             dropped = sum(
                 1
-                for _, r in session.entries
-                if (str(r.get("id") or ""), str(r.get("timestamp") or "")) in skip
+                for _, record in session.entries
+                if (str(record.get("id") or ""), str(record.get("timestamp") or "")) in skip
             )
             if dropped:
                 row = self.base_row(artifact)
                 row.source_line = session.header_line
-                row.timestamp_utc = to_utc(h.get("timestamp"))
+                row.timestamp_utc = to_utc(header.get("timestamp"))
                 row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
                 row.text = compact(
                     "fork: %d entries copied from the parent session %s omitted; "
@@ -563,7 +563,7 @@ class PiParser(Parser):
         if why:
             row = self.base_row(artifact)
             row.source_line = session.header_line
-            row.timestamp_utc = to_utc(h.get("timestamp"))
+            row.timestamp_utc = to_utc(header.get("timestamp"))
             row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
             row.text = compact(
                 "session driven by little-coder (pi launcher): %s" % "; ".join(why),
@@ -578,16 +578,16 @@ class PiParser(Parser):
             doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
             doc = None
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         if not isinstance(doc, dict):
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.text = "parser: %s is not a JSON object" % TRUST_REL
             yield row
             return
         for path, value in doc.items():
             row = self.base_row(artifact)
-            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", ts
+            row.source_line, row.turn_type, row.timestamp_utc = 1, "system", timestamp
             row.project_path = str(path)
             row.text = compact(
                 "permission setting: %s=%s (from %s, file mtime)"
@@ -619,10 +619,10 @@ class PiParser(Parser):
         session = SessionFile()
         written = ""
         in_messages = False
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 line = line_text(raw)
-                if n == 1 and line.startswith(DEBUG_HEADER):
+                if line_number == 1 and line.startswith(DEBUG_HEADER):
                     written = to_utc(line[len(DEBUG_HEADER) :].strip())
                 if not in_messages:
                     in_messages = line == DEBUG_MARKER
@@ -631,13 +631,15 @@ class PiParser(Parser):
                     continue
                 try:
                     msg = json.loads(line)
-                except ValueError as e:
-                    session.errors.append((n, "unparseable line (%s)" % e, line))
+                except ValueError as error:
+                    session.errors.append((line_number, "unparseable line (%s)" % error, line))
                     continue
                 if not isinstance(msg, dict):
-                    session.errors.append((n, "unparseable line (not a JSON object)", line))
+                    session.errors.append(
+                        (line_number, "unparseable line (not a JSON object)", line)
+                    )
                     continue
-                session.entries.append((n, {"type": "message", "message": msg}))
+                session.entries.append((line_number, {"type": "message", "message": msg}))
         row = self.base_row(artifact)
         row.source_line, row.turn_type, row.timestamp_utc = 1, "system", written
         row.text = compact(
@@ -651,15 +653,15 @@ class PiParser(Parser):
     def _parse_crashes(self, artifact: Artifact) -> Iterator[Row]:
         """`crashes.json`: one row per crash record, at its own time."""
         errors: list = []
-        for n, rec in iter_json_array(artifact.disk_path, errors):
+        for index, rec in iter_json_array(artifact.disk_path, errors):
             if not isinstance(rec, dict):
                 continue
             session_file = str(rec.get("sessionFile") or "")
-            m = SESSION_NAME_RX.search(session_file.replace("\\", "/"))
+            match = SESSION_NAME_RX.search(session_file.replace("\\", "/"))
             row = self.base_row(artifact)
-            row.source_line, row.turn_type = n, "system"
+            row.source_line, row.turn_type = index, "system"
             row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.session_id = m.group(1) if m else ""
+            row.session_id = match.group(1) if match else ""
             row.project_path = str(rec.get("cwd") or "")
             text = "crash: %s %s version=%s sessionFile=%s (from %s, record timestamp)" % (
                 _dash(rec.get("kind")),
@@ -678,10 +680,10 @@ class PiParser(Parser):
         row = self.base_row(artifact)
         row.session_id, row.turn_type, row.source_line = sid, "system", 1
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                meta = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except ValueError as e:
-            row.text = "parser: %s" % e
+            with open(artifact.disk_path, "rb") as handle:
+                meta = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except ValueError as error:
+            row.text = "parser: %s" % error
             yield row
             return
         if not isinstance(meta, dict):
@@ -695,9 +697,9 @@ class PiParser(Parser):
         yield row
 
 
-def _dash(v) -> str:
+def _dash(value) -> str:
     """A record value as row text, `-` when it is absent or empty."""
-    return "-" if v in (None, "") else setting_value(v)
+    return "-" if value in (None, "") else setting_value(value)
 
 
 def little_coder_markers(artifact: Artifact, session: SessionFile) -> list[str]:
@@ -706,9 +708,9 @@ def little_coder_markers(artifact: Artifact, session: SessionFile) -> list[str]:
     llamacpp = False
     for _, rec in session.entries:
         if rec.get("type") == "custom_message":
-            ct = str(rec.get("customType") or "")
-            if ct.startswith("lc-"):
-                types.setdefault(ct)
+            custom_type = str(rec.get("customType") or "")
+            if custom_type.startswith("lc-"):
+                types.setdefault(custom_type)
         elif rec.get("type") == "message":
             msg = rec.get("message")
             if (
@@ -722,7 +724,9 @@ def little_coder_markers(artifact: Artifact, session: SessionFile) -> list[str]:
         why.append("custom_message types " + ", ".join(types))
     if llamacpp:
         why.append("assistant provider llamacpp")
-    ck = artifact.home.disk_path / ".little-coder" / "checkpoints" / os.path.basename(artifact.rel)
-    if not ck.is_symlink() and ck.is_dir():
-        why.append("checkpoints in ~/.little-coder/checkpoints/%s" % ck.name)
+    checkpoint = (
+        artifact.home.disk_path / ".little-coder" / "checkpoints" / os.path.basename(artifact.rel)
+    )
+    if not checkpoint.is_symlink() and checkpoint.is_dir():
+        why.append("checkpoints in ~/.little-coder/checkpoints/%s" % checkpoint.name)
     return why

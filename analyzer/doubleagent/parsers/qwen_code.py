@@ -190,9 +190,9 @@ def args_summary(args) -> str:
     as JSON."""
     if isinstance(args, dict):
         for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, ""):
-                return v if isinstance(v, str) else compact_json(v)
+            value = args.get(k)
+            if value not in (None, ""):
+                return value if isinstance(value, str) else compact_json(value)
         return compact_json(args)
     if args in (None, ""):
         return ""
@@ -204,15 +204,15 @@ def _parts(rec: dict) -> list:
     if not isinstance(msg, dict):
         return []
     parts = msg.get("parts")
-    return [p for p in parts if isinstance(p, dict)] if isinstance(parts, list) else []
+    return [part for part in parts if isinstance(part, dict)] if isinstance(parts, list) else []
 
 
 def _response_text(response) -> str:
     if isinstance(response, dict):
         for k in ("output", "error", "llmContent"):
-            v = response.get(k)
-            if isinstance(v, str) and v:
-                return v
+            value = response.get(k)
+            if isinstance(value, str) and value:
+                return value
         return compact_json(response)
     if response in (None, ""):
         return ""
@@ -220,19 +220,19 @@ def _response_text(response) -> str:
 
 
 def system_text(subtype: str, payload) -> str:
-    p = payload if isinstance(payload, dict) else {}
+    fields = payload if isinstance(payload, dict) else {}
     if subtype == "slash_command":
-        detail = "%s %s" % (p.get("phase") or "", p.get("rawCommand") or "")
+        detail = "%s %s" % (fields.get("phase") or "", fields.get("rawCommand") or "")
     elif subtype == "session_model":
-        detail = "%s auth=%s" % (p.get("modelId") or "", p.get("authType") or "")
+        detail = "%s auth=%s" % (fields.get("modelId") or "", fields.get("authType") or "")
     elif subtype == "custom_title":
-        detail = p.get("customTitle") or ""
+        detail = fields.get("customTitle") or ""
     elif subtype == "turn_result":
-        detail = "%s %s" % (p.get("state") or "", p.get("resultText") or "")
+        detail = "%s %s" % (fields.get("state") or "", fields.get("resultText") or "")
     elif subtype == "rewind":
-        detail = "truncated %s record(s)" % p.get("truncatedCount")
+        detail = "truncated %s record(s)" % fields.get("truncatedCount")
     elif subtype == "chat_compression":
-        detail = compact_json(p.get("info")) if p.get("info") is not None else ""
+        detail = compact_json(fields.get("info")) if fields.get("info") is not None else ""
     else:
         detail = compact_json(payload) if payload else ""
     detail = str(detail).strip()
@@ -255,9 +255,9 @@ def injected_origin(rec: dict) -> str:
     name = rec.get("agentName") or author.get("name")
     agent_id = rec.get("agentId") or author.get("agentId")
     keys = [
-        "%s=%s" % (k, v)
-        for k, v in (("provenance", provenance), ("agent", name), ("agentId", agent_id))
-        if v not in (None, "")
+        "%s=%s" % (key, value)
+        for key, value in (("provenance", provenance), ("agent", name), ("agentId", agent_id))
+        if value not in (None, "")
     ]
     label = subtype or "user"
     return "%s (%s)" % (label, " ".join(keys)) if keys else label
@@ -271,8 +271,8 @@ class QwenCodeParser(Parser):
 
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
-        for rx in (LOGS_RX, TRUSTED_RX, CHANNELS_RX, SETTINGS_RX, USAGE_RX):
-            if rx.match(rel):
+        for pattern in (LOGS_RX, TRUSTED_RX, CHANNELS_RX, SETTINGS_RX, USAGE_RX):
+            if pattern.match(rel):
                 return True
         return bool(SESSION_RX.match(rel)) and not rel.endswith(SIDECAR_SUFFIX)
 
@@ -305,19 +305,19 @@ class QwenCodeParser(Parser):
             return
         mtime = ""
         errors: list = []
-        for n, (key, entry) in enumerate(doc.items(), 1):
+        for index, (key, entry) in enumerate(doc.items(), 1):
             if not isinstance(entry, dict):
-                errors.append((n, "entry %s is not a JSON object" % key, ""))
+                errors.append((index, "entry %s is not a JSON object" % key, ""))
                 continue
             target = entry.get("target")
             target = target if isinstance(target, dict) else {}
 
             def value(k: str, target: dict = target) -> str:
-                v = target.get(k)
-                return str(v) if v not in (None, "") else "-"
+                field = target.get(k)
+                return str(field) if field not in (None, "") else "-"
 
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = index
             row.turn_type = "system"
             row.session_id = str(entry.get("sessionId") or "")
             row.project_path = str(entry.get("cwd") or "")
@@ -337,11 +337,11 @@ class QwenCodeParser(Parser):
             yield row
         yield from error_rows(self, artifact, errors)
 
-    def _settings_row(self, artifact: Artifact, ts: str, project: str, text: str) -> Row:
+    def _settings_row(self, artifact: Artifact, timestamp: str, project: str, text: str) -> Row:
         row = self.base_row(artifact)
         row.source_line = 1
         row.turn_type = "system"
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.project_path = project
         row.text = compact(text)
         return row
@@ -351,7 +351,7 @@ class QwenCodeParser(Parser):
         `deny` rule and one for `tools.approvalMode` of a `settings.json`,
         read as JSONC as Qwen Code reads it; no other key is read, since
         the file can hold provider keys and channel tokens."""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
         try:
             doc = parse_jsonc(artifact.disk_path.read_bytes())
@@ -359,7 +359,7 @@ class QwenCodeParser(Parser):
             doc = None
         if not isinstance(doc, dict):
             text = "parser: %s is not a JSON object" % artifact.rel
-            yield self._settings_row(artifact, ts, project, text)
+            yield self._settings_row(artifact, timestamp, project, text)
             return
         settings: list = []
         perms = doc.get("permissions")
@@ -377,22 +377,22 @@ class QwenCodeParser(Parser):
                 setting_value(value),
                 artifact.rel,
             )
-            yield self._settings_row(artifact, ts, project, text)
+            yield self._settings_row(artifact, timestamp, project, text)
 
     def _parse_usage(self, artifact: Artifact) -> Iterator[Row]:
         """One `session usage:` row per `usage_record.jsonl` line, at its
         `startTime`; a secondary source that survives the session's delete."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             models = rec.get("models")
             tools = rec.get("tools")
             by_name = tools.get("byName") if isinstance(tools, dict) else None
             counts = [
-                "%s=%s" % (name, v.get("count") if isinstance(v, dict) else v)
-                for name, v in (by_name.items() if isinstance(by_name, dict) else ())
+                "%s=%s" % (name, stats.get("count") if isinstance(stats, dict) else stats)
+                for name, stats in (by_name.items() if isinstance(by_name, dict) else ())
             ]
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.turn_type = "system"
             row.timestamp_utc = to_utc(rec.get("startTime"))
             row.session_id = str(rec.get("sessionId") or "")
@@ -437,7 +437,7 @@ class QwenCodeParser(Parser):
         session_id = project_path = ""
         models: dict = {}  # session id -> model in force, for the model rows
         modes: dict = {}  # session id -> approval mode in force
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             rtype = rec.get("type")
             if rec.get("sessionId"):
                 session_id = str(rec["sessionId"])
@@ -446,7 +446,7 @@ class QwenCodeParser(Parser):
 
             def base(turn_type: str, text: str) -> Row:
                 row = self.base_row(artifact)
-                row.source_line = n
+                row.source_line = line_number
                 row.timestamp_utc = to_utc(rec.get("timestamp"))
                 row.session_id = session_id
                 row.project_path = str(rec.get("cwd") or "")
@@ -462,9 +462,9 @@ class QwenCodeParser(Parser):
             parts = _parts(rec)
             if rtype == "user":
                 text = "\n".join(
-                    p["text"]
-                    for p in parts
-                    if isinstance(p.get("text"), str) and not p.get("thought")
+                    part["text"]
+                    for part in parts
+                    if isinstance(part.get("text"), str) and not part.get("thought")
                 )
                 if not text:
                     payload = rec.get("systemPayload")
@@ -482,18 +482,18 @@ class QwenCodeParser(Parser):
                     row = base("system", change)
                     row.model = model
                     yield row
-                for p in parts:
-                    fc = p.get("functionCall")
-                    if isinstance(fc, dict):
-                        row = base("tool_use", args_summary(fc.get("args")))
-                        row.tool_name = str(fc.get("name") or "")
-                        row.tool_use_id = str(fc.get("id") or "")
-                    elif isinstance(p.get("text"), str) and p.get("thought"):
+                for part in parts:
+                    function_call = part.get("functionCall")
+                    if isinstance(function_call, dict):
+                        row = base("tool_use", args_summary(function_call.get("args")))
+                        row.tool_name = str(function_call.get("name") or "")
+                        row.tool_use_id = str(function_call.get("id") or "")
+                    elif isinstance(part.get("text"), str) and part.get("thought"):
                         if not opts.include_thinking:
                             continue
-                        row = base("thinking", p["text"])
-                    elif isinstance(p.get("text"), str) and p["text"]:
-                        row = base("assistant", p["text"])
+                        row = base("thinking", part["text"])
+                    elif isinstance(part.get("text"), str) and part["text"]:
+                        row = base("assistant", part["text"])
                     else:
                         continue
                     row.model = model
@@ -502,16 +502,16 @@ class QwenCodeParser(Parser):
                 tcr = rec.get("toolCallResult")
                 tcr = tcr if isinstance(tcr, dict) else {}
                 responses = [
-                    p["functionResponse"]
-                    for p in parts
-                    if isinstance(p.get("functionResponse"), dict)
+                    part["functionResponse"]
+                    for part in parts
+                    if isinstance(part.get("functionResponse"), dict)
                 ]
-                fr = responses[0] if responses else {}
+                first_response = responses[0] if responses else {}
                 display = tcr.get("resultDisplay")
                 if isinstance(display, str) and display:
                     text = display
-                elif fr:
-                    text = _response_text(fr.get("response"))
+                elif first_response:
+                    text = _response_text(first_response.get("response"))
                 else:
                     text = compact_json(display) if display else ""
                 status = str(tcr.get("status") or "")
@@ -523,8 +523,8 @@ class QwenCodeParser(Parser):
                     )
                     text = "[%s] %s" % (tag, text)
                 row = base("tool_result", text)
-                row.tool_name = str(fr.get("name") or "")
-                row.tool_use_id = str(tcr.get("callId") or fr.get("id") or "")
+                row.tool_name = str(first_response.get("name") or "")
+                row.tool_use_id = str(tcr.get("callId") or first_response.get("id") or "")
                 yield row
                 if status in DECISION_STATUSES:
                     dec = base("system", "permission decision: %s" % status)
@@ -617,36 +617,38 @@ class QwenCodeParser(Parser):
         started at to the end of the file, less a trailing line terminator,
         since a broken element has no boundary of its own and nothing after
         it is decoded (issue 136). A whole-file error has raw `""`."""
-        with open(path, "rb") as fh:
-            data = fh.read().decode("utf-8", errors="replace")
+        with open(path, "rb") as handle:
+            data = handle.read().decode("utf-8", errors="replace")
         dec = json.JSONDecoder()
         pos = 0
-        n = len(data)
+        length = len(data)
 
-        def skip(p: int) -> int:
-            while p < n and data[p] in " \t\r\n":
-                p += 1
-            return p
+        def skip(position: int) -> int:
+            while position < length and data[position] in " \t\r\n":
+                position += 1
+            return position
 
         pos = skip(pos)
-        if pos >= n:
+        if pos >= length:
             return
         if data[pos] != "[":
             errors.append((0, "not a JSON array", ""))
             return
         pos = skip(pos + 1)
         idx = 0
-        while pos < n and data[pos] != "]":
+        while pos < length and data[pos] != "]":
             idx += 1
             try:
                 value, pos = dec.raw_decode(data, pos)
-            except ValueError as e:
-                errors.append((idx, "unparseable record %d (%s)" % (idx, e), tail_text(data, pos)))
+            except ValueError as error:
+                errors.append(
+                    (idx, "unparseable record %d (%s)" % (idx, error), tail_text(data, pos))
+                )
                 return
             if isinstance(value, dict):
                 yield idx, value
             pos = skip(pos)
-            if pos < n and data[pos] == ",":
+            if pos < length and data[pos] == ",":
                 pos = skip(pos + 1)
-        if pos >= n:
+        if pos >= length:
             errors.append((idx + 1, "unterminated JSON array", ""))

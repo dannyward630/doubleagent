@@ -240,44 +240,44 @@ def content_text(content) -> str:
     if not isinstance(content, list):
         return compact_json(content)
     parts = []
-    for c in content:
-        if isinstance(c, str):
-            parts.append(c)
-        elif isinstance(c, dict):
-            if isinstance(c.get("Text"), str):
-                parts.append(c["Text"])
-            elif "Image" in c:
+    for item in content:
+        if isinstance(item, str):
+            parts.append(item)
+        elif isinstance(item, dict):
+            if isinstance(item.get("Text"), str):
+                parts.append(item["Text"])
+            elif "Image" in item:
                 parts.append("[image]")
-            elif isinstance(c.get("text"), str):
-                parts.append(c["text"])
+            elif isinstance(item.get("text"), str):
+                parts.append(item["text"])
             else:
-                parts.append(compact_json(c))
+                parts.append(compact_json(item))
     return "\n".join(parts)
 
 
-def mention_text(m) -> str:
-    if not isinstance(m, dict):
+def mention_text(mention) -> str:
+    if not isinstance(mention, dict):
         return "[mention]"
-    uri = m.get("uri")
+    uri = mention.get("uri")
     return "[mention] " + (uri if isinstance(uri, str) else compact_json(uri))
 
 
-def tool_input_text(tu: dict) -> str:
-    inp = tu.get("input")
+def tool_input_text(tool_use: dict) -> str:
+    inp = tool_use.get("input")
     if isinstance(inp, dict) and set(inp) <= {"type", "value"} and "value" in inp:
         inp = inp["value"]
     if inp not in (None, "", {}):
         return inp if isinstance(inp, str) else compact_json(inp)
-    raw = tu.get("raw_input")
+    raw = tool_use.get("raw_input")
     return raw if isinstance(raw, str) else ""
 
 
 def first_folder(folder_paths) -> str:
     if not isinstance(folder_paths, str):
         return ""
-    for p in folder_paths.split("\n"):
-        if p.strip():
-            return p
+    for path in folder_paths.split("\n"):
+        if path.strip():
+            return path
     return ""
 
 
@@ -290,21 +290,21 @@ def acp_blocks_text(blocks) -> str:
     if not isinstance(blocks, list):
         return compact_json(blocks)
     parts = []
-    for b in blocks:
-        kind = b.get("type") if isinstance(b, dict) else None
-        if isinstance(b, str):
-            parts.append(b)
-        elif kind == "text" and isinstance(b.get("text"), str):
-            parts.append(b["text"])
-        elif kind == "resource_link" and isinstance(b.get("uri"), str):
-            parts.append("[mention] " + b["uri"])
-        elif kind == "resource" and isinstance(b.get("resource"), dict):
-            uri = b["resource"].get("uri")
+    for block in blocks:
+        kind = block.get("type") if isinstance(block, dict) else None
+        if isinstance(block, str):
+            parts.append(block)
+        elif kind == "text" and isinstance(block.get("text"), str):
+            parts.append(block["text"])
+        elif kind == "resource_link" and isinstance(block.get("uri"), str):
+            parts.append("[mention] " + block["uri"])
+        elif kind == "resource" and isinstance(block.get("resource"), dict):
+            uri = block["resource"].get("uri")
             parts.append("[mention] " + (uri if isinstance(uri, str) else compact_json(uri)))
         elif kind in ("image", "audio"):
             parts.append("[%s]" % kind)
         else:
-            parts.append(compact_json(b))
+            parts.append(compact_json(block))
     return "\n".join(parts)
 
 
@@ -334,11 +334,11 @@ def flatten_setting(key: str, value) -> Iterator[tuple[str, object]]:
     """(dotted key, value) per leaf of a settings value: one per object
     member, recursively, and one per list entry."""
     if isinstance(value, dict):
-        for k, v in value.items():
-            yield from flatten_setting("%s.%s" % (key, k), v)
+        for member, member_value in value.items():
+            yield from flatten_setting("%s.%s" % (key, member), member_value)
     elif isinstance(value, list):
-        for e in value:
-            yield key, e
+        for entry in value:
+            yield key, entry
     else:
         yield key, value
 
@@ -363,8 +363,8 @@ class ZedParser(Parser):
                 yield from self._parse_threads(artifact, opts)
             else:
                 yield from self._parse_sidebar(artifact)
-        except sqlite3.DatabaseError as e:
-            yield self._file_error(artifact, "SQLite error: %s" % e)
+        except sqlite3.DatabaseError as error:
+            yield self._file_error(artifact, "SQLite error: %s" % error)
 
     def _file_error(self, artifact: Artifact, message: str) -> Row:
         """The one `parser: <message>` row for a file that cannot be read."""
@@ -377,7 +377,7 @@ class ZedParser(Parser):
         self,
         artifact: Artifact,
         text: str,
-        ts: str,
+        timestamp: str,
         source_line: int,
         session_id: str = "",
         project: str = "",
@@ -387,7 +387,7 @@ class ZedParser(Parser):
         row.source_line = source_line
         row.session_id = session_id
         row.project_path = project
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.turn_type = "system"
         row.text = compact(text)
         return row
@@ -398,8 +398,8 @@ class ZedParser(Parser):
         user settings file, at the file's modification time."""
         try:
             raw = artifact.disk_path.read_bytes()
-        except OSError as e:
-            yield self._file_error(artifact, "unreadable: %s" % e)
+        except OSError as error:
+            yield self._file_error(artifact, "unreadable: %s" % error)
             return
         if not raw.strip():
             return
@@ -410,14 +410,14 @@ class ZedParser(Parser):
         if not isinstance(doc, dict):
             yield self._file_error(artifact, "%s is not a JSON object" % artifact.rel)
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         for key, value in self._settings_entries(doc):
             text = "permission setting: %s=%s (from %s, file mtime)" % (
                 key,
                 setting_value(value),
                 artifact.rel,
             )
-            yield self._state_row(artifact, text, ts, 1)
+            yield self._state_row(artifact, text, timestamp, 1)
 
     @staticmethod
     def _settings_entries(doc: dict) -> Iterator[tuple[str, object]]:
@@ -471,7 +471,7 @@ class ZedParser(Parser):
                 "trusted_worktrees",
                 "select rowid as _rowid, * from trusted_worktrees order by rowid",
             )
-            kv = self._select(
+            key_values = self._select(
                 con,
                 tables,
                 "scoped_kv_store",
@@ -497,24 +497,24 @@ class ZedParser(Parser):
                 "sidebar_terminal_threads",
                 "select rowid as _rowid, * from sidebar_terminal_threads order by created_at",
             )
-        by_key = {thread_key(r.get("thread_id")): r for r in sidebar}
-        for r in sidebar:
-            yield from self._sidebar_row(artifact, r)
-        for r in trusted:
-            yield self._trusted_row(artifact, r)
-        for r in kv:
-            if r["namespace"] == "agent_draft_prompts":
-                yield from self._draft(artifact, r, by_key, errors)
+        by_key = {thread_key(row.get("thread_id")): row for row in sidebar}
+        for row in sidebar:
+            yield from self._sidebar_row(artifact, row)
+        for row in trusted:
+            yield self._trusted_row(artifact, row)
+        for row in key_values:
+            if row["namespace"] == "agent_draft_prompts":
+                yield from self._draft(artifact, row, by_key, errors)
             else:
-                yield from self._created_worktree(artifact, r, sidebar, archived, errors)
-        for r in archived:
-            yield self._archived_worktree(artifact, r, by_key)
-        for r in terminals:
-            title = r.get("custom_title") or r.get("title") or ""
-            text = "sidebar terminal: %s cwd=%s" % (title, r.get("working_directory") or "-")
-            project = first_folder(r.get("folder_paths"))
-            ts = to_utc(r.get("created_at"))
-            yield self._state_row(artifact, text, ts, r["_rowid"], "", project)
+                yield from self._created_worktree(artifact, row, sidebar, archived, errors)
+        for row in archived:
+            yield self._archived_worktree(artifact, row, by_key)
+        for row in terminals:
+            title = row.get("custom_title") or row.get("title") or ""
+            text = "sidebar terminal: %s cwd=%s" % (title, row.get("working_directory") or "-")
+            project = first_folder(row.get("folder_paths"))
+            timestamp = to_utc(row.get("created_at"))
+            yield self._state_row(artifact, text, timestamp, row["_rowid"], "", project)
         yield from error_rows(self, artifact, errors)
 
     @staticmethod
@@ -522,60 +522,60 @@ class ZedParser(Parser):
         """The rows of `sql` as dicts, or [] when `table` does not exist."""
         if table not in tables:
             return []
-        return [dict(r) for r in con.execute(sql)]
+        return [dict(row) for row in con.execute(sql)]
 
-    def _sidebar_row(self, artifact: Artifact, r: dict) -> Iterator[Row]:
+    def _sidebar_row(self, artifact: Artifact, row: dict) -> Iterator[Row]:
         """An external agent's thread (no transcript in `threads.db`), or the
         sidebar state of a native thread; a draft (no `session_id`) has no
         row of its own, only its draft prompt."""
-        title = r.get("title_override") or r.get("title") or ""
-        project = first_folder(r.get("folder_paths"))
-        session_id = str(r.get("session_id") or "")
-        if r.get("agent_id"):
+        title = row.get("title_override") or row.get("title") or ""
+        project = first_folder(row.get("folder_paths"))
+        session_id = str(row.get("session_id") or "")
+        if row.get("agent_id"):
             text = "external agent thread (no transcript in threads.db): agent=%s title=%s%s" % (
-                r["agent_id"],
+                row["agent_id"],
                 title,
-                " archived" if r.get("archived") else "",
+                " archived" if row.get("archived") else "",
             )
-            ts = to_utc(r.get("interacted_at") or r.get("updated_at"))
-            yield self._state_row(artifact, text, ts, r["_rowid"], session_id, project)
+            timestamp = to_utc(row.get("interacted_at") or row.get("updated_at"))
+            yield self._state_row(artifact, text, timestamp, row["_rowid"], session_id, project)
         elif session_id:
             text = "sidebar thread: title=%s archived=%s interacted_at=%s main_worktree=%s" % (
                 title,
-                "true" if r.get("archived") else "false",
-                to_utc(r.get("interacted_at")) or "-",
-                first_folder(r.get("main_worktree_paths")) or "-",
+                "true" if row.get("archived") else "false",
+                to_utc(row.get("interacted_at")) or "-",
+                first_folder(row.get("main_worktree_paths")) or "-",
             )
-            ts = to_utc(r.get("updated_at"))
-            yield self._state_row(artifact, text, ts, r["_rowid"], session_id, project)
+            timestamp = to_utc(row.get("updated_at"))
+            yield self._state_row(artifact, text, timestamp, row["_rowid"], session_id, project)
 
-    def _trusted_row(self, artifact: Artifact, r: dict) -> Row:
+    def _trusted_row(self, artifact: Artifact, row: dict) -> Row:
         """The `permission setting:` row of one trusted project path."""
-        path = str(r.get("absolute_path") or "")
-        host = str(r.get("host_name") or "")
-        if host and r.get("user_name"):
-            host = "%s@%s" % (r["user_name"], host)
+        path = str(row.get("absolute_path") or "")
+        host = str(row.get("host_name") or "")
+        if host and row.get("user_name"):
+            host = "%s@%s" % (row["user_name"], host)
         text = "permission setting: trusted_worktrees.%s=true%s (from %s trusted_worktrees," % (
             path,
             " host=%s" % host if host else "",
             artifact.rel,
         )
-        ts = file_mtime(artifact)
-        return self._state_row(artifact, text + " file mtime)", ts, r["_rowid"], "", path)
+        timestamp = file_mtime(artifact)
+        return self._state_row(artifact, text + " file mtime)", timestamp, row["_rowid"], "", path)
 
-    def _draft(self, artifact: Artifact, r: dict, by_key: dict, errors: list) -> Iterator[Row]:
+    def _draft(self, artifact: Artifact, row: dict, by_key: dict, errors: list) -> Iterator[Row]:
         """`unsent draft: <text>` for an `agent_draft_prompts` entry, at the
         draft's sidebar `updated_at`, or at the file's modification time,
         saying so, when the draft has no sidebar row."""
-        rowid, key, value = r["_rowid"], str(r["key"]), r["value"]
+        rowid, key, value = row["_rowid"], str(row["key"]), row["value"]
         try:
             blocks = json.loads(value)
-        except (TypeError, ValueError) as e:
+        except (TypeError, ValueError) as error:
             label = "unparseable record %d (agent_draft_prompts %s: %s: %s)" % (
                 rowid,
                 key,
-                type(e).__name__,
-                e,
+                type(error).__name__,
+                error,
             )
             errors.append((rowid, label, str(value)))
             return
@@ -584,41 +584,48 @@ class ZedParser(Parser):
             return
         side = by_key.get(key)
         if side is not None:
-            ts = to_utc(side.get("updated_at"))
+            timestamp = to_utc(side.get("updated_at"))
             project = first_folder(side.get("folder_paths"))
-            yield self._state_row(artifact, "unsent draft: " + text, ts, rowid, "", project)
+            yield self._state_row(artifact, "unsent draft: " + text, timestamp, rowid, "", project)
             return
         text = "unsent draft: %s (from %s agent_draft_prompts, file mtime)" % (text, artifact.rel)
         yield self._state_row(artifact, text, file_mtime(artifact), rowid)
 
     def _created_worktree(
-        self, artifact: Artifact, r: dict, sidebar: list, archived: list, errors: list
+        self, artifact: Artifact, row: dict, sidebar: list, archived: list, errors: list
     ) -> Iterator[Row]:
         """`scratch directory:` for a `created_git_worktrees` entry, at the
         worktree's recorded creation time, `project_path` the worktree, and
         the main repository from the sidebar or the archived worktrees."""
-        rowid, value = r["_rowid"], r["value"]
-        host, _, path = str(r["key"]).partition("\n")
+        rowid, value = row["_rowid"], row["value"]
+        host, _, path = str(row["key"]).partition("\n")
         try:
             rec = json.loads(value)
             seconds = rec["created_at_seconds"] + rec.get("created_at_subsec_nanos", 0) / 1e9
-        except (TypeError, ValueError, KeyError, AttributeError) as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as error:
             label = "unparseable record %d (created_git_worktrees: %s: %s)" % (
                 rowid,
-                type(e).__name__,
-                e,
+                type(error).__name__,
+                error,
             )
             errors.append((rowid, label, str(value)))
             return
         main = next(
             (
-                first_folder(s.get("main_worktree_paths"))
-                for s in sidebar
-                if s.get("main_worktree_paths")
-                and path in str(s.get("folder_paths") or "").split("\n")
+                first_folder(entry.get("main_worktree_paths"))
+                for entry in sidebar
+                if entry.get("main_worktree_paths")
+                and path in str(entry.get("folder_paths") or "").split("\n")
             ),
             "",
-        ) or next((str(a["main_repo_path"]) for a in archived if a["worktree_path"] == path), "")
+        ) or next(
+            (
+                str(archive["main_repo_path"])
+                for archive in archived
+                if archive["worktree_path"] == path
+            ),
+            "",
+        )
         text = "scratch directory: %s (Zed-created git worktree%s%s) (from %s" % (
             path,
             " of %s" % main if main else "",
@@ -628,101 +635,114 @@ class ZedParser(Parser):
         text += " created_git_worktrees, created_at)"
         yield self._state_row(artifact, text, to_utc(seconds), rowid, "", path)
 
-    def _archived_worktree(self, artifact: Artifact, r: dict, by_key: dict) -> Row:
+    def _archived_worktree(self, artifact: Artifact, row: dict, by_key: dict) -> Row:
         """The row of one archived worktree and one thread linked to it."""
-        side = by_key.get(thread_key(r.get("_thread"))) if r.get("_thread") else None
+        side = by_key.get(thread_key(row.get("_thread"))) if row.get("_thread") else None
         session_id = str((side or {}).get("session_id") or "")
         text = (
             "archived worktree: %s of %s branch=%s staged=%s unstaged=%s original=%s"
             " ref=refs/archived-worktrees/%s (from %s archived_git_worktrees, file mtime)"
         ) % (
-            r.get("worktree_path") or "",
-            r.get("main_repo_path") or "",
-            r.get("branch_name") or "-",
-            r.get("staged_commit_hash") or "-",
-            r.get("unstaged_commit_hash") or "-",
-            r.get("original_commit_hash") or "-",
-            r.get("id"),
+            row.get("worktree_path") or "",
+            row.get("main_repo_path") or "",
+            row.get("branch_name") or "-",
+            row.get("staged_commit_hash") or "-",
+            row.get("unstaged_commit_hash") or "-",
+            row.get("original_commit_hash") or "-",
+            row.get("id"),
             artifact.rel,
         )
-        project = str(r.get("main_repo_path") or "")
-        ts = file_mtime(artifact)
-        return self._state_row(artifact, text, ts, r["_rowid"], session_id, project)
+        project = str(row.get("main_repo_path") or "")
+        timestamp = file_mtime(artifact)
+        return self._state_row(artifact, text, timestamp, row["_rowid"], session_id, project)
 
     # -- threads/threads.db -------------------------------------------------------
     def _parse_threads(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         with open_copy(artifact.disk_path) as con:
             if "threads" not in table_names(con):
                 return
-            for r in con.execute("select rowid as _rowid, * from threads order by updated_at"):
-                yield from self._thread_rows(artifact, dict(r), opts)
+            for row in con.execute("select rowid as _rowid, * from threads order by updated_at"):
+                yield from self._thread_rows(artifact, dict(row), opts)
 
-    def _thread_rows(self, artifact: Artifact, r: dict, opts: Options) -> Iterator[Row]:
-        session_id = str(r.get("id") or "")
-        project = first_folder(r.get("folder_paths"))
-        updated = to_utc(r.get("updated_at"))
+    def _thread_rows(self, artifact: Artifact, record: dict, opts: Options) -> Iterator[Row]:
+        session_id = str(record.get("id") or "")
+        project = first_folder(record.get("folder_paths"))
+        updated = to_utc(record.get("updated_at"))
 
-        def base(turn_type: str, text: str, ts: str = "", model: str = "", branch: str = "") -> Row:
+        def base(
+            turn_type: str, text: str, timestamp: str = "", model: str = "", branch: str = ""
+        ) -> Row:
             row = self.base_row(artifact)
-            row.source_line = r["_rowid"]
+            row.source_line = record["_rowid"]
             row.session_id = session_id
             row.project_path = project
             row.git_branch = branch
-            row.timestamp_utc = ts or updated
+            row.timestamp_utc = timestamp or updated
             row.model = model
             row.turn_type = turn_type
             row.text = compact(text)
             return row
 
-        thread, err, raw = self._decode(r)
+        thread, err, raw = self._decode(record)
         if thread is None:
-            label = "unparseable record %d (%s)" % (r["_rowid"], err)
-            yield from error_rows(self, artifact, [(r["_rowid"], label, raw)], session_id, project)
+            label = "unparseable record %d (%s)" % (record["_rowid"], err)
+            yield from error_rows(
+                self, artifact, [(record["_rowid"], label, raw)], session_id, project
+            )
             return
 
         snap = thread.get("initial_project_snapshot")
         if not isinstance(snap, dict):
             snap = {}
-        worktrees = [w for w in (snap.get("worktree_snapshots") or []) if isinstance(w, dict)]
+        worktrees = [
+            worktree
+            for worktree in (snap.get("worktree_snapshots") or [])
+            if isinstance(worktree, dict)
+        ]
         if not project and worktrees:
             project = str(worktrees[0].get("worktree_path") or "")
         branches = [
-            (w.get("worktree_path") == project, str(w["git_state"]["current_branch"]))
-            for w in worktrees
-            if isinstance(w.get("git_state"), dict) and w["git_state"].get("current_branch")
+            (worktree.get("worktree_path") == project, str(worktree["git_state"]["current_branch"]))
+            for worktree in worktrees
+            if isinstance(worktree.get("git_state"), dict)
+            and worktree["git_state"].get("current_branch")
         ]
-        branch = max(branches, key=lambda b: b[0])[1] if branches else ""
+        branch = max(branches, key=lambda pair: pair[0])[1] if branches else ""
         # The project's own snapshot, else the first one; never another
         # worktree's, whose remote is another repository's.
-        own = [w for w in worktrees if w.get("worktree_path") == project] or worktrees[:1]
+        own = [
+            worktree for worktree in worktrees if worktree.get("worktree_path") == project
+        ] or worktrees[:1]
         remote = ""
         if own and isinstance(own[0].get("git_state"), dict):
             url = own[0]["git_state"].get("remote_url")
             remote = url.strip() if isinstance(url, str) else ""
-        m = thread.get("model")
-        if not isinstance(m, dict):
-            m = {}
-        model = "/".join(str(x) for x in (m.get("provider"), m.get("model")) if x)
+        model_info = thread.get("model")
+        if not isinstance(model_info, dict):
+            model_info = {}
+        model = "/".join(
+            str(part) for part in (model_info.get("provider"), model_info.get("model")) if part
+        )
         if not updated:
             updated = to_utc(thread.get("updated_at"))
 
-        parent = r.get("parent_id") or (
+        parent = record.get("parent_id") or (
             (thread.get("subagent_context") or {}).get("parent_thread_id")
             if isinstance(thread.get("subagent_context"), dict)
             else ""
         )
-        start_ts = to_utc(snap.get("timestamp")) or to_utc(r.get("created_at")) or updated
+        start_ts = to_utc(snap.get("timestamp")) or to_utc(record.get("created_at")) or updated
         yield base(
             "system",
             " ".join(
-                x
-                for x in (
+                part
+                for part in (
                     "thread start:",
-                    str(thread.get("title") or r.get("summary") or ""),
+                    str(thread.get("title") or record.get("summary") or ""),
                     "version=%s" % thread["version"] if thread.get("version") else "",
                     "parent=%s" % parent if parent else "",
                 )
-                if x
+                if part
             ),
             start_ts,
             model,
@@ -730,10 +750,10 @@ class ZedParser(Parser):
         )
         if remote:
             yield base("system", GIT_REMOTE_PREFIX + remote, start_ts, model, branch)
-        if m.get("model"):
-            text = "model: %s" % m["model"]
-            if m.get("provider"):
-                text += " provider=%s" % m["provider"]
+        if model_info.get("model"):
+            text = "model: %s" % model_info["model"]
+            if model_info.get("provider"):
+                text += " provider=%s" % model_info["provider"]
             yield base("system", text, start_ts, model, branch)
         for key, value in self._grants(thread):
             yield base(
@@ -753,10 +773,10 @@ class ZedParser(Parser):
                 "scratch directory: %s (sandboxed terminal temp directory of thread %s)"
                 " (thread blob, as of updated_at)" % (temp_dir, session_id)
             )
-            yield self._state_row(artifact, text, updated, r["_rowid"], "", temp_dir)
+            yield self._state_row(artifact, text, updated, record["_rowid"], "", temp_dir)
 
         errors: list = []
-        for kind, text, tool_name, tool_id in self._messages(thread, r["_rowid"], errors):
+        for kind, text, tool_name, tool_id in self._messages(thread, record["_rowid"], errors):
             if kind == "thinking" and not opts.include_thinking:
                 continue
             if not text and kind not in ("tool_use", "tool_result"):
@@ -786,36 +806,40 @@ class ZedParser(Parser):
         for key in ("write_paths", "network_hosts"):
             entries = grants.get(key)
             if isinstance(entries, list):
-                for e in entries:
-                    yield "sandbox_grants.%s" % key, e
+                for entry in entries:
+                    yield "sandbox_grants.%s" % key, entry
         for key in SANDBOX_FLAGS:
             if grants.get(key) is True:
                 yield "sandbox_grants.%s" % key, True
 
     @staticmethod
-    def _decode(r: dict) -> tuple[dict | None, str, str]:
+    def _decode(row: dict) -> tuple[dict | None, str, str]:
         """(thread, "", "") for a blob that decodes to a JSON object, else
         (None, reason, the stored value as text). A `json` row's stored
         value is its text, decoded UTF-8 with `errors="replace"`; a `zstd`
         row's is its compressed bytes as lowercase hex, since they have no
         faithful text form and a truncated frame can decompress to nothing,
         and its reason ends `stored zstd blob as hex`."""
-        data = r.get("data")
+        data = row.get("data")
         if data is None:
             return None, "no data", ""
         binary = isinstance(data, (bytes, bytearray))
         stored = bytes(data) if binary else str(data).encode("utf-8")
-        is_zstd = str(r.get("data_type") or "").lower() == "zstd"
+        is_zstd = str(row.get("data_type") or "").lower() == "zstd"
         try:
             raw = decompress(stored) if is_zstd else stored
             thread = json.loads(raw.decode("utf-8", errors="replace"))
             if not isinstance(thread, dict):
                 raise ValueError("not a JSON object")
-        except Exception as e:  # noqa: BLE001 - ZstdError, the stream reader's errors, ValueError
+        except Exception as error:  # noqa: BLE001 - ZstdError, the stream reader's errors, ValueError
             if is_zstd:
-                reason = "%s: %s; stored zstd blob as hex" % (type(e).__name__, e)
+                reason = "%s: %s; stored zstd blob as hex" % (type(error).__name__, error)
                 return None, reason, stored.hex()
-            return None, "%s: %s" % (type(e).__name__, e), stored.decode("utf-8", errors="replace")
+            return (
+                None,
+                "%s: %s" % (type(error).__name__, error),
+                stored.decode("utf-8", errors="replace"),
+            )
         return thread, "", ""
 
     def _messages(
@@ -834,71 +858,73 @@ class ZedParser(Parser):
             errors.append((rowid, reason, record_json(messages)))
             return
 
-        def bad(n: int, reason: str, item) -> None:
-            errors.append((rowid, "unparseable record %d (%s)" % (n, reason), record_json(item)))
+        def bad(position: int, reason: str, item) -> None:
+            errors.append(
+                (rowid, "unparseable record %d (%s)" % (position, reason), record_json(item))
+            )
 
-        for n, msg in enumerate(messages, 1):
+        for position, msg in enumerate(messages, 1):
             if isinstance(msg, str):
                 yield "system", msg.lower(), "", ""
             elif not isinstance(msg, dict):
-                bad(n, "unknown message variant", msg)
+                bad(position, "unknown message variant", msg)
             elif "User" in msg:
-                yield from self._user(msg["User"], n, bad)
+                yield from self._user(msg["User"], position, bad)
             elif "Agent" in msg:
-                yield from self._agent(msg["Agent"], n, bad)
+                yield from self._agent(msg["Agent"], position, bad)
             elif "Compaction" in msg:
-                c = msg["Compaction"]
-                if isinstance(c, dict) and isinstance(c.get("Summary"), str):
-                    yield "system", "compaction: " + c["Summary"], "", ""
-                elif isinstance(c, dict) and "ProviderNative" in c:
+                compaction = msg["Compaction"]
+                if isinstance(compaction, dict) and isinstance(compaction.get("Summary"), str):
+                    yield "system", "compaction: " + compaction["Summary"], "", ""
+                elif isinstance(compaction, dict) and "ProviderNative" in compaction:
                     yield "system", "compaction: provider native", "", ""
                 else:
-                    bad(n, "unknown Compaction variant", msg)
+                    bad(position, "unknown Compaction variant", msg)
             elif "role" in msg:
-                yield from self._legacy(msg, n, bad)
+                yield from self._legacy(msg, position, bad)
             else:
-                bad(n, "unknown message variant", msg)
+                bad(position, "unknown message variant", msg)
 
     @staticmethod
-    def _user(u, n: int, bad) -> Iterator[tuple[str, str, str, str]]:
+    def _user(user_message, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
         # One row per prompt: text, mentions and images of one User message
         # are joined so sessions.jsonl counts prompts, not content items. A
         # content object of an unknown variant stays in the prompt text as
         # JSON; an item that is not an object or string goes to `bad`.
-        if not isinstance(u, dict):
-            bad(n, "User message is not an object", {"User": u})
+        if not isinstance(user_message, dict):
+            bad(position, "User message is not an object", {"User": user_message})
             return
-        content = u.get("content")
+        content = user_message.get("content")
         if isinstance(content, (str, dict)):
             content = [content]
         elif content is not None and not isinstance(content, list):
-            bad(n, "User content is not a list", content)
+            bad(position, "User content is not a list", content)
             content = []
         parts = []
-        for k, c in enumerate(content or []):
-            if isinstance(c, str):
-                parts.append(c)
-            elif not isinstance(c, dict):
-                bad(n, "unknown User content variant, content[%d]" % k, c)
+        for k, item in enumerate(content or []):
+            if isinstance(item, str):
+                parts.append(item)
+            elif not isinstance(item, dict):
+                bad(position, "unknown User content variant, content[%d]" % k, item)
             else:
-                if isinstance(c.get("Text"), str):
-                    parts.append(c["Text"])
-                elif "Mention" in c:
-                    parts.append(mention_text(c["Mention"]))
-                elif "Image" in c:
+                if isinstance(item.get("Text"), str):
+                    parts.append(item["Text"])
+                elif "Mention" in item:
+                    parts.append(mention_text(item["Mention"]))
+                elif "Image" in item:
                     parts.append("[image]")
                 else:
-                    parts.append(compact_json(c))
+                    parts.append(compact_json(item))
         yield "user", "\n".join(parts), "", ""
 
     @staticmethod
-    def _agent(a, n: int, bad) -> Iterator[tuple[str, str, str, str]]:
-        if not isinstance(a, dict):
-            bad(n, "Agent message is not an object", {"Agent": a})
+    def _agent(agent_message, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
+        if not isinstance(agent_message, dict):
+            bad(position, "Agent message is not an object", {"Agent": agent_message})
             return
-        results = a.get("tool_results")
+        results = agent_message.get("tool_results")
         if results is not None and not isinstance(results, dict):
-            bad(n, "Agent tool_results is not an object", results)
+            bad(position, "Agent tool_results is not an object", results)
         if not isinstance(results, dict):
             results = {}
         done = set()
@@ -919,73 +945,78 @@ class ZedParser(Parser):
             if decision:
                 yield "system", decision, name, tid
 
-        content = a.get("content")
+        content = agent_message.get("content")
         if isinstance(content, (str, dict)):
             content = [content]
         elif content is not None and not isinstance(content, list):
-            bad(n, "Agent content is not a list", content)
+            bad(position, "Agent content is not a list", content)
             content = []
-        for k, c in enumerate(content or []):
-            if isinstance(c, str):
-                yield "assistant", c, "", ""
-            elif not isinstance(c, dict):
-                bad(n, "unknown Agent content variant, content[%d]" % k, c)
-            elif isinstance(c.get("Text"), str):
-                yield "assistant", c["Text"], "", ""
-            elif "Thinking" in c:
-                t = c["Thinking"]
-                yield "thinking", (t.get("text") if isinstance(t, dict) else str(t)) or "", "", ""
-            elif "RedactedThinking" in c:
+        for k, item in enumerate(content or []):
+            if isinstance(item, str):
+                yield "assistant", item, "", ""
+            elif not isinstance(item, dict):
+                bad(position, "unknown Agent content variant, content[%d]" % k, item)
+            elif isinstance(item.get("Text"), str):
+                yield "assistant", item["Text"], "", ""
+            elif "Thinking" in item:
+                thinking = item["Thinking"]
+                yield (
+                    "thinking",
+                    (thinking.get("text") if isinstance(thinking, dict) else str(thinking)) or "",
+                    "",
+                    "",
+                )
+            elif "RedactedThinking" in item:
                 yield "thinking", "[redacted thinking]", "", ""
-            elif isinstance(c.get("ToolUse"), dict):
-                tu = c["ToolUse"]
-                tid = str(tu.get("id") or "")
-                yield "tool_use", tool_input_text(tu), str(tu.get("name") or ""), tid
+            elif isinstance(item.get("ToolUse"), dict):
+                tool_use = item["ToolUse"]
+                tid = str(tool_use.get("id") or "")
+                yield "tool_use", tool_input_text(tool_use), str(tool_use.get("name") or ""), tid
                 # The result follows its call, so the timeline reads in order.
                 if isinstance(results.get(tid), dict):
                     done.add(tid)
                     yield from result(tid, results[tid])
-            elif "Image" in c:
+            elif "Image" in item:
                 yield "assistant", "[image]", "", ""
             else:
-                bad(n, "unknown Agent content variant, content[%d]" % k, c)
+                bad(position, "unknown Agent content variant, content[%d]" % k, item)
         for key, res in results.items():
             if key in done:
                 continue
             if isinstance(res, dict):
                 yield from result(key, res)
             else:
-                bad(n, "Agent tool_results entry %s is not an object" % key, res)
+                bad(position, "Agent tool_results entry %s is not an object" % key, res)
 
     @staticmethod
-    def _legacy(msg: dict, n: int, bad) -> Iterator[tuple[str, str, str, str]]:
+    def _legacy(msg: dict, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
         role = str(msg.get("role") or "").lower()
         kind = "user" if role == "user" else "assistant" if role == "assistant" else "system"
         if isinstance(msg.get("text"), str):
             yield kind, msg["text"] if kind != "system" else "%s: %s" % (role, msg["text"]), "", ""
         for k, seg in enumerate(msg.get("segments") or []):
-            st = str(seg.get("type") or "").lower() if isinstance(seg, dict) else ""
-            if st == "text":
+            segment_type = str(seg.get("type") or "").lower() if isinstance(seg, dict) else ""
+            if segment_type == "text":
                 yield kind, str(seg.get("text") or ""), "", ""
-            elif st == "thinking":
+            elif segment_type == "thinking":
                 yield "thinking", str(seg.get("text") or ""), "", ""
-            elif st == "redactedthinking":
+            elif segment_type == "redactedthinking":
                 yield "thinking", "[redacted thinking]", "", ""
             else:
-                bad(n, "unknown segment variant, segments[%d]" % k, seg)
-        for k, tu in enumerate(msg.get("tool_uses") or []):
-            if not isinstance(tu, dict):
-                bad(n, "tool_uses[%d] is not an object" % k, tu)
+                bad(position, "unknown segment variant, segments[%d]" % k, seg)
+        for k, tool_use in enumerate(msg.get("tool_uses") or []):
+            if not isinstance(tool_use, dict):
+                bad(position, "tool_uses[%d] is not an object" % k, tool_use)
             else:
                 yield (
                     "tool_use",
-                    tool_input_text(tu),
-                    str(tu.get("name") or ""),
-                    str(tu.get("id") or ""),
+                    tool_input_text(tool_use),
+                    str(tool_use.get("name") or ""),
+                    str(tool_use.get("id") or ""),
                 )
         for k, res in enumerate(msg.get("tool_results") or []):
             if not isinstance(res, dict):
-                bad(n, "tool_results[%d] is not an object" % k, res)
+                bad(position, "tool_results[%d] is not an object" % k, res)
             else:
                 text = content_text(res.get("content"))
                 if res.get("is_error"):

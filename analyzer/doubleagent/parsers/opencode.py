@@ -241,11 +241,11 @@ def tool_summary(value) -> str:
         return value
     if isinstance(value, dict):
         for key in TOOL_KEYS:
-            v = value.get(key)
-            if isinstance(v, str) and v:
+            argument = value.get(key)
+            if isinstance(argument, str) and argument:
                 if key == "pattern" and isinstance(value.get("path"), str) and value.get("path"):
-                    return "%s | %s" % (v, value["path"])
-                return v
+                    return "%s | %s" % (argument, value["path"])
+                return argument
     if value in (None, "", {}):
         return ""
     return compact_json(value)
@@ -264,9 +264,9 @@ def message_ref(msg: dict) -> tuple[object, object]:
     `providerID`/`modelID`, else the user message's `model` object."""
     if msg.get("role") == "assistant":
         return msg.get("providerID"), msg.get("modelID")
-    m = msg.get("model")
-    if isinstance(m, dict):
-        return m.get("providerID"), m.get("modelID") or m.get("id")
+    model = msg.get("model")
+    if isinstance(model, dict):
+        return model.get("providerID"), model.get("modelID") or model.get("id")
     return None, None
 
 
@@ -299,7 +299,7 @@ def agent_row_text(seen: dict, key, agent) -> str:
     return track_change("permission mode", seen, key, "agent=" + agent)
 
 
-def _d(value) -> dict:
+def _dict_or_empty(value) -> dict:
     return value if isinstance(value, dict) else {}
 
 
@@ -309,10 +309,10 @@ def _loads(value) -> dict | None:
     if not isinstance(value, str):
         return None
     try:
-        v = json.loads(value)
+        decoded = json.loads(value)
     except ValueError:
         return None
-    return v if isinstance(v, dict) else None
+    return decoded if isinstance(decoded, dict) else None
 
 
 def _decode(value) -> tuple[dict | None, str, str]:
@@ -329,43 +329,45 @@ def _decode(value) -> tuple[dict | None, str, str]:
     else:
         return None, "not JSON text", str(value)
     try:
-        v = json.loads(text)
-    except ValueError as e:
-        return None, str(e), text
-    if not isinstance(v, dict):
+        decoded = json.loads(text)
+    except ValueError as error:
+        return None, str(error), text
+    if not isinstance(decoded, dict):
         return None, "not a JSON object", text
-    return v, "", text
+    return decoded, "", text
 
 
 def _read_part(path: Path) -> tuple[dict | None, str, str]:
     """`_decode` of a part file's bytes; an unreadable file gives the
     reason and no text."""
     try:
-        with open(path, "rb") as fh:
-            return _decode(fh.read())
-    except OSError as e:
-        return None, "unreadable: %s" % (e.strerror or e), ""
+        with open(path, "rb") as handle:
+            return _decode(handle.read())
+    except OSError as error:
+        return None, "unreadable: %s" % (error.strerror or error), ""
 
 
 def _read_json(path: Path) -> dict | None:
     try:
-        with open(path, "rb") as fh:
-            return _loads(fh.read())
+        with open(path, "rb") as handle:
+            return _loads(handle.read())
     except OSError:
         return None
 
 
 def _join(*parts) -> str:
-    return " ".join(str(p) for p in parts if p not in (None, ""))
+    return " ".join(str(part) for part in parts if part not in (None, ""))
 
 
 def _error_text(err) -> str:
     if isinstance(err, str):
         return err
-    e = _d(err)
-    data = _d(e.get("data"))
-    msg = data.get("message") or e.get("message") or ""
-    return _join(e.get("name") or e.get("type") or "", msg) or (compact_json(err) if err else "")
+    error = _dict_or_empty(err)
+    data = _dict_or_empty(error.get("data"))
+    msg = data.get("message") or error.get("message") or ""
+    return _join(error.get("name") or error.get("type") or "", msg) or (
+        compact_json(err) if err else ""
+    )
 
 
 # The refusal texts a tool's error carries (research/opencode.md, Permission
@@ -421,7 +423,7 @@ def session_rules(value) -> list[tuple[str, str, str]] | None:
         return None
     out = []
     for rule in rules:
-        rule = _d(rule)
+        rule = _dict_or_empty(rule)
         if "effect" in rule:
             keys = ("action", "resource", "effect")
         elif "permission" in rule:
@@ -462,27 +464,29 @@ class OpenCodeParser(Parser):
     pinned_sessions = True
 
     def __init__(self) -> None:
-        dd = re.escape(self.data_dir)
-        sd = re.escape(self.state_dir)
-        self.history_rx = re.compile(r"^%s/prompt-history\.jsonl$" % sd)
-        self.stash_rx = re.compile(r"^%s/prompt-stash\.jsonl$" % sd)
-        self.pinned_rx = re.compile(r"^%s/session\.json$" % sd if self.pinned_sessions else r"(?!)")
-        prefixes = "|".join(re.escape(p) for p in self.db_prefixes)
-        self.db_rx = re.compile(r"^%s/(?:%s)(?:-[^/]+)?\.db$" % (dd, prefixes))
-        self.session_rx = re.compile(r"^%s/storage/session/([^/]+)/([^/]+)\.json$" % dd)
-        self.message_rx = re.compile(r"^%s/storage/message/([^/]+)/([^/]+)\.json$" % dd)
+        data_dir = re.escape(self.data_dir)
+        state_dir = re.escape(self.state_dir)
+        self.history_rx = re.compile(r"^%s/prompt-history\.jsonl$" % state_dir)
+        self.stash_rx = re.compile(r"^%s/prompt-stash\.jsonl$" % state_dir)
+        self.pinned_rx = re.compile(
+            r"^%s/session\.json$" % state_dir if self.pinned_sessions else r"(?!)"
+        )
+        prefixes = "|".join(re.escape(prefix) for prefix in self.db_prefixes)
+        self.db_rx = re.compile(r"^%s/(?:%s)(?:-[^/]+)?\.db$" % (data_dir, prefixes))
+        self.session_rx = re.compile(r"^%s/storage/session/([^/]+)/([^/]+)\.json$" % data_dir)
+        self.message_rx = re.compile(r"^%s/storage/message/([^/]+)/([^/]+)\.json$" % data_dir)
         self.old_session_rx = re.compile(
-            r"^%s/project/[^/]+/storage/session/info/([^/]+)\.json$" % dd
+            r"^%s/project/[^/]+/storage/session/info/([^/]+)\.json$" % data_dir
         )
         self.old_message_rx = re.compile(
-            r"^%s/project/[^/]+/storage/session/message/([^/]+)/([^/]+)\.json$" % dd
+            r"^%s/project/[^/]+/storage/session/message/([^/]+)/([^/]+)\.json$" % data_dir
         )
 
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
+            pattern.match(rel)
+            for pattern in (
                 self.db_rx,
                 self.session_rx,
                 self.message_rx,
@@ -519,7 +523,13 @@ class OpenCodeParser(Parser):
 
     # -- shared row builders --------------------------------------------------------
     def _row(
-        self, artifact: Artifact, ctx: _Ctx, source_file: str, line: int, ts: str, model: str = ""
+        self,
+        artifact: Artifact,
+        ctx: _Ctx,
+        source_file: str,
+        line: int,
+        timestamp: str,
+        model: str = "",
     ) -> Row:
         row = self.base_row(artifact)
         if source_file:
@@ -527,7 +537,7 @@ class OpenCodeParser(Parser):
         row.source_line = line
         row.session_id = ctx.session_id
         row.project_path = ctx.project_path
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.model = model
         return row
 
@@ -535,7 +545,7 @@ class OpenCodeParser(Parser):
         self,
         artifact: Artifact,
         ctx: _Ctx,
-        s: dict,
+        session: dict,
         created,
         line: int,
         opts: Options,
@@ -547,15 +557,15 @@ class OpenCodeParser(Parser):
         row.text = compact(
             _join(
                 "session start:",
-                s.get("title") or "",
-                "slug=%s" % s["slug"] if s.get("slug") else "",
-                "version=%s" % s["version"] if s.get("version") else "",
-                "agent=%s" % s["agent"] if s.get("agent") else "",
-                "parent=%s" % (s.get("parent_id") or s.get("parentID"))
-                if (s.get("parent_id") or s.get("parentID"))
+                session.get("title") or "",
+                "slug=%s" % session["slug"] if session.get("slug") else "",
+                "version=%s" % session["version"] if session.get("version") else "",
+                "agent=%s" % session["agent"] if session.get("agent") else "",
+                "parent=%s" % (session.get("parent_id") or session.get("parentID"))
+                if (session.get("parent_id") or session.get("parentID"))
                 else "",
-                "fork=%s" % s["fork_session_id"] if s.get("fork_session_id") else "",
-                "directory=%s" % s["directory"] if s.get("directory") else "",
+                "fork=%s" % session["fork_session_id"] if session.get("fork_session_id") else "",
+                "directory=%s" % session["directory"] if session.get("directory") else "",
                 note,
             ),
         )
@@ -579,9 +589,9 @@ class OpenCodeParser(Parser):
         role = msg.get("role")
         model = message_model(msg)
         msg_file, msg_line, msg_time = msg_src
-        msg_ts = to_utc(_d(msg.get("time")).get("created")) or to_utc(msg_time)
+        msg_ts = to_utc(_dict_or_empty(msg.get("time")).get("created")) or to_utc(msg_time)
         if not ctx.project_path:
-            ctx.project_path = str(_d(msg.get("path")).get("cwd") or "")
+            ctx.project_path = str(_dict_or_empty(msg.get("path")).get("cwd") or "")
         for text in (
             model_row_text(ctx.models, ctx.session_id, *message_ref(msg)),
             agent_row_text(ctx.modes, ctx.session_id, msg.get("agent")),
@@ -596,10 +606,10 @@ class OpenCodeParser(Parser):
         out: list[Row] = []
         for data, pfile, pline, ptime in parts:
             ptype = data.get("type")
-            pts = to_utc(_d(data.get("time")).get("start")) or to_utc(ptime) or msg_ts
+            pts = to_utc(_dict_or_empty(data.get("time")).get("start")) or to_utc(ptime) or msg_ts
 
-            def mk(turn: str, text, ts: str = "") -> Row:
-                row = self._row(artifact, ctx, pfile, pline, ts or pts, model)
+            def make_row(turn: str, text, timestamp: str = "") -> Row:
+                row = self._row(artifact, ctx, pfile, pline, timestamp or pts, model)
                 row.turn_type = turn
                 row.text = compact(text)
                 out.append(row)
@@ -608,22 +618,24 @@ class OpenCodeParser(Parser):
             if ptype == "text":
                 text = data.get("text") or ""
                 if data.get("synthetic") or data.get("ignored"):
-                    mk("system", _join("synthetic:" if data.get("synthetic") else "ignored:", text))
+                    make_row(
+                        "system", _join("synthetic:" if data.get("synthetic") else "ignored:", text)
+                    )
                 elif role == "user":
                     if text:
                         user_text.append(text)
                         if first_user is None:
                             first_user = (pfile, pline, len(out))
                 elif text:
-                    mk("assistant", text)
+                    make_row("assistant", text)
             elif ptype == "reasoning":
                 if opts.include_thinking and data.get("text"):
-                    mk("thinking", data.get("text"))
+                    make_row("thinking", data.get("text"))
             elif ptype == "tool":
-                self._tool_rows(mk, data)
+                self._tool_rows(make_row, data)
             elif ptype == "step-finish":
-                tokens = _d(data.get("tokens"))
-                mk(
+                tokens = _dict_or_empty(data.get("tokens"))
+                make_row(
                     "system",
                     _join(
                         "step-finish",
@@ -636,7 +648,7 @@ class OpenCodeParser(Parser):
                     ),
                 )
             elif ptype == "subtask":
-                mk(
+                make_row(
                     "system",
                     _join(
                         "subtask",
@@ -646,13 +658,15 @@ class OpenCodeParser(Parser):
                     ),
                 )
             elif ptype == "compaction":
-                mk("system", _join("compaction", "auto" if data.get("auto") else ""))
+                make_row("system", _join("compaction", "auto" if data.get("auto") else ""))
             elif ptype == "file":
-                mk("system", _join("file:", data.get("filename") or "", data.get("url") or ""))
+                make_row(
+                    "system", _join("file:", data.get("filename") or "", data.get("url") or "")
+                )
             elif ptype == "agent":
-                mk("system", _join("agent:", data.get("name") or ""))
+                make_row("system", _join("agent:", data.get("name") or ""))
             elif ptype == "retry":
-                mk(
+                make_row(
                     "system",
                     _join(
                         "retry",
@@ -662,22 +676,23 @@ class OpenCodeParser(Parser):
                 )
             elif ptype == "patch":
                 files = data.get("files")
-                mk(
+                make_row(
                     "system",
                     _join(
-                        "patch:", " ".join(str(f) for f in files) if isinstance(files, list) else ""
+                        "patch:",
+                        " ".join(str(file) for file in files) if isinstance(files, list) else "",
                     ),
                 )
             elif ptype in ("step-start", "snapshot"):
                 continue
             else:
-                mk("system", _join("%s:" % (ptype or "part"), compact_json(data)))
+                make_row("system", _join("%s:" % (ptype or "part"), compact_json(data)))
         if user_text and first_user:
-            pfile, pline, at = first_user
+            pfile, pline, position = first_user
             row = self._row(artifact, ctx, pfile, pline, msg_ts, model)
             row.turn_type = "user"
             row.text = compact("\n".join(user_text))
-            out.insert(at, row)
+            out.insert(position, row)
         yield from out
         if msg.get("error"):
             row = self._row(
@@ -685,7 +700,7 @@ class OpenCodeParser(Parser):
                 ctx,
                 msg_file,
                 msg_line,
-                to_utc(_d(msg.get("time")).get("completed")) or msg_ts,
+                to_utc(_dict_or_empty(msg.get("time")).get("completed")) or msg_ts,
                 model,
             )
             row.turn_type = "system"
@@ -698,13 +713,13 @@ class OpenCodeParser(Parser):
             yield row
 
     @staticmethod
-    def _tool_rows(mk, data: dict) -> None:
+    def _tool_rows(make_row, data: dict) -> None:
         """Append a tool_use row, and a tool_result row once finished, via `mk`."""
-        state = _d(data.get("state"))
-        times = _d(state.get("time"))
+        state = _dict_or_empty(data.get("state"))
+        times = _dict_or_empty(state.get("time"))
         name = str(data.get("tool") or "")
         call_id = str(data.get("callID") or "")
-        use = mk(
+        use = make_row(
             "tool_use",
             tool_summary(state.get("input")) or state.get("title") or "",
             to_utc(times.get("start")),
@@ -717,11 +732,13 @@ class OpenCodeParser(Parser):
             else:
                 out = state.get("output")
                 text = out if isinstance(out, str) else compact_json(out)
-            res = mk("tool_result", text, to_utc(times.get("end")) or to_utc(times.get("start")))
+            res = make_row(
+                "tool_result", text, to_utc(times.get("end")) or to_utc(times.get("start"))
+            )
             res.tool_name, res.tool_use_id = name, call_id
             decision = decision_text(state.get("error")) if status == "error" else ""
             if decision:
-                row = mk("system", decision, res.timestamp_utc)
+                row = make_row("system", decision, res.timestamp_utc)
                 row.tool_name, row.tool_use_id = name, call_id
 
     # -- SQLite ---------------------------------------------------------------------
@@ -733,10 +750,10 @@ class OpenCodeParser(Parser):
             with open_copy(artifact.disk_path) as con:
                 for row in self._db_rows(con, artifact, opts):
                     rows.append(row)
-        except sqlite3.DatabaseError as e:
+        except sqlite3.DatabaseError as error:
             row = self.base_row(artifact)
             row.turn_type = "system"
-            row.text = "parser: database could not be read: %s" % e
+            row.text = "parser: database could not be read: %s" % error
             rows.append(row)
         yield from rows
 
@@ -744,42 +761,42 @@ class OpenCodeParser(Parser):
         tables = table_names(con)
         projects: dict[object, dict] = {}  # keyed by the raw id column value
         if "project" in tables:
-            for r in con.execute("select * from project"):
-                projects[r["id"]] = dict(r)
+            for record in con.execute("select * from project"):
+                projects[record["id"]] = dict(record)
         # OpenCode 2.0 keeps its sessions in `session_v2` and leaves the 1.x
         # `session`, `message` and `part` tables behind after the upgrade.
-        v2 = "session_v2" in tables
+        has_v2 = "session_v2" in tables
         sessions: dict[str, tuple[int, dict, str]] = {}  # id -> (rowid, row, table)
         for table in ("session_v2", "session"):
             if table in tables:
-                for r in con.execute(
+                for record in con.execute(
                     "select rowid as _rowid, * from %s order by time_created, id" % table
                 ):
-                    sessions.setdefault(str(r["id"]), (r["_rowid"], dict(r), table))
+                    sessions.setdefault(str(record["id"]), (record["_rowid"], dict(record), table))
         ctxs: dict[str, _Ctx] = {}
 
         def ctx_for(sid: str) -> _Ctx:
-            c = ctxs.get(sid)
-            if c is None:
-                s = sessions.get(sid, (0, {}, ""))[1]
-                path = s.get("directory") or ""
+            context = ctxs.get(sid)
+            if context is None:
+                session = sessions.get(sid, (0, {}, ""))[1]
+                path = session.get("directory") or ""
                 if not path:
-                    wt = projects.get(s.get("project_id"), {}).get("worktree") or ""
-                    path = wt if wt != "/" else ""
-                c = ctxs[sid] = _Ctx(sid, path)
-            return c
+                    worktree = projects.get(session.get("project_id"), {}).get("worktree") or ""
+                    path = worktree if worktree != "/" else ""
+                context = ctxs[sid] = _Ctx(sid, path)
+            return context
 
-        for sid, (rowid, s, table) in sessions.items():
-            note = LEGACY_NOTE if v2 and table == "session" else ""
+        for sid, (rowid, session, table) in sessions.items():
+            note = LEGACY_NOTE if has_v2 and table == "session" else ""
             yield self._session_row(
-                artifact, ctx_for(sid), s, s.get("time_created"), rowid, opts, note=note
+                artifact, ctx_for(sid), session, session.get("time_created"), rowid, opts, note=note
             )
 
         # (rowid, message, raw, session id) per record whose data does not decode.
         errors: list[tuple[int, str, str, str]] = []
         yield from self._share_rows(con, tables, artifact, ctx_for, errors)
         yield from self._state_rows(con, tables, artifact, sessions, projects, ctx_for, errors)
-        if v2:
+        if has_v2:
             # 2.0: `session_message` is the transcript. The 1.x rows repeat a
             # migrated session and are read only for a session it does not
             # hold (one deleted in 2.0, which leaves the 1.x rows), as
@@ -809,7 +826,8 @@ class OpenCodeParser(Parser):
         if "session_message" not in tables:
             return set()
         return {
-            str(r[0] or "") for r in con.execute("select distinct session_id from session_message")
+            str(row[0] or "")
+            for row in con.execute("select distinct session_id from session_message")
         }
 
     def _v1_messages(
@@ -833,35 +851,38 @@ class OpenCodeParser(Parser):
         if "message" not in tables:
             return covered
         has_parts = "part" in tables
-        for m in con.execute(
+        for message_row in con.execute(
             "select rowid as _rowid, id, session_id, time_created, data from message "
             "order by session_id, time_created, id"
         ).fetchall():
-            sid = str(m["session_id"] or "")
+            sid = str(message_row["session_id"] or "")
             covered.add(sid)
             if sid in skip:
                 continue
-            msg, reason, raw = _decode(m["data"])
+            msg, reason, raw = _decode(message_row["data"])
             if msg is None:
-                label = "unparseable record %d (message.data: %s)" % (m["_rowid"], reason)
-                errors.append((m["_rowid"], label, raw, sid))
+                label = "unparseable record %d (message.data: %s)" % (message_row["_rowid"], reason)
+                errors.append((message_row["_rowid"], label, raw, sid))
                 continue
-            msg.setdefault("id", m["id"])
+            msg.setdefault("id", message_row["id"])
             parts = []
             part_errors: list[tuple[int, str, str, str]] = []
             if has_parts:
-                for p in con.execute(
+                for part_row in con.execute(
                     "select rowid as _rowid, time_created, data from part "
                     "where message_id = ? order by id",
-                    (m["id"],),
+                    (message_row["id"],),
                 ):
-                    data, reason, raw = _decode(p["data"])
+                    data, reason, raw = _decode(part_row["data"])
                     if data is None:
-                        label = "unparseable record %d (part.data: %s)" % (p["_rowid"], reason)
-                        part_errors.append((p["_rowid"], label, raw, ""))
+                        label = "unparseable record %d (part.data: %s)" % (
+                            part_row["_rowid"],
+                            reason,
+                        )
+                        part_errors.append((part_row["_rowid"], label, raw, ""))
                     else:
-                        parts.append((data, "", p["_rowid"], p["time_created"]))
-            msg_src = ("", m["_rowid"], m["time_created"])
+                        parts.append((data, "", part_row["_rowid"], part_row["time_created"]))
+            msg_src = ("", message_row["_rowid"], message_row["time_created"])
             for row in self._message_rows(
                 artifact, ctx_for(sid), msg, msg_src, parts, opts, part_errors
             ):
@@ -885,25 +906,28 @@ class OpenCodeParser(Parser):
         session id)."""
         if "session_message" not in tables:
             return
-        for m in con.execute(
+        for message_row in con.execute(
             "select rowid as _rowid, session_id, type, seq, time_created, data "
             "from session_message order by session_id, seq, time_created"
         ).fetchall():
-            sid = str(m["session_id"] or "")
+            sid = str(message_row["session_id"] or "")
             if sid in skip:
                 continue
-            data, reason, raw = _decode(m["data"])
+            data, reason, raw = _decode(message_row["data"])
             if data is None:
-                label = "unparseable record %d (session_message.data: %s)" % (m["_rowid"], reason)
-                errors.append((m["_rowid"], label, raw, sid))
+                label = "unparseable record %d (session_message.data: %s)" % (
+                    message_row["_rowid"],
+                    reason,
+                )
+                errors.append((message_row["_rowid"], label, raw, sid))
                 continue
             yield from self._v2_rows(
                 artifact,
                 ctx_for(sid),
-                m["type"] or data.get("type") or "",
+                message_row["type"] or data.get("type") or "",
                 data,
-                m["_rowid"],
-                m["time_created"],
+                message_row["_rowid"],
+                message_row["time_created"],
                 opts,
             )
 
@@ -915,40 +939,42 @@ class OpenCodeParser(Parser):
         its `session.updated.1` events record. An event row whose `data`
         does not decode is appended to `errors` as (rowid, message, raw,
         session id). `secret` is never selected."""
-        db = self.db_label(artifact)
+        database = self.db_label(artifact)
         shared: set[str] = set()
         if "session_share" in tables:
-            for r in con.execute(
+            for record in con.execute(
                 "select rowid as _rowid, session_id, id, url, time_created from session_share "
                 "order by time_created, session_id"
             ):
-                sid = str(r["session_id"] or "")
+                sid = str(record["session_id"] or "")
                 shared.add(sid)
-                row = self._row(artifact, ctx_for(sid), "", r["_rowid"], to_utc(r["time_created"]))
+                row = self._row(
+                    artifact, ctx_for(sid), "", record["_rowid"], to_utc(record["time_created"])
+                )
                 row.turn_type = "system"
                 row.text = compact(
                     "session synced: share %s url %s (from %s session_share, time_created)"
-                    % (r["id"] or "-", r["url"] or "-", db)
+                    % (record["id"] or "-", record["url"] or "-", database)
                 )
                 yield row
         if "event" not in tables:
             return
         state: dict[str, str] = {}  # session id -> "shared" or "unshared"
-        for r in con.execute(
+        for record in con.execute(
             "select rowid as _rowid, aggregate_id, data from event "
             "where type = 'session.updated.1' order by aggregate_id, seq"
         ):
-            sid = str(r["aggregate_id"] or "")
-            data, reason, raw = _decode(r["data"])
+            sid = str(record["aggregate_id"] or "")
+            data, reason, raw = _decode(record["data"])
             if data is None:
-                label = "unparseable record %d (event.data: %s)" % (r["_rowid"], reason)
-                errors.append((r["_rowid"], label, raw, sid))
+                label = "unparseable record %d (event.data: %s)" % (record["_rowid"], reason)
+                errors.append((record["_rowid"], label, raw, sid))
                 continue
             if sid in shared or state.get(sid) == "unshared":
                 continue
-            info = _d(data.get("info"))
-            url = _d(info.get("share")).get("url")
-            ts = to_utc(_d(info.get("time")).get("updated"))
+            info = _dict_or_empty(data.get("info"))
+            url = _dict_or_empty(info.get("share")).get("url")
+            timestamp = to_utc(_dict_or_empty(info.get("time")).get("updated"))
             if url and sid not in state:
                 state[sid] = "shared"
                 text = "session synced: share url %s" % url
@@ -957,10 +983,10 @@ class OpenCodeParser(Parser):
                 text = "session unshared"
             else:
                 continue
-            row = self._row(artifact, ctx_for(sid), "", r["_rowid"], ts)
+            row = self._row(artifact, ctx_for(sid), "", record["_rowid"], timestamp)
             row.turn_type = "system"
             row.text = compact(
-                "%s (from %s event session.updated.1, info.time.updated)" % (text, db)
+                "%s (from %s event session.updated.1, info.time.updated)" % (text, database)
             )
             yield row
 
@@ -982,9 +1008,9 @@ class OpenCodeParser(Parser):
         one `permission setting:` row per saved grant of the `permission`
         table. A `permission` value that is not a JSON array is appended to
         `errors` as (rowid, message, raw, session id)."""
-        db = self.db_label(artifact)
+        database = self.db_label(artifact)
 
-        def mk(ctx: _Ctx, line: int, when, text: str, project: str | None = None) -> Row:
+        def make_row(ctx: _Ctx, line: int, when, text: str, project: str | None = None) -> Row:
             row = self._row(artifact, ctx, "", line, to_utc(when))
             row.turn_type = "system"
             row.text = compact(text)
@@ -992,77 +1018,81 @@ class OpenCodeParser(Parser):
                 row.project_path = project
             return row
 
-        for sid, (rowid, s, table) in sessions.items():
-            if s.get("time_archived"):
-                yield mk(
+        for sid, (rowid, session, table) in sessions.items():
+            if session.get("time_archived"):
+                yield make_row(
                     ctx_for(sid),
                     rowid,
-                    s["time_archived"],
-                    "session archived (from %s %s, time_archived)" % (db, table),
+                    session["time_archived"],
+                    "session archived (from %s %s, time_archived)" % (database, table),
                 )
-            if s.get("permission") in (None, ""):
+            if session.get("permission") in (None, ""):
                 continue
-            rules = session_rules(s["permission"])
+            rules = session_rules(session["permission"])
             if rules is None:
-                raw = s["permission"]
+                raw = session["permission"]
                 raw = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
                 label = "unparseable record %d (%s.permission: not a JSON array)" % (rowid, table)
                 errors.append((rowid, label, raw, sid))
                 continue
             for perm, pattern, effect in rules:
-                yield mk(
+                yield make_row(
                     ctx_for(sid),
                     rowid,
-                    s.get("time_updated"),
+                    session.get("time_updated"),
                     "permission setting: session %s %s=%s (from %s %s.permission, time_updated)"
-                    % (perm, pattern, effect, db, table),
+                    % (perm, pattern, effect, database, table),
                 )
 
         def worktree_of(project_id) -> str:
-            wt = projects.get(project_id, {}).get("worktree") or ""
-            return wt if wt != "/" else ""
+            worktree = projects.get(project_id, {}).get("worktree") or ""
+            return worktree if worktree != "/" else ""
 
         seen: set[str] = set()
         for table in ("worktree", "project_directory"):
             if table not in tables:
                 continue
-            for r in con.execute(
+            for record in con.execute(
                 "select rowid as _rowid, * from %s order by time_created, directory" % table
             ):
-                r = dict(r)
-                directory = str(r.get("directory") or "")
+                record = dict(record)
+                directory = str(record.get("directory") or "")
                 if not directory or directory in seen:
                     continue
-                if table == "project_directory" and r.get("type") != "git_worktree":
+                if table == "project_directory" and record.get("type") != "git_worktree":
                     continue
                 seen.add(directory)
                 text = "scratch directory: %s (git worktree of %s strategy=%s) (from %s %s, " % (
                     directory,
-                    worktree_of(r.get("project_id")) or "-",
-                    r.get("strategy") or "-",
-                    db,
+                    worktree_of(record.get("project_id")) or "-",
+                    record.get("strategy") or "-",
+                    database,
                     table,
                 )
-                yield mk(
-                    _Ctx(), r["_rowid"], r.get("time_created"), text + "time_created)", directory
+                yield make_row(
+                    _Ctx(),
+                    record["_rowid"],
+                    record.get("time_created"),
+                    text + "time_created)",
+                    directory,
                 )
 
         if "permission" in tables:
-            for r in con.execute(
+            for record in con.execute(
                 "select rowid as _rowid, * from permission order by time_created, id"
             ):
-                r = dict(r)
-                if "action" not in r:
+                record = dict(record)
+                if "action" not in record:
                     # The first migration's `permission(project_id, data)`,
                     # dropped later; its `data` shape is not in the research.
                     break
-                yield mk(
+                yield make_row(
                     _Ctx(),
-                    r["_rowid"],
-                    r.get("time_created"),
+                    record["_rowid"],
+                    record.get("time_created"),
                     "permission setting: %s %s=allow (from %s permission, time_created)"
-                    % (r.get("action") or "-", r.get("resource") or "-", db),
-                    worktree_of(r.get("project_id")),
+                    % (record.get("action") or "-", record.get("resource") or "-", database),
+                    worktree_of(record.get("project_id")),
                 )
 
     @staticmethod
@@ -1081,34 +1111,39 @@ class OpenCodeParser(Parser):
         created,
         opts: Options,
     ) -> Iterator[Row]:
-        ts = to_utc(_d(data.get("time")).get("created")) or to_utc(created)
-        m = _d(data.get("model"))
-        model = model_name(m.get("providerID"), m.get("modelID") or m.get("id"))
+        timestamp = to_utc(_dict_or_empty(data.get("time")).get("created")) or to_utc(created)
+        model_ref = _dict_or_empty(data.get("model"))
+        model = model_name(
+            model_ref.get("providerID"), model_ref.get("modelID") or model_ref.get("id")
+        )
 
-        def mk(turn: str, text, when: str = "") -> Row:
-            row = self._row(artifact, ctx, "", line, when or ts, model)
+        def make_row(turn: str, text, when: str = "") -> Row:
+            row = self._row(artifact, ctx, "", line, when or timestamp, model)
             row.turn_type = turn
             row.text = compact(text)
             return row
 
         if mtype == "model-switched":
             text = model_row_text(
-                ctx.models, ctx.session_id, m.get("providerID"), m.get("id") or m.get("modelID")
+                ctx.models,
+                ctx.session_id,
+                model_ref.get("providerID"),
+                model_ref.get("id") or model_ref.get("modelID"),
             )
             if text:
-                yield mk("system", text)
+                yield make_row("system", text)
         elif mtype == "agent-switched":
             text = agent_row_text(ctx.modes, ctx.session_id, data.get("agent"))
             if text:
-                yield mk("system", text)
+                yield make_row("system", text)
         elif mtype == "user":
-            yield mk("user", data.get("text") or "")
+            yield make_row("user", data.get("text") or "")
         elif mtype in ("synthetic", "system"):
-            yield mk("system", _join("%s:" % mtype, data.get("text") or ""))
+            yield make_row("system", _join("%s:" % mtype, data.get("text") or ""))
         elif mtype == "shell":
-            yield from self._shell_rows(mk, data)
+            yield from self._shell_rows(make_row, data)
         elif mtype == "compaction":
-            yield mk(
+            yield make_row(
                 "system",
                 _join(
                     "compaction",
@@ -1119,9 +1154,9 @@ class OpenCodeParser(Parser):
                 ),
             )
         elif mtype == "location-switched":
-            loc = _d(data.get("location"))
-            prev = _d(_d(data.get("previous")).get("location"))
-            yield mk(
+            loc = _dict_or_empty(data.get("location"))
+            prev = _dict_or_empty(_dict_or_empty(data.get("previous")).get("location"))
+            yield make_row(
                 "system",
                 _join(
                     "location switched:",
@@ -1132,11 +1167,11 @@ class OpenCodeParser(Parser):
                 ),
             )
         elif mtype == "skill":
-            yield mk(
+            yield make_row(
                 "system", _join("skill %s:" % (data.get("name") or ""), data.get("text") or "")
             )
         elif mtype == "idle":
-            yield mk(
+            yield make_row(
                 "system",
                 _join(
                     "idle:",
@@ -1147,25 +1182,28 @@ class OpenCodeParser(Parser):
         elif mtype == "assistant":
             for text in (
                 model_row_text(
-                    ctx.models, ctx.session_id, m.get("providerID"), m.get("id") or m.get("modelID")
+                    ctx.models,
+                    ctx.session_id,
+                    model_ref.get("providerID"),
+                    model_ref.get("id") or model_ref.get("modelID"),
                 ),
                 agent_row_text(ctx.modes, ctx.session_id, data.get("agent")),
             ):
                 if text:
-                    yield mk("system", text)
+                    yield make_row("system", text)
             for item in data.get("content") or []:
-                item = _d(item)
+                item = _dict_or_empty(item)
                 itype = item.get("type")
                 if itype == "text" and item.get("text"):
-                    yield mk("assistant", item["text"])
+                    yield make_row("assistant", item["text"])
                 elif itype == "reasoning":
                     if opts.include_thinking and item.get("text"):
-                        yield mk("thinking", item["text"])
+                        yield make_row("thinking", item["text"])
                 elif itype == "tool":
-                    state = _d(item.get("state"))
-                    times = _d(item.get("time"))
+                    state = _dict_or_empty(item.get("state"))
+                    times = _dict_or_empty(item.get("time"))
                     name, call_id = str(item.get("name") or ""), str(item.get("id") or "")
-                    use = mk(
+                    use = make_row(
                         "tool_use", tool_summary(state.get("input")), to_utc(times.get("created"))
                     )
                     use.tool_name, use.tool_use_id = name, call_id
@@ -1176,11 +1214,11 @@ class OpenCodeParser(Parser):
                             text = "[error] " + _error_text(state.get("error"))
                         else:
                             text = "\n".join(
-                                str(c.get("text"))
-                                for c in state.get("content") or []
-                                if isinstance(c, dict) and c.get("text") is not None
+                                str(chunk.get("text"))
+                                for chunk in state.get("content") or []
+                                if isinstance(chunk, dict) and chunk.get("text") is not None
                             )
-                        res = mk(
+                        res = make_row(
                             "tool_result",
                             text,
                             to_utc(times.get("completed")) or to_utc(times.get("ran")),
@@ -1189,39 +1227,42 @@ class OpenCodeParser(Parser):
                         yield res
                         decision = decision_text(state.get("error")) if status == "error" else ""
                         if decision:
-                            row = mk("system", decision, res.timestamp_utc)
+                            row = make_row("system", decision, res.timestamp_utc)
                             row.tool_name, row.tool_use_id = name, call_id
                             yield row
             if data.get("error"):
-                yield mk("system", "error: " + _error_text(data.get("error")))
+                yield make_row("system", "error: " + _error_text(data.get("error")))
         elif mtype:
-            yield mk(
+            yield make_row(
                 "system",
-                _join("%s:" % mtype, compact_json({k: v for k, v in data.items() if k != "time"})),
+                _join(
+                    "%s:" % mtype,
+                    compact_json({key: value for key, value in data.items() if key != "time"}),
+                ),
             )
 
     @staticmethod
-    def _shell_rows(mk, data: dict) -> Iterator[Row]:
+    def _shell_rows(make_row, data: dict) -> Iterator[Row]:
         """A `shell` record's tool_use row and, once it has output or has
         ended, its tool_result row. 1.x: `callID`, `output` a string. 2.0:
         `shellID`, `status` (`running`, `exited`, `timeout`, `killed`),
         `exit` and `output.output`; a result that did not exit 0 starts
         `[<status>]` or `[exit <code>]`."""
         call_id = str(data.get("callID") or data.get("shellID") or "")
-        times = _d(data.get("time"))
-        use = mk("tool_use", data.get("command") or "")
+        times = _dict_or_empty(data.get("time"))
+        use = make_row("tool_use", data.get("command") or "")
         use.tool_name, use.tool_use_id = "shell", call_id
         yield use
         output, status, code = data.get("output"), data.get("status"), data.get("exit")
         if output is None and status in (None, "running"):
             return
-        text = _d(output).get("output") if isinstance(output, dict) else output
+        text = _dict_or_empty(output).get("output") if isinstance(output, dict) else output
         text = text if isinstance(text, str) else ""
         if status in ("timeout", "killed"):
             text = _join("[%s]" % status, text)
         elif code not in (None, 0):
             text = _join("[exit %s]" % code, text)
-        res = mk("tool_result", text, to_utc(times.get("completed")))
+        res = make_row("tool_result", text, to_utc(times.get("completed")))
         res.tool_name, res.tool_use_id = "shell", call_id
         yield res
 
@@ -1234,11 +1275,11 @@ class OpenCodeParser(Parser):
         `shell` and no id, which pairs on text with the transcript's command.
         2.0 writes the prompt as `text`, 1.x and Kilo Code as `input`."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             text = rec.get("text") if isinstance(rec.get("text"), str) else rec.get("input")
             if not isinstance(text, str) or not text.strip():
                 continue
-            row = self._row(artifact, _Ctx(), "", n, "")
+            row = self._row(artifact, _Ctx(), "", line_number, "")
             if rec.get("mode") == "shell":
                 row.turn_type, row.tool_name = "tool_use", "shell"
             else:
@@ -1254,12 +1295,14 @@ class OpenCodeParser(Parser):
         {text, ...}, timestamp}`, 1.x and Kilo Code `{input, parts,
         timestamp}`."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             prompt = rec.get("prompt")
-            text = _d(prompt).get("text") if isinstance(prompt, dict) else rec.get("input")
+            text = (
+                _dict_or_empty(prompt).get("text") if isinstance(prompt, dict) else rec.get("input")
+            )
             if not isinstance(text, str) or not text.strip():
                 continue
-            row = self._row(artifact, _Ctx(), "", n, to_utc(rec.get("timestamp")))
+            row = self._row(artifact, _Ctx(), "", line_number, to_utc(rec.get("timestamp")))
             row.turn_type = "system"
             row.text = compact(
                 "prompt stashed (unsent): %s (from %s, timestamp)" % (text.strip(), artifact.rel)
@@ -1275,9 +1318,9 @@ class OpenCodeParser(Parser):
         is a trace of a deleted one. A file that is not a JSON object is one
         `parser:` row."""
         doc = _read_json(artifact.disk_path)
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         if doc is None:
-            row = self._row(artifact, _Ctx(), "", 1, ts)
+            row = self._row(artifact, _Ctx(), "", 1, timestamp)
             row.turn_type = "system"
             row.text = "parser: %s is not a JSON object" % artifact.rel
             yield row
@@ -1286,7 +1329,7 @@ class OpenCodeParser(Parser):
         for sid in pinned if isinstance(pinned, list) else []:
             if not isinstance(sid, str) or not sid:
                 continue
-            row = self._row(artifact, _Ctx(sid), "", 1, ts)
+            row = self._row(artifact, _Ctx(sid), "", 1, timestamp)
             row.turn_type = "system"
             row.text = "session pinned: %s (from %s pinned, file mtime)" % (sid, artifact.rel)
             yield row
@@ -1310,55 +1353,55 @@ class OpenCodeParser(Parser):
     def _children(directory: Path) -> list[Path]:
         try:
             return sorted(
-                p
-                for p in directory.iterdir()
-                if p.suffix == ".json" and not p.is_symlink() and p.is_file()
+                path
+                for path in directory.iterdir()
+                if path.suffix == ".json" and not path.is_symlink() and path.is_file()
             )
         except OSError:
             return []
 
     def _previous_message(self, path: Path) -> dict | None:
         siblings = self._children(path.parent)
-        names = [p.name for p in siblings]
+        names = [sibling.name for sibling in siblings]
         if path.name not in names:
             return None
         i = names.index(path.name)
         return _read_json(siblings[i - 1]) if i > 0 else None
 
     def _session_ctx(self, root: Path, session_id: str, old: bool, msg: dict) -> tuple[_Ctx, dict]:
-        s: dict | None = None
+        session: dict | None = None
         if old:
-            s = _read_json(root / "info" / (session_id + ".json"))
+            session = _read_json(root / "info" / (session_id + ".json"))
         else:
             sdir = root / "session"
             try:
                 cands = sorted(
-                    d / (session_id + ".json")
-                    for d in sdir.iterdir()
-                    if not d.is_symlink() and d.is_dir()
+                    directory / (session_id + ".json")
+                    for directory in sdir.iterdir()
+                    if not directory.is_symlink() and directory.is_dir()
                 )
             except OSError:
                 cands = []
-            for c in cands:
-                if c.is_file() and not c.is_symlink():
-                    s = _read_json(c)
-                    if s is not None:
+            for candidate in cands:
+                if candidate.is_file() and not candidate.is_symlink():
+                    session = _read_json(candidate)
+                    if session is not None:
                         break
-        s = s or {}
-        path = s.get("directory") or ""
-        if not path and not old and s.get("projectID"):
-            wt = (_read_json(root / "project" / (str(s["projectID"]) + ".json")) or {}).get(
-                "worktree"
-            ) or ""
-            path = wt if wt != "/" else ""
+        session = session or {}
+        path = session.get("directory") or ""
+        if not path and not old and session.get("projectID"):
+            worktree = (
+                _read_json(root / "project" / (str(session["projectID"]) + ".json")) or {}
+            ).get("worktree") or ""
+            path = worktree if worktree != "/" else ""
         if not path:
-            p = _d(msg.get("path"))
-            path = p.get("root") or p.get("cwd") or ""
-        return _Ctx(session_id, str(path)), s
+            message_path = _dict_or_empty(msg.get("path"))
+            path = message_path.get("root") or message_path.get("cwd") or ""
+        return _Ctx(session_id, str(path)), session
 
     def _parse_session_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        s = _read_json(artifact.disk_path)
-        if s is None:
+        session = _read_json(artifact.disk_path)
+        if session is None:
             row = self.base_row(artifact)
             row.source_line = 1
             row.session_id = artifact.disk_path.stem
@@ -1366,17 +1409,19 @@ class OpenCodeParser(Parser):
             row.text = "parser: session file could not be decoded"
             yield row
             return
-        path = s.get("directory") or ""
-        if not path and s.get("projectID") and not self.old_session_rx.match(artifact.rel):
+        path = session.get("directory") or ""
+        if not path and session.get("projectID") and not self.old_session_rx.match(artifact.rel):
             proj = (
                 artifact.disk_path.parent.parent.parent
                 / "project"
-                / (str(s["projectID"]) + ".json")
+                / (str(session["projectID"]) + ".json")
             )
-            wt = (_read_json(proj) or {}).get("worktree") or ""
-            path = wt if wt != "/" else ""
-        ctx = _Ctx(str(s.get("id") or artifact.disk_path.stem), str(path))
-        yield self._session_row(artifact, ctx, s, _d(s.get("time")).get("created"), 1, opts)
+            worktree = (_read_json(proj) or {}).get("worktree") or ""
+            path = worktree if worktree != "/" else ""
+        ctx = _Ctx(str(session.get("id") or artifact.disk_path.stem), str(path))
+        yield self._session_row(
+            artifact, ctx, session, _dict_or_empty(session.get("time")).get("created"), 1, opts
+        )
 
     def _parse_message_file(self, artifact: Artifact, opts: Options, old: bool) -> Iterator[Row]:
         # new: storage/message/<ses>/<msg>.json, root is storage/
@@ -1405,11 +1450,11 @@ class OpenCodeParser(Parser):
         pdir = root.joinpath(*pdir_rel)
         parts = []
         errors: list[tuple[int, str, str, str]] = []
-        for f in self._children(pdir):
-            data, reason, raw = _read_part(f)
-            src = orig_root + sep + sep.join([*pdir_rel, f.name])
+        for file in self._children(pdir):
+            data, reason, raw = _read_part(file)
+            src = orig_root + sep + sep.join([*pdir_rel, file.name])
             if data is None:
-                errors.append((1, "unparseable part %s (%s)" % (f.stem, reason), raw, src))
+                errors.append((1, "unparseable part %s (%s)" % (file.stem, reason), raw, src))
             else:
                 parts.append((data, src, 1, None))
         yield from self._message_rows(artifact, ctx, msg, ("", 1, None), parts, opts, errors)

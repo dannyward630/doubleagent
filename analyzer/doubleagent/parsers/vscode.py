@@ -323,46 +323,52 @@ def _set(parent, key, value):
         raise MutationError("cannot set %r" % (key,))
 
 
-def md_text(v) -> str:
+def md_text(value) -> str:
     """An IMarkdownString (`{value}`), a plain string or a list of either."""
-    if v is None:
+    if value is None:
         return ""
-    if isinstance(v, str):
-        return v
-    if isinstance(v, dict):
-        val = v.get("value")
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        val = value.get("value")
         return val if isinstance(val, str) else ""
-    if isinstance(v, list):
-        return "\n".join(md_text(x) for x in v)
-    return str(v)
+    if isinstance(value, list):
+        return "\n".join(md_text(item) for item in value)
+    return str(value)
 
 
-def uri_text(u) -> str:
+def uri_text(uri) -> str:
     """A serialized URI (`{scheme, path, ...}` or `{$mid, fsPath}`), a URI
     string, or a location `{uri, range}`."""
-    if isinstance(u, str):
-        return uri_to_path(u)
-    if isinstance(u, dict):
-        if "uri" in u:
-            return uri_text(u["uri"])
+    if isinstance(uri, str):
+        return uri_to_path(uri)
+    if isinstance(uri, dict):
+        if "uri" in uri:
+            return uri_text(uri["uri"])
         for k in ("fsPath", "path", "external"):
-            if isinstance(u.get(k), str):
-                return u[k]
-    return compact_json(u) if u is not None else ""
+            if isinstance(uri.get(k), str):
+                return uri[k]
+    return compact_json(uri) if uri is not None else ""
 
 
 def tool_call_text(part: dict) -> str:
     tsd = part.get("toolSpecificData")
     if isinstance(tsd, dict):
-        cl = tsd.get("commandLine")
-        if isinstance(cl, dict) and (cl.get("userEdited") or cl.get("original")):
-            return str(cl.get("userEdited") or cl.get("original"))
+        command_line = tsd.get("commandLine")
+        if isinstance(command_line, dict) and (
+            command_line.get("userEdited") or command_line.get("original")
+        ):
+            return str(command_line.get("userEdited") or command_line.get("original"))
         if "rawInput" in tsd:
             raw = tsd["rawInput"]
             return raw if isinstance(raw, str) else compact_json(raw)
-    rd = part.get("resultDetails")
-    if isinstance(rd, dict) and isinstance(rd.get("input"), str) and rd["input"]:
-        return rd["input"]
+    result_details = part.get("resultDetails")
+    if (
+        isinstance(result_details, dict)
+        and isinstance(result_details.get("input"), str)
+        and result_details["input"]
+    ):
+        return result_details["input"]
     return md_text(part.get("invocationMessage"))
 
 
@@ -381,11 +387,11 @@ TOOL_CONFIRM_KINDS = (
 def confirmed_text(part: dict) -> str:
     """The `permission decision:` text for a tool invocation's `isConfirmed`,
     or "" when the invocation records none."""
-    v = part.get("isConfirmed")
-    if v is None:
+    confirmed = part.get("isConfirmed")
+    if confirmed is None:
         return ""
-    if isinstance(v, dict):
-        kind = v.get("type")
+    if isinstance(confirmed, dict):
+        kind = confirmed.get("type")
         if (
             isinstance(kind, int)
             and not isinstance(kind, bool)
@@ -395,13 +401,13 @@ def confirmed_text(part: dict) -> str:
         else:
             value = setting_value(kind)
         pairs = [
-            "%s=%s" % (k, setting_value(x))
-            for k, x in v.items()
-            if k not in ("type", "reason") and x is not None
+            "%s=%s" % (key, setting_value(item))
+            for key, item in confirmed.items()
+            if key not in ("type", "reason") and item is not None
         ]
-        reason = md_text(v.get("reason"))
+        reason = md_text(confirmed.get("reason"))
     else:
-        value, pairs, reason = setting_value(v), [], ""
+        value, pairs, reason = setting_value(confirmed), [], ""
     src = part.get("source")
     if isinstance(src, dict) and src.get("type"):
         pairs.append("tool_source=%s" % setting_value(src["type"]))
@@ -423,28 +429,30 @@ def confirmation_part_text(part: dict) -> str:
 
 
 def tool_result_text(part: dict) -> str:
-    rd = part.get("resultDetails")
+    result_details = part.get("resultDetails")
     text = ""
     is_error = bool(part.get("resultError"))
-    if isinstance(rd, dict):
-        out = rd.get("output")
+    if isinstance(result_details, dict):
+        out = result_details.get("output")
         if isinstance(out, list):
             vals = []
-            for o in out:
-                if isinstance(o, dict):
-                    v = o.get("value", o.get("text"))
-                    vals.append(v if isinstance(v, str) else compact_json(v))
-                elif isinstance(o, str):
-                    vals.append(o)
+            for output in out:
+                if isinstance(output, dict):
+                    value = output.get("value", output.get("text"))
+                    vals.append(value if isinstance(value, str) else compact_json(value))
+                elif isinstance(output, str):
+                    vals.append(output)
             text = "\n".join(vals)
         elif out is not None:
             text = out if isinstance(out, str) else compact_json(out)
-        is_error = is_error or bool(rd.get("isError"))
-    elif isinstance(rd, list):
-        text = "\n".join(uri_text(u) for u in rd)
+        is_error = is_error or bool(result_details.get("isError"))
+    elif isinstance(result_details, list):
+        text = "\n".join(uri_text(uri) for uri in result_details)
     if part.get("resultError"):
         err = part["resultError"]
-        text = "\n".join(x for x in (md_text(err) if not isinstance(err, bool) else "", text) if x)
+        text = "\n".join(
+            chunk for chunk in (md_text(err) if not isinstance(err, bool) else "", text) if chunk
+        )
     if not text:
         text = md_text(part.get("pastTenseMessage"))
     if not text and part.get("isComplete") is False:
@@ -493,8 +501,8 @@ def setting_texts(key: str, value) -> Iterator[str]:
     entry of a non-empty object value (`<key>.<entry>=<value>`), else one
     (`<key>=<value>`)."""
     if isinstance(value, dict) and value:
-        for entry, v in value.items():
-            yield "permission setting: %s.%s=%s" % (key, entry, setting_value(v))
+        for entry, setting in value.items():
+            yield "permission setting: %s.%s=%s" % (key, entry, setting_value(setting))
     else:
         yield "permission setting: %s=%s" % (key, setting_value(value))
 
@@ -560,22 +568,22 @@ class VsCodeParser(Parser):
             state = self._replay(artifact, req_lines, errors)
         else:
             try:
-                with open(artifact.disk_path, "rb") as fh:
-                    state = json.loads(fh.read().decode("utf-8", errors="replace"))
-            except ValueError as e:
+                with open(artifact.disk_path, "rb") as handle:
+                    state = json.loads(handle.read().decode("utf-8", errors="replace"))
+            except ValueError as error:
                 state = None
-                errors.append((0, "file is not valid JSON (%s)" % e, ""))
+                errors.append((0, "file is not valid JSON (%s)" % error, ""))
         if not isinstance(state, dict):
             state = {}
         session_id = str(state.get("sessionId") or Path(artifact.rel).name.rsplit(".", 1)[0])
         folder, workspace_file = self._workspace_folder(artifact, errors)
         project = uri_to_path(str(state.get("workingDirectory") or "")) or folder
 
-        def base(turn_type: str, text: str, ts, line: int, model: str = "") -> Row:
+        def base(turn_type: str, text: str, timestamp, line: int, model: str = "") -> Row:
             row = self.base_row(artifact)
             row.session_id = session_id
             row.project_path = project
-            row.timestamp_utc = to_utc(ts)
+            row.timestamp_utc = to_utc(timestamp)
             row.source_line = line
             row.model = model
             row.turn_type = turn_type
@@ -586,8 +594,8 @@ class VsCodeParser(Parser):
             yield base(
                 "system",
                 " ".join(
-                    x
-                    for x in (
+                    part
+                    for part in (
                         "session start:",
                         "responder=%s" % state["responderUsername"]
                         if state.get("responderUsername")
@@ -598,7 +606,7 @@ class VsCodeParser(Parser):
                         "title=%s" % state["customTitle"] if state.get("customTitle") else "",
                         "workspace=%s" % workspace_file if workspace_file else "",
                     )
-                    if x
+                    if part
                 ),
                 state.get("creationDate"),
                 req_lines.get(-1, 0),
@@ -612,9 +620,9 @@ class VsCodeParser(Parser):
                 yield from self._request_rows(req, req_lines.get(i, 0), base, opts, seen)
         yield from error_rows(self, artifact, errors, session_id, project)
 
-    def _system_row(self, artifact: Artifact, session_id: str, ts: str, text: str) -> Row:
+    def _system_row(self, artifact: Artifact, session_id: str, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
-        row.session_id, row.timestamp_utc, row.turn_type = session_id, ts, "system"
+        row.session_id, row.timestamp_utc, row.turn_type = session_id, timestamp, "system"
         row.text = compact(text)
         return row
 
@@ -622,16 +630,16 @@ class VsCodeParser(Parser):
         """`cloudSessions.json`: one sync row per entry at the file's
         modification time, or one `parser:` row when it is not a JSON
         object."""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                doc = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except ValueError as e:
-            doc = e
+            with open(artifact.disk_path, "rb") as handle:
+                doc = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except ValueError as error:
+            doc = error
         if not isinstance(doc, dict):
             why = " (%s)" % doc if isinstance(doc, ValueError) else ""
             row = self._system_row(
-                artifact, "", ts, "parser: cloudSessions.json is not a JSON object" + why
+                artifact, "", timestamp, "parser: cloudSessions.json is not a JSON object" + why
             )
             row.source_line = 1
             yield row
@@ -641,7 +649,7 @@ class VsCodeParser(Parser):
             row = self._system_row(
                 artifact,
                 str(key),
-                ts,
+                timestamp,
                 "session synced: remote session %s task %s (from "
                 "User/globalStorage/github.copilot-chat/cloudSessions.json, file mtime)"
                 % (entry.get("cloudSessionId") or "-", entry.get("cloudTaskId") or "-"),
@@ -672,9 +680,11 @@ class VsCodeParser(Parser):
             usages, more = self._usage_items(artifact.disk_path)
             problems.extend(more)
             yield from self._source_host_rows(artifact, usages)
-        ts, src = file_mtime(artifact), user_rel(artifact.rel)
+        timestamp, src = file_mtime(artifact), user_rel(artifact.rel)
         for text in grant_texts(values, problems):
-            row = self._system_row(artifact, "", ts, "%s (from %s, file mtime)" % (text, src))
+            row = self._system_row(
+                artifact, "", timestamp, "%s (from %s, file mtime)" % (text, src)
+            )
             row.project_path = project
             yield row
         for problem in problems:
@@ -711,7 +721,7 @@ class VsCodeParser(Parser):
                 if "ItemTable" not in sqlite_util.table_names(con):
                     return [], []
                 sql = "select key, value from ItemTable where key like 'github%-usages'"
-                found = [(r[0], r[1]) for r in con.execute(sql)]
+                found = [(row[0], row[1]) for row in con.execute(sql)]
         except (sqlite3.DatabaseError, OSError):
             return [], []
         out: list[tuple[str, object]] = []
@@ -725,8 +735,8 @@ class VsCodeParser(Parser):
                 value = bytes(value).decode("utf-8", errors="replace")
             try:
                 out.append((key, json.loads(str(value))))
-            except ValueError as e:
-                problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, e))
+            except ValueError as error:
+                problems.append("ItemTable value for %s is not valid JSON (%s)" % (key, error))
         return out, problems
 
     def _source_host_rows(self, artifact: Artifact, usages) -> Iterator[Row]:
@@ -734,10 +744,10 @@ class VsCodeParser(Parser):
         GitHub account, at the usage's `lastUsed`. The account label is the
         GitHub login; a GitHub Enterprise label ends ` - <host><path>`."""
         for key, entries in usages:
-            m = USAGE_KEY_RX.match(key)
-            if not m or not isinstance(entries, list):
+            match = USAGE_KEY_RX.match(key)
+            if not match or not isinstance(entries, list):
                 continue
-            provider, label, mcp = m.group(1), m.group(2), m.group(3)
+            provider, label, mcp = match.group(1), match.group(2), match.group(3)
             host, login = "github.com", label
             if provider == "github-enterprise":
                 login, _, host = label.rpartition(" - ")
@@ -757,7 +767,9 @@ class VsCodeParser(Parser):
                         login,
                         "mcp_server" if mcp else "extension",
                         setting_value(usage.get("mcpServerId" if mcp else "extensionId") or "-"),
-                        ",".join(str(x) for x in scopes) if isinstance(scopes, list) else "-",
+                        ",".join(str(scope) for scope in scopes)
+                        if isinstance(scopes, list)
+                        else "-",
                         key,
                     ),
                 )
@@ -768,11 +780,11 @@ class VsCodeParser(Parser):
         permission level, and a `model setting:` row for the default model,
         at the file's modification time; one `parser:` row when the file is
         not a JSON object."""
-        ts, src = file_mtime(artifact), user_rel(artifact.rel)
+        timestamp, src = file_mtime(artifact), user_rel(artifact.rel)
         try:
             doc = parse_jsonc(artifact.disk_path.read_bytes())
-        except (OSError, ValueError) as e:
-            doc = e
+        except (OSError, ValueError) as error:
+            doc = error
         if not isinstance(doc, dict):
             why = " (%s)" % doc if isinstance(doc, Exception) else ""
             text = "parser: %s is not a JSON object%s" % (src, why)
@@ -786,7 +798,9 @@ class VsCodeParser(Parser):
             else:
                 continue
             for text in texts:
-                row = self._system_row(artifact, "", ts, "%s (from %s, file mtime)" % (text, src))
+                row = self._system_row(
+                    artifact, "", timestamp, "%s (from %s, file mtime)" % (text, src)
+                )
                 row.source_line = 1
                 yield row
 
@@ -796,25 +810,25 @@ class VsCodeParser(Parser):
         with the folder's name as the session id and the workspace's folder
         as the project; a whole-file `parser:` row when it does not decode
         or is not a JSON object."""
-        m = EDITING_RX.match(artifact.rel)
-        session_id = m.group("key") if m else ""
+        match = EDITING_RX.match(artifact.rel)
+        session_id = match.group("key") if match else ""
         errors: list = []
         project = self._workspace_json(artifact.disk_path.parent.parent.parent, errors)[0]
         doc = None
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                doc = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except ValueError as e:
-            errors.append((0, "file is not valid JSON (%s)" % e, ""))
+            with open(artifact.disk_path, "rb") as handle:
+                doc = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except ValueError as error:
+            errors.append((0, "file is not valid JSON (%s)" % error, ""))
         else:
             if not isinstance(doc, dict):
                 errors.append((0, "state.json is not a JSON object", ""))
         snapshot = doc.get("recentSnapshot") if isinstance(doc, dict) else None
         entries = snapshot.get("entries") if isinstance(snapshot, dict) else None
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         for entry in entries if isinstance(entries, list) else ():
             if isinstance(entry, dict):
-                row = self._system_row(artifact, session_id, ts, edit_state_text(entry))
+                row = self._system_row(artifact, session_id, timestamp, edit_state_text(entry))
                 row.project_path, row.source_line = project, 1
                 yield row
         yield from error_rows(self, artifact, errors, session_id, project)
@@ -828,17 +842,20 @@ class VsCodeParser(Parser):
                 recorded, application = entry.get("recordedAt"), entry.get("application")
             else:
                 recorded, application = entry, None
-            session_id, ts = "copilot-cloud-agent:/task/%s" % task_id, to_utc(recorded)
+            session_id, timestamp = "copilot-cloud-agent:/task/%s" % task_id, to_utc(recorded)
             source = "(from state.vscdb %s %s, recordedAt)" % (COPILOT_STATE_KEY, OWNED_TASKS_KEY)
             yield self._system_row(
                 artifact,
                 session_id,
-                ts,
+                timestamp,
                 "session synced: cloud agent task %s application=%s %s"
                 % (task_id, application or "-", source),
             )
             yield self._system_row(
-                artifact, session_id, ts, "session origin: remote GitHub cloud agent " + source
+                artifact,
+                session_id,
+                timestamp,
+                "session origin: remote GitHub cloud agent " + source,
             )
 
     def _replay(self, artifact: Artifact, req_lines: dict[int, int], errors: list):
@@ -848,36 +865,38 @@ class VsCodeParser(Parser):
         `iter_jsonl` is not used because a mutation error needs the line's
         text too."""
         state = None
-        with open(artifact.disk_path, "rb") as fh:
-            for n, raw in enumerate(fh, 1):
+        with open(artifact.disk_path, "rb") as handle:
+            for line_number, raw in enumerate(handle, 1):
                 stripped = raw.strip()
                 if not stripped:
                     continue
                 try:
                     rec = json.loads(stripped.decode("utf-8", errors="replace"))
-                except ValueError as e:
-                    errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                except ValueError as error:
+                    errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                     continue
                 if not isinstance(rec, dict):
                     continue
                 try:
                     state = apply_mutation(state, rec)
-                except MutationError as e:
-                    errors.append((n, "mutation not applied (%s)" % e, line_text(raw)))
+                except MutationError as error:
+                    errors.append(
+                        (line_number, "mutation not applied (%s)" % error, line_text(raw))
+                    )
                     continue
-                self._track(rec, state, n, req_lines)
+                self._track(rec, state, line_number, req_lines)
         return state
 
     @staticmethod
-    def _track(rec: dict, state, n: int, req_lines: dict[int, int]) -> None:
+    def _track(rec: dict, state, line_number: int, req_lines: dict[int, int]) -> None:
         """Remember the log line that created each request."""
         kind, path = rec.get("kind"), rec.get("k") or []
         if kind == 0:
             req_lines.clear()
-            req_lines[-1] = n
+            req_lines[-1] = line_number
             reqs = state.get("requests") if isinstance(state, dict) else None
             for i in range(len(reqs) if isinstance(reqs, list) else 0):
-                req_lines[i] = n
+                req_lines[i] = line_number
         elif path == ["requests"]:
             reqs = state.get("requests") if isinstance(state, dict) else None
             total = len(reqs) if isinstance(reqs, list) else 0
@@ -890,9 +909,9 @@ class VsCodeParser(Parser):
                 if i >= start:
                     del req_lines[i]
             for i in range(max(start, 0), total):
-                req_lines[i] = n
+                req_lines[i] = line_number
         elif kind == 1 and len(path) == 2 and path[0] == "requests" and isinstance(path[1], int):
-            req_lines[path[1]] = n
+            req_lines[path[1]] = line_number
 
     @staticmethod
     def _workspace_folder(artifact: Artifact, errors: list) -> tuple[str, str]:
@@ -913,14 +932,14 @@ class VsCodeParser(Parser):
         """`(folder, workspace_file)` from `<ws_dir>/workspace.json`, as
         `_workspace_folder` describes; also read for a workspace's
         `state.vscdb` and chat editing state."""
-        ws = ws_dir / "workspace.json"
+        workspace_file = ws_dir / "workspace.json"
         try:
-            if ws.is_symlink() or not ws.is_file():
+            if workspace_file.is_symlink() or not workspace_file.is_file():
                 return "", ""
-            with open(ws, "rb") as fh:
-                data = json.loads(fh.read().decode("utf-8", errors="replace"))
-        except (OSError, ValueError) as e:
-            errors.append((0, "workspace.json not read (%s)" % e, ""))
+            with open(workspace_file, "rb") as handle:
+                data = json.loads(handle.read().decode("utf-8", errors="replace"))
+        except (OSError, ValueError) as error:
+            errors.append((0, "workspace.json not read (%s)" % error, ""))
             return "", ""
         if not isinstance(data, dict):
             errors.append((0, "workspace.json is not a JSON object", ""))
@@ -939,20 +958,22 @@ class VsCodeParser(Parser):
         pairs = ""
         if model and isinstance(config, dict):
             pairs = " ".join("%s=%s" % (k, setting_value(config[k])) for k in sorted(config))
-        t = track_change("model", seen, "model", model + (" " + pairs if pairs else ""))
-        if t:
-            yield base("system", t, req_ts, line, model)
+        change = track_change("model", seen, "model", model + (" " + pairs if pairs else ""))
+        if change:
+            yield base("system", change, req_ts, line, model)
         mode_info = req.get("modeInfo")
         if not isinstance(mode_info, dict):
             mode_info = {}
         mode = mode_info.get("telemetryModeId")
-        t = track_change("permission mode", seen, "mode", setting_value(mode) if mode else "")
-        if t:
-            yield base("system", t, req_ts, line, model)
+        change = track_change("permission mode", seen, "mode", setting_value(mode) if mode else "")
+        if change:
+            yield base("system", change, req_ts, line, model)
         level = mode_info.get("permissionLevel")
-        t = track_change("permission level", seen, "level", setting_value(level) if level else "")
-        if t:
-            yield base("system", t, req_ts, line, model)
+        change = track_change(
+            "permission level", seen, "level", setting_value(level) if level else ""
+        )
+        if change:
+            yield base("system", change, req_ts, line, model)
         resp_ts = req.get("responseTimestamp") or req_ts
         msg = req.get("message")
         text = (
@@ -961,10 +982,12 @@ class VsCodeParser(Parser):
             else (msg.get("text") if isinstance(msg, dict) else "") or ""
         )
         names = []
-        vd = req.get("variableData")
-        for v in (vd.get("variables") if isinstance(vd, dict) else None) or []:
-            if isinstance(v, dict) and v.get("name"):
-                names.append(str(v["name"]))
+        variable_data = req.get("variableData")
+        for variable in (
+            variable_data.get("variables") if isinstance(variable_data, dict) else None
+        ) or []:
+            if isinstance(variable, dict) and variable.get("name"):
+                names.append(str(variable["name"]))
         if names:
             text = "%s\n[attached: %s]" % (text, ", ".join(names))
         if req.get("isSystemInitiated"):
@@ -1013,9 +1036,9 @@ class VsCodeParser(Parser):
                 yield row
             if kind == "thinking":
                 if opts.include_thinking:
-                    t = md_text(part.get("value"))
-                    if t:
-                        yield base("thinking", t, resp_ts, line, model)
+                    thought = md_text(part.get("value"))
+                    if thought:
+                        yield base("thinking", thought, resp_ts, line, model)
             elif kind == "toolInvocationSerialized":
                 tid = str(part.get("toolCallId") or "")
                 tname = str(part.get("toolId") or "")

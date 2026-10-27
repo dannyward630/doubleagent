@@ -209,7 +209,7 @@ def _json(value, default):
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    return " | ".join(part for part in parts if part)
 
 
 def _list(value) -> list:
@@ -218,66 +218,72 @@ def _list(value) -> list:
 
 def _select(con: sqlite3.Connection, table: str, order: str) -> Iterator[dict]:
     """Rows of `table` restricted to the whitelisted columns it has."""
-    have = {r[1] for r in con.execute("pragma table_info(%s)" % table)}
-    cols = [c for c in COLUMNS[table] if c in have]
+    have = {row[1] for row in con.execute("pragma table_info(%s)" % table)}
+    cols = [column for column in COLUMNS[table] if column in have]
     if not cols:
         return
-    order_cols = [c for c in order.split(",") if c.strip() in have]
+    order_cols = [column for column in order.split(",") if column.strip() in have]
     sql = "select %s from %s" % (", ".join(cols), table)
     if order_cols:
         sql += " order by " + ", ".join(order_cols)
-    for r in con.execute(sql):
-        yield dict(zip(cols, r, strict=False))
+    for row in con.execute(sql):
+        yield dict(zip(cols, row, strict=False))
 
 
 def _loc(filepath, start_line) -> str:
-    fp = str(filepath or "")
-    return "%s:%s" % (fp, start_line) if fp and start_line not in (None, "") else fp
+    path_text = str(filepath or "")
+    return (
+        "%s:%s" % (path_text, start_line)
+        if path_text and start_line not in (None, "")
+        else path_text
+    )
 
 
 def attachment_parts(att: dict) -> list[str]:
     """Short descriptions of what was attached to a message."""
     parts: list[str] = []
-    for c in _list(att.get("code")):
-        if isinstance(c, dict):
-            repo = str(c.get("git_url") or "")
-            if c.get("commit"):
-                repo += "@" + str(c["commit"])
+    for code in _list(att.get("code")):
+        if isinstance(code, dict):
+            repo = str(code.get("git_url") or "")
+            if code.get("commit"):
+                repo += "@" + str(code["commit"])
             parts.append(
-                _join("code", repo, _loc(c.get("filepath"), c.get("start_line"))).replace(
+                _join("code", repo, _loc(code.get("filepath"), code.get("start_line"))).replace(
                     " | ", " "
                 )
             )
-    for c in _list(att.get("client_code")):
-        if isinstance(c, dict):
-            parts.append(("client_code " + _loc(c.get("filepath"), c.get("start_line"))).strip())
-    for d in _list(att.get("doc")):
-        if isinstance(d, dict):
-            label = d.get("title") or d.get("sha") or ""
-            link = d.get("link") or d.get("page_link") or ""
+    for code in _list(att.get("client_code")):
+        if isinstance(code, dict):
+            parts.append(
+                ("client_code " + _loc(code.get("filepath"), code.get("start_line"))).strip()
+            )
+    for doc in _list(att.get("doc")):
+        if isinstance(doc, dict):
+            label = doc.get("title") or doc.get("sha") or ""
+            link = doc.get("link") or doc.get("page_link") or ""
             parts.append(_join("doc", str(label), str(link)).replace(" | ", " "))
-    fl = att.get("code_file_list")
-    if isinstance(fl, dict) and isinstance(fl.get("file_list"), list):
-        parts.append("code_file_list %d files" % len(fl["file_list"]))
+    file_list = att.get("code_file_list")
+    if isinstance(file_list, dict) and isinstance(file_list.get("file_list"), list):
+        parts.append("code_file_list %d files" % len(file_list["file_list"]))
     return parts
 
 
-def message_attachment(m: dict) -> dict:
-    att = _json(m.get("attachment"), None)
+def message_attachment(message: dict) -> dict:
+    att = _json(message.get("attachment"), None)
     if isinstance(att, dict):
         return att
     # Pre-0.25 databases (threads.rs:34-38): separate columns, no `attachment`.
     return {
-        "code": _json(m.get("code_attachments"), None),
-        "client_code": _json(m.get("client_code_attachments"), None),
-        "doc": _json(m.get("doc_attachments"), None),
+        "code": _json(message.get("code_attachments"), None),
+        "client_code": _json(message.get("client_code_attachments"), None),
+        "doc": _json(message.get("doc_attachments"), None),
     }
 
 
 def first_git_url(att: dict) -> str:
-    for c in _list(att.get("code")):
-        if isinstance(c, dict) and c.get("git_url"):
-            return str(c["git_url"])
+    for code in _list(att.get("code")):
+        if isinstance(code, dict) and code.get("git_url"):
+            return str(code["git_url"])
     return ""
 
 
@@ -288,15 +294,15 @@ def _model_text(group: str, kind: str, body: dict) -> str:
     if kind == "http":
         supported = body.get("supported_models")
         detail = " ".join(
-            x
-            for x in (
+            part
+            for part in (
                 "kind=%s" % body["kind"] if body.get("kind") else "",
                 "endpoint=%s" % body["api_endpoint"] if body.get("api_endpoint") else "",
-                "supported_models=%s" % ",".join(str(x) for x in supported)
+                "supported_models=%s" % ",".join(str(part) for part in supported)
                 if isinstance(supported, list) and supported
                 else "",
             )
-            if x
+            if part
         )
         model = body.get("model_name")
     else:
@@ -320,9 +326,9 @@ def _command_text(item) -> str:
     if isinstance(cmd, dict) and cmd.get("command"):
         text = str(cmd["command"])
         files = [
-            str(c.get("uri"))
-            for c in _list(cmd.get("context"))
-            if isinstance(c, dict) and c.get("uri")
+            str(context.get("uri"))
+            for context in _list(cmd.get("context"))
+            if isinstance(context, dict) and context.get("uri")
         ]
         return "%s [context: %s]" % (text, "; ".join(files)) if files else text
     if item in (None, ""):
@@ -379,7 +385,7 @@ class TabbyParser(Parser):
         line: int,
         session_id: str = "",
         project_path: str = "",
-        ts: str = "",
+        timestamp: str = "",
         turn_type: str = "system",
         text: str = "",
         opts: Options | None = None,
@@ -388,7 +394,7 @@ class TabbyParser(Parser):
         row.source_line = line
         row.session_id = session_id
         row.project_path = project_path
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.turn_type = turn_type
         row.text = compact(text)
         return row
@@ -413,11 +419,13 @@ class TabbyParser(Parser):
                 tables = table_names(con)
                 users: dict[str, str] = {}
                 if "users" in tables:
-                    for u in _select(con, "users", "id"):
-                        label = str(u.get("email") or "")
-                        if u.get("name"):
-                            label = "%s (%s)" % (label, u["name"]) if label else str(u["name"])
-                        users[str(u.get("id"))] = label
+                    for user in _select(con, "users", "id"):
+                        label = str(user.get("email") or "")
+                        if user.get("name"):
+                            label = (
+                                "%s (%s)" % (label, user["name"]) if label else str(user["name"])
+                            )
+                        users[str(user.get("id"))] = label
                 if "threads" in tables:
                     yield from self._threads(artifact, con, tables, users, opts)
                 if "pages" in tables:
@@ -426,8 +434,8 @@ class TabbyParser(Parser):
                     yield from self._user_events(artifact, con, users, opts)
                 if "integrations" in tables:
                     yield from self._integrations(artifact, con, tables, opts)
-        except sqlite3.DatabaseError as e:
-            yield self._row(artifact, 0, text="parser: SQLite error: %s" % e)
+        except sqlite3.DatabaseError as error:
+            yield self._row(artifact, 0, text="parser: SQLite error: %s" % error)
 
     def _threads(
         self,
@@ -439,54 +447,60 @@ class TabbyParser(Parser):
     ) -> Iterator[Row]:
         messages: dict[str, list[dict]] = {}
         if "thread_messages" in tables:
-            for m in _select(con, "thread_messages", "thread_id,created_at,id"):
-                messages.setdefault(str(m.get("thread_id")), []).append(m)
+            for message in _select(con, "thread_messages", "thread_id,created_at,id"):
+                messages.setdefault(str(message.get("thread_id")), []).append(message)
         threads = list(_select(con, "threads", "created_at,id"))
-        known = {str(t.get("id")) for t in threads}
+        known = {str(thread.get("id")) for thread in threads}
         # Messages whose thread row is gone still get parsed, under their thread id.
         threads += [{"id": tid} for tid in messages if tid not in known]
-        for t in threads:
-            tid = str(t.get("id"))
+        for thread in threads:
+            tid = str(thread.get("id"))
             msgs = messages.get(tid, [])
-            atts = [message_attachment(m) for m in msgs]
-            project = next((u for u in (first_git_url(a) for a in atts) if u), "")
-            questions = [str(q) for q in _list(_json(t.get("relevant_questions"), None))]
-            owner = users.get(str(t.get("user_id")), "")
+            atts = [message_attachment(message) for message in msgs]
+            project = next(
+                (url for url in (first_git_url(attachment) for attachment in atts) if url), ""
+            )
+            questions = [
+                str(question) for question in _list(_json(thread.get("relevant_questions"), None))
+            ]
+            owner = users.get(str(thread.get("user_id")), "")
             yield self._row(
                 artifact,
-                int(t["id"]) if str(t.get("id")).isdigit() else 0,
+                int(thread["id"]) if str(thread.get("id")).isdigit() else 0,
                 tid,
                 project,
-                to_utc(t.get("created_at")),
+                to_utc(thread.get("created_at")),
                 opts=opts,
                 text=_join(
                     "thread start",
                     "owner %s" % owner
                     if owner
                     else (
-                        "owner user_id=%s" % t["user_id"] if t.get("user_id") is not None else ""
+                        "owner user_id=%s" % thread["user_id"]
+                        if thread.get("user_id") is not None
+                        else ""
                     ),
-                    "ephemeral" if t.get("is_ephemeral") else "",
-                    "thread row missing" if "user_id" not in t else "",
+                    "ephemeral" if thread.get("is_ephemeral") else "",
+                    "thread row missing" if "user_id" not in thread else "",
                     "relevant questions: " + "; ".join(questions) if questions else "",
                 ),
             )
-            for m, att in zip(msgs, atts, strict=False):
-                role = str(m.get("role") or "")
-                text = str(m.get("content") or "")
+            for message, att in zip(msgs, atts, strict=False):
+                role = str(message.get("role") or "")
+                text = str(message.get("content") or "")
                 parts = attachment_parts(att)
-                if m.get("code_source_id"):
-                    parts.insert(0, "code_source %s" % m["code_source_id"])
+                if message.get("code_source_id"):
+                    parts.insert(0, "code_source %s" % message["code_source_id"])
                 if parts:
                     text = "%s [attachments: %s]" % (text, "; ".join(parts))
                 if role not in ("user", "assistant"):
                     text = "%s: %s" % (role, text)
                 yield self._row(
                     artifact,
-                    m.get("id") or 0,
+                    message.get("id") or 0,
                     tid,
                     project,
-                    to_utc(m.get("created_at")),
+                    to_utc(message.get("created_at")),
                     role if role in ("user", "assistant") else "system",
                     text,
                     opts,
@@ -495,22 +509,24 @@ class TabbyParser(Parser):
     def _user_events(
         self, artifact: Artifact, con: sqlite3.Connection, users: dict[str, str], opts: Options
     ) -> Iterator[Row]:
-        for e in _select(con, "user_events", "created_at,id"):
-            line = e.get("id") or 0
-            ts = to_utc(e.get("created_at"))
-            owner = "user=%s" % (users.get(str(e.get("user_id")), "") or e.get("user_id"))
-            event = _json(e.get("payload"), None)
+        for user_event in _select(con, "user_events", "created_at,id"):
+            line = user_event.get("id") or 0
+            timestamp = to_utc(user_event.get("created_at"))
+            owner = "user=%s" % (
+                users.get(str(user_event.get("user_id")), "") or user_event.get("user_id")
+            )
+            event = _json(user_event.get("payload"), None)
             if not isinstance(event, dict):
                 yield self._row(
                     artifact,
                     line,
-                    ts=ts,
+                    timestamp=timestamp,
                     opts=opts,
-                    text="parser: user_event %s payload did not parse" % e.get("id"),
+                    text="parser: user_event %s payload did not parse" % user_event.get("id"),
                 )
                 continue
             yield from self._event_rows(
-                artifact, line, ts, owner, event, opts, str(e.get("kind") or "")
+                artifact, line, timestamp, owner, event, opts, str(user_event.get("kind") or "")
             )
 
     def _pages(
@@ -528,23 +544,25 @@ class TabbyParser(Parser):
             for sec in _select(con, "page_sections", "page_id,position,id"):
                 sections.setdefault(str(sec.get("page_id")), []).append(sec)
         pages = list(_select(con, "pages", "created_at,id"))
-        known = {str(pg.get("id")) for pg in pages}
+        known = {str(page.get("id")) for page in pages}
         # Sections whose page row is gone still get parsed, under their page id.
         pages += [{"id": pid} for pid in sections if pid not in known]
-        for pg in pages:
-            pid = str(pg.get("id"))
+        for page in pages:
+            pid = str(page.get("id"))
             line = int(pid) if pid.isdigit() else 0
             sid = "page:%s" % pid
             secs = sections.get(pid, [])
             atts = [_json(sec.get("attachment"), {}) for sec in secs]
-            atts = [a if isinstance(a, dict) else {} for a in atts]
-            project = next((u for u in (first_git_url(a) for a in atts) if u), "")
-            ts = to_utc(pg.get("created_at"))
-            owner = users.get(str(pg.get("author_id")), "")
+            atts = [attachment if isinstance(attachment, dict) else {} for attachment in atts]
+            project = next(
+                (url for url in (first_git_url(attachment) for attachment in atts) if url), ""
+            )
+            timestamp = to_utc(page.get("created_at"))
+            owner = users.get(str(page.get("author_id")), "")
             if owner:
                 author = "author %s" % owner
-            elif pg.get("author_id") is not None:
-                author = "author user_id=%s" % pg["author_id"]
+            elif page.get("author_id") is not None:
+                author = "author user_id=%s" % page["author_id"]
             else:
                 author = ""
             yield self._row(
@@ -552,23 +570,25 @@ class TabbyParser(Parser):
                 line,
                 sid,
                 project,
-                ts,
+                timestamp,
                 opts=opts,
                 text=_join(
                     "page start",
-                    "title %s" % pg["title"] if pg.get("title") else "",
+                    "title %s" % page["title"] if page.get("title") else "",
                     author,
-                    "code_source %s" % pg["code_source_id"] if pg.get("code_source_id") else "",
-                    "page row missing" if "author_id" not in pg else "",
+                    "code_source %s" % page["code_source_id"] if page.get("code_source_id") else "",
+                    "page row missing" if "author_id" not in page else "",
                 ),
             )
-            if pg.get("content"):
+            if page.get("content"):
                 yield self._row(
-                    artifact, line, sid, project, ts, "assistant", str(pg["content"]), opts
+                    artifact, line, sid, project, timestamp, "assistant", str(page["content"]), opts
                 )
             for sec, att in zip(secs, atts, strict=False):
                 text = "\n\n".join(
-                    str(x) for x in (sec.get("title"), sec.get("content")) if x not in (None, "")
+                    str(part)
+                    for part in (sec.get("title"), sec.get("content"))
+                    if part not in (None, "")
                 )
                 parts = attachment_parts(att)
                 if parts:
@@ -578,7 +598,7 @@ class TabbyParser(Parser):
                     sec.get("id") or 0,
                     sid,
                     project,
-                    to_utc(sec.get("created_at")) or ts,
+                    to_utc(sec.get("created_at")) or timestamp,
                     "assistant",
                     text,
                     opts,
@@ -599,7 +619,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 i.get("id") or 0,
-                ts=to_utc(i.get("created_at")),
+                timestamp=to_utc(i.get("created_at")),
                 opts=opts,
                 text="source host: %s integration %s kind=%s api_base=%s (account not recorded; "
                 "from integrations table, created_at)"
@@ -607,21 +627,21 @@ class TabbyParser(Parser):
             )
         if "provided_repositories" not in tables:
             return
-        for r in _select(con, "provided_repositories", "integration_id,id"):
-            name, kind = names.get(str(r.get("integration_id")), ("", ""))
+        for repository in _select(con, "provided_repositories", "integration_id,id"):
+            name, kind = names.get(str(repository.get("integration_id")), ("", ""))
             yield self._row(
                 artifact,
-                r.get("id") or 0,
-                ts=to_utc(r.get("updated_at")),
+                repository.get("id") or 0,
+                timestamp=to_utc(repository.get("updated_at")),
                 opts=opts,
                 text="source host repository: %s type=%s name=%s active=%s (integration %s; "
                 "from provided_repositories table, updated_at)"
                 % (
-                    r.get("git_url") or "-",
+                    repository.get("git_url") or "-",
                     kind or "-",
-                    r.get("name") or "-",
-                    "yes" if r.get("active") else "no",
-                    name or "integration_id=%s" % r.get("integration_id"),
+                    repository.get("name") or "-",
+                    "yes" if repository.get("active") else "no",
+                    name or "integration_id=%s" % repository.get("integration_id"),
                 ),
             )
 
@@ -630,23 +650,27 @@ class TabbyParser(Parser):
         """One `system` row per configured model (config.rs:259-342), at the
         file's modification time. Only the model tables' names, kinds and
         endpoints are read; `api_key` never reaches a row."""
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         if load_toml is flat_toml:
             # flat_toml reads only the top-level keys; the model tables need tomllib.
             yield self._row(
                 artifact,
                 0,
-                ts=ts,
+                timestamp=timestamp,
                 opts=opts,
                 text="parser: config.toml model tables not read: Python 3.11 or later needed",
             )
             return
         try:
             data = load_toml(artifact.disk_path.read_text(encoding="utf-8", errors="replace"))
-        except ValueError as e:
+        except ValueError as error:
             # tomllib's message names a line and column, never the value.
             yield self._row(
-                artifact, 0, ts=ts, opts=opts, text="parser: config.toml is not valid TOML (%s)" % e
+                artifact,
+                0,
+                timestamp=timestamp,
+                opts=opts,
+                text="parser: config.toml is not valid TOML (%s)" % error,
             )
             return
         models = data.get("model") if isinstance(data, dict) else None
@@ -660,7 +684,11 @@ class TabbyParser(Parser):
                 body = conf.get(kind)
                 if isinstance(body, dict):
                     yield self._row(
-                        artifact, 0, ts=ts, opts=opts, text=_model_text(group, kind, body)
+                        artifact,
+                        0,
+                        timestamp=timestamp,
+                        opts=opts,
+                        text=_model_text(group, kind, body),
                     )
 
     # -- editor command histories ----------------------------------------------------------
@@ -676,15 +704,15 @@ class TabbyParser(Parser):
             text="inline edit command history: %d commands, newest first (from %s, no times)"
             % (len(commands), source),
         )
-        for n, cmd in enumerate(commands, 1):
-            yield self._row(artifact, n, turn_type="user", text=cmd, opts=opts)
+        for index, cmd in enumerate(commands, 1):
+            yield self._row(artifact, index, turn_type="user", text=cmd, opts=opts)
 
     def _parse_intellij_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         try:
             root = ET.parse(artifact.disk_path).getroot()
-        except (ET.ParseError, OSError) as e:
+        except (ET.ParseError, OSError) as error:
             yield self._row(
-                artifact, 0, opts=opts, text="parser: not a readable XML document (%s)" % e
+                artifact, 0, opts=opts, text="parser: not a readable XML document (%s)" % error
             )
             return
         commands: list[str] = []
@@ -694,9 +722,9 @@ class TabbyParser(Parser):
             for opt in comp.iter("option"):
                 if opt.get("name") == "history":
                     commands += [
-                        str(el.get("value"))
-                        for el in opt.iter()
-                        if el is not opt and el.get("value") is not None
+                        str(element.get("value"))
+                        for element in opt.iter()
+                        if element is not opt and element.get("value") is not None
                     ]
         if commands:
             yield from self._history_rows(
@@ -707,7 +735,9 @@ class TabbyParser(Parser):
         state, problems = read_item(artifact.disk_path, VSCODE_ITEM_KEY)
         if isinstance(state, dict):
             history = state.get(VSCODE_HISTORY_KEY)
-            commands = [c for c in (_command_text(i) for i in _list(history)) if c]
+            commands = [
+                command for command in (_command_text(i) for i in _list(history)) if command
+            ]
             if commands:
                 source = "state.vscdb %s %s" % (VSCODE_ITEM_KEY, VSCODE_HISTORY_KEY)
                 yield from self._history_rows(artifact, source, commands, opts)
@@ -720,20 +750,22 @@ class TabbyParser(Parser):
     # -- events/YYYY-MM-DD.json ----------------------------------------------------------
     def _parse_events(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             user = rec.get("user")
             owner = "user=%s" % user if user not in (None, "") else ""
             event = rec.get("event")
             if not isinstance(event, dict):
                 yield self._row(
                     artifact,
-                    n,
-                    ts=to_utc(rec.get("ts")),
+                    line_number,
+                    timestamp=to_utc(rec.get("ts")),
                     opts=opts,
                     text="unknown log entry: " + compact_json(rec),
                 )
                 continue
-            yield from self._event_rows(artifact, n, to_utc(rec.get("ts")), owner, event, opts)
+            yield from self._event_rows(
+                artifact, line_number, to_utc(rec.get("ts")), owner, event, opts
+            )
         yield from error_rows(self, artifact, errors)
 
     # -- one Event, from either store -----------------------------------------------------
@@ -741,7 +773,7 @@ class TabbyParser(Parser):
         self,
         artifact: Artifact,
         line: int,
-        ts: str,
+        timestamp: str,
         owner: str,
         event: dict,
         opts: Options,
@@ -751,7 +783,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 line,
-                ts=ts,
+                timestamp=timestamp,
                 opts=opts,
                 text=_join(kind or "event", owner, compact_json(event)),
             )
@@ -769,7 +801,7 @@ class TabbyParser(Parser):
                 line,
                 cid,
                 project,
-                ts,
+                timestamp,
                 opts=opts,
                 text=_join(
                     "completion",
@@ -780,18 +812,18 @@ class TabbyParser(Parser):
                 ),
             )
             yield self._row(
-                artifact, line, cid, project, ts, "user", str(body.get("prompt") or ""), opts
+                artifact, line, cid, project, timestamp, "user", str(body.get("prompt") or ""), opts
             )
-            for c in _list(body.get("choices")):
-                if isinstance(c, dict):
+            for choice in _list(body.get("choices")):
+                if isinstance(choice, dict):
                     yield self._row(
                         artifact,
                         line,
                         cid,
                         project,
-                        ts,
+                        timestamp,
                         "assistant",
-                        str(c.get("text") or ""),
+                        str(choice.get("text") or ""),
                         opts,
                     )
         elif tag in ("view", "select", "dismiss"):
@@ -799,7 +831,7 @@ class TabbyParser(Parser):
                 artifact,
                 line,
                 cid,
-                ts=ts,
+                timestamp=timestamp,
                 opts=opts,
                 text=_join(
                     "%s choice %s" % (tag, body.get("choice_index", "")),
@@ -814,7 +846,7 @@ class TabbyParser(Parser):
                 artifact,
                 line,
                 cid,
-                ts=ts,
+                timestamp=timestamp,
                 opts=opts,
                 text=_join(str(tag), owner, compact_json(body) if body else ""),
             )

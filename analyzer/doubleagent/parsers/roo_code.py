@@ -227,9 +227,9 @@ class RooCodeParser(LegacyTaskParser):
         index = self.cached_json(root / "tasks" / "_index.json")
         entries = index.get("entries") if isinstance(index, dict) else None
         if isinstance(entries, list):
-            for e in entries:
-                if isinstance(e, dict) and str(e.get("id")) == task_id:
-                    return e
+            for entry in entries:
+                if isinstance(entry, dict) and str(entry.get("id")) == task_id:
+                    return entry
         return None
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -287,8 +287,8 @@ class RooCodeParser(LegacyTaskParser):
         `isAnswered: true` (approved by a click or automatically). The
         pre-scan's errors are dropped: the shared reader reports them."""
         answered = {
-            n
-            for n, msg in iter_json_array(artifact.disk_path, [])
+            index
+            for index, msg in iter_json_array(artifact.disk_path, [])
             if isinstance(msg, dict)
             and msg.get("type") == "ask"
             and msg.get("ask") == "tool"
@@ -308,15 +308,15 @@ class RooCodeParser(LegacyTaskParser):
         ctx = self.context(artifact)
         if (artifact.disk_path.parent / UI_FILE).is_file():
             errors: list = []
-            for n, ts, tid, name, text in api_decisions(artifact.disk_path, errors):
-                row = self._row(artifact, ctx, n, to_utc(ts) or ctx.start)
+            for index, timestamp, tid, name, text in api_decisions(artifact.disk_path, errors):
+                row = self._row(artifact, ctx, index, to_utc(timestamp) or ctx.start)
                 row.tool_use_id = tid
                 row.tool_name = name
                 yield system_like(row, text)
             yield from error_rows(self, artifact, errors, ctx.task_id, ctx.project_path)
             return
         pending: dict[str, list[tuple[str, str]]] = {}
-        for _n, _ts, tid, name, text in api_decisions(artifact.disk_path, []):
+        for _index, _timestamp, tid, name, text in api_decisions(artifact.disk_path, []):
             pending.setdefault(tid, []).append((name, text))
         for row in self._parse_api(artifact, ctx, opts):
             yield row
@@ -328,10 +328,12 @@ class RooCodeParser(LegacyTaskParser):
 
     # ---- task index entries ---------------------------------------------------
 
-    def _history_rows(self, artifact: Artifact, item: dict, n: int, opts: Options) -> Iterator[Row]:
+    def _history_rows(
+        self, artifact: Artifact, item: dict, index: int, opts: Options
+    ) -> Iterator[Row]:
         """The shared task row, then `permission mode: <mode>` from the
         task's `mode` slug, which decides the tool groups the task may use."""
-        row = self.history_row(artifact, item, n, opts)
+        row = self.history_row(artifact, item, index, opts)
         yield row
         mode = item.get("mode")
         if isinstance(mode, str) and mode:
@@ -345,18 +347,18 @@ class RooCodeParser(LegacyTaskParser):
         else:
             # Cut mid-write (the CLI rewrites the whole file per prompt): walk
             # the entries array as far as it parses.
-            s = read_text(artifact.disk_path) if data is None else None
-            m = ENTRIES_KEY_RX.search(s) if s is not None else None
-            if m and s is not None:
-                entries = iter_array_at(s, m.end(), errors)
+            text = read_text(artifact.disk_path) if data is None else None
+            match = ENTRIES_KEY_RX.search(text) if text is not None else None
+            if match and text is not None:
+                entries = iter_array_at(text, match.end(), errors)
             else:
                 errors.append((0, "cli-history.json has no entries array", ""))
                 entries = iter(())
-        for n, entry in entries:
+        for index, entry in entries:
             if not isinstance(entry, str) or not entry.strip():
                 continue
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = index
             row.turn_type = "user"
             row.text = entry
             yield row
@@ -370,13 +372,13 @@ class RooCodeParser(LegacyTaskParser):
             yield from error_rows(self, artifact, [(0, "_index.json has no entries array", "")])
             return
         tasks = artifact.disk_path.parent
-        for n, e in enumerate(index["entries"], 1):
-            if not isinstance(e, dict):
+        for position, entry in enumerate(index["entries"], 1):
+            if not isinstance(entry, dict):
                 continue
-            tid = str(e.get("id") or "")
+            tid = str(entry.get("id") or "")
             if tid and (tasks / tid / ITEM_FILE).is_file():
                 continue
-            yield from self._history_rows(artifact, e, n, opts)
+            yield from self._history_rows(artifact, entry, position, opts)
 
     # ---- standing settings ----------------------------------------------------
 
@@ -411,8 +413,8 @@ class RooCodeParser(LegacyTaskParser):
             value = doc.get(key)
             if value is None:
                 continue
-            for v in value if isinstance(value, list) else [value]:
-                yield self._setting_row(artifact, "permission setting", key, v, source)
+            for item in value if isinstance(value, list) else [value]:
+                yield self._setting_row(artifact, "permission setting", key, item, source)
 
     def _global_state_rows(self, artifact: Artifact, state: dict, source: str) -> Iterator[Row]:
         """Standing permission settings, then the Roo Code Cloud settings
@@ -480,7 +482,7 @@ class RooCodeParser(LegacyTaskParser):
             if state is None:
                 continue
             if not isinstance(state, dict):
-                if not any(key in p for p in problems):
+                if not any(key in problem for problem in problems):
                     problems.append("%s value is not a JSON object" % key)
                 continue
             source = "%s ItemTable %s" % (artifact.rel, key)
@@ -488,10 +490,10 @@ class RooCodeParser(LegacyTaskParser):
                 yield from self._retry_queue_rows(artifact, state, source)
             else:
                 yield from self._global_state_rows(artifact, state, source)
-        for p in problems:
+        for problem in problems:
             # never echo the value: the workspace state's retry queue holds a
             # bearer token
-            yield self._bad_file(artifact, p.split(" (", 1)[0])
+            yield self._bad_file(artifact, problem.split(" (", 1)[0])
 
     # ---- Roo Code Cloud retry queue -------------------------------------------
 
@@ -501,14 +503,14 @@ class RooCodeParser(LegacyTaskParser):
         bearer token and its body the event, so only the event type, the task
         id, the URL and the retry state are written."""
         queue = state.get(RETRY_QUEUE_KEY)
-        for n, req in enumerate(queue if isinstance(queue, list) else [], 1):
+        for index, req in enumerate(queue if isinstance(queue, list) else [], 1):
             if not isinstance(req, dict):
                 continue
             event = queued_event(req)
             props = event.get("properties")
             task_id = props.get("taskId") if isinstance(props, dict) else None
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = index
             row.turn_type = "system"
             row.timestamp_utc = to_utc(req.get("timestamp"))
             row.session_id = str(task_id or "")
@@ -559,18 +561,18 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
     output."""
     names: dict[str, str] = {}
     dec = json.JSONDecoder()
-    for n, msg in iter_json_array(path, errors):
+    for index, msg in iter_json_array(path, errors):
         if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
             continue
-        for b in msg["content"]:
-            if not isinstance(b, dict):
+        for block in msg["content"]:
+            if not isinstance(block, dict):
                 continue
-            if b.get("type") == "tool_use":
-                names[str(b.get("id") or "")] = str(b.get("name") or "")
+            if block.get("type") == "tool_use":
+                names[str(block.get("id") or "")] = str(block.get("name") or "")
                 continue
-            if b.get("type") != "tool_result":
+            if block.get("type") != "tool_result":
                 continue
-            body = text_of(b.get("content")).lstrip()
+            body = text_of(block.get("content")).lstrip()
             if not body.startswith("{"):
                 continue
             try:
@@ -582,5 +584,5 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
             text = "permission decision: %s" % status["status"]
             if status.get("feedback") is not None:
                 text += " feedback=%s" % setting_value(status["feedback"])
-            tid = str(b.get("tool_use_id") or "")
-            yield n, msg.get("ts"), tid, names.get(tid, ""), text
+            tid = str(block.get("tool_use_id") or "")
+            yield index, msg.get("ts"), tid, names.get(tid, ""), text

@@ -1038,20 +1038,21 @@ another build is a new cell, never a confirmation of the old one.
    gets a test feeding it those four forms. Copy it to the VM alone and run
    it with `python3 -I`; write no ad-hoc script that prints values. Nothing
    from a real install goes into the repository, an issue or a report
-   beyond file names, key names, types, sizes, enum values and log lines
-   with ids redacted.
+   beyond file names, key names, types, sizes, file modes, enum values,
+   credential-store item names (an account that names a person given as
+   its class, `<os-user>`) and log lines with ids redacted.
 3. **Exercise every surface separately.** Each item is its own step with
    its own listing diff, run for every kind of task the surface offers.
    - Before the baseline, check the brief's step table against this list and
      the previous cell's lessons, and fix it. Before the first prompt,
      record the REPL's `?` shortcut list and `/help`.
-   - The first prompt, before any step touches the sample project, is a
-     simple arithmetic question (`what is 17 + 25?`), so the round records
-     a turn with no tool call; a request to read a file is not one, since
-     the agent may run `cat`.
+   - The first prompt, before any step opens a project directory, is a
+     question no tool can help answer (`what is 17 + 25?`), so the round
+     records a turn with no tool call.
    - A prompt that needs a web search (a fact newer than the model can
      know, such as the latest release of a named package), so the round
-     records how the agent stores a search call and its results.
+     records how the agent stores a call of its own web search or fetch
+     tool and its results; a `curl` through the shell is not one.
    - A session with a tool call, a task that writes files, a scheduled or
      automated task, a plugin or MCP server, a resumed session, and a short
      and a long paste as prompts, each paste its own step.
@@ -1080,20 +1081,21 @@ another build is a new cell, never a confirmation of the old one.
      plaintext `hosts.yml` over SSH, the OS keychain from the GUI), then
      the agent's own flow is completed. Log `gh` in with
      `gh auth login --expiring` (gh 2.103.0 or later), only for steps that
-     act on the public lab repository and the one-time store observation
+     act on the public lab repository and the credential observation
      below, and run `gh auth logout` before the VM is released; the logout
      removes only the local token, and the grant itself is revoked under
      the account's authorized OAuth apps.
-   - An agent's own credentials are recorded on every platform, signed in
-     over SSH and from the GUI, each with a listing before and after: the
-     location (the file and its mode, or the OS credential store with its
-     service and account names) and the shape (key names and types from
-     `analyzer/tools/shape.py`, never values). Over SSH an agent may not
-     reach the OS store and write a file fallback instead (Claude Code
-     2.1.310 on macOS: `~/.claude/.credentials.json`, mode 0600); record
-     it, then sign out and have the person sign in from a terminal in the
-     VM's GUI. Once per agent and platform; later cells cite the research
-     document.
+   - In every cell, each credential the agent or its source-host CLI
+     writes is recorded on each sign-in path the surface offers (over SSH
+     and from the VM's GUI for a CLI in a VM), with a listing before and
+     after: a file by name, size, mode and its key names and types from
+     `analyzer/tools/shape.py`, or an OS credential-store item by its item
+     names (service and account on macOS, target on Windows, attributes
+     under the Secret Service on Linux), never by reading its value. Over
+     SSH an agent may not reach the OS store and write a file fallback
+     instead (Claude Code 2.1.310 on macOS: `~/.claude/.credentials.json`,
+     mode 0600); record it, then sign out and have the person sign in from
+     a terminal in the VM's GUI.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to
      remove the synced copy, take it and record whether a local file still
@@ -1107,8 +1109,9 @@ another build is a new cell, never a confirmation of the old one.
      lacks is recorded as not exercised, with the reason.
    - The brief carries the exact prompt per step; a step whose prompt
      misses is kept as a finding about the agent, and repeated with a
-     sharper prompt under the next name. An install command is copied from the vendor's page or script,
-     never retyped, and pipes to the shell its shebang names. The person
+     sharper prompt under the next name. An install command is copied
+     from the vendor's page or script, never retyped, and pipes to the
+     shell its shebang names. The person
      reports what the screen showed at each step.
 4. **Run the collector in the VM** as the user, before and after the
    delete steps; pull the manifests, summary, log and archive. Read the

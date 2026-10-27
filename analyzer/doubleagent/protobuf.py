@@ -1,6 +1,7 @@
-"""Minimal protocol buffers wire decoder and encoder driven by hand-written
-schemas, so parsers for agents that store protobuf (Antigravity, Windsurf)
-need no generated code and no third-party package.
+"""Decode and encode protocol buffers from hand-written schemas.
+
+Parsers for agents that store protobuf need no generated code and no
+third-party package.
 
 A schema is a dict: message name -> {field number: (field name, kind)} where
 kind is one of 'str', 'bytes', 'int', 'bool', 'float', 'double', 'ts'
@@ -24,6 +25,11 @@ SCALARS = ("str", "bytes", "int", "bool", "float", "double", "ts")
 
 
 def read_varint(data: bytes, offset: int) -> tuple[int, int]:
+    """Return the varint at `offset` and the offset after it.
+
+    Raises:
+        ValueError: The varint is cut off or too long.
+    """
     result = 0
     shift = 0
     while True:
@@ -41,9 +47,13 @@ def read_varint(data: bytes, offset: int) -> tuple[int, int]:
 
 def iter_fields(data: bytes) -> Iterator[tuple[int, int, Any]]:
     """Yield (field_number, wire_type, value) for each field on the wire.
-    Length-delimited values are returned as bytes, varints as int, fixed
-    widths as raw bytes. The value is typed Any because its type follows
-    the wire type, which a static annotation cannot express."""
+
+    Length-delimited values are bytes, varints int, fixed widths raw bytes.
+    The value is typed Any because its type follows the wire type.
+
+    Raises:
+        ValueError: The buffer is cut off or holds an unsupported wire type.
+    """
     offset = 0
     size = len(data)
     while offset < size:
@@ -113,9 +123,16 @@ def _scalar(kind: str, wire_type: int, value) -> Any:
 
 
 def decode(data: bytes, message: str, schema: Schema) -> dict[str, Any]:
-    """Decode bytes as `message` per `schema`. Returns a dict of the fields
-    present; repeated fields are lists. Never raises on unknown fields; a
-    malformed buffer raises ValueError."""
+    """Decode bytes as `message` per `schema`.
+
+    Unknown fields are skipped.
+
+    Returns:
+        The fields present, by name; a repeated field is a list.
+
+    Raises:
+        ValueError: The buffer is malformed.
+    """
     fields = schema[message]
     out: dict[str, Any] = {}
     for number, wire_type, value in iter_fields(data):
@@ -185,7 +202,7 @@ def _encode_scalar(field: int, kind: str, value) -> bytes:
     if kind == "double":
         return _tag(field, 1) + struct.pack("<d", value)
     if kind == "ts":
-        # v is epoch seconds (float allowed)
+        # Epoch seconds, a fraction allowed.
         seconds = int(value)
         nanos = round((value - seconds) * 1e9)
         body = _tag(1, 0) + _write_varint(seconds)
@@ -196,7 +213,7 @@ def _encode_scalar(field: int, kind: str, value) -> bytes:
 
 
 def encode(values: dict[str, Any], message: str, schema: Schema) -> bytes:
-    """Encode a dict as `message`. Repeated fields take lists."""
+    """Encode a dict as `message` per `schema`; a repeated field takes a list."""
     by_name = {}
     for number, (name, kind) in schema[message].items():
         by_name[name.lstrip("+")] = (number, kind, name.startswith("+"))

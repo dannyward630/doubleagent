@@ -712,10 +712,10 @@ def uri_to_path(uri: str) -> str:
         return ""
     if not uri.startswith("file:"):
         return uri
-    p = unquote(urlparse(uri).path)
-    if re.match(r"^/[A-Za-z]:", p):
-        p = p[1:]
-    return p
+    path = unquote(urlparse(uri).path)
+    if re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    return path
 
 
 def tool_args_summary(arguments_json: str) -> str:
@@ -725,9 +725,9 @@ def tool_args_summary(arguments_json: str) -> str:
         return arguments_json
     if isinstance(args, dict):
         for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, "", [], {}):
-                return v if isinstance(v, str) else compact_json(v)
+            value = args.get(k)
+            if value not in (None, "", [], {}):
+                return value if isinstance(value, str) else compact_json(value)
     return compact_json(args)
 
 
@@ -739,33 +739,33 @@ def _path_of(scope: dict | None) -> str:
     )
 
 
-def _output(p: dict) -> str:
-    combined = p.get("combined_output") or {}
+def _output(payload: dict) -> str:
+    combined = payload.get("combined_output") or {}
     return (
         combined.get("full")
         or combined.get("truncated")
-        or p.get("combined")
-        or p.get("stdout")
-        or p.get("stderr")
-        or p.get("output")
+        or payload.get("combined")
+        or payload.get("stdout")
+        or payload.get("stderr")
+        or payload.get("output")
         or ""
     )
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    return " | ".join(part for part in parts if part)
 
 
-def _bool(v: object) -> str:
-    return "true" if v else "false"
+def _bool(value: object) -> str:
+    return "true" if value else "false"
 
 
-def _list(v: object) -> list:
-    return v if isinstance(v, list) else []
+def _list(value: object) -> list:
+    return value if isinstance(value, list) else []
 
 
-def _dict(v: object) -> dict:
-    return v if isinstance(v, dict) else {}
+def _dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _read_json(artifact: Artifact) -> object:
@@ -783,12 +783,14 @@ def _regular(path: Path) -> bool:
 
 def _chunks(logs: Path, form: str) -> list[Path]:
     """The chunk files of `form` under `logs/chunks`, in chunk order."""
-    d = logs / "chunks" / form
+    directory = logs / "chunks" / form
     try:
-        names = [p for p in d.iterdir() if p.suffix == ".jsonl" and p.stem.isdigit()]
+        names = [
+            path for path in directory.iterdir() if path.suffix == ".jsonl" and path.stem.isdigit()
+        ]
     except OSError:
         return []
-    return sorted((p for p in names if _regular(p)), key=lambda p: int(p.stem))
+    return sorted((path for path in names if _regular(path)), key=lambda path: int(path.stem))
 
 
 def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
@@ -812,45 +814,45 @@ def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
         return None
     if chunk_form == SHORT and (_chunks(logs, FULL) or _regular(logs / (SHORT + ".jsonl"))):
         return None
-    return b"".join(p.read_bytes() for p in chunks)
+    return b"".join(chunk.read_bytes() for chunk in chunks)
 
 
-def _brain_args(tc: dict) -> str:
+def _brain_args(tool_call: dict) -> str:
     """A brain tool call's arguments as a JSON string: `arguments_json` as the
     database records it, else `args` or `arguments`, an object or a string."""
     for key in ("arguments_json", "args", "arguments"):
-        v = tc.get(key)
-        if isinstance(v, str) and v:
-            return v
-        if isinstance(v, (dict, list)):
-            return json.dumps(v, ensure_ascii=False)
+        value = tool_call.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
     return ""
 
 
-def permission_texts(perms: dict) -> list[str]:
+def permission_texts(permissions: dict) -> list[str]:
     """One `permission grant:` text per entry of a TrajectoryPermissions."""
     out = []
-    for g in perms.get("permission_grants", []):
-        res = g.get("resource") or {}
-        scope = g.get("scope", 0)
+    for grant in permissions.get("permission_grants", []):
+        resource = grant.get("resource") or {}
+        scope = grant.get("scope", 0)
         text = "permission grant: action=%s target=%s allow=%s scope=%s" % (
-            g.get("action") or res.get("action", ""),
-            g.get("target") or res.get("target", ""),
-            _bool(g.get("allow")),
+            grant.get("action") or resource.get("action", ""),
+            grant.get("target") or resource.get("target", ""),
+            _bool(grant.get("allow")),
             PERMISSION_SCOPES.get(scope, str(scope)),
         )
-        if g.get("user_deny_instruction"):
-            text += " deny_instruction=" + g["user_deny_instruction"]
+        if grant.get("user_deny_instruction"):
+            text += " deny_instruction=" + grant["user_deny_instruction"]
         out.append(text)
-    for f in perms.get("file_access_permissions", []):
-        scope = f.get("scope", 0)
+    for file_access in permissions.get("file_access_permissions", []):
+        scope = file_access.get("scope", 0)
         text = "permission grant: path=%s is_directory=%s allow=%s scope=%s" % (
-            uri_to_path(f.get("path", "")),
-            _bool(f.get("is_directory")),
-            _bool(f.get("allow")),
+            uri_to_path(file_access.get("path", "")),
+            _bool(file_access.get("is_directory")),
+            _bool(file_access.get("allow")),
             PERMISSION_SCOPES.get(scope, str(scope)),
         )
-        if f.get("from_current_step"):
+        if file_access.get("from_current_step"):
             text += " from_current_step=true"
         out.append(text)
     return out
@@ -861,162 +863,183 @@ def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
     file, reading only the keys the module docstring names."""
     out: list[tuple[str, object, str]] = []
     if rel == CONFIG_REL:
-        us = _dict(doc.get("userSettings"))
-        grants = _dict(us.get("globalPermissionGrants"))
-        for lst in ("allow", "deny"):
-            for v in _list(grants.get(lst)):
-                out.append(("userSettings.globalPermissionGrants." + lst, v, ""))
+        user_settings = _dict(doc.get("userSettings"))
+        grants = _dict(user_settings.get("globalPermissionGrants"))
+        for list_key in ("allow", "deny"):
+            for value in _list(grants.get(list_key)):
+                out.append(("userSettings.globalPermissionGrants." + list_key, value, ""))
         for k in ("permissionGrantsV2Migrated", "sandboxEnabledAtV2Migration"):
-            if k in us:
-                out.append(("userSettings." + k, us[k], ""))
-        for name, sc in _dict(doc.get("sidecars")).items():
-            sc = _dict(sc)
-            if "enabled" in sc:
-                out.append(("sidecars.%s.enabled" % name, sc["enabled"], ""))
-            for v in _list(_dict(sc.get("resolvedPermissions")).get("accessGrants")):
-                out.append(("sidecars.%s.resolvedPermissions.accessGrants" % name, v, ""))
+            if k in user_settings:
+                out.append(("userSettings." + k, user_settings[k], ""))
+        for name, sidecar in _dict(doc.get("sidecars")).items():
+            sidecar = _dict(sidecar)
+            if "enabled" in sidecar:
+                out.append(("sidecars.%s.enabled" % name, sidecar["enabled"], ""))
+            for value in _list(_dict(sidecar.get("resolvedPermissions")).get("accessGrants")):
+                out.append(("sidecars.%s.resolvedPermissions.accessGrants" % name, value, ""))
     elif PROJECT_RX.match(rel):
         folder = ""
-        for r in _list(_dict(doc.get("projectResources")).get("resources")):
-            uri = _dict(r).get("folderUri")
+        for resource in _list(_dict(doc.get("projectResources")).get("resources")):
+            uri = _dict(resource).get("folderUri")
             if isinstance(uri, str) and uri:
                 folder = uri_to_path(uri)
                 break
-        pg = _dict(doc.get("permissionGrants"))
-        inner = _dict(pg.get("permissionGrants"))
-        for lst in ("allow", "deny"):
-            for v in _list(inner.get(lst)):
-                out.append(("permissionGrants.permissionGrants." + lst, v, folder))
-        if "v2Migrated" in pg:
-            out.append(("permissionGrants.v2Migrated", pg["v2Migrated"], folder))
+        project_grants = _dict(doc.get("permissionGrants"))
+        inner = _dict(project_grants.get("permissionGrants"))
+        for list_key in ("allow", "deny"):
+            for value in _list(inner.get(list_key)):
+                out.append(("permissionGrants.permissionGrants." + list_key, value, folder))
+        if "v2Migrated" in project_grants:
+            out.append(("permissionGrants.v2Migrated", project_grants["v2Migrated"], folder))
     elif SIDECAR_RX.match(rel):
-        for v in _list(_dict(doc.get("agent_permissions")).get("access_grants")):
-            out.append(("agent_permissions.access_grants", v, ""))
+        for value in _list(_dict(doc.get("agent_permissions")).get("access_grants")):
+            out.append(("agent_permissions.access_grants", value, ""))
     elif rel == CLI_SETTINGS_REL:
         perms = _dict(doc.get("permissions"))
-        for lst in ("allow", "deny"):
-            for v in _list(perms.get(lst)):
-                out.append(("permissions." + lst, v, ""))
-        for v in _list(doc.get("trustedWorkspaces")):
-            path = uri_to_path(v) if isinstance(v, str) else ""
-            out.append(("trustedWorkspace", path or v, path))
+        for list_key in ("allow", "deny"):
+            for value in _list(perms.get(list_key)):
+                out.append(("permissions." + list_key, value, ""))
+        for value in _list(doc.get("trustedWorkspaces")):
+            path = uri_to_path(value) if isinstance(value, str) else ""
+            out.append(("trustedWorkspace", path or value, path))
     return out
 
 
-def describe_payload(kind: str, p: dict) -> str:
+def describe_payload(kind: str, payload: dict) -> str:
     """One line describing a tool step's result or a system event."""
     if kind == "run_command":
         return _join(
-            p.get("command_line") or p.get("command") or "",
-            "[rejected by user]" if p.get("user_rejected") else "",
-            "[timed out]" if p.get("timed_out") else "",
-            "exit=%s" % p["exit_code"] if "exit_code" in p else "",
-            _output(p),
+            payload.get("command_line") or payload.get("command") or "",
+            "[rejected by user]" if payload.get("user_rejected") else "",
+            "[timed out]" if payload.get("timed_out") else "",
+            "exit=%s" % payload["exit_code"] if "exit_code" in payload else "",
+            _output(payload),
         )
     if kind in ("command_status", "shell_exec"):
         return _join(
-            p.get("command", ""),
-            "exit=%s" % p["exit_code"] if "exit_code" in p else "",
-            _output(p) or p.get("error_message", ""),
+            payload.get("command", ""),
+            "exit=%s" % payload["exit_code"] if "exit_code" in payload else "",
+            _output(payload) or payload.get("error_message", ""),
         )
     if kind == "send_command_input":
         return "input to %s: %s%s" % (
-            p.get("command_id", ""),
-            p.get("input", ""),
-            " [terminate]" if p.get("terminate") else "",
+            payload.get("command_id", ""),
+            payload.get("input", ""),
+            " [terminate]" if payload.get("terminate") else "",
         )
     if kind == "view_file":
-        rng = ""
-        if p.get("start_line") or p.get("end_line"):
-            rng = ":%s-%s" % (p.get("start_line", ""), p.get("end_line", ""))
-        return uri_to_path(p.get("absolute_path_uri", "")) + rng
+        line_range = ""
+        if payload.get("start_line") or payload.get("end_line"):
+            line_range = ":%s-%s" % (payload.get("start_line", ""), payload.get("end_line", ""))
+        return uri_to_path(payload.get("absolute_path_uri", "")) + line_range
     if kind == "list_directory":
-        return uri_to_path(p.get("directory_path_uri", ""))
+        return uri_to_path(payload.get("directory_path_uri", ""))
     if kind == "grep_search":
         return _join(
-            p.get("query", ""), uri_to_path(p.get("search_path_uri", "")), p.get("command_run", "")
+            payload.get("query", ""),
+            uri_to_path(payload.get("search_path_uri", "")),
+            payload.get("command_run", ""),
         )
     if kind == "find":
-        return _join(p.get("pattern", ""), p.get("search_directory", ""), p.get("command_run", ""))
+        return _join(
+            payload.get("pattern", ""),
+            payload.get("search_directory", ""),
+            payload.get("command_run", ""),
+        )
     if kind == "write_to_file":
-        return uri_to_path(p.get("target_file_uri", "")) + (
-            " [created]" if p.get("file_created") else ""
+        return uri_to_path(payload.get("target_file_uri", "")) + (
+            " [created]" if payload.get("file_created") else ""
         )
     if kind == "file_change":
-        return _join(uri_to_path(p.get("absolute_path_uri", "")), p.get("instruction", ""))
-    if kind == "code_action":
-        spec = p.get("action_spec") or {}
-        kindname = path = ""
-        for key in ("command", "create_file", "delete_file", "sed"):
-            sub = spec.get(key)
-            if sub:
-                kindname, path = key, _path_of(sub.get("file") or sub.get("path"))
-                break
-        return _join(kindname, path, p.get("description") or p.get("code_instruction", ""))
-    if kind == "read_url_content":
-        return p.get("resolved_url") or p.get("url", "")
-    if kind == "search_web":
-        return p.get("query", "")
-    if kind == "mcp_tool":
-        tc = p.get("tool_call") or {}
         return _join(
-            "%s/%s" % (p.get("server_name", ""), tc.get("name", "")),
-            "[rejected by user]" if p.get("user_rejected") else "",
-            p.get("result_string", ""),
+            uri_to_path(payload.get("absolute_path_uri", "")), payload.get("instruction", "")
+        )
+    if kind == "code_action":
+        spec = payload.get("action_spec") or {}
+        action_kind = path = ""
+        for key in ("command", "create_file", "delete_file", "sed"):
+            action = spec.get(key)
+            if action:
+                action_kind, path = key, _path_of(action.get("file") or action.get("path"))
+                break
+        return _join(
+            action_kind, path, payload.get("description") or payload.get("code_instruction", "")
+        )
+    if kind == "read_url_content":
+        return payload.get("resolved_url") or payload.get("url", "")
+    if kind == "search_web":
+        return payload.get("query", "")
+    if kind == "mcp_tool":
+        tool_call = payload.get("tool_call") or {}
+        return _join(
+            "%s/%s" % (payload.get("server_name", ""), tool_call.get("name", "")),
+            "[rejected by user]" if payload.get("user_rejected") else "",
+            payload.get("result_string", ""),
         )
     if kind == "agency_tool_call":
-        return "%s.%s" % (p.get("agent_name", ""), p.get("function_name", ""))
+        return "%s.%s" % (payload.get("agent_name", ""), payload.get("function_name", ""))
     if kind == "invoke_subagent":
         children = " ".join(
-            r.get("conversation_id", "") for r in p.get("results", []) if r.get("conversation_id")
+            result.get("conversation_id", "")
+            for result in payload.get("results", [])
+            if result.get("conversation_id")
         )
         return _join(
-            p.get("subagent_name", ""),
-            p.get("prompt", ""),
+            payload.get("subagent_name", ""),
+            payload.get("prompt", ""),
             "children: " + children if children else "",
         )
     if kind == "ask_question":
-        qs = []
-        for q in p.get("questions", []):
-            ans = (
-                q.get("write_in_response")
-                or " ".join(q.get("selected_option_ids", []))
-                or ("skipped" if q.get("skipped") else "")
+        answers = []
+        for question in payload.get("questions", []):
+            answer = (
+                question.get("write_in_response")
+                or " ".join(question.get("selected_option_ids", []))
+                or ("skipped" if question.get("skipped") else "")
             )
-            qs.append(q.get("question", "") + (" -> " + ans if ans else ""))
-        return "; ".join(qs)
+            answers.append(question.get("question", "") + (" -> " + answer if answer else ""))
+        return "; ".join(answers)
     if kind == "generic":
-        return (p.get("result") or {}).get("result", "")
+        return (payload.get("result") or {}).get("result", "")
     if kind == "checkpoint":
         return "checkpoint: " + (
-            p.get("conversation_title") or p.get("session_summary") or p.get("user_intent", "")
+            payload.get("conversation_title")
+            or payload.get("session_summary")
+            or payload.get("user_intent", "")
         )
     if kind == "system_message":
-        return "%s: %s" % (p.get("event_type") or "system_message", p.get("message", ""))
+        return "%s: %s" % (
+            payload.get("event_type") or "system_message",
+            payload.get("message", ""),
+        )
     if kind == "ephemeral_message":
-        return "ephemeral: " + p.get("content", "")
+        return "ephemeral: " + payload.get("content", "")
     if kind == "task_boundary":
         return "task %s [%s]: %s" % (
-            p.get("task_name", ""),
-            p.get("task_status", ""),
-            p.get("task_summary", ""),
+            payload.get("task_name", ""),
+            payload.get("task_status", ""),
+            payload.get("task_summary", ""),
         )
     if kind == "notify_user":
-        return "notify user: " + p.get("notification_content", "")
+        return "notify user: " + payload.get("notification_content", "")
     if kind in ("error", "error_message"):
-        e = p.get("error", {}) if kind == "error_message" else p
+        error = payload.get("error", {}) if kind == "error_message" else payload
         return "error: " + (
-            e.get("short_error") or e.get("user_error_message") or e.get("full_error", "")
+            error.get("short_error")
+            or error.get("user_error_message")
+            or error.get("full_error", "")
         )
     if kind == "finish":
-        return "finish: " + p.get("output_string", "")
+        return "finish: " + payload.get("output_string", "")
     if kind == "memory":
-        return "memory %s action=%s" % (p.get("memory_id", ""), p.get("action", ""))
+        return "memory %s action=%s" % (payload.get("memory_id", ""), payload.get("action", ""))
     if kind == "directory_rules":
-        return "directory rules: " + " ".join(uri_to_path(u) for u in p.get("rule_file_uris", []))
+        return "directory rules: " + " ".join(
+            uri_to_path(uri) for uri in payload.get("rule_file_uris", [])
+        )
     if kind == "conversation_history":
-        return "conversation history injected (%d chars)" % len(p.get("content", ""))
-    return compact_json(p)
+        return "conversation history injected (%d chars)" % len(payload.get("content", ""))
+    return compact_json(payload)
 
 
 class AntigravityParser(Parser):
@@ -1064,9 +1087,9 @@ class AntigravityParser(Parser):
     # -- history.jsonl ------------------------------------------------------------
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.timestamp_utc = to_utc(rec.get("timestamp"))
             row.project_path = uri_to_path(str(rec.get("workspace") or ""))
             row.session_id = str(rec.get("conversationId") or "")
@@ -1077,32 +1100,32 @@ class AntigravityParser(Parser):
 
     # -- brain/<uuid>/.system_generated/logs ------------------------------------
     def _parse_brain(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = BRAIN_RX.match(artifact.rel)
-        if not m:
+        match = BRAIN_RX.match(artifact.rel)
+        if not match:
             return
-        blob = brain_copy(artifact.disk_path, m.group(3) or "", m.group(4) or "")
+        blob = brain_copy(artifact.disk_path, match.group(3) or "", match.group(4) or "")
         if blob is None:
             return
-        session_id = m.group(2)
+        session_id = match.group(2)
         errors: list = []
         calls: list[dict] = []
-        for n, raw in enumerate(blob.split(b"\n"), 1):
+        for line_number, raw in enumerate(blob.split(b"\n"), 1):
             stripped = raw.strip()
             if not stripped:
                 continue
             try:
                 rec = json.loads(stripped.decode("utf-8", errors="replace"))
-            except ValueError as e:
-                errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+            except ValueError as error:
+                errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                 continue
             if isinstance(rec, dict):
-                yield from self._brain_rows(artifact, n, rec, session_id, calls, opts)
+                yield from self._brain_rows(artifact, line_number, rec, session_id, calls, opts)
         yield from error_rows(self, artifact, errors, session_id)
 
     def _brain_rows(
         self,
         artifact: Artifact,
-        n: int,
+        line_number: int,
         rec: dict,
         session_id: str,
         calls: list[dict],
@@ -1114,11 +1137,11 @@ class AntigravityParser(Parser):
         kind = str(rec.get("type") or "")
         status = str(rec.get("status") or "").lower()
         content = text_of(rec.get("content"))
-        truncated = [str(f) for f in _list(rec.get("truncated_fields"))]
+        truncated = [str(field) for field in _list(rec.get("truncated_fields"))]
 
         def base(turn_type: str, text: str, field: str = "content") -> Row:
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.session_id = session_id
             row.timestamp_utc = to_utc(rec.get("created_at"))
             row.turn_type = turn_type
@@ -1138,22 +1161,24 @@ class AntigravityParser(Parser):
                 yield base("thinking", thinking, "thinking")
             if content:
                 yield base("assistant", content)
-            calls[:] = [_dict(tc) for tc in _list(rec.get("tool_calls"))]
-            for tc in calls:
-                row = base("tool_use", tool_args_summary(_brain_args(tc)), "tool_calls")
-                row.tool_name = str(tc.get("name") or "")
-                row.tool_use_id = str(tc.get("id") or "")
+            calls[:] = [_dict(raw_call) for raw_call in _list(rec.get("tool_calls"))]
+            for tool_call in calls:
+                row = base("tool_use", tool_args_summary(_brain_args(tool_call)), "tool_calls")
+                row.tool_name = str(tool_call.get("name") or "")
+                row.tool_use_id = str(tool_call.get("id") or "")
                 yield row
             return
         if kind == "SYSTEM_MESSAGE":
             text = "system_message: " + content
         elif kind == "ERROR_MESSAGE":
-            err = rec.get("error")
-            if isinstance(err, dict):
-                err = (
-                    err.get("short_error") or err.get("user_error_message") or err.get("full_error")
+            error = rec.get("error")
+            if isinstance(error, dict):
+                error = (
+                    error.get("short_error")
+                    or error.get("user_error_message")
+                    or error.get("full_error")
                 )
-            text = "error: " + (err if isinstance(err, str) and err else content)
+            text = "error: " + (error if isinstance(error, str) and error else content)
         else:
             text = content or "step %s" % kind.lower()
         if status and status != "done":
@@ -1161,10 +1186,10 @@ class AntigravityParser(Parser):
         if kind in ("SYSTEM_MESSAGE", "ERROR_MESSAGE") or not calls:
             yield base("system", text)
             return
-        tc = calls.pop(0)
+        tool_call = calls.pop(0)
         row = base("tool_result", text)
-        row.tool_name = str(tc.get("name") or "")
-        row.tool_use_id = str(tc.get("id") or "")
+        row.tool_name = str(tool_call.get("name") or "")
+        row.tool_use_id = str(tool_call.get("id") or "")
         yield row
 
     # -- standing permission files ----------------------------------------------
@@ -1179,9 +1204,9 @@ class AntigravityParser(Parser):
             row.text = "parser: unreadable %s" % artifact.rel
             yield row
             return
-        for n, (key, value, project) in enumerate(standing_entries(artifact.rel, doc), 1):
+        for position, (key, value, project) in enumerate(standing_entries(artifact.rel, doc), 1):
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = position
             row.timestamp_utc = mtime
             row.project_path = project
             row.turn_type = "system"
@@ -1195,19 +1220,22 @@ class AntigravityParser(Parser):
     def _parse_summaries(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
-        with open_copy(artifact.disk_path) as con:
-            if "conversation_summaries" not in table_names(con):
+        with open_copy(artifact.disk_path) as connection:
+            if "conversation_summaries" not in table_names(connection):
                 return
-            for n, r in enumerate(
-                con.execute("select * from conversation_summaries order by last_modified_time"), 1
+            for position, summary in enumerate(
+                connection.execute(
+                    "select * from conversation_summaries order by last_modified_time"
+                ),
+                1,
             ):
-                r = dict(r)
+                summary = dict(summary)
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.session_id = str(r.get("conversation_id") or "")
-                row.timestamp_utc = to_utc(r.get("last_modified_time"))
+                row.source_line = position
+                row.session_id = str(summary.get("conversation_id") or "")
+                row.timestamp_utc = to_utc(summary.get("last_modified_time"))
                 try:
-                    uris = json.loads(r.get("workspace_uris") or "[]")
+                    uris = json.loads(summary.get("workspace_uris") or "[]")
                 except ValueError:
                     uris = []
                 row.project_path = uri_to_path(uris[0]) if uris else ""
@@ -1215,12 +1243,12 @@ class AntigravityParser(Parser):
                 row.text = compact(
                     _join(
                         "conversation summary",
-                        r.get("title") or r.get("preview") or "",
-                        str(r.get("status") or ""),
-                        "%s steps" % r.get("step_count", 0),
-                        "agent=%s" % r["agent_name"] if r.get("agent_name") else "",
-                        "parent=%s" % r["parent_conversation_id"]
-                        if r.get("parent_conversation_id")
+                        summary.get("title") or summary.get("preview") or "",
+                        str(summary.get("status") or ""),
+                        "%s steps" % summary.get("step_count", 0),
+                        "agent=%s" % summary["agent_name"] if summary.get("agent_name") else "",
+                        "parent=%s" % summary["parent_conversation_id"]
+                        if summary.get("parent_conversation_id")
                         else "",
                     ),
                 )
@@ -1230,33 +1258,37 @@ class AntigravityParser(Parser):
     def _parse_conversation(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
-        with open_copy(artifact.disk_path) as con:
-            tables = table_names(con)
+        with open_copy(artifact.disk_path) as connection:
+            tables = table_names(connection)
             if "steps" not in tables:
                 return
             session_id = artifact.disk_path.name[:-3]
             project_path = branch = source = ""
-            m = CONV_RX.match(artifact.rel)
-            data_dir = m.group(1) if m else ""
+            match = CONV_RX.match(artifact.rel)
+            data_dir = match.group(1) if match else ""
             if "trajectory_meta" in tables:
-                tm = con.execute("select * from trajectory_meta limit 1").fetchone()
-                if tm:
-                    session_id = tm["cascade_id"] or session_id
-                    if tm["source"] is not None:
-                        source = TRAJECTORY_SOURCES.get(tm["source"], str(tm["source"]))
+                trajectory = connection.execute("select * from trajectory_meta limit 1").fetchone()
+                if trajectory:
+                    session_id = trajectory["cascade_id"] or session_id
+                    if trajectory["source"] is not None:
+                        source = TRAJECTORY_SOURCES.get(
+                            trajectory["source"], str(trajectory["source"])
+                        )
             if "trajectory_metadata_blob" in tables:
-                blob = con.execute("select data from trajectory_metadata_blob limit 1").fetchone()
+                blob = connection.execute(
+                    "select data from trajectory_metadata_blob limit 1"
+                ).fetchone()
                 if blob and blob[0]:
                     try:
                         meta = decode(blob[0], "CortexTrajectoryMetadata", SCHEMA)
                     except ValueError:
                         meta = {}
-                    ws = (meta.get("workspaces") or [{}])[0]
+                    workspace = (meta.get("workspaces") or [{}])[0]
                     project_path = uri_to_path(
-                        ws.get("workspace_folder_absolute_uri")
+                        workspace.get("workspace_folder_absolute_uri")
                         or (meta.get("workspace_uris") or [""])[0]
                     )
-                    branch = ws.get("branch_name", "")
+                    branch = workspace.get("branch_name", "")
                     if meta.get("created_at"):
                         row = self._row(artifact, 0, session_id, project_path, branch)
                         row.timestamp_utc = meta["created_at"]
@@ -1277,30 +1309,42 @@ class AntigravityParser(Parser):
                         yield row
             models: dict[int, str] = {}
             if "gen_metadata" in tables:
-                for (data,) in con.execute("select data from gen_metadata"):
+                for (data,) in connection.execute("select data from gen_metadata"):
                     try:
-                        gm = decode(data or b"", "CortexStepGeneratorMetadata", SCHEMA)
+                        generator = decode(data or b"", "CortexStepGeneratorMetadata", SCHEMA)
                     except ValueError:
                         continue
-                    cm = gm.get("chat_model") or {}
-                    model = cm.get("response_model") or cm.get("model_display_name") or ""
-                    for idx in gm.get("step_indices", []):
+                    chat_model = generator.get("chat_model") or {}
+                    model = (
+                        chat_model.get("response_model")
+                        or chat_model.get("model_display_name")
+                        or ""
+                    )
+                    for idx in generator.get("step_indices", []):
                         models[idx] = model
             seen_models: dict = {}
             bad = 0
-            cols = {r[1] for r in con.execute("pragma table_info(steps)")}
-            perm_col = "permissions" if "permissions" in cols else "NULL AS permissions"
-            for srow in con.execute(
+            columns = {
+                column_info[1] for column_info in connection.execute("pragma table_info(steps)")
+            }
+            permissions_column = (
+                "permissions" if "permissions" in columns else "NULL AS permissions"
+            )
+            for step_row in connection.execute(
                 "select idx, step_type, status, metadata, step_payload, %s from steps order by idx"
-                % perm_col
+                % permissions_column
             ):
-                idx = srow["idx"]
+                idx = step_row["idx"]
                 try:
                     step = (
-                        decode(srow["step_payload"], "Step", SCHEMA) if srow["step_payload"] else {}
+                        decode(step_row["step_payload"], "Step", SCHEMA)
+                        if step_row["step_payload"]
+                        else {}
                     )
-                    if "metadata" not in step and srow["metadata"]:
-                        step["metadata"] = decode(srow["metadata"], "CortexStepMetadata", SCHEMA)
+                    if "metadata" not in step and step_row["metadata"]:
+                        step["metadata"] = decode(
+                            step_row["metadata"], "CortexStepMetadata", SCHEMA
+                        )
                 except ValueError:
                     bad += 1
                     continue
@@ -1309,9 +1353,11 @@ class AntigravityParser(Parser):
                 if change:
                     # The model at the conversation's first generated step and
                     # on every change, before that step's own rows (#96).
-                    md = step.get("metadata") or {}
+                    metadata = step.get("metadata") or {}
                     row = self._row(artifact, idx, session_id, project_path, branch)
-                    row.timestamp_utc = md.get("created_at") or md.get("completed_at", "")
+                    row.timestamp_utc = metadata.get("created_at") or metadata.get(
+                        "completed_at", ""
+                    )
                     row.turn_type = "system"
                     row.model = model
                     row.text = change
@@ -1319,8 +1365,8 @@ class AntigravityParser(Parser):
                 yield from self._step_rows(
                     artifact,
                     idx,
-                    srow["step_type"],
-                    srow["status"],
+                    step_row["step_type"],
+                    step_row["status"],
                     step,
                     session_id,
                     project_path,
@@ -1329,7 +1375,7 @@ class AntigravityParser(Parser):
                     opts,
                 )
                 yield from self._permission_rows(
-                    artifact, idx, step, srow["permissions"], session_id, project_path, branch
+                    artifact, idx, step, step_row["permissions"], session_id, project_path, branch
                 )
             if bad:
                 row = self._row(artifact, 0, session_id, project_path, branch)
@@ -1359,28 +1405,32 @@ class AntigravityParser(Parser):
     ) -> Iterator[Row]:
         """One `system` row per grant in the step's permissions: the
         `steps.permissions` column, else Step field 133 of the payload."""
-        perms = step.get("permissions") or {}
+        permissions = step.get("permissions") or {}
         if column:
             try:
-                perms = decode(column, "TrajectoryPermissions", SCHEMA)
+                permissions = decode(column, "TrajectoryPermissions", SCHEMA)
             except ValueError:
                 row = self._row(artifact, idx, session_id, project_path, branch)
                 row.turn_type = "system"
                 row.text = "parser: the permissions of step %d could not be decoded" % idx
                 yield row
                 return
-        texts = permission_texts(perms)
+        texts = permission_texts(permissions)
         if not texts:
             return
-        md = step.get("metadata") or {}
-        tc = md.get("tool_call") or {}
-        ts = md.get("completed_at") or md.get("finished_generating_at") or md.get("created_at", "")
+        metadata = step.get("metadata") or {}
+        tool_call = metadata.get("tool_call") or {}
+        timestamp = (
+            metadata.get("completed_at")
+            or metadata.get("finished_generating_at")
+            or metadata.get("created_at", "")
+        )
         for text in texts:
             row = self._row(artifact, idx, session_id, project_path, branch)
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.turn_type = "system"
-            row.tool_name = tc.get("name") or tc.get("original_name", "")
-            row.tool_use_id = tc.get("id", "")
+            row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+            row.tool_use_id = tool_call.get("id", "")
             row.text = compact(text)
             yield row
 
@@ -1397,23 +1447,27 @@ class AntigravityParser(Parser):
         model: str,
         opts: Options,
     ) -> Iterator[Row]:
-        md = step.get("metadata") or {}
-        created = md.get("created_at", "")
-        completed = md.get("completed_at") or md.get("finished_generating_at") or created
+        metadata = step.get("metadata") or {}
+        created = metadata.get("created_at", "")
+        completed = (
+            metadata.get("completed_at") or metadata.get("finished_generating_at") or created
+        )
         kind = next((k for k in PAYLOAD_KINDS if k in step), "")
         payload = step.get(kind) or {}
         status_name = STEP_STATUS.get(status, str(status))
         type_name = STEP_TYPES.get(step_type, str(step_type))
 
-        def base(ts: str) -> Row:
+        def base(timestamp: str) -> Row:
             row = self._row(artifact, idx, session_id, project_path, branch)
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.model = model
             return row
 
         if kind == "user_input":
             row = base(created)
-            row.turn_type = "system" if md.get("source") == STEP_SOURCE_USER_IMPLICIT else "user"
+            row.turn_type = (
+                "system" if metadata.get("source") == STEP_SOURCE_USER_IMPLICIT else "user"
+            )
             text = payload.get("query") or payload.get("user_response") or ""
             if payload.get("is_queued_message"):
                 text = "[queued] " + text
@@ -1434,26 +1488,26 @@ class AntigravityParser(Parser):
                 row.turn_type = "assistant"
                 row.text = compact(text)
                 yield row
-            for tc in payload.get("tool_calls", []):
+            for tool_call in payload.get("tool_calls", []):
                 row = base(completed)
                 row.turn_type = "tool_use"
-                row.tool_name = tc.get("name") or tc.get("original_name", "")
-                row.tool_use_id = tc.get("id", "")
-                row.text = compact(tool_args_summary(tc.get("arguments_json", "")))
+                row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+                row.tool_use_id = tool_call.get("id", "")
+                row.text = compact(tool_args_summary(tool_call.get("arguments_json", "")))
                 yield row
             return
 
-        tc = md.get("tool_call")
+        tool_call = metadata.get("tool_call")
         text = describe_payload(kind, payload) if kind else "step %s" % type_name
         if status_name != "done":
             text = "[%s] %s" % (status_name, text)
         if kind == "run_command" and payload.get("ran_in_sandbox"):
             text += " sandbox=true"
-        if tc:
+        if tool_call:
             row = base(completed)
             row.turn_type = "tool_result"
-            row.tool_name = tc.get("name") or tc.get("original_name", "")
-            row.tool_use_id = tc.get("id", "")
+            row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+            row.tool_use_id = tool_call.get("id", "")
         else:
             row = base(created)
             row.turn_type = "system"

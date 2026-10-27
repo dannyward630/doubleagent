@@ -631,30 +631,30 @@ TRANSCRIPT_TYPES = ("user", "assistant", "system", "attachment")
 DENIAL_KEYS = ("toolDenialKind", "userFeedback")
 
 
-def tool_summary(name: str, inp) -> str:
-    if not isinstance(inp, dict):
-        return compact_json(inp)
+def tool_summary(name: str, tool_input) -> str:
+    if not isinstance(tool_input, dict):
+        return compact_json(tool_input)
     keys = TOOL_KEYS.get(name)
     if keys:
-        vals = [str(inp[k]) for k in keys if inp.get(k) not in (None, "")]
-        if vals:
-            return " | ".join(vals)
+        values = [str(tool_input[k]) for k in keys if tool_input.get(k) not in (None, "")]
+        if values:
+            return " | ".join(values)
     for k in ("command", "file_path", "path", "pattern", "url", "query", "description"):
-        if inp.get(k) not in (None, ""):
-            return str(inp[k])
-    return compact_json(inp)
+        if tool_input.get(k) not in (None, ""):
+            return str(tool_input[k])
+    return compact_json(tool_input)
 
 
 def result_text(content) -> str:
     """A tool_result's text; a `tool_reference` block is its tool name."""
     if isinstance(content, list):
         parts = []
-        for b in content:
-            if isinstance(b, dict) and b.get("type") == "tool_reference":
-                parts.append(str(b.get("tool_name") or ""))
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "tool_reference":
+                parts.append(str(block.get("tool_name") or ""))
             else:
-                parts.append(text_of([b]))
-        return "\n".join(p for p in parts if p)
+                parts.append(text_of([block]))
+        return "\n".join(part for part in parts if part)
     return text_of(content)
 
 
@@ -669,13 +669,13 @@ def marker_label(text: str) -> str:
 def session_dir(artifact: Artifact) -> Path:
     """The directory that holds a transcript's sidecars: `<session>/` next to
     a session file, or the directory above `subagents/` for a subagent."""
-    p = artifact.disk_path
+    path = artifact.disk_path
     if SUBAGENT_RX.search(artifact.rel):
-        d = p.parent
-        while d.name != "subagents" and d != d.parent:
-            d = d.parent
-        return d.parent
-    return p.with_suffix("")
+        directory = path.parent
+        while directory.name != "subagents" and directory != directory.parent:
+            directory = directory.parent
+        return directory.parent
+    return path.with_suffix("")
 
 
 def persisted_text(artifact: Artifact, stub: str, path: str = "") -> str:
@@ -684,27 +684,32 @@ def persisted_text(artifact: Artifact, stub: str, path: str = "") -> str:
     the line's `toolUseResult.persistedOutputPath` (2.1.309); without it the
     path is read from a `<persisted-output>` stub's text."""
     if not path:
-        m = PERSISTED_RX.search(stub)
-        if not m:
+        match = PERSISTED_RX.search(stub)
+        if not match:
             return stub
-        path = m.group(1)
+        path = match.group(1)
     parts = re.split(r"[/\\]", path)
     name = parts[-1]
-    sdir = session_dir(artifact)
+    session_directory = session_dir(artifact)
     note = "%s\n[persisted output not found: tool-results/%s]" % (stub, name)
     if (
         len(parts) < 3
         or parts[-2] != "tool-results"
-        or parts[-3] != sdir.name
+        or parts[-3] != session_directory.name
         or name in ("", ".", "..")
     ):
         return note
-    tdir = sdir / "tool-results"
-    f = tdir / name
+    results_directory = session_directory / "tool-results"
+    output_file = results_directory / name
     try:
-        if sdir.is_symlink() or tdir.is_symlink() or f.is_symlink() or not f.is_file():
+        if (
+            session_directory.is_symlink()
+            or results_directory.is_symlink()
+            or output_file.is_symlink()
+            or not output_file.is_file()
+        ):
             return note
-        return f.read_bytes().decode("utf-8", errors="replace")
+        return output_file.read_bytes().decode("utf-8", errors="replace")
     except OSError:
         return note
 
@@ -729,13 +734,13 @@ def match_form(row: Row) -> tuple[str, str]:
         if text.startswith(("slash command: ", "local_command: ")):
             name = COMMAND_NAME_RX.search(text)
             if name:
-                cmd = name.group(1).strip(" \t\r\n")
-                if not cmd.startswith("/"):
-                    cmd = "/" + cmd
+                command = name.group(1).strip(" \t\r\n")
+                if not command.startswith("/"):
+                    command = "/" + command
                 args = COMMAND_ARGS_RX.search(text)
                 if args and args.group(1).strip(" \t\r\n"):
-                    cmd += " " + args.group(1).strip(" \t\r\n")
-                return "user", _squash(cmd)
+                    command += " " + args.group(1).strip(" \t\r\n")
+                return "user", _squash(command)
         return row.turn_type, text
     if row.turn_type == "user":
         return "user", _squash(PASTE_WRAPPER_RX.sub(" ", text))
@@ -768,13 +773,13 @@ def read_paste(history: Path, content_hash: str) -> tuple[str | None, str]:
     if not PASTE_HASH_RX.match(content_hash):
         return None, ""
     cache = history.parent / "paste-cache"
-    f = cache / (content_hash + ".txt")
+    cache_file = cache / (content_hash + ".txt")
     try:
-        if cache.is_symlink() or f.is_symlink() or not f.is_file():
+        if cache.is_symlink() or cache_file.is_symlink() or not cache_file.is_file():
             return None, ""
-        return f.read_bytes().decode("utf-8", errors="replace"), ""
-    except OSError as e:
-        return None, "paste-cache/%s.txt unreadable (%s)" % (content_hash, e)
+        return cache_file.read_bytes().decode("utf-8", errors="replace"), ""
+    except OSError as error:
+        return None, "paste-cache/%s.txt unreadable (%s)" % (content_hash, error)
 
 
 def expand_pastes(
@@ -789,20 +794,22 @@ def expand_pastes(
     if not isinstance(pasted, dict) or not pasted:
         return display
 
-    def sub(m: re.Match) -> str:
-        entry = pasted.get(m.group(1))
+    def replace_paste(match: re.Match) -> str:
+        entry = pasted.get(match.group(1))
         if not isinstance(entry, dict) or entry.get("type", "text") != "text":
-            return m.group(0)
+            return match.group(0)
         content = entry.get("content")
         if isinstance(content, str):
             return content
-        h = entry.get("contentHash")
-        text, problem = read_paste(history, h) if isinstance(h, str) else (None, "")
+        content_hash = entry.get("contentHash")
+        text, problem = (
+            read_paste(history, content_hash) if isinstance(content_hash, str) else (None, "")
+        )
         if problem and errors is not None:
             errors.append((line, problem, ""))
-        return m.group(0) if text is None else text
+        return match.group(0) if text is None else text
 
-    return PASTE_RX.sub(sub, display)
+    return PASTE_RX.sub(replace_paste, display)
 
 
 class _Prescan:
@@ -854,8 +861,8 @@ class ClaudeCodeParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
+            pattern.match(rel)
+            for pattern in (
                 HISTORY_RX,
                 SESSION_RX,
                 REGISTRY_RX,
@@ -887,17 +894,17 @@ class ClaudeCodeParser(Parser):
 
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.session_id = str(rec.get("sessionId") or "")
-            row.project_path = str(rec.get("project") or "")
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.session_id = str(record.get("sessionId") or "")
+            row.project_path = str(record.get("project") or "")
             row.turn_type = "user"
-            display = rec.get("display")
+            display = record.get("display")
             if isinstance(display, str):
                 display = expand_pastes(
-                    artifact.disk_path, display, rec.get("pastedContents"), errors, n
+                    artifact.disk_path, display, record.get("pastedContents"), errors, line_number
                 )
             row.text = compact(display)
             yield row
@@ -908,8 +915,8 @@ class ClaudeCodeParser(Parser):
         the last claude.ai event the local side of a Remote Control session
         processed, one `session synced:` row at the file's modification
         time."""
-        m = CCR_TIP_RX.match(artifact.rel)
-        session = m.group(1) if m else ""
+        match = CCR_TIP_RX.match(artifact.rel)
+        session = match.group(1) if match else ""
         doc, bad = self._settings_doc(artifact, "ccr-tip.json")
         if doc is None:
             if bad is not None:
@@ -950,8 +957,8 @@ class ClaudeCodeParser(Parser):
     @staticmethod
     def _val(doc: dict, key: str) -> str:
         """A JSON value as row text, `-` when missing or empty."""
-        v = doc.get(key)
-        return "-" if v in (None, "") else setting_value(v)
+        value = doc.get(key)
+        return "-" if value in (None, "") else setting_value(value)
 
     def _file_row(self, artifact: Artifact) -> Row:
         """A `system` row at the file's modification time."""
@@ -966,31 +973,31 @@ class ClaudeCodeParser(Parser):
         row.source_line = 1
         row.turn_type = "system"
         try:
-            rec = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            record = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
-            rec = None
-        if not isinstance(rec, dict):
+            record = None
+        if not isinstance(record, dict):
             row.text = "parser: session registry file is not a JSON object"
             yield row
             return
 
-        def val(key: str, missing: str) -> str:
-            v = rec.get(key)
-            return missing if v in (None, "") else str(v)
+        def field_text(key: str, missing: str) -> str:
+            value = record.get(key)
+            return missing if value in (None, "") else str(value)
 
-        row.timestamp_utc = to_utc(rec.get("startedAt"))
-        row.session_id = val("sessionId", "")
-        row.project_path = val("cwd", "")
+        row.timestamp_utc = to_utc(record.get("startedAt"))
+        row.session_id = field_text("sessionId", "")
+        row.project_path = field_text("cwd", "")
         row.text = "claude-code process %s %s status=%s entrypoint=%s bridge=%s host_session=%s" % (
-            val("pid", artifact.disk_path.stem),
-            val("kind", "-"),
-            val("status", "-"),
-            val("entrypoint", "-"),
-            val("bridgeSessionId", "none"),
-            val("hostSessionId", "none"),
+            field_text("pid", artifact.disk_path.stem),
+            field_text("kind", "-"),
+            field_text("status", "-"),
+            field_text("entrypoint", "-"),
+            field_text("bridgeSessionId", "none"),
+            field_text("hostSessionId", "none"),
         )
         yield row
-        bridge = rec.get("bridgeSessionId")
+        bridge = record.get("bridgeSessionId")
         if isinstance(bridge, str) and bridge:
             sync = self.base_row(artifact)
             sync.source_line = 1
@@ -1008,7 +1015,7 @@ class ClaudeCodeParser(Parser):
     def _standing_row(
         self,
         artifact: Artifact,
-        ts: str,
+        timestamp: str,
         project: str,
         key: str,
         value,
@@ -1017,7 +1024,7 @@ class ClaudeCodeParser(Parser):
         row = self.base_row(artifact)
         row.source_line = 1
         row.turn_type = "system"
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.project_path = project
         row.text = compact(
             "%s: %s=%s (from %s, file mtime)" % (label, key, setting_value(value), artifact.rel)
@@ -1045,27 +1052,29 @@ class ClaudeCodeParser(Parser):
             if bad is not None:
                 yield bad
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
-        perms = doc.get("permissions")
-        if isinstance(perms, dict):
+        permissions = doc.get("permissions")
+        if isinstance(permissions, dict):
             for key in PERMISSION_LISTS:
-                entries = perms.get(key)
+                entries = permissions.get(key)
                 if isinstance(entries, list):
                     for entry in entries:
-                        yield self._standing_row(artifact, ts, project, "permissions." + key, entry)
+                        yield self._standing_row(
+                            artifact, timestamp, project, "permissions." + key, entry
+                        )
             for key in PERMISSION_SCALARS:
-                if perms.get(key) is not None:
+                if permissions.get(key) is not None:
                     yield self._standing_row(
-                        artifact, ts, project, "permissions." + key, perms[key]
+                        artifact, timestamp, project, "permissions." + key, permissions[key]
                     )
         if doc.get(RETENTION_KEY) is not None:
             yield self._standing_row(
-                artifact, ts, project, RETENTION_KEY, doc[RETENTION_KEY], "retention setting"
+                artifact, timestamp, project, RETENTION_KEY, doc[RETENTION_KEY], "retention setting"
             )
         if isinstance(doc.get(MODEL_KEY), str) and doc[MODEL_KEY]:
             yield self._standing_row(
-                artifact, ts, project, MODEL_KEY, doc[MODEL_KEY], "model setting"
+                artifact, timestamp, project, MODEL_KEY, doc[MODEL_KEY], "model setting"
             )
 
     def _parse_global_config(self, artifact: Artifact) -> Iterator[Row]:
@@ -1074,22 +1083,22 @@ class ClaudeCodeParser(Parser):
             if bad is not None:
                 yield bad
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         projects = doc.get("projects")
-        for path, proj in projects.items() if isinstance(projects, dict) else ():
-            if not isinstance(proj, dict):
+        for path, project in projects.items() if isinstance(projects, dict) else ():
+            if not isinstance(project, dict):
                 continue
-            tools = proj.get("allowedTools")
+            tools = project.get("allowedTools")
             if isinstance(tools, list):
                 for entry in tools:
-                    yield self._standing_row(artifact, ts, str(path), "allowedTools", entry)
+                    yield self._standing_row(artifact, timestamp, str(path), "allowedTools", entry)
             for key in PROJECT_FLAGS:
-                if proj.get(key) is not None:
-                    yield self._standing_row(artifact, ts, str(path), key, proj[key])
-            spawn = proj.get(RC_SPAWN_KEY)
+                if project.get(key) is not None:
+                    yield self._standing_row(artifact, timestamp, str(path), key, project[key])
+            spawn = project.get(RC_SPAWN_KEY)
             if spawn not in (None, ""):
                 row = self._file_row(artifact)
-                row.timestamp_utc = ts
+                row.timestamp_utc = timestamp
                 row.project_path = str(path)
                 row.text = compact(
                     "remote control: spawn mode %s for %s (from %s, file mtime)"
@@ -1103,7 +1112,7 @@ class ClaudeCodeParser(Parser):
             row = self.base_row(artifact)
             row.source_line = 1
             row.turn_type = "system"
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.text = compact(
                 "source host: github status=%s (from %s, file mtime)"
                 % ("-" if status in (None, "") else setting_value(status), artifact.rel)
@@ -1112,12 +1121,12 @@ class ClaudeCodeParser(Parser):
         if doc.get(RC_MACHINE_KEY) not in (None, ""):
             # The machine id is an identity value: never printed.
             row = self._file_row(artifact)
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.text = "remote control: machine id set (from %s, file mtime)" % artifact.rel
             yield row
         if doc.get(CLOUD_ENV_KEY) is not None:
             row = self._file_row(artifact)
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.text = compact(
                 "cloud: %s=%s (from %s, file mtime)"
                 % (CLOUD_ENV_KEY, setting_value(doc[CLOUD_ENV_KEY]), artifact.rel)
@@ -1136,54 +1145,60 @@ class ClaudeCodeParser(Parser):
         which bound the status lines a bridge may take its URL from, and
         the two origin marks (`_Prescan`). The errors are discarded: the
         same file is parsed in full and reported on by `_parse_session`."""
-        pre = _Prescan()
+        prescan = _Prescan()
 
-        def deliver(text: str, n: int) -> None:
+        def deliver(text: str, at_line: int) -> None:
             if text:
-                pre.delivered.setdefault(text, []).append(n)
+                prescan.delivered.setdefault(text, []).append(at_line)
 
-        for n, rec in iter_jsonl(artifact.disk_path, []):
-            rtype = rec.get("type")
-            if not pre.cwd and rec.get("cwd"):
-                pre.cwd = str(rec.get("cwd"))
-            if not pre.branch and rec.get("gitBranch"):
-                pre.branch = str(rec.get("gitBranch"))
-            if rec.get("remoteSourced") is True:
-                pre.remote_last = n
-            if rtype == "system" and rec.get("subtype") == "bridge_status" and rec.get("url"):
-                pre.bridge_urls.append((n, str(rec.get("url"))))
-            if rtype == "bridge-session":
-                b = rec.get("bridgeSessionId")
-                pre.bridge_lines.append((n, b if isinstance(b, str) and b else None))
-            if rtype == "attachment":
-                att = rec.get("attachment") or {}
-                if isinstance(att, dict) and att.get("type") == "queued_command":
-                    deliver(text_of(att.get("prompt")), n)
-            elif rtype == "user":
-                if rec.get("entrypoint") == "sdk-cli" and rec.get("promptSource") == "sdk":
-                    pre.sdk_spawn = True
-                content = (rec.get("message") or {}).get("content")
+        for line_number, record in iter_jsonl(artifact.disk_path, []):
+            record_type = record.get("type")
+            if not prescan.cwd and record.get("cwd"):
+                prescan.cwd = str(record.get("cwd"))
+            if not prescan.branch and record.get("gitBranch"):
+                prescan.branch = str(record.get("gitBranch"))
+            if record.get("remoteSourced") is True:
+                prescan.remote_last = line_number
+            if (
+                record_type == "system"
+                and record.get("subtype") == "bridge_status"
+                and record.get("url")
+            ):
+                prescan.bridge_urls.append((line_number, str(record.get("url"))))
+            if record_type == "bridge-session":
+                bridge_id = record.get("bridgeSessionId")
+                prescan.bridge_lines.append(
+                    (line_number, bridge_id if isinstance(bridge_id, str) and bridge_id else None)
+                )
+            if record_type == "attachment":
+                attachment = record.get("attachment") or {}
+                if isinstance(attachment, dict) and attachment.get("type") == "queued_command":
+                    deliver(text_of(attachment.get("prompt")), line_number)
+            elif record_type == "user":
+                if record.get("entrypoint") == "sdk-cli" and record.get("promptSource") == "sdk":
+                    prescan.sdk_spawn = True
+                content = (record.get("message") or {}).get("content")
                 if isinstance(content, str):
-                    deliver(content, n)
+                    deliver(content, line_number)
                 elif isinstance(content, list):
-                    for b in content:
-                        if isinstance(b, dict) and b.get("type") == "text":
-                            t = str(b.get("text") or "")
-                            deliver(t, n)
-                            if t.lstrip().startswith(FORK_MARK):
-                                pre.fork = True
-        return pre
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            block_text = str(block.get("text") or "")
+                            deliver(block_text, line_number)
+                            if block_text.lstrip().startswith(FORK_MARK):
+                                prescan.fork = True
+        return prescan
 
     @staticmethod
-    def _origin_text(rec, pre: _Prescan) -> str:
+    def _origin_text(record, prescan: _Prescan) -> str:
         """The `session origin:` text a record marks, or "": the first
         record of the `sdk-cli` entrypoint in a Remote Control spawn's file,
         a `remoteSourced` record (a teleported cloud turn), or a record of
         the VS Code extension (`claude-vscode`)."""
-        entrypoint = rec.get("entrypoint")
-        if entrypoint == "sdk-cli" and pre.sdk_spawn:
+        entrypoint = record.get("entrypoint")
+        if entrypoint == "sdk-cli" and prescan.sdk_spawn:
             return ORIGIN_PREFIX + " (Remote Control, entrypoint sdk-cli)"
-        if rec.get("remoteSourced") is True:
+        if record.get("remoteSourced") is True:
             return ORIGIN_PREFIX + " (teleport, remoteSourced)"
         if entrypoint == "claude-vscode":
             return "session origin: local (VS Code extension)"
@@ -1191,16 +1206,16 @@ class ClaudeCodeParser(Parser):
 
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        pre = self._prescan(artifact)
-        delivered = pre.delivered
-        sub = SUBAGENT_RX.search(artifact.rel)
-        file_agent_id = sub.group(1) if sub else ""
-        header_done = not sub
-        task_done = not sub or pre.fork
+        prescan = self._prescan(artifact)
+        delivered = prescan.delivered
+        subagent = SUBAGENT_RX.search(artifact.rel)
+        file_agent_id = subagent.group(1) if subagent else ""
+        header_done = not subagent
+        task_done = not subagent or prescan.fork
         session_id = ""
-        last_ts = ""
-        last_cwd = pre.cwd
-        last_branch = pre.branch
+        last_timestamp = ""
+        last_cwd = prescan.cwd
+        last_branch = prescan.branch
         seen_origin: set = set()
         relocated = ""
         seen_pr: set = set()
@@ -1212,45 +1227,45 @@ class ClaudeCodeParser(Parser):
         bridges: dict[str, tuple] = {}
         seen_sync: set = set()
 
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            rtype = rec.get("type")
-            sid = rec.get("sessionId") or rec.get("session_id")
-            if sid:
-                session_id = str(sid)
-            ts = to_utc(rec.get("timestamp"))
-            if ts:
-                last_ts = ts
-            if rec.get("cwd"):
-                last_cwd = str(rec.get("cwd"))
-            if rec.get("gitBranch"):
-                last_branch = str(rec.get("gitBranch"))
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            record_type = record.get("type")
+            record_session_id = record.get("sessionId") or record.get("session_id")
+            if record_session_id:
+                session_id = str(record_session_id)
+            timestamp = to_utc(record.get("timestamp"))
+            if timestamp:
+                last_timestamp = timestamp
+            if record.get("cwd"):
+                last_cwd = str(record.get("cwd"))
+            if record.get("gitBranch"):
+                last_branch = str(record.get("gitBranch"))
 
-            def base(ts=ts) -> Row:
+            def base(timestamp=timestamp) -> Row:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
+                row.source_line = line_number
+                row.timestamp_utc = timestamp
                 row.session_id = session_id
                 row.project_path = relocated or last_cwd
                 row.git_branch = last_branch
                 return row
 
             def state_row(text: str) -> Row:
-                row = base(ts or last_ts)
+                row = base(timestamp or last_timestamp)
                 row.turn_type = "system"
                 row.text = compact(text)
                 return row
 
-            if not header_done and rtype in TRANSCRIPT_TYPES:
+            if not header_done and record_type in TRANSCRIPT_TYPES:
                 header_done = True
                 row = base()
                 row.turn_type = "system"
                 row.text = "subagent %s of %s" % (
-                    rec.get("agentId") or file_agent_id,
+                    record.get("agentId") or file_agent_id,
                     session_id,
                 )
                 yield row
 
-            entrypoint = rec.get("entrypoint")
+            entrypoint = record.get("entrypoint")
             if isinstance(entrypoint, str) and entrypoint and entrypoint != surface:
                 yield state_row(
                     "session surface: %s -> %s" % (surface, entrypoint)
@@ -1258,7 +1273,7 @@ class ClaudeCodeParser(Parser):
                     else "session surface: " + entrypoint
                 )
                 surface = entrypoint
-            origin = self._origin_text(rec, pre) if rtype in TRANSCRIPT_TYPES else ""
+            origin = self._origin_text(record, prescan) if record_type in TRANSCRIPT_TYPES else ""
             if origin and (session_id, origin) not in seen_origin:
                 seen_origin.add((session_id, origin))
                 yield state_row(origin)
@@ -1267,50 +1282,55 @@ class ClaudeCodeParser(Parser):
                     # replayed here, so the session is synced as well.
                     yield state_row(TELEPORT_SYNCED)
 
-            mode = rec.get("permissionMode") if rtype in ("user", "permission-mode") else None
+            mode = (
+                record.get("permissionMode") if record_type in ("user", "permission-mode") else None
+            )
             if isinstance(mode, str) and mode and modes.get(session_id) != mode:
                 old = modes.get(session_id)
                 modes[session_id] = mode
                 yield state_row(
                     "permission mode: %s -> %s" % (old, mode) if old else "permission mode: " + mode
                 )
-            if rtype == "assistant":
-                model_row = self._model_row(rec, base, models, session_id)
+            if record_type == "assistant":
+                model_row = self._model_row(record, base, models, session_id)
                 if model_row is not None:
                     yield model_row
 
-            if rtype == "user":
-                yield from self._user(rec, base, artifact, opts, not task_done)
+            if record_type == "user":
+                yield from self._user(record, base, artifact, opts, not task_done)
                 task_done = True
-            elif rtype == "assistant":
-                yield from self._assistant(rec, base, opts)
-            elif rtype == "system":
+            elif record_type == "assistant":
+                yield from self._assistant(record, base, opts)
+            elif record_type == "system":
                 row = base()
                 row.turn_type = "system"
-                subtype = str(rec.get("subtype") or "system")
-                detail = text_of(rec.get("content"))
+                subtype = str(record.get("subtype") or "system")
+                detail = text_of(record.get("content"))
                 if subtype == "turn_duration":
-                    detail = "%s ms, %s messages" % (rec.get("durationMs"), rec.get("messageCount"))
+                    detail = "%s ms, %s messages" % (
+                        record.get("durationMs"),
+                        record.get("messageCount"),
+                    )
                 elif subtype == "scheduled_task_fire":
                     row.text = compact(
                         "scheduled task fired: %s cron=%s"
-                        % (self._val(rec, "taskId"), self._val(rec, "cron"))
+                        % (self._val(record, "taskId"), self._val(record, "cron"))
                     )
                     yield row
                     continue
                 elif not detail:
-                    rest = {k: v for k, v in rec.items() if k not in SYSTEM_ENVELOPE}
+                    rest = {k: value for k, value in record.items() if k not in SYSTEM_ENVELOPE}
                     detail = compact_json(rest) if rest else ""
                 row.text = compact("%s: %s" % (subtype, detail) if detail else subtype)
                 yield row
-            elif rtype == "attachment":
-                row = self._attachment(rec, base)
+            elif record_type == "attachment":
+                row = self._attachment(record, base)
                 if row is not None:
                     yield row
-                scratch = self._scratchpad(rec)
+                scratch = self._scratchpad(record)
                 if scratch and (session_id, scratch) not in seen_scratch:
                     seen_scratch.add((session_id, scratch))
-                    if n <= pre.remote_last:
+                    if line_number <= prescan.remote_last:
                         # A teleport replays the cloud session's records
                         # before the local process writes its own, so this
                         # environment is the cloud machine's: its scratchpad
@@ -1325,60 +1345,67 @@ class ClaudeCodeParser(Parser):
                     )
                     row.project_path = scratch
                     yield row
-            elif rtype == "continued-in":
+            elif record_type == "continued-in":
                 yield state_row(
-                    "session continued in: %s" % (rec.get("continuedInSessionId") or "-")
+                    "session continued in: %s" % (record.get("continuedInSessionId") or "-")
                 )
-            elif rtype == "bridge-session":
+            elif record_type == "bridge-session":
                 yield from self._bridge(
-                    rec,
-                    n,
+                    record,
+                    line_number,
                     state_row,
                     session_id,
                     bridges,
                     seen_sync,
-                    pre.bridge_urls,
-                    pre.bridge_lines,
+                    prescan.bridge_urls,
+                    prescan.bridge_lines,
                 )
-            elif rtype in TITLE_FIELDS:
-                title = str(rec.get(TITLE_FIELDS[rtype]) or "")
+            elif record_type in TITLE_FIELDS:
+                title = str(record.get(TITLE_FIELDS[record_type]) or "")
                 if title and (session_id, title) not in seen_title:
                     seen_title.add((session_id, title))
                     yield state_row("session title: " + title)
-            elif rtype == "relocated":
-                new_cwd = str(rec.get("relocatedCwd") or "")
+            elif record_type == "relocated":
+                new_cwd = str(record.get("relocatedCwd") or "")
                 if new_cwd:
                     relocated = new_cwd
                     yield state_row("cwd changed: " + new_cwd)
-            elif rtype == "pr-link":
-                url = str(rec.get("prUrl") or rec.get("prNumber") or "")
+            elif record_type == "pr-link":
+                url = str(record.get("prUrl") or record.get("prNumber") or "")
                 if (session_id, url) not in seen_pr:
                     seen_pr.add((session_id, url))
                     yield state_row("pr-link: " + url)
-            elif rtype == "queue-operation":
-                content = text_of(rec.get("content"))
-                lines = delivered.get(content) if rec.get("operation") == "enqueue" else None
+            elif record_type == "queue-operation":
+                content = text_of(record.get("content"))
+                lines = delivered.get(content) if record.get("operation") == "enqueue" else None
                 if lines:
-                    at = next((x for x in lines if x > n), lines[0])
-                    yield state_row("prompt queued: delivered at line %d" % at)
+                    delivered_at = next(
+                        (
+                            delivered_line
+                            for delivered_line in lines
+                            if delivered_line > line_number
+                        ),
+                        lines[0],
+                    )
+                    yield state_row("prompt queued: delivered at line %d" % delivered_at)
                     continue
-                yield state_row("queue %s: %s" % (rec.get("operation"), content))
+                yield state_row("queue %s: %s" % (record.get("operation"), content))
         yield from error_rows(self, artifact, errors, session_id)
 
     @staticmethod
-    def _model_row(rec, base, models: dict, session_id: str) -> Row | None:
+    def _model_row(record, base, models: dict, session_id: str) -> Row | None:
         """`model: <id>` at a session's first assistant record and
         `model: <old> -> <new>` when `message.model` changes."""
-        msg = rec.get("message")
-        model = str(msg.get("model") or "") if isinstance(msg, dict) else ""
-        if not model or model == "<synthetic>" or rec.get("isApiErrorMessage"):
+        message = record.get("message")
+        model = str(message.get("model") or "") if isinstance(message, dict) else ""
+        if not model or model == "<synthetic>" or record.get("isApiErrorMessage"):
             return None
         old = models.get(session_id)
         if old == model:
             return None
         models[session_id] = model
         text = "model: %s -> %s" % (old, model) if old else "model: " + model
-        requested = rec.get("requestedModel")
+        requested = record.get("requestedModel")
         if requested not in (None, "") and str(requested) != model:
             text += " requested=%s" % requested
         row = base()
@@ -1389,7 +1416,7 @@ class ClaudeCodeParser(Parser):
 
     @staticmethod
     def _bridge(
-        rec, n: int, state_row, session_id: str, bridges, seen_sync, urls, lines
+        record, line_number: int, state_row, session_id: str, bridges, seen_sync, urls, lines
     ) -> Iterator[Row]:
         """The rows of a `bridge-session` record: `remote control: bridge
         session ...` when the bridge id or sequence number changes, and the
@@ -1401,37 +1428,59 @@ class ClaudeCodeParser(Parser):
         the next `bridge-session` record of another id (a detach counts),
         the first at or after the line is taken, else the nearest before,
         else `-`, so a second bridge never takes the first one's URL."""
-        bridge = rec.get("bridgeSessionId")
-        seq = rec.get("lastSequenceNum")
-        if bridges.get(session_id) != (bridge, seq):
-            bridges[session_id] = (bridge, seq)
+        bridge = record.get("bridgeSessionId")
+        sequence = record.get("lastSequenceNum")
+        if bridges.get(session_id) != (bridge, sequence):
+            bridges[session_id] = (bridge, sequence)
             yield state_row(
                 "remote control: bridge session %s lastSequenceNum=%s"
-                % (bridge or "none", "-" if seq in (None, "") else seq)
+                % (bridge or "none", "-" if sequence in (None, "") else sequence)
             )
         if bridge and (session_id, bridge) not in seen_sync:
             seen_sync.add((session_id, bridge))
-            start = max((x for x, b in lines if x < n and b != bridge), default=0)
-            end = min((x for x, b in lines if x > n and b != bridge), default=None)
-            after = [u for x, u in urls if x >= n and (end is None or x < end)]
-            before = [u for x, u in urls if start < x < n]
+            start = max(
+                (
+                    other_line
+                    for other_line, other_bridge in lines
+                    if other_line < line_number and other_bridge != bridge
+                ),
+                default=0,
+            )
+            end = min(
+                (
+                    other_line
+                    for other_line, other_bridge in lines
+                    if other_line > line_number and other_bridge != bridge
+                ),
+                default=None,
+            )
+            after = [
+                status_url
+                for other_line, status_url in urls
+                if other_line >= line_number and (end is None or other_line < end)
+            ]
+            before = [
+                status_url for other_line, status_url in urls if start < other_line < line_number
+            ]
             url = after[0] if after else (before[-1] if before else "-")
             yield state_row("%s remote control bridge %s url %s" % (SYNCED_PREFIX, bridge, url))
 
     @staticmethod
-    def _scratchpad(rec) -> str:
+    def _scratchpad(record) -> str:
         """An `environment` attachment's `snapshot.scratchpadDirectory`."""
-        att = rec.get("attachment")
-        if not isinstance(att, dict) or att.get("type") != "environment":
+        attachment = record.get("attachment")
+        if not isinstance(attachment, dict) or attachment.get("type") != "environment":
             return ""
-        snap = att.get("snapshot")
-        path = snap.get("scratchpadDirectory") if isinstance(snap, dict) else None
+        snapshot = attachment.get("snapshot")
+        path = snapshot.get("scratchpadDirectory") if isinstance(snapshot, dict) else None
         return path if isinstance(path, str) else ""
 
-    def _user(self, rec, base, artifact: Artifact, opts: Options, is_task: bool) -> Iterator[Row]:
-        yield from self._user_blocks(rec, base, artifact, is_task)
-        source = rec.get("promptSource")
-        origin = rec.get("turnOrigin")
+    def _user(
+        self, record, base, artifact: Artifact, opts: Options, is_task: bool
+    ) -> Iterator[Row]:
+        yield from self._user_blocks(record, base, artifact, is_task)
+        source = record.get("promptSource")
+        origin = record.get("turnOrigin")
         source = "" if source is None else str(source)
         origin = "" if origin is None else str(origin)
         if source not in TYPED_SOURCES or origin not in HUMAN_ORIGINS:
@@ -1441,30 +1490,34 @@ class ClaudeCodeParser(Parser):
                 "prompt trigger: promptSource=%s turnOrigin=%s" % (source or "-", origin or "-")
             )
             yield row
-        decision = rec.get("permissionDecision")
-        denial = any(rec.get(k) not in (None, "") for k in DENIAL_KEYS)
+        decision = record.get("permissionDecision")
+        denial = any(record.get(k) not in (None, "") for k in DENIAL_KEYS)
         if decision is not None or denial:
-            yield self._permission_row(rec, decision, base)
+            yield self._permission_row(record, decision, base)
 
     @staticmethod
-    def _permission_row(rec, decision, base) -> Row:
+    def _permission_row(record, decision, base) -> Row:
         """The `system` row of a 2.1.295 `permissionDecision`."""
         row = base()
         row.turn_type = "system"
-        content = (rec.get("message") or {}).get("content")
+        content = (record.get("message") or {}).get("content")
         if isinstance(content, list):
             first = next(
-                (b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"),
+                (
+                    block
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "tool_result"
+                ),
                 None,
             )
             if first is not None:
                 row.tool_use_id = str(first.get("tool_use_id") or "")
         denial = "".join(
-            " %s=%s" % (k, setting_value(rec[k]))
+            " %s=%s" % (k, setting_value(record[k]))
             for k in DENIAL_KEYS
-            if rec.get(k) not in (None, "")
+            if record.get(k) not in (None, "")
         )
-        if decision is None and rec.get("toolDenialKind") not in (None, ""):
+        if decision is None and record.get("toolDenialKind") not in (None, ""):
             # 2.1.310 macOS: a `No` at the permission dialog (with or
             # without the Tab amendment) and a declined plan interrupt the
             # turn and write no decision record, only the denial kind.
@@ -1476,29 +1529,29 @@ class ClaudeCodeParser(Parser):
             row.text = compact("permission decision: " + compact_json(decision) + denial)
             return row
 
-        def val(key: str) -> str:
-            v = decision.get(key)
-            return "-" if v in (None, "") else str(v)
+        def field_text(key: str) -> str:
+            value = decision.get(key)
+            return "-" if value in (None, "") else str(value)
 
         text = "permission decision: %s source=%s reason=%s" % (
-            val("decision"),
-            val("source"),
-            val("reasonType"),
+            field_text("decision"),
+            field_text("source"),
+            field_text("reasonType"),
         )
         if set(decision) - {"decision", "source", "reasonType"}:
             text += " " + compact_json(decision)
         row.text = compact(text + denial)
         return row
 
-    def _user_blocks(self, rec, base, artifact: Artifact, is_task: bool) -> Iterator[Row]:
-        content = (rec.get("message") or {}).get("content")
-        origin = rec.get("origin") or {}
+    def _user_blocks(self, record, base, artifact: Artifact, is_task: bool) -> Iterator[Row]:
+        content = (record.get("message") or {}).get("content")
+        origin = record.get("origin") or {}
         kind = origin.get("kind") if isinstance(origin, dict) else None
-        if rec.get("isCompactSummary"):
+        if record.get("isCompactSummary"):
             record_label = "compaction summary"
         elif is_task:
             record_label = "subagent task"
-        elif rec.get("interruptedMessageId"):
+        elif record.get("interruptedMessageId"):
             record_label = "interrupted"
         else:
             record_label = ""
@@ -1508,7 +1561,7 @@ class ClaudeCodeParser(Parser):
                 record_label
                 or marker_label(text)
                 or ORIGIN_LABELS.get(str(kind), "")
-                or ("context" if rec.get("isMeta") else "")
+                or ("context" if record.get("isMeta") else "")
             )
             row = base()
             if label:
@@ -1525,16 +1578,24 @@ class ClaudeCodeParser(Parser):
         # 2.1.309 names the persisted output's file in `toolUseResult`; the
         # key belongs to the line's one tool call, so it is used only when
         # the line has one tool_result block.
-        tur = rec.get("toolUseResult")
-        saved = tur.get("persistedOutputPath") if isinstance(tur, dict) else None
-        results = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
+        tool_use_result = record.get("toolUseResult")
+        saved = (
+            tool_use_result.get("persistedOutputPath")
+            if isinstance(tool_use_result, dict)
+            else None
+        )
+        results = [
+            candidate
+            for candidate in content
+            if isinstance(candidate, dict) and candidate.get("type") == "tool_result"
+        ]
         if not isinstance(saved, str) or len(results) != 1:
             saved = ""
         for block in content:
             if not isinstance(block, dict):
                 continue
-            btype = block.get("type")
-            if btype == "tool_result":
+            block_type = block.get("type")
+            if block_type == "tool_result":
                 row = base()
                 row.turn_type = "tool_result"
                 row.tool_use_id = str(block.get("tool_use_id") or "")
@@ -1547,47 +1608,49 @@ class ClaudeCodeParser(Parser):
                     text = "[error] " + text
                 row.text = compact(text)
                 yield row
-            elif btype in ("text", "image"):
+            elif block_type in ("text", "image"):
                 yield text_row(text_of([block]))
 
-    def _assistant(self, rec, base, opts: Options) -> Iterator[Row]:
-        msg = rec.get("message") or {}
-        model = str(msg.get("model") or "")
-        content = msg.get("content")
-        if rec.get("isApiErrorMessage") or model == "<synthetic>":
+    def _assistant(self, record, base, opts: Options) -> Iterator[Row]:
+        message = record.get("message") or {}
+        model = str(message.get("model") or "")
+        content = message.get("content")
+        if record.get("isApiErrorMessage") or model == "<synthetic>":
             row = base()
             row.turn_type = "system"
             status = " ".join(
-                str(v) for v in (rec.get("apiErrorStatus"), rec.get("error")) if v not in (None, "")
+                str(value)
+                for value in (record.get("apiErrorStatus"), record.get("error"))
+                if value not in (None, "")
             )
             text = text_of(content)
             row.text = compact(
-                "api error: %s" % ": ".join(p for p in (status, text) if p),
+                "api error: %s" % ": ".join(part for part in (status, text) if part),
             )
             yield row
             return
-        wire = rec.get("wireToolInputs")
+        wire = record.get("wireToolInputs")
         blocks = (
             content if isinstance(content, list) else [{"type": "text", "text": text_of(content)}]
         )
         for block in blocks:
             if not isinstance(block, dict):
                 continue
-            btype = block.get("type")
-            if btype == "tool_use":
+            block_type = block.get("type")
+            if block_type == "tool_use":
                 row = base()
                 row.turn_type = "tool_use"
                 row.model = model
                 row.tool_name = str(block.get("name") or "")
                 row.tool_use_id = str(block.get("id") or "")
-                inp = block.get("input")
+                tool_input = block.get("input")
                 if row.tool_name == "Bash" and isinstance(wire, dict):
                     sent = wire.get(row.tool_use_id)
                     if isinstance(sent, dict) and sent.get("command"):
-                        inp = sent
-                row.text = compact(tool_summary(row.tool_name, inp))
+                        tool_input = sent
+                row.text = compact(tool_summary(row.tool_name, tool_input))
                 yield row
-            elif btype == "text":
+            elif block_type == "text":
                 text = block.get("text")
                 if not text:
                     continue
@@ -1596,8 +1659,8 @@ class ClaudeCodeParser(Parser):
                 row.model = model
                 row.text = compact(text)
                 yield row
-            elif btype in ("thinking", "redacted_thinking") and opts.include_thinking:
-                if btype == "thinking":
+            elif block_type in ("thinking", "redacted_thinking") and opts.include_thinking:
+                if block_type == "thinking":
                     text = block.get("thinking")
                     if not text:
                         continue
@@ -1610,17 +1673,17 @@ class ClaudeCodeParser(Parser):
                 yield row
 
     @staticmethod
-    def _attachment(rec, base) -> Row | None:
-        att = rec.get("attachment") or {}
-        if not isinstance(att, dict):
+    def _attachment(record, base) -> Row | None:
+        attachment = record.get("attachment") or {}
+        if not isinstance(attachment, dict):
             return None
-        atype = att.get("type")
-        if atype == "queued_command":
-            text = text_of(att.get("prompt"))
-            origin = att.get("origin") or {}
+        attachment_type = attachment.get("type")
+        if attachment_type == "queued_command":
+            text = text_of(attachment.get("prompt"))
+            origin = attachment.get("origin") or {}
             kind = origin.get("kind") if isinstance(origin, dict) else None
             row = base()
-            if kind == "human" and not att.get("isMeta"):
+            if kind == "human" and not attachment.get("isMeta"):
                 label = marker_label(text)
             else:
                 label = marker_label(text) or ORIGIN_LABELS.get(str(kind), "") or "queued command"
@@ -1631,17 +1694,17 @@ class ClaudeCodeParser(Parser):
                 row.turn_type = "user"
             row.text = compact(text)
             return row
-        if atype == "hook_system_message":
+        if attachment_type == "hook_system_message":
             row = base()
             row.turn_type = "system"
-            name = str(att.get("hookName") or att.get("hookEvent") or "")
-            body = text_of(att.get("content"))
-            row.text = compact("hook: %s" % ": ".join(p for p in (name, body) if p))
+            name = str(attachment.get("hookName") or attachment.get("hookEvent") or "")
+            body = text_of(attachment.get("content"))
+            row.text = compact("hook: %s" % ": ".join(part for part in (name, body) if part))
             return row
-        if atype == "edited_text_file":
+        if attachment_type == "edited_text_file":
             row = base()
             row.turn_type = "system"
-            row.text = compact("edited file: %s" % (att.get("filename") or ""))
+            row.text = compact("edited file: %s" % (attachment.get("filename") or ""))
             return row
         return None
 

@@ -151,15 +151,15 @@ _ACCOUNT_KEY = r'"([^"\\]+)"\s*:\s*\{\s*"chat"\s*:\s*\{'
 
 def chat_time(chat_id: str, fallback) -> str:
     """UTC timestamp of a `toUTCString()` chat id, else of `fallback`."""
-    for v in (chat_id, fallback):
-        if isinstance(v, str) and v:
+    for candidate in (chat_id, fallback):
+        if isinstance(candidate, str) and candidate:
             try:
-                return to_utc(parsedate_to_datetime(v).isoformat())
+                return to_utc(parsedate_to_datetime(candidate).isoformat())
             except (TypeError, ValueError, IndexError):
                 pass
-            ts = to_utc(v)
-            if ts:
-                return ts
+            timestamp = to_utc(candidate)
+            if timestamp:
+                return timestamp
     return ""
 
 
@@ -167,8 +167,10 @@ def recover_history(text: str) -> tuple[dict, str]:
     """Rebuild what can be read from a damaged history text: each chat whose
     key is a `toUTCString()` date, with the interactions that decode."""
     out: dict[str, dict] = {}
-    marks = [(m.start(), "account", m.group(1)) for m in re.finditer(_ACCOUNT_KEY, text)]
-    marks += [(m.end(), "chat", m.group(1)) for m in re.finditer(_DATE_KEY, text)]
+    marks = [
+        (found.start(), "account", found.group(1)) for found in re.finditer(_ACCOUNT_KEY, text)
+    ]
+    marks += [(found.end(), "chat", found.group(1)) for found in re.finditer(_DATE_KEY, text)]
     marks.sort()
     account = ""
     chats = 0
@@ -177,11 +179,15 @@ def recover_history(text: str) -> tuple[dict, str]:
             account = name
             continue
         end = marks[i + 1][0] if i + 1 < len(marks) else len(text)
-        m = re.compile(r'"interactions"\s*:\s*').search(text, pos, end)
+        match = re.compile(r'"interactions"\s*:\s*').search(text, pos, end)
         interactions = []
-        if m:
-            errs: list = []
-            interactions = [v for _, v in iter_array_at(text, m.end(), errs) if isinstance(v, dict)]
+        if match:
+            errors: list = []
+            interactions = [
+                value
+                for _, value in iter_array_at(text, match.end(), errors)
+                if isinstance(value, dict)
+            ]
         title = re.compile(r'"chatTitle"\s*:\s*("(?:[^"\\]|\\.)*")').search(text, pos, end)
         chat = {"id": name, "interactions": interactions}
         if title:
@@ -204,16 +210,16 @@ def _fs_path(uri) -> str:
     return ""
 
 
-def _confirmation_head(proc: dict) -> str:
+def _confirmation_head(process: dict) -> str:
     """First line of the permission row for a `confirmation` process step.
 
     A refusal completes the step with `Error('Command rejected')`, so it is
     saved as `state` `error` with that `error.message`; an approval never
     completes the step, so `pending` is an approval or an unanswered request.
     """
-    state = proc.get("state")
-    err = proc.get("error")
-    message = err.get("message") if isinstance(err, dict) else err
+    state = process.get("state")
+    error = process.get("error")
+    message = error.get("message") if isinstance(error, dict) else error
     message = setting_value(message) if message else ""
     if state == "error" and message == REJECTED:
         decision = "rejected"
@@ -228,8 +234,8 @@ def _confirmation_head(proc: dict) -> str:
         head += " state=%s" % setting_value(state)
     if message:
         head += " error=%s" % message
-    if proc.get("title"):
-        head += " title=%s" % setting_value(proc["title"])
+    if process.get("title"):
+        head += " title=%s" % setting_value(process["title"])
     return head
 
 
@@ -238,8 +244,8 @@ def _leaves(prefix: str, value) -> list[tuple[str, object]]:
     object is a leaf of its own."""
     if isinstance(value, dict) and value:
         out: list[tuple[str, object]] = []
-        for k, v in value.items():
-            out.extend(_leaves("%s.%s" % (prefix, k), v))
+        for k, child in value.items():
+            out.extend(_leaves("%s.%s" % (prefix, k), child))
         return out
     return [(prefix, value)]
 
@@ -253,20 +259,20 @@ def settings_entries(doc: dict) -> list[tuple[str, object]]:
         if key in doc:
             out.extend(_leaves(key, doc[key]))
     servers = doc.get(MCP_KEY)
-    for name, conf in servers.items() if isinstance(servers, dict) else ():
-        if isinstance(conf, dict):
+    for name, server in servers.items() if isinstance(servers, dict) else ():
+        if isinstance(server, dict):
             for field in MCP_FIELDS:
-                if field in conf:
-                    out.append(("%s.%s.%s" % (MCP_KEY, name, field), conf[field]))
+                if field in server:
+                    out.append(("%s.%s.%s" % (MCP_KEY, name, field), server[field]))
     return out
 
 
-def pref_entries(prefs) -> list[tuple[str, str, str, str]]:
+def pref_entries(preferences) -> list[tuple[str, str, str, str]]:
     """(kind, usage, model id, endpoint) for each entry of a
     `cody-model-preferences` value, the user's `selected` before the
     server's `defaults`."""
     out: list[tuple[str, str, str, str]] = []
-    for endpoint, entry in prefs.items() if isinstance(prefs, dict) else ():
+    for endpoint, entry in preferences.items() if isinstance(preferences, dict) else ():
         if not isinstance(entry, dict):
             continue
         for kind in ("selected", "defaults"):
@@ -277,9 +283,9 @@ def pref_entries(prefs) -> list[tuple[str, str, str, str]]:
     return out
 
 
-def _value(elem, tag: str) -> str:
+def _value(element, tag: str) -> str:
     """The `value` attribute of `elem`'s direct child `tag`, or ""."""
-    child = elem.find(tag)
+    child = element.find(tag)
     return (child.get("value") or "") if child is not None else ""
 
 
@@ -292,8 +298,8 @@ class CodyParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
         return any(
-            rx.search(rel)
-            for rx in (STATE_DB_RX, JETBRAINS_RX, JETBRAINS_PREFS_RX, SETTINGS_RX, LEGACY_RX)
+            pattern.search(rel)
+            for pattern in (STATE_DB_RX, JETBRAINS_RX, JETBRAINS_PREFS_RX, SETTINGS_RX, LEGACY_RX)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
@@ -322,8 +328,8 @@ class CodyParser(Parser):
             line = 0
             state, problems = read_item(artifact.disk_path, ITEM_KEY)
             if state is None:
-                for p in problems:
-                    yield self._system(artifact, "parser: " + p, line)
+                for problem in problems:
+                    yield self._system(artifact, "parser: " + problem, line)
                 return
             if isinstance(state, str):  # value did not parse; read_item noted it
                 history = recover_history(state)[0]
@@ -336,8 +342,8 @@ class CodyParser(Parser):
         if isinstance(state, dict):
             source = "%s %s" % (artifact.rel, PREFS_KEY)
             yield from self._prefs_rows(artifact, state.get(PREFS_KEY), source, line)
-        for p in problems:
-            yield self._system(artifact, "parser: " + p, line)
+        for problem in problems:
+            yield self._system(artifact, "parser: " + problem, line)
 
     def _settings_rows(self, artifact: Artifact) -> Iterator[Row]:
         """`permission setting:` rows from an editor's `User/settings.json`."""
@@ -354,7 +360,7 @@ class CodyParser(Parser):
             if b'"cody.' in raw:
                 yield self._system(artifact, "parser: settings.json is not a JSON object", 1)
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         for key, value in settings_entries(doc):
             row = self._system(
                 artifact,
@@ -364,31 +370,31 @@ class CodyParser(Parser):
                 ),
                 1,
             )
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             yield row
 
     def _prefs_file_rows(self, artifact: Artifact) -> Iterator[Row]:
         """`model setting:` rows from `JetBrains-globalState/cody-model-preferences`."""
         text = read_text(artifact.disk_path)
         try:
-            prefs = json.loads(text) if text is not None else None
+            preferences = json.loads(text) if text is not None else None
         except ValueError:
-            prefs = None
-        if not isinstance(prefs, dict):
+            preferences = None
+        if not isinstance(preferences, dict):
             yield self._system(artifact, "parser: %s is not a JSON object" % PREFS_KEY, 1)
             return
-        yield from self._prefs_rows(artifact, prefs, artifact.rel, 1)
+        yield from self._prefs_rows(artifact, preferences, artifact.rel, 1)
 
-    def _prefs_rows(self, artifact: Artifact, prefs, source: str, line: int) -> Iterator[Row]:
-        ts = file_mtime(artifact)
-        for kind, usage, model, endpoint in pref_entries(prefs):
+    def _prefs_rows(self, artifact: Artifact, preferences, source: str, line: int) -> Iterator[Row]:
+        timestamp = file_mtime(artifact)
+        for kind, usage, model, endpoint in pref_entries(preferences):
             row = self._system(
                 artifact,
                 "model setting: %s.%s=%s endpoint=%s (from %s, file mtime)"
                 % (kind, usage, model, endpoint, source),
                 line,
             )
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.model = model
             yield row
 
@@ -400,26 +406,26 @@ class CodyParser(Parser):
         account = ""
         chats = 0
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                for event, elem in ET.iterparse(fh, events=("start", "end")):
+            with open(artifact.disk_path, "rb") as handle:
+                for event, element in ET.iterparse(handle, events=("start", "end")):
                     if event == "start":
-                        stack.append(elem.tag)
-                        if elem.tag == "AccountData":
+                        stack.append(element.tag)
+                        if element.tag == "AccountData":
                             account = ""
                         continue
                     stack.pop()
-                    if elem.tag == "accountId" and stack and stack[-1] == "AccountData":
-                        account = elem.get("value") or ""
-                    elif elem.tag == "AccountData":
+                    if element.tag == "accountId" and stack and stack[-1] == "AccountData":
+                        account = element.get("value") or ""
+                    elif element.tag == "AccountData":
                         account = ""
-                    elif elem.tag == "chat":
+                    elif element.tag == "chat":
                         chats += 1
-                        yield from self._legacy_chat(artifact, elem, account, project)
-                        elem.clear()
-        except (OSError, ET.ParseError) as e:
+                        yield from self._legacy_chat(artifact, element, account, project)
+                        element.clear()
+        except (OSError, ET.ParseError) as error:
             row = self._system(
                 artifact,
-                "parser: cody_history.xml did not parse; read %d chat(s) (%s)" % (chats, e),
+                "parser: cody_history.xml did not parse; read %d chat(s) (%s)" % (chats, error),
                 0,
             )
             row.project_path = project
@@ -431,53 +437,53 @@ class CodyParser(Parser):
         account = account or _value(chat, "accountId")
         model = ""
         llm = chat.find("llm")
-        for m in llm.iter("model") if llm is not None else ():
-            if m.get("value"):
-                model = m.get("value") or ""
+        for model_element in llm.iter("model") if llm is not None else ():
+            if model_element.get("value"):
+                model = model_element.get("value") or ""
                 break
         model = model or _value(chat, "model")
         holder = chat.find("messages")
         messages = list(holder.iter("message")) if holder is not None else []
-        ts = chat_time(updated, None)
+        timestamp = chat_time(updated, None)
 
-        def row(turn: str, text: str, model_id: str = "") -> Row:
-            r = self.base_row(artifact)
-            r.timestamp_utc = ts
-            r.session_id = updated or internal
-            r.project_path = project
-            r.source_line = 0
-            r.turn_type = turn
-            r.model = model_id
-            r.text = compact(text)
-            return r
+        def make_row(turn: str, text: str, model_id: str = "") -> Row:
+            new_row = self.base_row(artifact)
+            new_row.timestamp_utc = timestamp
+            new_row.session_id = updated or internal
+            new_row.project_path = project
+            new_row.source_line = 0
+            new_row.turn_type = turn
+            new_row.model = model_id
+            new_row.text = compact(text)
+            return new_row
 
-        yield row(
+        yield make_row(
             "system",
             "chat: %s | account=%s | messages=%d (legacy JetBrains history)"
             % (internal, account or "-", len(messages)),
         )
         model_shown = False
-        for m in messages:
-            speaker, text = _value(m, "speaker"), _value(m, "text")
+        for message in messages:
+            speaker, text = _value(message, "speaker"), _value(message, "text")
             if speaker == "ASSISTANT":
                 if model and not model_shown:
                     model_shown = True
-                    yield row("system", "model: " + model, model)
+                    yield make_row("system", "model: " + model, model)
                 if text:
-                    yield row("assistant", text, model)
+                    yield make_row("assistant", text, model)
             elif speaker == "HUMAN":
                 if text:
-                    yield row("user", text)
+                    yield make_row("user", text)
             elif text:
-                yield row("system", "message speaker=%s: %s" % (speaker or "-", text))
+                yield make_row("system", "message speaker=%s: %s" % (speaker or "-", text))
 
     @staticmethod
     def _decode(text: str, problems: list[str]):
         try:
             return json.loads(text)
-        except ValueError as e:
+        except ValueError as error:
             history, problem = recover_history(text)
-            problems.append("%s (%s)" % (problem, e))
+            problems.append("%s (%s)" % (problem, error))
             return history
 
     def _system(self, artifact: Artifact, text: str, line: int) -> Row:
@@ -491,142 +497,154 @@ class CodyParser(Parser):
         self, artifact: Artifact, history: dict, line: int, opts: Options
     ) -> Iterator[Row]:
         seen: dict[str, int] = {}
-        for acct in history.values():
-            chats = acct.get("chat") if isinstance(acct, dict) else None
-            for cid in chats if isinstance(chats, dict) else {}:
-                seen[cid] = seen.get(cid, 0) + 1
-        for account, acct in history.items():
-            chats = acct.get("chat") if isinstance(acct, dict) else None
+        for account_data in history.values():
+            chats = account_data.get("chat") if isinstance(account_data, dict) else None
+            for chat_id in chats if isinstance(chats, dict) else {}:
+                seen[chat_id] = seen.get(chat_id, 0) + 1
+        for account, account_data in history.items():
+            chats = account_data.get("chat") if isinstance(account_data, dict) else None
             if not isinstance(chats, dict):
                 continue
-            for cid, chat in chats.items():
+            for chat_id, chat in chats.items():
                 if not isinstance(chat, dict):
                     continue
-                sid = str(chat.get("id") or cid)
-                if seen.get(cid, 0) > 1:
-                    sid = "%s/%s" % (account, sid)
-                yield from self._chat_rows(artifact, account, sid, chat, line, opts)
+                session_id = str(chat.get("id") or chat_id)
+                if seen.get(chat_id, 0) > 1:
+                    session_id = "%s/%s" % (account, session_id)
+                yield from self._chat_rows(artifact, account, session_id, chat, line, opts)
 
     def _chat_rows(
-        self, artifact: Artifact, account: str, sid: str, chat: dict, line: int, opts: Options
+        self,
+        artifact: Artifact,
+        account: str,
+        session_id: str,
+        chat: dict,
+        line: int,
+        opts: Options,
     ) -> Iterator[Row]:
-        ts = chat_time(str(chat.get("id") or ""), chat.get("lastInteractionTimestamp"))
+        timestamp = chat_time(str(chat.get("id") or ""), chat.get("lastInteractionTimestamp"))
         interactions = chat.get("interactions")
         interactions = (
-            [i for i in interactions if isinstance(i, dict)]
+            [entry for entry in interactions if isinstance(entry, dict)]
             if isinstance(interactions, list)
             else []
         )
 
-        def row(turn: str, text, model: str = "", name: str = "", tid: str = "") -> Row:
-            r = self.base_row(artifact)
-            r.timestamp_utc = ts
-            r.session_id = sid
-            r.source_line = line
-            r.turn_type = turn
-            r.model = model
-            r.tool_name = name
-            r.tool_use_id = tid
-            r.text = compact(text)
-            return r
+        def make_row(turn: str, text, model: str = "", name: str = "", tool_id: str = "") -> Row:
+            new_row = self.base_row(artifact)
+            new_row.timestamp_utc = timestamp
+            new_row.session_id = session_id
+            new_row.source_line = line
+            new_row.turn_type = turn
+            new_row.model = model
+            new_row.tool_name = name
+            new_row.tool_use_id = tool_id
+            new_row.text = compact(text)
+            return new_row
 
-        yield row(
+        yield make_row(
             "system",
             "chat: %s | account=%s | interactions=%d"
             % (chat.get("chatTitle") or "", account, len(interactions)),
         )
         names: dict[str, str] = {}
         seen: dict = {}
-        for it in interactions:
+        for interaction in interactions:
             for key in ("humanMessage", "assistantMessage"):
-                msg = it.get(key)
-                if isinstance(msg, dict):
-                    yield from self._message_rows(msg, row, names, seen)
+                message = interaction.get(key)
+                if isinstance(message, dict):
+                    yield from self._message_rows(message, make_row, names, seen)
 
-    def _message_rows(self, msg: dict, row, names: dict[str, str], seen: dict) -> Iterator[Row]:
-        speaker = msg.get("speaker")
-        model = str(msg.get("model") or "") if speaker == "assistant" else ""
+    def _message_rows(
+        self, message: dict, make_row, names: dict[str, str], seen: dict
+    ) -> Iterator[Row]:
+        speaker = message.get("speaker")
+        model = str(message.get("model") or "") if speaker == "assistant" else ""
         # `seen` is per chat, so the tracked key needs no session id.
-        t = track_change("model", seen, "model", model)
-        if t:
-            yield row("system", t, model)
-        text = msg.get("text")
+        model_change = track_change("model", seen, "model", model)
+        if model_change:
+            yield make_row("system", model_change, model)
+        text = message.get("text")
         text = text if isinstance(text, str) else text_of(text)
-        parts = msg.get("content")
+        parts = message.get("content")
         if not isinstance(parts, list):
             parts = []
         if not text:
             text = "\n".join(
-                str(p.get("text"))
-                for p in parts
-                if isinstance(p, dict) and p.get("type") == "text" and p.get("text")
+                str(text_part.get("text"))
+                for text_part in parts
+                if isinstance(text_part, dict)
+                and text_part.get("type") == "text"
+                and text_part.get("text")
             )
         if speaker == "human":
             files = [
-                _fs_path(f.get("uri")) for f in msg.get("contextFiles") or [] if isinstance(f, dict)
+                _fs_path(entry.get("uri"))
+                for entry in message.get("contextFiles") or []
+                if isinstance(entry, dict)
             ]
-            files = [f for f in files if f]
+            files = [entry for entry in files if entry]
             if files:
                 text = "%s\n[context: %s]" % (text, ", ".join(files))
             if text:
-                yield row("user", text)
+                yield make_row("user", text)
         elif text:
-            yield row("assistant" if speaker == "assistant" else "system", text, model)
+            yield make_row("assistant" if speaker == "assistant" else "system", text, model)
         call_ids = set()
-        for p in parts:
-            if not isinstance(p, dict):
+        for part in parts:
+            if not isinstance(part, dict):
                 continue
-            if p.get("type") == "tool_call" and isinstance(p.get("tool_call"), dict):
-                tc = p["tool_call"]
-                tid, name = str(tc.get("id") or ""), str(tc.get("name") or "")
-                call_ids.add(tid)
-                names[tid] = name
-                args = tc.get("arguments")
-                yield row(
+            if part.get("type") == "tool_call" and isinstance(part.get("tool_call"), dict):
+                tool_call = part["tool_call"]
+                tool_id, name = str(tool_call.get("id") or ""), str(tool_call.get("name") or "")
+                call_ids.add(tool_id)
+                names[tool_id] = name
+                args = tool_call.get("arguments")
+                yield make_row(
                     "tool_use",
                     args if isinstance(args, str) else compact_json(args),
                     model,
                     name,
-                    tid,
+                    tool_id,
                 )
-            elif p.get("type") == "tool_result" and isinstance(p.get("tool_result"), dict):
-                tr = p["tool_result"]
-                tid = str(tr.get("id") or "")
-                c = tr.get("content")
-                yield row(
+            elif part.get("type") == "tool_result" and isinstance(part.get("tool_result"), dict):
+                tool_result = part["tool_result"]
+                tool_id = str(tool_result.get("id") or "")
+                content = tool_result.get("content")
+                yield make_row(
                     "tool_result",
-                    c
-                    if isinstance(c, str)
-                    else text_of(c)
-                    if isinstance(c, list)
-                    else compact_json(c),
+                    content
+                    if isinstance(content, str)
+                    else text_of(content)
+                    if isinstance(content, list)
+                    else compact_json(content),
                     model,
-                    names.get(tid, ""),
-                    tid,
+                    names.get(tool_id, ""),
+                    tool_id,
                 )
-        for proc in msg.get("processes") or []:
-            if isinstance(proc, dict) and proc.get("type") == "confirmation":
-                tid = str(proc.get("id") or "")
-                lines = [_confirmation_head(proc)] + [
-                    setting_value(proc[k]) for k in ("description", "content") if proc.get(k)
+        for process in message.get("processes") or []:
+            if isinstance(process, dict) and process.get("type") == "confirmation":
+                tool_id = str(process.get("id") or "")
+                lines = [_confirmation_head(process)] + [
+                    setting_value(process[k]) for k in ("description", "content") if process.get(k)
                 ]
-                yield row("system", "\n".join(lines), model, names.get(tid, ""), tid)
+                yield make_row("system", "\n".join(lines), model, names.get(tool_id, ""), tool_id)
                 continue
-            if not isinstance(proc, dict) or proc.get("type") != "tool":
+            if not isinstance(process, dict) or process.get("type") != "tool":
                 continue
-            tid = str(proc.get("id") or "")
-            if tid and tid in call_ids:
+            tool_id = str(process.get("id") or "")
+            if tool_id and tool_id in call_ids:
                 continue
-            name = str(proc.get("title") or "")
-            names[tid] = name
-            body = proc.get("content")
+            name = str(process.get("title") or "")
+            names[tool_id] = name
+            body = process.get("content")
             body = body if isinstance(body, str) else compact_json(body) if body is not None else ""
-            if proc.get("state") and proc.get("state") != "success":
-                body = "[%s] %s" % (proc["state"], body)
-            yield row("tool_use", body, model, name, tid)
-        err = msg.get("error")
-        if isinstance(err, dict) and err.get("message"):
-            yield row("system", "error: %s" % err["message"], model)
+            if process.get("state") and process.get("state") != "success":
+                body = "[%s] %s" % (process["state"], body)
+            yield make_row("tool_use", body, model, name, tool_id)
+        error = message.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            yield make_row("system", "error: %s" % error["message"], model)
 
 
 __all__ = ["CodyParser", "chat_time", "recover_history"]

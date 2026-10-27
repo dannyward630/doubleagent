@@ -127,14 +127,14 @@ TOOL_NAMES = {
 _WS = " \t\r\n"
 
 
-def _skip_ws(s: str, i: int) -> int:
-    while i < len(s) and s[i] in _WS:
-        i += 1
-    return i
+def _skip_ws(text: str, offset: int) -> int:
+    while offset < len(text) and text[offset] in _WS:
+        offset += 1
+    return offset
 
 
 def iter_array_at(
-    s: str, i: int, errors: list, end: list | None = None
+    text: str, offset: int, errors: list, end: list | None = None
 ) -> Iterator[tuple[int, object]]:
     """Yield (1-based position, element) from the JSON array starting at
     `s[i]`. A truncated or corrupt element stops the walk and is recorded in
@@ -144,93 +144,95 @@ def iter_array_at(
     the elements before it are kept. A structural error (not an array, no
     closing bracket) is (position, message, ""). When `end` is given, the
     index after the closing bracket is appended to it."""
-    dec = json.JSONDecoder()
-    i = _skip_ws(s, i)
-    if i >= len(s) or s[i] != "[":
+    decoder = json.JSONDecoder()
+    offset = _skip_ws(text, offset)
+    if offset >= len(text) or text[offset] != "[":
         errors.append((1, "not a JSON array", ""))
         return
-    i = _skip_ws(s, i + 1)
-    if i < len(s) and s[i] == "]":
+    offset = _skip_ws(text, offset + 1)
+    if offset < len(text) and text[offset] == "]":
         if end is not None:
-            end.append(i + 1)
+            end.append(offset + 1)
         return
-    n = 0
+    position = 0
     while True:
-        n += 1
-        start = _skip_ws(s, i)
+        position += 1
+        start = _skip_ws(text, offset)
         try:
-            value, i = dec.raw_decode(s, start)
-        except ValueError as e:
-            errors.append((n, "unparseable record %d (%s)" % (n, e), tail_text(s, start)))
+            value, offset = decoder.raw_decode(text, start)
+        except ValueError as error:
+            errors.append(
+                (position, "unparseable record %d (%s)" % (position, error), tail_text(text, start))
+            )
             return
-        yield n, value
-        i = _skip_ws(s, i)
-        if i < len(s) and s[i] == ",":
-            i += 1
+        yield position, value
+        offset = _skip_ws(text, offset)
+        if offset < len(text) and text[offset] == ",":
+            offset += 1
             continue
-        if i < len(s) and s[i] == "]":
+        if offset < len(text) and text[offset] == "]":
             if end is not None:
-                end.append(i + 1)
+                end.append(offset + 1)
             return
-        errors.append((n + 1, "array cut off after record %d" % n, ""))
+        errors.append((position + 1, "array cut off after record %d" % position, ""))
         return
 
 
 def read_text(path: Path) -> str | None:
     """File contents, or None for a symlink or an unreadable file."""
-    p = Path(path)
+    file_path = Path(path)
     try:
-        if p.is_symlink() or not p.is_file():
+        if file_path.is_symlink() or not file_path.is_file():
             return None
-        with open(p, "rb") as fh:
-            s = fh.read().decode("utf-8", errors="replace")
+        with open(file_path, "rb") as handle:
+            text = handle.read().decode("utf-8", errors="replace")
     except OSError:
         return None
-    return s[1:] if s.startswith("\ufeff") else s
+    return text[1:] if text.startswith("\ufeff") else text
 
 
 def iter_json_array(path: Path, errors: list) -> Iterator[tuple[int, object]]:
     """Elements of a file holding one JSON array, tolerant of truncation and
     of data appended after the array, both reported through `errors`."""
-    s = read_text(path)
-    if s is None:
+    text = read_text(path)
+    if text is None:
         errors.append((0, "unreadable", ""))
         return
     end: list = []
     count = 0
-    for n, v in iter_array_at(s, 0, errors, end):
-        count = n
-        yield n, v
-    if end and s[end[0] :].strip(_WS):
+    for position, value in iter_array_at(text, 0, errors, end):
+        count = position
+        yield position, value
+    if end and text[end[0] :].strip(_WS):
         errors.append((count + 1, "unparseable data after the JSON array", ""))
 
 
 def load_json(path: Path):
-    s = read_text(path)
-    if s is None:
+    text = read_text(path)
+    if text is None:
         return None
     try:
-        return json.loads(s)
+        return json.loads(text)
     except ValueError:
         return None
 
 
-def loads_or_none(s) -> dict | None:
-    if not isinstance(s, str) or not s.lstrip().startswith("{"):
+def loads_or_none(text) -> dict | None:
+    if not isinstance(text, str) or not text.lstrip().startswith("{"):
         return None
     try:
-        v = json.loads(s)
+        value = json.loads(text)
     except ValueError:
         return None
-    return v if isinstance(v, dict) else None
+    return value if isinstance(value, dict) else None
 
 
 def _join(*parts) -> str:
-    return " | ".join(str(p) for p in parts if p not in (None, "", [], {}))
+    return " | ".join(str(part) for part in parts if part not in (None, "", [], {}))
 
 
-def _fmt_counts(d: dict, keys) -> str:
-    return " ".join("%s=%s" % (k, d[k]) for k in keys if d.get(k) not in (None, ""))
+def _fmt_counts(record: dict, keys) -> str:
+    return " ".join("%s=%s" % (k, record[k]) for k in keys if record.get(k) not in (None, ""))
 
 
 # ---- task context ---------------------------------------------------------------
@@ -248,9 +250,9 @@ class TaskContext:
         self.default_model = str(item.get("modelId") or "")
         usage = metadata.get("model_usage")
         self.model_usage: list[tuple[float, str]] = sorted(
-            (float(u.get("ts") or 0), str(u.get("model_id") or ""))
-            for u in (usage if isinstance(usage, list) else [])
-            if isinstance(u, dict) and u.get("model_id")
+            (float(usage_entry.get("ts") or 0), str(usage_entry.get("model_id") or ""))
+            for usage_entry in (usage if isinstance(usage, list) else [])
+            if isinstance(usage_entry, dict) and usage_entry.get("model_id")
         )
         self.start = self._start(task_id, item, metadata)
 
@@ -260,20 +262,20 @@ class TaskContext:
             return to_utc(int(task_id))
         stamps = []
         for key in ("model_usage", "environment_history"):
-            for e in metadata.get(key) or []:
-                if isinstance(e, dict) and isinstance(e.get("ts"), (int, float)):
-                    stamps.append(e["ts"])
+            for entry in metadata.get(key) or []:
+                if isinstance(entry, dict) and isinstance(entry.get("ts"), (int, float)):
+                    stamps.append(entry["ts"])
         if stamps:
             return to_utc(min(stamps))
         return to_utc(item.get("ts"))
 
-    def model_at(self, ts) -> str:
+    def model_at(self, timestamp) -> str:
         if self.model_usage:
             chosen = self.model_usage[0][1]
-            if isinstance(ts, (int, float)):
-                for t, m in self.model_usage:
-                    if t <= ts:
-                        chosen = m
+            if isinstance(timestamp, (int, float)):
+                for used_at, model_id in self.model_usage:
+                    if used_at <= timestamp:
+                        chosen = model_id
             return chosen
         return self.default_model
 
@@ -302,10 +304,10 @@ class LegacyTaskParser(Parser):
 
     def cached_json(self, path: Path):
         try:
-            st = Path(path).lstat()
+            file_stat = Path(path).lstat()
         except OSError:
             return None
-        key = (str(path), st.st_mtime_ns, st.st_size)
+        key = (str(path), file_stat.st_mtime_ns, file_stat.st_size)
         if key not in self._cache:
             self._cache[key] = load_json(path)
         return self._cache[key]
@@ -313,9 +315,9 @@ class LegacyTaskParser(Parser):
     # Subclass hook: rows for one API history message. The default reads
     # native content blocks; PearAI's Roo fork overrides it for XML tool calls.
     def api_content_rows(
-        self, msg: dict, n: int, base_turn: str, include_thinking: bool
+        self, message: dict, position: int, base_turn: str, include_thinking: bool
     ) -> Iterator[tuple[str, str, str, str]]:
-        return content_rows(msg.get("content"), base_turn, include_thinking)
+        return content_rows(message.get("content"), base_turn, include_thinking)
 
     def task_match(self, artifact: Artifact):
         return self._task_rx.match(artifact.rel)
@@ -330,181 +332,194 @@ class LegacyTaskParser(Parser):
 
     def parse_task_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         name = artifact.disk_path.name.lower()
-        ctx = self.context(artifact)
+        context = self.context(artifact)
         if name == UI_FILE:
-            yield from self._parse_ui(artifact, ctx, opts)
+            yield from self._parse_ui(artifact, context, opts)
         elif name in API_FILES:
             if (artifact.disk_path.parent / UI_FILE).is_file():
                 return
-            yield from self._parse_api(artifact, ctx, opts)
+            yield from self._parse_api(artifact, context, opts)
         elif name == METADATA_FILE:
-            yield from self._parse_metadata(artifact, ctx, opts)
+            yield from self._parse_metadata(artifact, context, opts)
 
-    def _row(self, artifact: Artifact, ctx: TaskContext, n: int, ts: str, model: str = "") -> Row:
+    def _row(
+        self,
+        artifact: Artifact,
+        context: TaskContext,
+        position: int,
+        timestamp: str,
+        model: str = "",
+    ) -> Row:
         row = self.base_row(artifact)
-        row.source_line = n
-        row.timestamp_utc = ts
-        row.session_id = ctx.task_id
-        row.project_path = ctx.project_path
+        row.source_line = position
+        row.timestamp_utc = timestamp
+        row.session_id = context.task_id
+        row.project_path = context.project_path
         row.model = model
         return row
 
     # -- ui_messages.json
 
-    def _parse_ui(self, artifact: Artifact, ctx: TaskContext, opts: Options) -> Iterator[Row]:
+    def _parse_ui(self, artifact: Artifact, context: TaskContext, opts: Options) -> Iterator[Row]:
         errors: list = []
         model = ""
         last_tool_id = ""
-        for n, msg in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(msg, dict):
+        for position, message in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(message, dict):
                 continue
-            info = msg.get("modelInfo")
+            info = message.get("modelInfo")
             if isinstance(info, dict) and info.get("modelId"):
                 model = str(info["modelId"])
-            ts = msg.get("ts")
-            row_model = model or ctx.model_at(ts)
-            kind = msg.get("say") if msg.get("type") == "say" else msg.get("ask")
-            kind = str(kind or msg.get("say") or msg.get("ask") or msg.get("type") or "")
-            reasoning = msg.get("reasoning")
+            timestamp = message.get("ts")
+            row_model = model or context.model_at(timestamp)
+            kind = message.get("say") if message.get("type") == "say" else message.get("ask")
+            kind = str(
+                kind or message.get("say") or message.get("ask") or message.get("type") or ""
+            )
+            reasoning = message.get("reasoning")
             if (
                 opts.include_thinking
                 and isinstance(reasoning, str)
                 and reasoning
                 and kind != "reasoning"
             ):
-                row = self._row(artifact, ctx, n, to_utc(ts), row_model)
+                row = self._row(artifact, context, position, to_utc(timestamp), row_model)
                 row.turn_type = "thinking"
                 row.text = compact(reasoning)
                 yield row
-            mapped = map_ui(kind, msg, n == 1)
+            mapped = map_ui(kind, message, position == 1)
             if mapped is None:
                 continue
             turn, text, tool_name = mapped
             if turn == "thinking" and not opts.include_thinking:
                 continue
-            row = self._row(artifact, ctx, n, to_utc(ts), row_model)
+            row = self._row(artifact, context, position, to_utc(timestamp), row_model)
             row.turn_type = turn
             if turn == "tool_use":
-                last_tool_id = str(ts if ts is not None else n)
+                last_tool_id = str(timestamp if timestamp is not None else position)
                 row.tool_use_id = last_tool_id
                 row.tool_name = tool_name
             elif turn == "tool_result":
                 row.tool_use_id = last_tool_id
                 row.tool_name = tool_name
-            if msg.get("partial"):
+            if message.get("partial"):
                 text = text + " [partial]" if text else "[partial]"
             row.text = compact(text)
             yield row
-        yield from error_rows(self, artifact, errors, ctx.task_id, ctx.project_path)
+        yield from error_rows(self, artifact, errors, context.task_id, context.project_path)
 
     # -- api_conversation_history.json
 
-    def _parse_api(self, artifact: Artifact, ctx: TaskContext, opts: Options) -> Iterator[Row]:
+    def _parse_api(self, artifact: Artifact, context: TaskContext, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, msg in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(msg, dict):
+        for position, message in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(message, dict):
                 continue
-            ts = to_utc(msg.get("ts")) or ctx.start
-            model = ctx.model_at(msg.get("ts"))
-            role = msg.get("role")
+            timestamp = to_utc(message.get("ts")) or context.start
+            model = context.model_at(message.get("ts"))
+            role = message.get("role")
             base_turn = (
                 "user" if role == "user" else "assistant" if role == "assistant" else "system"
             )
-            if msg.get("type") == "reasoning":
+            if message.get("type") == "reasoning":
                 if opts.include_thinking:
-                    row = self._row(artifact, ctx, n, ts, model)
+                    row = self._row(artifact, context, position, timestamp, model)
                     row.turn_type = "thinking"
                     row.text = compact(
-                        text_of(msg.get("summary"))
-                        or msg.get("text")
-                        or msg.get("reasoning_content")
+                        text_of(message.get("summary"))
+                        or message.get("text")
+                        or message.get("reasoning_content")
                         or "[encrypted reasoning]",
                     )
                     yield row
                 continue
-            if msg.get("isSummary") or msg.get("isTruncationMarker"):
-                row = self._row(artifact, ctx, n, ts, model)
+            if message.get("isSummary") or message.get("isTruncationMarker"):
+                row = self._row(artifact, context, position, timestamp, model)
                 row.turn_type = "system"
-                label = "summary" if msg.get("isSummary") else "truncation marker"
-                row.text = compact("%s: %s" % (label, text_of(msg.get("content"))))
+                label = "summary" if message.get("isSummary") else "truncation marker"
+                row.text = compact("%s: %s" % (label, text_of(message.get("content"))))
                 yield row
                 continue
             if (
                 opts.include_thinking
-                and isinstance(msg.get("reasoning_content"), str)
-                and msg["reasoning_content"]
+                and isinstance(message.get("reasoning_content"), str)
+                and message["reasoning_content"]
             ):
-                row = self._row(artifact, ctx, n, ts, model)
+                row = self._row(artifact, context, position, timestamp, model)
                 row.turn_type = "thinking"
-                row.text = compact(msg["reasoning_content"])
+                row.text = compact(message["reasoning_content"])
                 yield row
-            for turn, text, name, tid in self.api_content_rows(
-                msg, n, base_turn, opts.include_thinking
+            for turn, text, name, tool_id in self.api_content_rows(
+                message, position, base_turn, opts.include_thinking
             ):
-                row = self._row(artifact, ctx, n, ts, model)
+                row = self._row(artifact, context, position, timestamp, model)
                 row.turn_type = turn
                 row.tool_name = name
-                row.tool_use_id = tid
+                row.tool_use_id = tool_id
                 row.text = compact(text)
                 yield row
-        yield from error_rows(self, artifact, errors, ctx.task_id, ctx.project_path)
+        yield from error_rows(self, artifact, errors, context.task_id, context.project_path)
 
     # -- task_metadata.json
 
-    def _parse_metadata(self, artifact: Artifact, ctx: TaskContext, opts: Options) -> Iterator[Row]:
+    def _parse_metadata(
+        self, artifact: Artifact, context: TaskContext, opts: Options
+    ) -> Iterator[Row]:
         data = load_json(artifact.disk_path)
         if not isinstance(data, dict):
             yield from error_rows(
                 self,
                 artifact,
                 [(0, "task_metadata.json is not a JSON object", "")],
-                ctx.task_id,
-                ctx.project_path,
+                context.task_id,
+                context.project_path,
             )
             return
         events = []
         seen = set()
-        for n, e in enumerate(data.get("files_in_context") or [], 1):
-            if not isinstance(e, dict):
+        for position, entry in enumerate(data.get("files_in_context") or [], 1):
+            if not isinstance(entry, dict):
                 continue
-            for key in sorted(k for k in e if k.endswith("_date")):
-                ts = e.get(key)
-                if not isinstance(ts, (int, float)):
+            for key in sorted(k for k in entry if k.endswith("_date")):
+                timestamp = entry.get(key)
+                if not isinstance(timestamp, (int, float)):
                     continue
-                sig = (e.get("path"), key, ts)
-                if sig in seen:
+                signature = (entry.get("path"), key, timestamp)
+                if signature in seen:
                     continue
-                seen.add(sig)
+                seen.add(signature)
                 events.append(
                     (
-                        ts,
-                        n,
+                        timestamp,
+                        position,
                         "",
                         "file %s: %s (source=%s state=%s)"
                         % (
                             key[:-5],
-                            e.get("path") or "",
-                            e.get("record_source") or "",
-                            e.get("record_state") or "",
+                            entry.get("path") or "",
+                            entry.get("record_source") or "",
+                            entry.get("record_state") or "",
                         ),
                     )
                 )
-        for n, e in enumerate(data.get("model_usage") or [], 1):
-            if isinstance(e, dict):
+        for position, entry in enumerate(data.get("model_usage") or [], 1):
+            if isinstance(entry, dict):
                 # Text is decided after sorting: a model_usage entry becomes a
                 # `model:` row when the model changes and a `permission mode:`
                 # row when the plan/act mode changes.
-                events.append((e.get("ts") or 0, n, str(e.get("model_id") or ""), e))
-        for n, e in enumerate(data.get("environment_history") or [], 1):
-            if isinstance(e, dict):
+                events.append(
+                    (entry.get("ts") or 0, position, str(entry.get("model_id") or ""), entry)
+                )
+        for position, entry in enumerate(data.get("environment_history") or [], 1):
+            if isinstance(entry, dict):
                 events.append(
                     (
-                        e.get("ts") or 0,
-                        n,
+                        entry.get("ts") or 0,
+                        position,
                         "",
                         "environment: %s"
                         % _fmt_counts(
-                            e,
+                            entry,
                             (
                                 "os_name",
                                 "os_version",
@@ -516,35 +531,35 @@ class LegacyTaskParser(Parser):
                         ),
                     )
                 )
-        events.sort(key=lambda x: x[0] if isinstance(x[0], (int, float)) else 0)
+        events.sort(key=lambda event: event[0] if isinstance(event[0], (int, float)) else 0)
         models: dict = {}
         modes: dict = {}
-        for ts, n, model, text in events:
+        for timestamp, position, model, text in events:
             if isinstance(text, dict):
                 usage = text
                 texts = []
-                change = track_change("model", models, ctx.task_id, model)
+                change = track_change("model", models, context.task_id, model)
                 if change:
                     extra = _fmt_counts(usage, ("model_provider_id", "mode"))
                     texts.append("%s %s" % (change, extra) if extra else change)
                 mode = track_change(
-                    "permission mode", modes, ctx.task_id, str(usage.get("mode") or "")
+                    "permission mode", modes, context.task_id, str(usage.get("mode") or "")
                 )
                 if mode:
                     texts.append(mode)
             else:
                 texts = [text]
-            for t in texts:
-                row = self._row(artifact, ctx, n, to_utc(ts), model)
+            for event_text in texts:
+                row = self._row(artifact, context, position, to_utc(timestamp), model)
                 row.turn_type = "system"
-                row.text = compact(t)
+                row.text = compact(event_text)
                 yield row
 
     # -- task index entries
 
-    def history_row(self, artifact: Artifact, item: dict, n: int, opts: Options) -> Row:
+    def history_row(self, artifact: Artifact, item: dict, position: int, opts: Options) -> Row:
         row = self.base_row(artifact)
-        row.source_line = n
+        row.source_line = position
         row.timestamp_utc = to_utc(item.get("ts"))
         row.session_id = str(item.get("id") or "")
         row.project_path = str(item.get(self.PROJECT_KEY) or "")
@@ -571,41 +586,43 @@ class LegacyTaskParser(Parser):
         return row
 
 
-def map_ui(kind: str, msg: dict, first: bool) -> tuple[str, str, str] | None:
+def map_ui(kind: str, message: dict, first: bool) -> tuple[str, str, str] | None:
     """(turn_type, text, tool_name) for one ClineMessage, or None to skip."""
-    text = msg.get("text")
+    text = message.get("text")
     text = text if isinstance(text, str) else ("" if text is None else compact_json(text))
-    images = msg.get("images")
-    nimg = len(images) if isinstance(images, list) else 0
+    images = message.get("images")
+    image_count = len(images) if isinstance(images, list) else 0
     if kind in USER_KINDS or (kind == "text" and first):
-        if nimg:
-            text = _join(text, "[%d image(s)]" % nimg)
+        if image_count:
+            text = _join(text, "[%d image(s)]" % image_count)
         return ("user", text, "") if text else None
     if kind == "reasoning":
         return ("thinking", text, "") if text else None
     if kind in ASSISTANT_KINDS:
-        j = loads_or_none(text)
-        if j is not None:
-            opts = j.get("options") or j.get("suggest")
-            if isinstance(opts, list):
-                opts = "; ".join(
-                    o
-                    if isinstance(o, str)
-                    else str(o.get("answer") or compact_json(o))
-                    if isinstance(o, dict)
-                    else str(o)
-                    for o in opts
+        parsed = loads_or_none(text)
+        if parsed is not None:
+            choices = parsed.get("options") or parsed.get("suggest")
+            if isinstance(choices, list):
+                choices = "; ".join(
+                    choice
+                    if isinstance(choice, str)
+                    else str(choice.get("answer") or compact_json(choice))
+                    if isinstance(choice, dict)
+                    else str(choice)
+                    for choice in choices
                 )
-            text = _join(j.get("question") or j.get("response") or "", opts or "")
+            text = _join(parsed.get("question") or parsed.get("response") or "", choices or "")
         return ("assistant", text, "") if text else None
     if kind in TOOL_USE_KINDS:
         name, body = tool_use_text(kind, text)
         return ("tool_use", body, name) if body or name else None
     if kind in TOOL_RESULT_KINDS:
         if kind == "browser_action_result":
-            j = loads_or_none(text) or {}
+            parsed = loads_or_none(text) or {}
             text = _join(
-                j.get("currentUrl"), j.get("logs"), "[screenshot]" if j.get("screenshot") else ""
+                parsed.get("currentUrl"),
+                parsed.get("logs"),
+                "[screenshot]" if parsed.get("screenshot") else "",
             )
         name = {
             "command_output": "execute_command",
@@ -615,9 +632,9 @@ def map_ui(kind: str, msg: dict, first: bool) -> tuple[str, str, str] | None:
         }.get(kind, "")
         return ("tool_result", text, name) if text else None
     if kind in ("api_req_started", "api_req_finished", "api_req_deleted"):
-        j = loads_or_none(text) or {}
+        parsed = loads_or_none(text) or {}
         detail = _fmt_counts(
-            j,
+            parsed,
             (
                 "tokensIn",
                 "tokensOut",
@@ -631,51 +648,59 @@ def map_ui(kind: str, msg: dict, first: bool) -> tuple[str, str, str] | None:
         )
         return ("system", "%s: %s" % (kind, detail) if detail else kind, "")
     if kind == "condense_context":
-        cc = msg.get("contextCondense") or {}
-        if isinstance(cc, dict) and cc:
-            detail = _fmt_counts(cc, ("prevContextTokens", "newContextTokens", "cost"))
-            return ("system", "condense_context: %s | %s" % (detail, cc.get("summary") or ""), "")
-    if kind == "checkpoint_created" and msg.get("lastCheckpointHash"):
-        return ("system", "checkpoint_created: %s" % msg["lastCheckpointHash"], "")
+        condense = message.get("contextCondense") or {}
+        if isinstance(condense, dict) and condense:
+            detail = _fmt_counts(condense, ("prevContextTokens", "newContextTokens", "cost"))
+            return (
+                "system",
+                "condense_context: %s | %s" % (detail, condense.get("summary") or ""),
+                "",
+            )
+    if kind == "checkpoint_created" and message.get("lastCheckpointHash"):
+        return ("system", "checkpoint_created: %s" % message["lastCheckpointHash"], "")
     return ("system", "%s: %s" % (kind, text) if text else kind, "")
 
 
 def tool_use_text(kind: str, text: str) -> tuple[str, str]:
     if kind == "tool":
-        j = loads_or_none(text)
-        if j is None:
+        parsed = loads_or_none(text)
+        if parsed is None:
             return "tool", text
-        batch = j.get("batchFiles")
+        batch = parsed.get("batchFiles")
         paths = (
-            "; ".join(str(b.get("path")) for b in batch if isinstance(b, dict))
+            "; ".join(str(entry.get("path")) for entry in batch if isinstance(entry, dict))
             if isinstance(batch, list)
             else ""
         )
         body = _join(
-            j.get("path"),
+            parsed.get("path"),
             paths,
-            j.get("regex"),
-            j.get("filePattern"),
-            j.get("query"),
-            j.get("mode"),
-            j.get("reason"),
-            j.get("diff") or j.get("content"),
+            parsed.get("regex"),
+            parsed.get("filePattern"),
+            parsed.get("query"),
+            parsed.get("mode"),
+            parsed.get("reason"),
+            parsed.get("diff") or parsed.get("content"),
         )
-        return str(j.get("tool") or "tool"), body
+        return str(parsed.get("tool") or "tool"), body
     if kind == "use_mcp_server":
-        j = loads_or_none(text)
-        if j is None:
+        parsed = loads_or_none(text)
+        if parsed is None:
             return "use_mcp_server", text
-        name = j.get("toolName") or j.get("type") or "use_mcp_server"
-        return str(name), _join(j.get("serverName"), j.get("uri"), j.get("arguments"))
+        name = parsed.get("toolName") or parsed.get("type") or "use_mcp_server"
+        return str(name), _join(
+            parsed.get("serverName"), parsed.get("uri"), parsed.get("arguments")
+        )
     if kind == "browser_action":
-        j = loads_or_none(text)
-        if j is not None:
-            return "browser_action", _join(j.get("action"), j.get("coordinate"), j.get("text"))
+        parsed = loads_or_none(text)
+        if parsed is not None:
+            return "browser_action", _join(
+                parsed.get("action"), parsed.get("coordinate"), parsed.get("text")
+            )
     if kind == "use_subagents":
-        j = loads_or_none(text)
-        if j is not None and isinstance(j.get("prompts"), list):
-            return "use_subagents", " ; ".join(str(p) for p in j["prompts"])
+        parsed = loads_or_none(text)
+        if parsed is not None and isinstance(parsed.get("prompts"), list):
+            return "use_subagents", " ; ".join(str(prompt) for prompt in parsed["prompts"])
     return TOOL_NAMES.get(kind, kind), text
 
 
@@ -693,40 +718,49 @@ def content_rows(
         if content not in (None, ""):
             yield base_turn, compact_json(content), "", ""
         return
-    for b in content:
-        if isinstance(b, str):
-            if b:
-                yield base_turn, b, "", ""
+    for block in content:
+        if isinstance(block, str):
+            if block:
+                yield base_turn, block, "", ""
             continue
-        if not isinstance(b, dict):
+        if not isinstance(block, dict):
             continue
-        t = b.get("type")
-        if t == "text":
-            if b.get("text"):
-                yield base_turn, str(b["text"]), "", ""
-        elif t == "tool_use":
-            name = str(b.get("name") or "")
+        block_type = block.get("type")
+        if block_type == "text":
+            if block.get("text"):
+                yield base_turn, str(block["text"]), "", ""
+        elif block_type == "tool_use":
+            name = str(block.get("name") or "")
             yield (
                 "tool_use",
-                tool_summary(name, b.get("input")),
+                tool_summary(name, block.get("input")),
                 name,
-                str(b.get("id") or b.get("call_id") or ""),
+                str(block.get("id") or block.get("call_id") or ""),
             )
-        elif t == "tool_result":
-            c = b.get("content")
-            body = text_of(c) if isinstance(c, (str, list)) or c is None else compact_json(c)
-            if b.get("is_error"):
+        elif block_type == "tool_result":
+            result_content = block.get("content")
+            body = (
+                text_of(result_content)
+                if isinstance(result_content, (str, list)) or result_content is None
+                else compact_json(result_content)
+            )
+            if block.get("is_error"):
                 body = "[error] " + body
-            yield "tool_result", body, str(b.get("name") or ""), str(b.get("tool_use_id") or "")
-        elif t in ("thinking", "reasoning"):
+            yield (
+                "tool_result",
+                body,
+                str(block.get("name") or ""),
+                str(block.get("tool_use_id") or ""),
+            )
+        elif block_type in ("thinking", "reasoning"):
             if include_thinking:
-                yield "thinking", str(b.get("thinking") or b.get("text") or ""), "", ""
-        elif t == "redacted_thinking":
+                yield "thinking", str(block.get("thinking") or block.get("text") or ""), "", ""
+        elif block_type == "redacted_thinking":
             if include_thinking:
                 yield "thinking", "[redacted thinking]", "", ""
-        elif t == "image":
+        elif block_type == "image":
             yield base_turn, "[image]", "", ""
-        elif t == "file":
-            yield base_turn, _join("[file]", b.get("path")), "", ""
-        elif t:
-            yield base_turn, "[%s]" % t, "", ""
+        elif block_type == "file":
+            yield base_turn, _join("[file]", block.get("path")), "", ""
+        elif block_type:
+            yield base_turn, "[%s]" % block_type, "", ""

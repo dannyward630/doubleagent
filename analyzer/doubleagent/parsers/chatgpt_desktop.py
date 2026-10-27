@@ -63,11 +63,11 @@ DB_REL = ".codex/sqlite/codex-dev.db"
 TABLE = "local_thread_catalog"
 
 
-def _value(v) -> str:
+def _value(value) -> str:
     """A column as row text: `-` for NULL or empty."""
-    if v is None or v == "":
+    if value is None or value == "":
         return "-"
-    return str(v)
+    return str(value)
 
 
 class ChatGptDesktopParser(Parser):
@@ -82,11 +82,11 @@ class ChatGptDesktopParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         return artifact.rel == DB_REL
 
-    def _system(self, artifact: Artifact, session_id: str, ts: str, text: str) -> Row:
+    def _system(self, artifact: Artifact, session_id: str, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
         row.turn_type = "system"
         row.session_id = session_id
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.text = text
         return row
 
@@ -95,38 +95,40 @@ class ChatGptDesktopParser(Parser):
             yield self._system(artifact, "", "", "parser: not a SQLite database")
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                if TABLE not in table_names(con):
+            with open_copy(artifact.disk_path) as connection:
+                if TABLE not in table_names(connection):
                     yield self._system(artifact, "", "", "parser: no %s table" % TABLE)
                     return
                 records = [
-                    dict(r)
-                    for r in con.execute("select rowid as _rowid, * from %s order by rowid" % TABLE)
+                    dict(row)
+                    for row in connection.execute(
+                        "select rowid as _rowid, * from %s order by rowid" % TABLE
+                    )
                 ]
-        except sqlite3.DatabaseError as e:
-            yield self._system(artifact, "", "", "parser: SQLite error: %s" % e)
+        except sqlite3.DatabaseError as error:
+            yield self._system(artifact, "", "", "parser: SQLite error: %s" % error)
             return
-        for rec in records:
-            if rec.get("source_kind") != "chatgpt":
+        for record in records:
+            if record.get("source_kind") != "chatgpt":
                 continue
-            yield from self._conversation_rows(artifact, rec)
+            yield from self._conversation_rows(artifact, record)
 
-    def _conversation_rows(self, artifact: Artifact, rec: dict) -> Iterator[Row]:
-        thread_id = str(rec.get("thread_id") or "")
-        created = to_utc(rec.get("source_created_at"))
-        updated = to_utc(rec.get("source_updated_at"))
-        ts = updated or created
+    def _conversation_rows(self, artifact: Artifact, record: dict) -> Iterator[Row]:
+        thread_id = str(record.get("thread_id") or "")
+        created = to_utc(record.get("source_created_at"))
+        updated = to_utc(record.get("source_updated_at"))
+        timestamp = updated or created
         yield self._system(
             artifact,
             thread_id,
-            ts,
+            timestamp,
             "account conversation: %s origin=%s created=%s updated=%s host=%s (from %s %s)"
             % (
-                _value(rec.get("display_title")),
-                _value(rec.get("conversation_origin")),
+                _value(record.get("display_title")),
+                _value(record.get("conversation_origin")),
                 created or "-",
                 updated or "-",
-                _value(rec.get("host_id")),
+                _value(record.get("host_id")),
                 DB_REL,
                 TABLE,
             ),
@@ -134,14 +136,14 @@ class ChatGptDesktopParser(Parser):
         yield self._system(
             artifact,
             thread_id,
-            ts,
+            timestamp,
             "session origin: remote chatgpt.com conversation %s"
             " (listed at sign-in; its transcript is server-side)" % _value(thread_id),
         )
         yield self._system(
             artifact,
             thread_id,
-            ts,
+            timestamp,
             "session synced: chatgpt.com holds conversation %s, no local transcript"
             % _value(thread_id),
         )

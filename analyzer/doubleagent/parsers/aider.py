@@ -126,13 +126,13 @@ DECISION = {"y": "yes", "n": "no", "a": "all", "s": "skip all", "d": "no, don't 
 
 
 def _lines(path: Path) -> Iterator[tuple[int, str]]:
-    with open(path, "rb") as fh:
-        for n, raw in enumerate(fh, 1):
-            yield n, line_text(raw)
+    with open(path, "rb") as handle:
+        for line_number, raw in enumerate(handle, 1):
+            yield line_number, line_text(raw)
 
 
-def _norm(s: str) -> str:
-    return " ".join(s.split())
+def _norm(text: str) -> str:
+    return " ".join(text.split())
 
 
 def sibling(original: str, name: str) -> str:
@@ -154,24 +154,26 @@ def read_input_history(path: Path, errors: list | None = None) -> list[tuple[int
     A non-blank line that is neither a timestamp nor a `+` entry line is
     appended to `errors` as (line, message, the line less its terminator)."""
     out: list[list] = []
-    for n, line in _lines(path):
-        m = INPUT_TS_RX.match(line)
-        if m:
-            out.append([n, m.group(1), []])
+    for line_number, line in _lines(path):
+        match = INPUT_TS_RX.match(line)
+        if match:
+            out.append([line_number, match.group(1), []])
         elif line.startswith("+"):
             if not out:
-                out.append([n, "", []])
+                out.append([line_number, "", []])
             out[-1][2].append(line[1:])
         elif line.strip() and errors is not None:
-            errors.append((n, "unparseable line (not a FileHistory line)", line))
-    return [(e[0], e[1], "\n".join(e[2])) for e in out]
+            errors.append((line_number, "unparseable line (not a FileHistory line)", line))
+    return [(entry[0], entry[1], "\n".join(entry[2])) for entry in out]
 
 
 def read_headers(path: Path) -> list[str]:
     """Session header timestamps of a chat history, in file order."""
     if not path.is_file() or path.is_symlink():
         return []
-    return [m.group(1) for _, line in _lines(path) for m in [HEADER_RX.match(line)] if m]
+    return [
+        match.group(1) for _, line in _lines(path) for match in [HEADER_RX.match(line)] if match
+    ]
 
 
 class AiderParser(Parser):
@@ -183,8 +185,8 @@ class AiderParser(Parser):
         return bool(FILE_RX.match(artifact.rel))
 
     def secondary(self, artifact: Artifact) -> bool:
-        m = FILE_RX.match(artifact.rel)
-        return bool(m) and m.group(1) != CHAT
+        match = FILE_RX.match(artifact.rel)
+        return bool(match) and match.group(1) != CHAT
 
     def base_row(self, artifact: Artifact) -> Row:
         row = Row(
@@ -197,9 +199,9 @@ class AiderParser(Parser):
         return row
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = FILE_RX.match(artifact.rel)
-        assert m is not None  # wants() accepted only matching paths
-        kind = m.group(1)
+        match = FILE_RX.match(artifact.rel)
+        assert match is not None  # wants() accepted only matching paths
+        kind = match.group(1)
         if kind == CHAT:
             yield from self._parse_chat(artifact, opts)
         elif kind == INPUT:
@@ -213,10 +215,10 @@ class AiderParser(Parser):
         headers = sorted(read_headers(artifact.disk_path.parent / CHAT))
         chat = sibling(artifact.original, CHAT)
 
-        def lookup(ts: str) -> str:
-            if not ts or not headers:
+        def lookup(timestamp: str) -> str:
+            if not timestamp or not headers:
                 return ""
-            i = bisect.bisect_right(headers, ts.replace("T", " ")[:19])
+            i = bisect.bisect_right(headers, timestamp.replace("T", " ")[:19])
             return "%s#%s" % (chat, headers[i - 1]) if i else ""
 
         return lookup
@@ -226,10 +228,10 @@ class AiderParser(Parser):
     def _parse_chat(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         headers = read_headers(artifact.disk_path)
         inputs = []
-        inp = artifact.disk_path.parent / INPUT
-        if inp.is_file() and not inp.is_symlink():
+        input_path = artifact.disk_path.parent / INPUT
+        if input_path.is_file() and not input_path.is_symlink():
             try:
-                inputs = [e for e in read_input_history(inp) if e[1]]
+                inputs = [entry for entry in read_input_history(input_path) if entry[1]]
             except OSError:
                 inputs = []
         next_input = 0
@@ -237,53 +239,55 @@ class AiderParser(Parser):
         session_id = ""
         header = ""
         next_header = ""
-        n_header = 0
-        ts = ""
+        header_count = 0
+        timestamp = ""
         kind = ""
-        buf: list[str] = []
-        nums: list[int] = []
+        buffer: list[str] = []
+        line_numbers: list[int] = []
         start = 0
 
         def flush() -> Iterator[Row]:
-            nonlocal next_input, ts
-            text = "\n".join(buf).strip()
+            nonlocal next_input, timestamp
+            text = "\n".join(buffer).strip()
             if not text or not kind:
                 return
             if kind == "user" and header:
                 for j in range(next_input, len(inputs)):
-                    ets = inputs[j][1]
-                    if ets[:19] < header:
+                    entry_timestamp = inputs[j][1]
+                    if entry_timestamp[:19] < header:
                         continue
-                    if next_header and ets[:19] >= next_header:
+                    if next_header and entry_timestamp[:19] >= next_header:
                         break
                     if _norm(inputs[j][2]) == _norm(text):
-                        ts = to_utc(ets)
+                        timestamp = to_utc(entry_timestamp)
                         next_input = j + 1
                         break
             row = self.base_row(artifact)
             row.source_line = start
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.session_id = session_id
             row.turn_type = {"user": "user", "tool": "tool_result", "assistant": "assistant"}[kind]
             row.text = compact(text)
             yield row
             if kind == "tool":
-                yield from self._tool_system_rows(artifact, buf, nums, ts, session_id, models)
+                yield from self._tool_system_rows(
+                    artifact, buffer, line_numbers, timestamp, session_id, models
+                )
 
-        for n, line in _lines(artifact.disk_path):
-            m = HEADER_RX.match(line)
-            if m:
+        for line_number, line in _lines(artifact.disk_path):
+            match = HEADER_RX.match(line)
+            if match:
                 yield from flush()
-                kind, buf, nums = "", [], []
+                kind, buffer, line_numbers = "", [], []
                 models = {}
-                header = m.group(1)
-                n_header += 1
-                next_header = headers[n_header] if n_header < len(headers) else ""
-                ts = to_utc(header)
+                header = match.group(1)
+                header_count += 1
+                next_header = headers[header_count] if header_count < len(headers) else ""
+                timestamp = to_utc(header)
                 session_id = "%s#%s" % (artifact.original, header)
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
+                row.source_line = line_number
+                row.timestamp_utc = timestamp
                 row.session_id = session_id
                 row.turn_type = "system"
                 row.text = "aider chat started at %s (local time)" % header
@@ -297,66 +301,74 @@ class AiderParser(Parser):
                 new, content = "assistant", line
             if new != kind:
                 yield from flush()
-                kind, buf, nums, start = new, [], [], n
-            if not any(b.strip() for b in buf):
-                start = n
-            buf.append(content.rstrip() if new != "assistant" else content)
-            nums.append(n)
+                kind, buffer, line_numbers, start = new, [], [], line_number
+            if not any(buffered.strip() for buffered in buffer):
+                start = line_number
+            buffer.append(content.rstrip() if new != "assistant" else content)
+            line_numbers.append(line_number)
         yield from flush()
 
     def _tool_system_rows(
         self,
         artifact: Artifact,
         lines: list[str],
-        nums: list[int],
-        ts: str,
+        line_numbers: list[int],
+        timestamp: str,
         session_id: str,
         models: dict[str, str],
     ) -> Iterator[Row]:
         """The `model:` and `permission decision:` rows of one blockquote run,
         after its `tool_result` row. `models` holds the session's main, editor
         and weak model so far and is updated in place."""
-        announced = any(MAIN_MODEL_RX.match(ln) for ln in lines)
-        for n, line in zip(nums, lines, strict=True):
+        announced = any(MAIN_MODEL_RX.match(text_line) for text_line in lines)
+        for line_number, line in zip(line_numbers, lines, strict=True):
             changes: list[tuple[str, str, str, bool]] = []
-            m = MAIN_MODEL_RX.match(line) if announced else None
-            if m:
-                changes.append(("main", m.group(1), "", True))
+            match = MAIN_MODEL_RX.match(line) if announced else None
+            if match:
+                changes.append(("main", match.group(1), "", True))
                 if line.startswith("Model: "):
                     # no separate weak model: the weak model is the main model,
                     # a row only when it replaces a separate one
-                    changes.append(("weak", m.group(1), " (weak model)", False))
-            elif announced and (m := EDITOR_MODEL_RX.match(line)):
-                changes.append(("editor", m.group(1), " (editor model)", True))
-            elif announced and (m := WEAK_MODEL_RX.match(line)):
-                changes.append(("weak", m.group(1), " (weak model)", True))
+                    changes.append(("weak", match.group(1), " (weak model)", False))
+            elif announced and (match := EDITOR_MODEL_RX.match(line)):
+                changes.append(("editor", match.group(1), " (editor model)", True))
+            elif announced and (match := WEAK_MODEL_RX.match(line)):
+                changes.append(("weak", match.group(1), " (weak model)", True))
             for role, name, label, first in changes:
                 old = models.get(role, "")
                 models[role] = name
                 if old != name and (old or first):
                     text = "model: %s%s" % ("%s -> %s" % (old, name) if old else name, label)
-                    yield self._system_row(artifact, n, ts, session_id, text, model=name)
+                    yield self._system_row(
+                        artifact, line_number, timestamp, session_id, text, model=name
+                    )
             if changes:
                 continue
-            m = CONFIRM_RX.match(line)
-            if m:
-                answer = m.group("answer")
+            match = CONFIRM_RX.match(line)
+            if match:
+                answer = match.group("answer")
                 text = "permission decision: %s (%s) answer=%s default=%s" % (
                     DECISION[answer],
-                    m.group("question"),
+                    match.group("question"),
                     answer,
-                    m.group("default"),
+                    match.group("default"),
                 )
                 if answer in "yn":
                     text += "; may be automatic (--yes-always)"
-                yield self._system_row(artifact, n, ts, session_id, text)
+                yield self._system_row(artifact, line_number, timestamp, session_id, text)
 
     def _system_row(
-        self, artifact: Artifact, line: int, ts: str, session_id: str, text: str, model: str = ""
+        self,
+        artifact: Artifact,
+        line: int,
+        timestamp: str,
+        session_id: str,
+        text: str,
+        model: str = "",
     ) -> Row:
         row = self.base_row(artifact)
         row.source_line = line
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.session_id = session_id
         row.turn_type = "system"
         row.model = model
@@ -368,11 +380,11 @@ class AiderParser(Parser):
     def _parse_input(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
         session_for = self._session_for(artifact)
-        for n, ts, text in read_input_history(artifact.disk_path, errors):
+        for line_number, timestamp, text in read_input_history(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(ts)
-            row.session_id = session_for(ts)
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(timestamp)
+            row.session_id = session_for(timestamp)
             row.turn_type = "user"
             row.text = compact(text)
             yield row
@@ -385,55 +397,67 @@ class AiderParser(Parser):
         session_for = self._session_for(artifact)
         block: dict | None = None
 
-        def emit(b: dict | None) -> Iterator[Row]:
-            if b is None:
+        def emit(current_block: dict | None) -> Iterator[Row]:
+            if current_block is None:
                 return
             row = self.base_row(artifact)
-            row.source_line = b["line"]
-            row.timestamp_utc = to_utc(b["ts"])
-            row.session_id = session_for(b["ts"])
-            if b["kind"] == "LLM RESPONSE":
-                text = "\n".join(_strip_role(ln, "ASSISTANT") for ln in b["lines"]).strip()
+            row.source_line = current_block["line"]
+            row.timestamp_utc = to_utc(current_block["ts"])
+            row.session_id = session_for(current_block["ts"])
+            if current_block["kind"] == "LLM RESPONSE":
+                text = "\n".join(
+                    _strip_role(response_line, "ASSISTANT")
+                    for response_line in current_block["lines"]
+                ).strip()
                 if not text:
                     return
                 row.turn_type = "assistant"
                 row.text = compact(text)
                 yield row
                 return
-            msgs: list[tuple[str, list[str]]] = []
-            for ln in b["lines"]:
-                if ln == "-------":
-                    msgs.append(("", []))
-                elif msgs:
-                    role, body = msgs[-1]
+            messages: list[tuple[str, list[str]]] = []
+            for text_line in current_block["lines"]:
+                if text_line == "-------":
+                    messages.append(("", []))
+                elif messages:
+                    role, body = messages[-1]
                     if not role:
-                        role = ln.split(" ", 1)[0]
-                        msgs[-1] = (role, body)
-                    body.append(_strip_role(ln, role))
+                        role = text_line.split(" ", 1)[0]
+                        messages[-1] = (role, body)
+                    body.append(_strip_role(text_line, role))
             counts: dict[str, int] = {}
             last_user = ""
-            for role, body in msgs:
+            for role, body in messages:
                 counts[role] = counts.get(role, 0) + 1
                 if role == "USER":
                     last_user = "\n".join(body)
             row.turn_type = "system"
             row.text = compact(
                 "TO LLM: %d message(s) (%s); last user message: %s"
-                % (len(msgs), ", ".join("%s %d" % kv for kv in counts.items()), last_user),
+                % (
+                    len(messages),
+                    ", ".join("%s %d" % role_count for role_count in counts.items()),
+                    last_user,
+                ),
             )
             yield row
 
-        for n, line in _lines(artifact.disk_path):
-            m = LLM_RX.match(line)
-            if m:
+        for line_number, line in _lines(artifact.disk_path):
+            match = LLM_RX.match(line)
+            if match:
                 yield from emit(block)
-                block = {"kind": m.group(1), "ts": m.group(2), "line": n, "lines": []}
+                block = {
+                    "kind": match.group(1),
+                    "ts": match.group(2),
+                    "line": line_number,
+                    "lines": [],
+                }
             elif block is not None:
                 block["lines"].append(line)
             elif line.strip():
                 errors.append(
                     (
-                        n,
+                        line_number,
                         "unparseable line (text before the first TO LLM / LLM RESPONSE marker)",
                         line,
                     )

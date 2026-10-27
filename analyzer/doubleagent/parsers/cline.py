@@ -402,19 +402,19 @@ class ClineParser(LegacyTaskParser):
             return
         root = artifact.disk_path.parent.parent
         errors: list = []
-        for n, (key, item) in enumerate(items.items(), 1):
+        for position, (key, item) in enumerate(items.items(), 1):
             if not isinstance(item, dict):
-                errors.append((n, "sync-queue item %s is not a JSON object" % key, ""))
+                errors.append((position, "sync-queue item %s is not a JSON object" % key, ""))
                 continue
 
             def value(k: str, item: dict = item) -> str:
-                v = item.get(k)
-                return str(v) if v not in (None, "") else "-"
+                found = item.get(k)
+                return str(found) if found not in (None, "") else "-"
 
             task_id = str(item.get("taskId") or "")
             history = self.history_item(root, root, task_id) if task_id else None
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = position
             row.turn_type = "system"
             row.session_id = task_id
             row.project_path = str((history or {}).get(self.PROJECT_KEY) or "")
@@ -431,34 +431,43 @@ class ClineParser(LegacyTaskParser):
 
     def _parse_task_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, item in iter_json_array(artifact.disk_path, errors):
+        for position, item in iter_json_array(artifact.disk_path, errors):
             if isinstance(item, dict):
-                yield self.history_row(artifact, item, n, opts)
+                yield self.history_row(artifact, item, position, opts)
         yield from error_rows(self, artifact, errors)
 
     # -- SDK sessions
 
     def _session_start(
-        self, m: dict, artifact: Artifact, n: int, opts: Options, ts_key: str, label: str, keys
+        self,
+        session: dict,
+        artifact: Artifact,
+        position: int,
+        opts: Options,
+        time_key: str,
+        label: str,
+        keys,
     ) -> Row:
         row = self.base_row(artifact)
-        row.source_line = n
-        row.timestamp_utc = to_utc(m.get(ts_key))
-        row.session_id = str(m.get("session_id") or "")
-        row.project_path = str(m.get("cwd") or m.get("workspace_root") or "")
-        row.model = str(m.get("model") or "")
+        row.source_line = position
+        row.timestamp_utc = to_utc(session.get(time_key))
+        row.session_id = str(session.get("session_id") or "")
+        row.project_path = str(session.get("cwd") or session.get("workspace_root") or "")
+        row.model = str(session.get("model") or "")
         row.turn_type = "system"
-        detail = " ".join("%s=%s" % (k, m[k]) for k in keys if m.get(k) not in (None, ""))
+        detail = " ".join(
+            "%s=%s" % (k, session[k]) for k in keys if session.get(k) not in (None, "")
+        )
         row.text = compact("%s: %s" % (label, detail))
         return row
 
-    def _model_start(self, start: Row, m: dict) -> Iterator[Row]:
+    def _model_start(self, start: Row, session: dict) -> Iterator[Row]:
         """`model: <model> provider=<provider>` after a session start or index
         row, with its time, session and project."""
-        model = str(m.get("model") or "")
+        model = str(session.get("model") or "")
         if not model:
             return
-        provider = str(m.get("provider") or "")
+        provider = str(session.get("provider") or "")
         yield replace(
             start,
             model=model,
@@ -476,8 +485,8 @@ class ClineParser(LegacyTaskParser):
         storage = storage if isinstance(storage, dict) else {}
 
         def value(key: str, default: str = "-") -> str:
-            v = storage.get(key)
-            return str(v) if v not in (None, "") else default
+            found = storage.get(key)
+            return str(found) if found not in (None, "") else default
 
         user = blob.get("userDistinctId")
         text = (
@@ -513,8 +522,8 @@ class ClineParser(LegacyTaskParser):
     END_KEYS = ("status", "exit_code")
 
     def _parse_manifest(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = load_json(artifact.disk_path)
-        if not isinstance(m, dict):
+        manifest = load_json(artifact.disk_path)
+        if not isinstance(manifest, dict):
             yield from error_rows(
                 self,
                 artifact,
@@ -522,21 +531,21 @@ class ClineParser(LegacyTaskParser):
                 artifact.disk_path.parent.name,
             )
             return
-        m = dict(m)
-        m.setdefault("session_id", artifact.disk_path.parent.name)
-        meta = m.get("metadata")
+        manifest = dict(manifest)
+        manifest.setdefault("session_id", artifact.disk_path.parent.name)
+        meta = manifest.get("metadata")
         if isinstance(meta, dict) and meta.get("title"):
-            m["title"] = meta["title"]
-        _imported(m, meta)
+            manifest["title"] = meta["title"]
+        _imported(manifest, meta)
         start = self._session_start(
-            m, artifact, 0, opts, "started_at", "session start", self.START_KEYS
+            manifest, artifact, 0, opts, "started_at", "session start", self.START_KEYS
         )
         yield start
-        yield from self._model_start(start, m)
+        yield from self._model_start(start, manifest)
         yield from self._blob_upload(start, meta, artifact.disk_path.name + " metadata")
-        if m.get("ended_at"):
+        if manifest.get("ended_at"):
             yield self._session_start(
-                m, artifact, 0, opts, "ended_at", "session end", self.END_KEYS
+                manifest, artifact, 0, opts, "ended_at", "session end", self.END_KEYS
             )
 
     def _parse_messages(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -544,24 +553,24 @@ class ClineParser(LegacyTaskParser):
         manifest = load_json(artifact.disk_path.parent / (session_id + ".json"))
         manifest = manifest if isinstance(manifest, dict) else {}
         project = str(manifest.get("cwd") or manifest.get("workspace_root") or "")
-        s = read_text(artifact.disk_path)
+        raw_text = read_text(artifact.disk_path)
         errors: list = []
         payload = None
-        if s is None:
+        if raw_text is None:
             errors.append((0, "unreadable", ""))
         else:
             try:
-                payload = json.loads(s)
+                payload = json.loads(raw_text)
             except ValueError:
                 payload = None
         if isinstance(payload, dict):
             messages = enumerate(payload.get("messages") or [], 1)
             fallback = to_utc(manifest.get("started_at")) or to_utc(payload.get("updated_at"))
-        elif s is not None:
+        elif raw_text is not None:
             # Cut mid-write: walk the messages array as far as it parses.
-            m = MESSAGES_KEY_RX.search(s)
-            if m:
-                messages = iter_array_at(s, m.end(), errors)
+            match = MESSAGES_KEY_RX.search(raw_text)
+            if match:
+                messages = iter_array_at(raw_text, match.end(), errors)
             else:
                 errors.append((0, "messages file is not a JSON object", ""))
                 messages = iter(())
@@ -574,19 +583,19 @@ class ClineParser(LegacyTaskParser):
         seen: dict = {}
         if artifact.disk_path.name == session_id + ".messages.json" and manifest.get("model"):
             seen[session_id] = str(manifest["model"])
-        for n, msg in messages:
-            if not isinstance(msg, dict):
+        for position, message in messages:
+            if not isinstance(message, dict):
                 continue
-            ts = to_utc(msg.get("ts")) or fallback
-            fallback = ts
-            info = msg.get("modelInfo")
+            timestamp = to_utc(message.get("ts")) or fallback
+            fallback = timestamp
+            info = message.get("modelInfo")
             info = info if isinstance(info, dict) else {}
             model = str(info.get("id") or manifest.get("model") or "")
             change = track_change("model", seen, session_id, str(info.get("id") or ""))
             if change:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
+                row.source_line = position
+                row.timestamp_utc = timestamp
                 row.session_id = session_id
                 row.project_path = project
                 row.model = model
@@ -594,27 +603,27 @@ class ClineParser(LegacyTaskParser):
                 provider = str(info.get("provider") or "")
                 row.text = compact(change + (" provider=%s" % provider if provider else ""))
                 yield row
-            role = msg.get("role")
+            role = message.get("role")
             base_turn = (
                 "user" if role == "user" else "assistant" if role == "assistant" else "system"
             )
-            decisions = _decisions(msg.get("content"))
-            for turn, text, name, tid in content_rows(
-                msg.get("content"), base_turn, opts.include_thinking
+            decisions = _decisions(message.get("content"))
+            for turn, text, name, tool_id in content_rows(
+                message.get("content"), base_turn, opts.include_thinking
             ):
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
+                row.source_line = position
+                row.timestamp_utc = timestamp
                 row.session_id = session_id
                 row.project_path = project
                 row.model = model
                 row.turn_type = turn
                 row.tool_name = name
-                row.tool_use_id = tid
+                row.tool_use_id = tool_id
                 row.text = compact(text)
                 yield row
-                if turn == "tool_result" and tid in decisions:
-                    yield replace(row, turn_type="system", text=decisions.pop(tid))
+                if turn == "tool_result" and tool_id in decisions:
+                    yield replace(row, turn_type="system", text=decisions.pop(tool_id))
         yield from error_rows(self, artifact, errors, session_id, project)
 
     def _parse_sessions_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
@@ -623,32 +632,37 @@ class ClineParser(LegacyTaskParser):
             return
         sessions_dir = artifact.disk_path.parent.parent / "sessions"
         try:
-            with open_copy(artifact.disk_path) as con:
-                if "sessions" not in table_names(con):
+            with open_copy(artifact.disk_path) as connection:
+                if "sessions" not in table_names(connection):
                     return
-                rows = [dict(r) for r in con.execute("select rowid as _rowid, * from sessions")]
-        except Exception as e:  # noqa: BLE001 - a damaged database must not stop the timeline
-            yield from error_rows(self, artifact, [(0, "sessions.db unreadable (%s)" % e, "")])
+                rows = [
+                    dict(db_row)
+                    for db_row in connection.execute("select rowid as _rowid, * from sessions")
+                ]
+        except Exception as error:  # noqa: BLE001 - a damaged database must not stop the timeline
+            yield from error_rows(self, artifact, [(0, "sessions.db unreadable (%s)" % error, "")])
             return
-        for r in rows:
-            sid = str(r.get("session_id") or "")
-            if sid and (sessions_dir / sid / (sid + ".json")).is_file():
+        for session in rows:
+            session_id = str(session.get("session_id") or "")
+            if session_id and (sessions_dir / session_id / (session_id + ".json")).is_file():
                 continue
-            meta = load_json_text(r["metadata_json"]) if r.get("metadata_json") else None
+            meta = (
+                load_json_text(session["metadata_json"]) if session.get("metadata_json") else None
+            )
             if isinstance(meta, dict) and meta.get("title"):
-                r["title"] = meta["title"]
-            _imported(r, meta)
+                session["title"] = meta["title"]
+            _imported(session, meta)
             start = self._session_start(
-                r,
+                session,
                 artifact,
-                int(r.get("_rowid") or 0),
+                int(session.get("_rowid") or 0),
                 opts,
                 "started_at",
                 "session index",
                 (*self.START_KEYS, "ended_at", "exit_code"),
             )
             yield start
-            yield from self._model_start(start, r)
+            yield from self._model_start(start, session)
             yield from self._blob_upload(start, meta, "sessions.db sessions.metadata_json")
 
     # -- logs/hooks.jsonl (secondary)
@@ -659,25 +673,28 @@ class ClineParser(LegacyTaskParser):
         with the call id), `agent_end` an `assistant` row with the final
         reply, and every other line a `hook audit: <hookName> ...` row."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            ctx = _obj(rec.get("sessionContext"))
-            roots = rec.get("workspaceRoots")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            session_context = _obj(record.get("sessionContext"))
+            roots = record.get("workspaceRoots")
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("ts") or rec.get("timestamp"))
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("ts") or record.get("timestamp"))
             row.session_id = str(
-                ctx.get("rootSessionId") or rec.get("taskId") or rec.get("sessionId") or ""
+                session_context.get("rootSessionId")
+                or record.get("taskId")
+                or record.get("sessionId")
+                or ""
             )
             if isinstance(roots, list) and roots and isinstance(roots[0], str):
                 row.project_path = roots[0]
-            hook = str(rec.get("hookName") or "")
-            if not _hook_event(row, hook, rec):
+            hook = str(record.get("hookName") or "")
+            if not _hook_event(row, hook, record):
                 detail = "".join(
-                    " %s=%s" % (name, setting_value(rec[key]))
+                    " %s=%s" % (name, setting_value(record[key]))
                     for key, name in HOOK_KEYS
-                    if rec.get(key) not in (None, "")
+                    if record.get(key) not in (None, "")
                 )
-                error = _obj(rec.get("error"))
+                error = _obj(record.get("error"))
                 if error:
                     detail += " error=%s: %s" % (
                         _dash(error.get("name")),
@@ -690,11 +707,11 @@ class ClineParser(LegacyTaskParser):
 
     # -- standing settings and Cline Cloud state
 
-    def _settings_row(self, artifact: Artifact, ts: str, key: str, value) -> Row:
+    def _settings_row(self, artifact: Artifact, timestamp: str, key: str, value) -> Row:
         row = self.base_row(artifact)
         row.source_line = 1
         row.turn_type = "system"
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         row.text = compact(
             "permission setting: %s=%s (from %s, file mtime)"
             % (key, setting_value(value), artifact.rel)
@@ -717,24 +734,28 @@ class ClineParser(LegacyTaskParser):
         if doc is None:
             yield from error_rows(self, artifact, errors)
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         auto = _obj(doc.get("autoApprovalSettings"))
         for key in ("enabled", "maxRequests"):
             if key in auto:
-                yield self._settings_row(artifact, ts, "autoApprovalSettings." + key, auto[key])
+                yield self._settings_row(
+                    artifact, timestamp, "autoApprovalSettings." + key, auto[key]
+                )
         favorites = auto.get("favorites")
         for entry in favorites if isinstance(favorites, list) else []:
-            yield self._settings_row(artifact, ts, "autoApprovalSettings.favorites", entry)
+            yield self._settings_row(artifact, timestamp, "autoApprovalSettings.favorites", entry)
         for key, value in _obj(auto.get("actions")).items():
-            yield self._settings_row(artifact, ts, "autoApprovalSettings.actions." + key, value)
+            yield self._settings_row(
+                artifact, timestamp, "autoApprovalSettings.actions." + key, value
+            )
         if doc.get("mode") not in (None, ""):
-            yield self._settings_row(artifact, ts, "mode", doc["mode"])
+            yield self._settings_row(artifact, timestamp, "mode", doc["mode"])
         target = doc.get("cloudTaskTarget")
         if isinstance(target, dict):
             row = self.base_row(artifact)
             row.source_line = 1
             row.turn_type = "system"
-            row.timestamp_utc = ts
+            row.timestamp_utc = timestamp
             row.text = "cloud task target: target=%s repository_id=%s branch=%s (from %s, %s)" % (
                 _dash(target.get("target")),
                 _dash(target.get("repositoryId")),
@@ -744,27 +765,27 @@ class ClineParser(LegacyTaskParser):
             )
             yield row
         source = "%s cloudSessionStatuses, observedAt" % artifact.rel
-        for sid, status in _obj(doc.get("cloudSessionStatuses")).items():
+        for session_id, status in _obj(doc.get("cloudSessionStatuses")).items():
             status = _obj(status)
             yield from self._cloud_rows(
                 artifact,
-                str(sid),
+                str(session_id),
                 to_utc(status.get("observedAt")),
                 "status %s" % _dash(status.get("status")),
                 source,
             )
 
     def _cloud_rows(
-        self, artifact: Artifact, sid: str, ts: str, detail: str, source: str
+        self, artifact: Artifact, session_id: str, timestamp: str, detail: str, source: str
     ) -> Iterator[Row]:
         """The `session origin:` and `session synced:` rows of one Cline
         Cloud session, whose transcript is on the vendor's servers."""
         row = self.base_row(artifact)
         row.turn_type = "system"
-        row.timestamp_utc = ts
-        row.session_id = sid
+        row.timestamp_utc = timestamp
+        row.session_id = session_id
         row.text = "session origin: remote cline-cloud session %s %s (from %s)" % (
-            sid,
+            session_id,
             detail,
             source,
         )
@@ -772,7 +793,7 @@ class ClineParser(LegacyTaskParser):
         yield replace(
             row,
             text="session synced: cline-cloud holds session %s, no local transcript (from %s)"
-            % (sid, source),
+            % (session_id, source),
         )
 
     def _parse_pending_starts(self, artifact: Artifact) -> Iterator[Row]:
@@ -783,19 +804,19 @@ class ClineParser(LegacyTaskParser):
             message = "cloud pending-start file is not a JSON array"
             yield from error_rows(self, artifact, [(0, message, "")])
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         errors: list = []
-        for n, rec in enumerate(doc, 1):
-            if not isinstance(rec, dict) or not isinstance(rec.get("sessionId"), str):
-                errors.append((n, "pending-start record %d has no sessionId" % n, ""))
+        for position, record in enumerate(doc, 1):
+            if not isinstance(record, dict) or not isinstance(record.get("sessionId"), str):
+                errors.append((position, "pending-start record %d has no sessionId" % position, ""))
                 continue
             detail = "sandbox start pending account=%s endpoint=%s" % (
-                _dash(rec.get("account")),
-                _dash(rec.get("endpoint")),
+                _dash(record.get("account")),
+                _dash(record.get("endpoint")),
             )
             source = "%s, file mtime" % artifact.rel
-            for row in self._cloud_rows(artifact, rec["sessionId"], ts, detail, source):
-                row.source_line = n
+            for row in self._cloud_rows(artifact, record["sessionId"], timestamp, detail, source):
+                row.source_line = position
                 yield row
         yield from error_rows(self, artifact, errors)
 
@@ -806,18 +827,20 @@ class ClineParser(LegacyTaskParser):
         if doc is None:
             yield from error_rows(self, artifact, errors)
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         for key in ("toolAutoApprove", "planActMode"):
             if doc.get(key) not in (None, ""):
-                yield self._settings_row(artifact, ts, key, doc[key])
+                yield self._settings_row(artifact, timestamp, key, doc[key])
         for key in ("disabledTools", "disabledPlugins", "disabledAgentPlugins"):
             entries = doc.get(key)
             for entry in entries if isinstance(entries, list) else []:
-                yield self._settings_row(artifact, ts, key, entry)
+                yield self._settings_row(artifact, timestamp, key, entry)
         for name, tool in _obj(doc.get("tools")).items():
             tool = _obj(tool)
             if "enabled" in tool:
-                yield self._settings_row(artifact, ts, "tools.%s.enabled" % name, tool["enabled"])
+                yield self._settings_row(
+                    artifact, timestamp, "tools.%s.enabled" % name, tool["enabled"]
+                )
 
     def _parse_mcp_settings(self, artifact: Artifact) -> Iterator[Row]:
         """Each MCP server's `autoApprove` entries and `disabled` flag; the
@@ -826,34 +849,34 @@ class ClineParser(LegacyTaskParser):
         if doc is None:
             yield from error_rows(self, artifact, errors)
             return
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         for name, server in _obj(doc.get("mcpServers")).items():
             server = _obj(server)
             entries = server.get("autoApprove")
             for entry in entries if isinstance(entries, list) else []:
                 key = "mcpServers.%s.autoApprove" % name
-                yield self._settings_row(artifact, ts, key, entry)
+                yield self._settings_row(artifact, timestamp, key, entry)
             if isinstance(server.get("disabled"), bool):
                 key = "mcpServers.%s.disabled" % name
-                yield self._settings_row(artifact, ts, key, server["disabled"])
+                yield self._settings_row(artifact, timestamp, key, server["disabled"])
 
     # -- cache/user_input_history.jsonl
 
     def _parse_input_history(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
         entries = [
-            (n, rec["prompt"], rec.get("ts"))
-            for n, rec in iter_jsonl(artifact.disk_path, errors)
-            if isinstance(rec.get("prompt"), str) and rec["prompt"].strip()
+            (entry_line, record["prompt"], record.get("ts"))
+            for entry_line, record in iter_jsonl(artifact.disk_path, errors)
+            if isinstance(record.get("prompt"), str) and record["prompt"].strip()
         ]
-        for k, (n, prompt, ts) in enumerate(entries):
+        for k, (line_number, prompt, timestamp) in enumerate(entries):
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.turn_type = "user"
             # Every line carries the time of the file's last rewrite, the
             # newest prompt's own time only; a bad line makes that unsure.
-            if k == len(entries) - 1 and not errors and isinstance(ts, (int, float)):
-                row.timestamp_utc = to_utc(ts)
+            if k == len(entries) - 1 and not errors and isinstance(timestamp, (int, float)):
+                row.timestamp_utc = to_utc(timestamp)
             row.text = compact(prompt)
             yield row
         yield from error_rows(self, artifact, errors)
@@ -868,56 +891,62 @@ class ClineParser(LegacyTaskParser):
             return
         problem = ""
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 indexed = []
                 if "indexed_sessions" in tables:
                     indexed = [
-                        dict(r)
-                        for r in con.execute("select * from indexed_sessions order by rowid")
+                        dict(db_row)
+                        for db_row in connection.execute(
+                            "select * from indexed_sessions order by rowid"
+                        )
                     ]
                 docs = []
                 if "session_search" in tables:
                     try:
                         docs = [
-                            dict(r)
-                            for r in con.execute(
+                            dict(db_row)
+                            for db_row in connection.execute(
                                 "select %s from session_search order by rowid" % SEARCH_COLUMNS
                             )
                         ]
-                    except sqlite3.OperationalError as e:
-                        problem = "session_search unreadable (%s), indexed_sessions read alone" % e
-        except Exception as e:  # noqa: BLE001 - a damaged database must not stop the timeline
+                    except sqlite3.OperationalError as error:
+                        problem = (
+                            "session_search unreadable (%s), indexed_sessions read alone" % error
+                        )
+        except Exception as error:  # noqa: BLE001 - a damaged database must not stop the timeline
             yield from error_rows(
-                self, artifact, [(0, "session-search.db unreadable (%s)" % e, "")]
+                self, artifact, [(0, "session-search.db unreadable (%s)" % error, "")]
             )
             return
         if problem:
             yield from error_rows(self, artifact, [(0, problem, "")])
         by_session: dict[str, list[dict]] = {}
-        for s in indexed:
-            by_session.setdefault(str(s.get("session_id") or ""), [])
-        for d in docs:
-            by_session.setdefault(str(d.get("session_id") or ""), []).append(d)
-        meta = {str(s.get("session_id") or ""): s for s in indexed}
+        for indexed_session in indexed:
+            by_session.setdefault(str(indexed_session.get("session_id") or ""), [])
+        for document in docs:
+            by_session.setdefault(str(document.get("session_id") or ""), []).append(document)
+        meta = {str(entry.get("session_id") or ""): entry for entry in indexed}
         sessions_dir = artifact.disk_path.parent.parent / "sessions"
-        for sid, session_docs in by_session.items():
+        for session_id, session_docs in by_session.items():
             yield from self._search_session(
-                artifact, sid, meta.get(sid, {}), session_docs, sessions_dir
+                artifact, session_id, meta.get(session_id, {}), session_docs, sessions_dir
             )
 
     def _search_session(
-        self, artifact: Artifact, sid: str, indexed: dict, docs: list, sessions_dir: Path
+        self, artifact: Artifact, session_id: str, indexed: dict, docs: list, sessions_dir: Path
     ) -> Iterator[Row]:
         """The index's rows for one session: the session row, then one row
         per message document in transcript order."""
-        head = next((d for d in docs if d.get("role") == "session"), None)
+        head = next((candidate for candidate in docs if candidate.get("role") == "session"), None)
         docs = sorted(
-            (d for d in docs if d.get("role") != "session"),
-            key=lambda d: _ordinal(d.get("ordinal")),
+            (candidate for candidate in docs if candidate.get("role") != "session"),
+            key=lambda candidate: _ordinal(candidate.get("ordinal")),
         )
         workspace = str((head or (docs[0] if docs else {})).get("workspace_root") or "")
-        manifest = load_json(sessions_dir / sid / (sid + ".json")) if sid else None
+        manifest = (
+            load_json(sessions_dir / session_id / (session_id + ".json")) if session_id else None
+        )
         if isinstance(manifest, dict):
             project = str(manifest.get("cwd") or manifest.get("workspace_root") or "")
         else:
@@ -931,7 +960,7 @@ class ClineParser(LegacyTaskParser):
         }
         row = self.base_row(artifact)
         row.timestamp_utc = to_utc((head or (docs[0] if docs else {})).get("started_at"))
-        row.session_id = sid
+        row.session_id = session_id
         row.project_path = project
         row.turn_type = "system"
         detail = " ".join(
@@ -939,14 +968,14 @@ class ClineParser(LegacyTaskParser):
         )
         row.text = compact("session search index: %s" % detail)
         yield row
-        for d in docs:
-            role = d.get("role")
+        for document in docs:
+            role = document.get("role")
             row = self.base_row(artifact)
-            row.source_line = _ordinal(d.get("ordinal")) + 1
-            row.session_id = sid
+            row.source_line = _ordinal(document.get("ordinal")) + 1
+            row.session_id = session_id
             row.project_path = project
             row.turn_type = role if role in ("user", "assistant") else "system"
-            row.text = compact(d.get("content"))
+            row.text = compact(document.get("content"))
             yield row
 
 
@@ -958,9 +987,9 @@ def _ordinal(value) -> int:
         return -1
 
 
-def load_json_text(s):
+def load_json_text(text):
     try:
-        return json.loads(s)
+        return json.loads(text)
     except (TypeError, ValueError):
         return None
 
@@ -975,13 +1004,13 @@ def _dash(value) -> str:
     return "-" if value in (None, "") else str(value)
 
 
-def _imported(m: dict, meta) -> None:
+def _imported(session: dict, meta) -> None:
     """Copy `metadata.importedFrom` onto the session record under the
     `imported_*` names the start row prints."""
     source = _obj(_obj(meta).get("importedFrom"))
     for key, name in IMPORTED_KEYS:
         if source.get(key) not in (None, ""):
-            m[name] = source[key]
+            session[name] = source[key]
 
 
 def _denial(content) -> str:
@@ -1006,32 +1035,32 @@ def _decisions(content) -> dict:
     """tool_use_id -> `permission decision:` text for each errored
     tool_result block of a message whose reason is a rejection or a block."""
     out: dict = {}
-    for b in content if isinstance(content, list) else []:
-        b = _obj(b)
-        if b.get("type") == "tool_result" and b.get("is_error"):
-            text = _denial(b.get("content"))
+    for block in content if isinstance(content, list) else []:
+        block = _obj(block)
+        if block.get("type") == "tool_result" and block.get("is_error"):
+            text = _denial(block.get("content"))
             if text:
-                out[str(b.get("tool_use_id") or "")] = compact(text)
+                out[str(block.get("tool_use_id") or "")] = compact(text)
     return out
 
 
-def _hook_event(row: Row, hook: str, rec: dict) -> bool:
+def _hook_event(row: Row, hook: str, entry: dict) -> bool:
     """Fill `row` as the transcript event a hook audit line repeats, and
     say whether it is one."""
     if hook == "prompt_submit":
-        prompt = _obj(rec.get("userPromptSubmit")).get("prompt")
+        prompt = _obj(entry.get("userPromptSubmit")).get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():
             return False
         row.turn_type, row.text = "user", compact(prompt)
     elif hook == "tool_call":
-        call = _obj(rec.get("tool_call"))
+        call = _obj(entry.get("tool_call"))
         row.turn_type = "tool_use"
         row.tool_name = str(call.get("name") or "")
         row.tool_use_id = str(call.get("id") or "")
         row.text = compact(tool_summary(row.tool_name, call.get("input")))
     elif hook == "tool_result":
-        record = _obj(rec.get("tool_result"))
-        post = _obj(rec.get("postToolUse"))
+        record = _obj(entry.get("tool_result"))
+        post = _obj(entry.get("postToolUse"))
         row.turn_type = "tool_result"
         row.tool_name = str(record.get("name") or post.get("toolName") or "")
         row.tool_use_id = str(record.get("id") or "")
@@ -1045,7 +1074,7 @@ def _hook_event(row: Row, hook: str, rec: dict) -> bool:
                 text_of(output) if isinstance(output, (str, list)) else compact_json(output)
             )
     elif hook == "agent_end":
-        text = _obj(rec.get("turn")).get("outputText")
+        text = _obj(entry.get("turn")).get("outputText")
         if not isinstance(text, str) or not text.strip():
             return False
         row.turn_type, row.text = "assistant", compact(text)

@@ -187,9 +187,9 @@ from .base import (
 # A home install keeps the chats under `<a0>/usr/chats` (or the legacy
 # `<a0>/tmp/chats`); a volume mounted at `/a0/usr` is collected with its
 # `_data` directory as the home, so its chats start at `chats/` (issue 175).
-A0 = r"(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?(?:usr|tmp)/)?chats"
-CHAT_RX = re.compile(r"^%s/[^/]+/chat\.json$" % A0)
-LEGACY_RX = re.compile(r"^%s/[^/]+\.json$" % A0)
+CHATS_ROOT = r"(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?(?:usr|tmp)/)?chats"
+CHAT_RX = re.compile(r"^%s/[^/]+/chat\.json$" % CHATS_ROOT)
+LEGACY_RX = re.compile(r"^%s/[^/]+\.json$" % CHATS_ROOT)
 # The other `usr/` files read beside the chats, in the same two forms (a home
 # install's `<a0>/usr/` prefix, or none at a volume's base).
 USR = r"^(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?usr/)?"
@@ -254,8 +254,8 @@ def walk_history(node, summaries: bool) -> Iterator[tuple[str, dict]]:
     """Yield ("message", Message) and, with `summaries`, ("summary", text) in
     chronological order: bulks, then topics, then the current topic."""
     if isinstance(node, list):
-        for n in node:
-            yield from walk_history(n, summaries)
+        for child in node:
+            yield from walk_history(child, summaries)
         return
     if not isinstance(node, dict):
         return
@@ -276,23 +276,23 @@ def parse_ai(content) -> dict | None:
     if isinstance(content, dict):
         return content
     if isinstance(content, str):
-        s = content.strip()
-        if s.startswith("{"):
+        text = content.strip()
+        if text.startswith("{"):
             try:
-                value = json.loads(s)
+                value = json.loads(text)
             except ValueError:
                 return None
             return value if isinstance(value, dict) else None
     return None
 
 
-def headline_text(d: dict) -> str:
+def headline_text(response: dict) -> str:
     parts = []
-    if d.get("headline"):
-        parts.append(str(d["headline"]))
-    thoughts = d.get("thoughts")
+    if response.get("headline"):
+        parts.append(str(response["headline"]))
+    thoughts = response.get("thoughts")
     if isinstance(thoughts, list):
-        parts.extend(str(t) for t in thoughts if t)
+        parts.extend(str(thought) for thought in thoughts if thought)
     elif thoughts:
         parts.append(str(thoughts))
     return "\n".join(parts)
@@ -300,7 +300,7 @@ def headline_text(d: dict) -> str:
 
 def args_summary(args) -> str:
     if isinstance(args, dict):
-        visible = {k: v for k, v in args.items() if not str(k).startswith("_")}
+        visible = {k: value for k, value in args.items() if not str(k).startswith("_")}
         for k in ARG_KEYS:
             if visible.get(k) not in (None, ""):
                 return str(visible[k])
@@ -324,16 +324,16 @@ def _content_text(value) -> str:
 
 def recover_logs(raw: str) -> list[dict]:
     """Complete log items before the point where a damaged file breaks off."""
-    m = LOGS_RX.search(raw)
-    if not m:
+    match = LOGS_RX.search(raw)
+    if not match:
         return []
-    dec = json.JSONDecoder()
-    pos, out = m.end(), []
+    decoder = json.JSONDecoder()
+    pos, out = match.end(), []
     while True:
         while pos < len(raw) and raw[pos] in " \t\r\n,":
             pos += 1
         try:
-            item, pos = dec.raw_decode(raw, pos)
+            item, pos = decoder.raw_decode(raw, pos)
         except ValueError:
             return out
         if not isinstance(item, dict):
@@ -341,10 +341,10 @@ def recover_logs(raw: str) -> list[dict]:
         out.append(item)
 
 
-def _key(d: dict, key: str) -> str:
+def _key(record: dict, key: str) -> str:
     """`d[key]` as row text, `-` when absent or empty."""
-    v = d.get(key)
-    return "-" if v in (None, "") else str(v)
+    value = record.get(key)
+    return "-" if value in (None, "") else str(value)
 
 
 def remote_copy_texts(chat: dict, data: dict) -> list[str]:
@@ -352,8 +352,8 @@ def remote_copy_texts(chat: dict, data: dict) -> list[str]:
     relayed:` (Telegram, WhatsApp, email) texts of a chat. Never reads
     `telegram_bot_cfg`, which holds the bot token."""
     out = []
-    for i, ag in enumerate(chat.get("agents") or []):
-        agent_data = ag.get("data") if isinstance(ag, dict) else None
+    for i, agent in enumerate(chat.get("agents") or []):
+        agent_data = agent.get("data") if isinstance(agent, dict) else None
         state = agent_data.get("responses_state") if isinstance(agent_data, dict) else None
         if not isinstance(state, dict) or state.get("previous_response_id") in (None, ""):
             continue
@@ -366,7 +366,7 @@ def remote_copy_texts(chat: dict, data: dict) -> list[str]:
                 _key(state, "previous_response_id"),
                 _key(state, "provider_model_key"),
                 len(ids) if isinstance(ids, list) else 0,
-                ag.get("number", i),
+                agent.get("number", i),
             )
         )
     if any(data.get(k) not in (None, "") for k in TELEGRAM_KEYS):
@@ -387,11 +387,11 @@ def remote_copy_texts(chat: dict, data: dict) -> list[str]:
     return out
 
 
-def _model_name(d: dict) -> str:
+def _model_name(config: dict) -> str:
     """`<provider>/<name>` of a model configuration, never its `api_key` or
     `api_base`; `""` when it names neither."""
-    parts = [str(d.get(k) or "").strip() for k in ("provider", "name")]
-    return "/".join(p for p in parts if p)
+    parts = [str(config.get(k) or "").strip() for k in ("provider", "name")]
+    return "/".join(part for part in parts if part)
 
 
 def override_text(override) -> str:
@@ -443,11 +443,11 @@ def warning_decision(item: dict) -> tuple[str, str]:
     item records, or ("", "") when it records none."""
     heading = str(item.get("heading") or "")
     content = item.get("content")
-    m = BLOCKED_RX.search(content) if isinstance(content, str) else None
-    if m:
+    match = BLOCKED_RX.search(content) if isinstance(content, str) else None
+    if match:
         return (
-            "permission decision: blocked tool=%s profile=%s" % (m["tool"], m["profile"]),
-            m["tool"],
+            "permission decision: blocked tool=%s profile=%s" % (match["tool"], match["profile"]),
+            match["tool"],
         )
     if MCP_APPROVAL_HEADING in heading:
         return (
@@ -464,9 +464,9 @@ def project_of(name) -> str:
     return "/a0/usr/projects/%s" % name if name else ""
 
 
-def scope_text(m: re.Match) -> str:
+def scope_text(match: re.Match) -> str:
     """` profile=<p> project=<n>` for a scoped plugin file, each when set."""
-    return "".join(" %s=%s" % (k, m[k]) for k in ("profile", "project") if m[k])
+    return "".join(" %s=%s" % (k, match[k]) for k in ("profile", "project") if match[k])
 
 
 class AgentZeroParser(Parser):
@@ -480,8 +480,8 @@ class AgentZeroParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
+            pattern.match(rel)
+            for pattern in (
                 CHAT_RX,
                 LEGACY_RX,
                 TASKS_RX,
@@ -510,13 +510,13 @@ class AgentZeroParser(Parser):
         if TG_STATE_RX.match(rel):
             yield from self._telegram_state(artifact)
             return
-        m = POLICY_RX.match(rel)
-        if m:
-            yield from self._policy(artifact, m)
+        match = POLICY_RX.match(rel)
+        if match:
+            yield from self._policy(artifact, match)
             return
-        m = TOGGLE_RX.match(rel)
-        if m:
-            yield from self._toggle(artifact, m)
+        match = TOGGLE_RX.match(rel)
+        if match:
+            yield from self._toggle(artifact, match)
             return
         if CONNECTOR_ENV_RX.match(rel):
             yield from self._connector_env(artifact)
@@ -534,11 +534,11 @@ class AgentZeroParser(Parser):
             chat = json.loads(raw)
             if not isinstance(chat, dict):
                 raise ValueError("top level is not an object")
-        except ValueError as e:
+        except ValueError as error:
             yield self._row(
                 base,
                 "system",
-                "parser: chat.json did not parse (%s); log items recovered without history" % e,
+                "parser: chat.json did not parse (%s); log items recovered without history" % error,
                 opts,
             )
             yield from self._log_rows(base, recover_logs(raw), {}, None, opts, {})
@@ -558,24 +558,24 @@ class AgentZeroParser(Parser):
             base,
             "system",
             " | ".join(
-                x
-                for x in (
+                part
+                for part in (
                     "chat start",
                     str(chat.get("name") or ""),
                     "type=%s" % chat["type"] if chat.get("type") else "",
                     "profile=%s" % chat["agent_profile"] if chat.get("agent_profile") else "",
                     "project=%s" % data["project"] if data.get("project") else "",
                 )
-                if x
+                if part
             ),
             opts,
         )
         start.timestamp_utc = to_utc(chat.get("created_at"))
         yield start
         for text in remote_copy_texts(chat, data):
-            yield self._row(base, "system", text, opts, ts=file_mtime(artifact))
+            yield self._row(base, "system", text, opts, timestamp=file_mtime(artifact))
         for text, project in chat_setting_rows(data):
-            row = self._row(base, "system", text, opts, ts=file_mtime(artifact))
+            row = self._row(base, "system", text, opts, timestamp=file_mtime(artifact))
             if project:
                 row.project_path = project
             yield row
@@ -583,32 +583,32 @@ class AgentZeroParser(Parser):
         log = chat.get("log")
         if not isinstance(log, dict):
             log = {}
-        logs = [i for i in (log.get("logs") or []) if isinstance(i, dict)]
+        logs = [item for item in (log.get("logs") or []) if isinstance(item, dict)]
         trimmed = len(logs) >= LOG_SIZE
         models: dict = {}
 
         history: dict[str, tuple[int, dict]] = {}
         ordered: list[tuple[int, str, dict]] = []
-        for i, ag in enumerate(chat.get("agents") or []):
-            if not isinstance(ag, dict):
+        for i, agent in enumerate(chat.get("agents") or []):
+            if not isinstance(agent, dict):
                 continue
-            agentno = ag.get("number", i)
-            hist = ag.get("history")
-            if isinstance(hist, str):
+            agent_number = agent.get("number", i)
+            agent_history = agent.get("history")
+            if isinstance(agent_history, str):
                 try:
-                    hist = json.loads(hist) if hist else {}
-                except ValueError as e:
+                    agent_history = json.loads(agent_history) if agent_history else {}
+                except ValueError as error:
                     yield self._row(
                         base,
                         "system",
-                        "parser: history of agent %s did not parse (%s)" % (agentno, e),
+                        "parser: history of agent %s did not parse (%s)" % (agent_number, error),
                         opts,
                     )
                     continue
-            for kind, node in walk_history(hist, trimmed):
-                ordered.append((agentno, kind, node))
+            for kind, node in walk_history(agent_history, trimmed):
+                ordered.append((agent_number, kind, node))
                 if kind == "message" and node.get("id"):
-                    history.setdefault(str(node["id"]), (agentno, node))
+                    history.setdefault(str(node["id"]), (agent_number, node))
 
         if trimmed:
             yield self._row(
@@ -618,17 +618,17 @@ class AgentZeroParser(Parser):
                 "history without timestamps" % LOG_SIZE,
                 opts,
             )
-            log_ids = {str(i.get("id")) for i in logs if i.get("id")}
-            for agentno, kind, node in ordered:
+            log_ids = {str(item.get("id")) for item in logs if item.get("id")}
+            for agent_number, kind, node in ordered:
                 if kind == "summary":
                     yield self._row(
                         base,
                         "system",
-                        self._prefix(agentno, "[summary] " + _content_text(node["summary"])),
+                        self._prefix(agent_number, "[summary] " + _content_text(node["summary"])),
                         opts,
                     )
                 elif str(node.get("id") or "") not in log_ids:
-                    yield from self._history_rows(base, agentno, node, opts, models)
+                    yield from self._history_rows(base, agent_number, node, opts, models)
 
         yield from self._log_rows(
             base, logs, history, path.parent / "messages" if not legacy else None, opts, models
@@ -636,65 +636,73 @@ class AgentZeroParser(Parser):
 
     # -- helpers -----------------------------------------------------------------------
     @staticmethod
-    def _prefix(agentno, text: str) -> str:
-        return "[agent %s] %s" % (agentno, text) if agentno not in (0, None, "0") else text
+    def _prefix(agent_number, text: str) -> str:
+        return (
+            "[agent %s] %s" % (agent_number, text) if agent_number not in (0, None, "0") else text
+        )
 
     def _row(
-        self, base: Row, turn_type: str, text: str, opts: Options, line: int = 0, ts: str = ""
+        self,
+        base: Row,
+        turn_type: str,
+        text: str,
+        opts: Options,
+        line: int = 0,
+        timestamp: str = "",
     ) -> Row:
         row = Row(**base.__dict__)
         row.turn_type = turn_type
         row.text = compact(text)
         row.source_line = line
-        row.timestamp_utc = ts
+        row.timestamp_utc = timestamp
         return row
 
     @staticmethod
-    def _message_file(msg_dir, content) -> str:
-        if msg_dir is None or not isinstance(content, dict) or not content.get("file"):
+    def _message_file(messages_dir, content) -> str:
+        if messages_dir is None or not isinstance(content, dict) or not content.get("file"):
             return ""
         name = str(content["file"]).replace("\\", "/").rsplit("/", 1)[-1]
-        f = msg_dir / name
-        if not name or f.is_symlink() or not f.is_file():
+        path = messages_dir / name
+        if not name or path.is_symlink() or not path.is_file():
             return ""
-        return f.read_bytes().decode("utf-8", errors="replace")
+        return path.read_bytes().decode("utf-8", errors="replace")
 
     def _model_row(
-        self, base: Row, agentno, model: str, models: dict, opts: Options, line=0, ts=""
+        self, base: Row, agent_number, model: str, models: dict, opts: Options, line=0, timestamp=""
     ):
         """`model: <id>` at an agent's first model and `model: <old> -> <new>`
         on a change, tracked per chat and agent number; a subordinate
         agent's row ends ` agent=<n>`."""
-        text = track_change("model", models, (base.session_id, str(agentno)), model)
+        text = track_change("model", models, (base.session_id, str(agent_number)), model)
         if not text:
             return None
-        if agentno not in (0, None, "0"):
-            text += " agent=%s" % agentno
-        row = self._row(base, "system", text, opts, line, ts)
+        if agent_number not in (0, None, "0"):
+            text += " agent=%s" % agent_number
+        row = self._row(base, "system", text, opts, line, timestamp)
         row.model = model
         return row
 
     def _history_rows(
-        self, base: Row, agentno, msg: dict, opts: Options, models: dict
+        self, base: Row, agent_number, message: dict, opts: Options, models: dict
     ) -> Iterator[Row]:
-        content = msg.get("content")
-        mid = str(msg.get("id") or "")
-        if msg.get("ai"):
+        content = message.get("content")
+        message_id = str(message.get("id") or "")
+        if message.get("ai"):
             parsed = parse_ai(content)
-            model = model_of(msg)
-            mrow = self._model_row(base, agentno, model, models, opts)
-            if mrow is not None:
-                yield mrow
+            model = model_of(message)
+            model_row = self._model_row(base, agent_number, model, models, opts)
+            if model_row is not None:
+                yield model_row
             text = headline_text(parsed) if parsed else _content_text(content)
             if text:
-                row = self._row(base, "assistant", self._prefix(agentno, text), opts)
+                row = self._row(base, "assistant", self._prefix(agent_number, text), opts)
                 row.model = model
                 yield row
             if parsed and parsed.get("tool_name"):
                 row = self._row(
                     base,
                     "tool_use",
-                    self._prefix(agentno, args_summary(parsed.get("tool_args"))),
+                    self._prefix(agent_number, args_summary(parsed.get("tool_args"))),
                     opts,
                 )
                 row.tool_name, row.model = str(parsed["tool_name"]), model
@@ -703,106 +711,124 @@ class AgentZeroParser(Parser):
             row = self._row(
                 base,
                 "tool_result",
-                self._prefix(agentno, _content_text(content.get("tool_result"))),
+                self._prefix(agent_number, _content_text(content.get("tool_result"))),
                 opts,
             )
-            row.tool_name, row.tool_use_id = str(content.get("tool_name") or ""), mid
+            row.tool_name, row.tool_use_id = str(content.get("tool_name") or ""), message_id
             yield row
         elif isinstance(content, dict) and "user_message" in content:
             yield self._row(
                 base,
                 "user",
-                self._prefix(agentno, _content_text(content.get("user_message"))),
+                self._prefix(agent_number, _content_text(content.get("user_message"))),
                 opts,
             )
         else:
-            yield self._row(base, "system", self._prefix(agentno, _content_text(content)), opts)
+            yield self._row(
+                base, "system", self._prefix(agent_number, _content_text(content)), opts
+            )
 
     def _log_rows(
         self,
         base: Row,
         logs: list[dict],
         history: dict[str, tuple[int, dict]],
-        msg_dir,
+        messages_dir,
         opts: Options,
         models: dict,
     ) -> Iterator[Row]:
         for item in logs:
             kind = str(item.get("type") or "")
-            no = item.get("no")
-            line: int = no if isinstance(no, int) else 0
-            ts = to_utc(item.get("timestamp"))
-            agentno = item.get("agentno", 0)
+            number = item.get("no")
+            line: int = number if isinstance(number, int) else 0
+            timestamp = to_utc(item.get("timestamp"))
+            agent_number = item.get("agentno", 0)
             kvps = item.get("kvps")
             if not isinstance(kvps, dict):
                 kvps = {}
             content = item.get("content") or ""
             item_id = str(item.get("id") or "")
-            hist = history.get(item_id, (None, None))[1] if item_id else None
-            hcontent = hist.get("content") if hist else None
+            history_message = history.get(item_id, (None, None))[1] if item_id else None
+            history_content = history_message.get("content") if history_message else None
 
-            def mk(turn_type: str, text: str) -> Row:
-                return self._row(base, turn_type, self._prefix(agentno, text), opts, line, ts)
+            def make_row(turn_type: str, text: str) -> Row:
+                return self._row(
+                    base, turn_type, self._prefix(agent_number, text), opts, line, timestamp
+                )
 
             if kind == "user":
                 text = (
-                    _content_text(hcontent.get("user_message"))
-                    if isinstance(hcontent, dict) and "user_message" in hcontent
+                    _content_text(history_content.get("user_message"))
+                    if isinstance(history_content, dict) and "user_message" in history_content
                     else _content_text(content)
                 )
-                att = kvps.get("attachments")
-                if isinstance(att, list) and att:
-                    text += " [attachments: %s]" % ", ".join(str(a) for a in att)
-                yield mk("user", text)
+                attachments = kvps.get("attachments")
+                if isinstance(attachments, list) and attachments:
+                    text += " [attachments: %s]" % ", ".join(
+                        str(attachment) for attachment in attachments
+                    )
+                yield make_row("user", text)
             elif kind == "agent":
-                model = model_of(hist)
-                mrow = self._model_row(base, agentno, model, models, opts, line, ts)
-                if mrow is not None:
-                    yield mrow
+                model = model_of(history_message)
+                model_row = self._model_row(
+                    base, agent_number, model, models, opts, line, timestamp
+                )
+                if model_row is not None:
+                    yield model_row
                 if opts.include_thinking and kvps.get("reasoning"):
-                    row = mk("thinking", _content_text(kvps["reasoning"]))
+                    row = make_row("thinking", _content_text(kvps["reasoning"]))
                     row.model = model
                     yield row
-                parsed = parse_ai(hcontent) if hist else None
+                parsed = parse_ai(history_content) if history_message else None
                 text = (
                     headline_text(kvps)
                     or (headline_text(parsed) if parsed else "")
-                    or (_content_text(hcontent) if hist and not parsed else "")
+                    or (_content_text(history_content) if history_message and not parsed else "")
                     or _content_text(content)
                 )
                 if text:
-                    row = mk("assistant", text)
+                    row = make_row("assistant", text)
                     row.model = model
                     yield row
             elif kind == "response":
-                yield mk("assistant", _content_text(content))
+                yield make_row("assistant", _content_text(content))
             elif kind in TOOL_TYPES:
                 tool_name = str(
                     kvps.get("_tool_name")
-                    or (hcontent.get("tool_name") if isinstance(hcontent, dict) else "")
+                    or (
+                        history_content.get("tool_name")
+                        if isinstance(history_content, dict)
+                        else ""
+                    )
                     or kind
                 )
                 tool_id = item_id or "log:%s" % line
-                row = mk("tool_use", args_summary(kvps))
+                row = make_row("tool_use", args_summary(kvps))
                 row.tool_name, row.tool_use_id = tool_name, tool_id
                 yield row
-                result = self._message_file(msg_dir, hcontent)
-                if not result and isinstance(hcontent, dict) and "tool_result" in hcontent:
-                    result = _content_text(hcontent["tool_result"])
+                result = self._message_file(messages_dir, history_content)
+                if (
+                    not result
+                    and isinstance(history_content, dict)
+                    and "tool_result" in history_content
+                ):
+                    result = _content_text(history_content["tool_result"])
                 if not result:
                     result = _content_text(content)
-                if result or hist:
-                    row = mk("tool_result", result)
+                if result or history_message:
+                    row = make_row("tool_result", result)
                     row.tool_name, row.tool_use_id = tool_name, tool_id
                     yield row
             else:
                 heading = ICON_RX.sub("", str(item.get("heading") or "")).strip()
-                text = " | ".join(x for x in (heading, _content_text(content)) if x)
-                yield mk("system", "%s: %s" % (kind or "log", text) if text else kind or "log")
+                text = " | ".join(part for part in (heading, _content_text(content)) if part)
+                yield make_row(
+                    "system", "%s: %s" % (kind or "log", text) if text else kind or "log"
+                )
                 if kind == "warning":
                     decision, tool_name = warning_decision(item)
                     if decision:
-                        row = mk("system", decision)
+                        row = make_row("system", decision)
                         row.tool_name = tool_name
                         yield row
 
@@ -811,20 +837,27 @@ class AgentZeroParser(Parser):
         """The file as JSON, or (None, the reason it is not)."""
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            return None, "unreadable (%s)" % e
+        except OSError as error:
+            return None, "unreadable (%s)" % error
         try:
             return json.loads(raw), ""
-        except ValueError as e:
-            return None, "not JSON (%s)" % e
+        except ValueError as error:
+            return None, "not JSON (%s)" % error
 
-    def _file_row(self, artifact: Artifact, text: str, ts: str = "", sid: str = "", proj=""):
+    def _file_row(
+        self,
+        artifact: Artifact,
+        text: str,
+        timestamp: str = "",
+        session_id: str = "",
+        project_path="",
+    ):
         row = self.base_row(artifact)
         row.turn_type = "system"
         row.text = compact(text)
-        row.timestamp_utc = ts
-        row.session_id = sid
-        row.project_path = proj
+        row.timestamp_utc = timestamp
+        row.session_id = session_id
+        row.project_path = project_path
         return row
 
     def _tasks(self, artifact: Artifact) -> Iterator[Row]:
@@ -840,33 +873,39 @@ class AgentZeroParser(Parser):
             )
             return
         errors = []
-        for n, task in enumerate(tasks, 1):
+        for number, task in enumerate(tasks, 1):
             if not isinstance(task, dict):
                 errors.append(
-                    (n, "unparseable record %d (not a JSON object)" % n, compact_json(task))
+                    (
+                        number,
+                        "unparseable record %d (not a JSON object)" % number,
+                        compact_json(task),
+                    )
                 )
                 continue
-            yield from self._task_rows(artifact, n, task)
+            yield from self._task_rows(artifact, number, task)
         yield from error_rows(self, artifact, errors)
 
-    def _task_rows(self, artifact: Artifact, n: int, task: dict) -> Iterator[Row]:
-        sid = str(task.get("context_id") or task.get("uuid") or "")
-        proj = project_of(task.get("project_name"))
+    def _task_rows(self, artifact: Artifact, number: int, task: dict) -> Iterator[Row]:
+        session_id = str(task.get("context_id") or task.get("uuid") or "")
+        project_path = project_of(task.get("project_name"))
         row = self._file_row(
             artifact,
             "scheduled task: %s type=%s state=%s"
             % (_key(task, "name"), _key(task, "type"), _key(task, "state")),
             to_utc(task.get("created_at")),
-            sid,
-            proj,
+            session_id,
+            project_path,
         )
-        row.source_line = n
+        row.source_line = number
         yield row
         if task.get("prompt"):
             # The scheduler logs `## Task:\n<prompt>` as the chat's user
             # message when the task has no context (task_scheduler.py:945-949).
-            row = self._file_row(artifact, "## Task:\n%s" % task["prompt"], "", sid, proj)
-            row.turn_type, row.source_line = "user", n
+            row = self._file_row(
+                artifact, "## Task:\n%s" % task["prompt"], "", session_id, project_path
+            )
+            row.turn_type, row.source_line = "user", number
             yield row
         result = task.get("last_result")
         if isinstance(result, str) and result.strip():
@@ -875,11 +914,11 @@ class AgentZeroParser(Parser):
                 artifact,
                 "scheduled task failed: %s" % result[len("ERROR: ") :] if failed else result,
                 to_utc(task.get("last_run")),
-                sid,
-                proj,
+                session_id,
+                project_path,
             )
             row.turn_type = "system" if failed else "assistant"
-            row.source_line = n
+            row.source_line = number
             yield row
 
     def _telegram_state(self, artifact: Artifact) -> Iterator[Row]:
@@ -891,24 +930,27 @@ class AgentZeroParser(Parser):
             yield self._file_row(artifact, "parser: state.json %s" % (why or "has no chats map"))
             return
         usr = artifact.disk_path.parents[2]
-        for key, ctxid in chats.items():
-            ctxid = str(ctxid or "")
-            if not ctxid or self._chat_present(usr, ctxid):
+        for key, context_id in chats.items():
+            context_id = str(context_id or "")
+            if not context_id or self._chat_present(usr, context_id):
                 continue
             parts = str(key).rsplit(":", 2)
             bot, user, chat = parts if len(parts) == 3 else (str(key), "-", "-")
             yield self._file_row(
                 artifact,
                 "session deleted: telegram bot %s chat %s user %s ctxid %s (from state.json,"
-                " no chat.json in the input, file mtime)" % (bot, chat, user, ctxid),
+                " no chat.json in the input, file mtime)" % (bot, chat, user, context_id),
                 file_mtime(artifact),
-                ctxid,
+                context_id,
             )
 
     @staticmethod
-    def _chat_present(usr, ctxid: str) -> bool:
-        for f in (usr / "chats" / ctxid / "chat.json", usr / "chats" / ("%s.json" % ctxid)):
-            if not f.is_symlink() and f.is_file():
+    def _chat_present(usr, context_id: str) -> bool:
+        for path in (
+            usr / "chats" / context_id / "chat.json",
+            usr / "chats" / ("%s.json" % context_id),
+        ):
+            if not path.is_symlink() and path.is_file():
                 return True
         return False
 
@@ -921,7 +963,7 @@ class AgentZeroParser(Parser):
             project,
         )
 
-    def _policy(self, artifact: Artifact, m: re.Match) -> Iterator[Row]:
+    def _policy(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
         """A `_tool_access` policy (helpers/tool_policy.py:27-37) or the
         Orchestrator's settings, one `permission setting:` row per key and
         list entry."""
@@ -931,8 +973,8 @@ class AgentZeroParser(Parser):
                 artifact, "parser: %s %s" % (artifact.rel, why or "is not a JSON object")
             )
             return
-        scope, project = scope_text(m), project_of(m["project"])
-        if m["plugin"] == "_tool_access":
+        scope, project = scope_text(match), project_of(match["project"])
+        if match["plugin"] == "_tool_access":
             for key in POLICY_SCALARS:
                 if doc.get(key) not in (None, ""):
                     value = setting_value(doc[key])
@@ -951,12 +993,12 @@ class AgentZeroParser(Parser):
                 text = "orchestrator.%s.%s=%s" % (cli, key, setting_value(section[key]))
                 yield self._setting(artifact, text, project)
 
-    def _toggle(self, artifact: Artifact, m: re.Match) -> Iterator[Row]:
+    def _toggle(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
         """An empty `.toggle-1` (enabled) or `.toggle-0` (disabled) switch of
         the Infection Check or the Orchestrator (helpers/plugins.py:60-61)."""
-        state = "enabled" if m["state"] == "1" else "disabled"
-        text = "%s=%s%s" % (m["plugin"].lstrip("_"), state, scope_text(m))
-        yield self._setting(artifact, text, project_of(m["project"]))
+        state = "enabled" if match["state"] == "1" else "disabled"
+        text = "%s=%s%s" % (match["plugin"].lstrip("_"), state, scope_text(match))
+        yield self._setting(artifact, text, project_of(match["project"]))
 
     def _connector_env(self, artifact: Artifact) -> Iterator[Row]:
         """The A0 CLI connector's `~/.agent-zero/.env`, a secret file: only
@@ -971,12 +1013,12 @@ class AgentZeroParser(Parser):
             key, sep, value = line.strip().partition("=")
             if sep and key.strip() in LAST_CONTEXT_KEYS:
                 values[key.strip()] = value.strip().strip("\"'")
-        host, ctxid = (values.get(k, "") for k in LAST_CONTEXT_KEYS)
-        if host and ctxid:
+        host, context_id = (values.get(k, "") for k in LAST_CONTEXT_KEYS)
+        if host and context_id:
             yield self._file_row(
                 artifact,
                 "session origin: remote agent-zero instance %s context %s"
-                " (from .agent-zero/.env, file mtime)" % (host, ctxid),
+                " (from .agent-zero/.env, file mtime)" % (host, context_id),
                 file_mtime(artifact),
-                ctxid,
+                context_id,
             )

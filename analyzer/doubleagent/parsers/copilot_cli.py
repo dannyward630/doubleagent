@@ -1,212 +1,33 @@
-"""GitHub Copilot CLI (`copilot`) session state (issue 50).
+"""Parse the session state of the GitHub Copilot CLI (`copilot`).
 
-Closed source. Validated against the shipped event schema
-(`schemas/session-events.schema.json`), the minified CLI and the Rust
-runtime addon of `@github/copilot-darwin-arm64` 1.0.98, and real installs
-on macOS and Linux (Copilot CLI 1.0.98, October 2026), with a synthetic
-fixture; see `research/copilot-cli.md`. Paths are relative to the home, under
-`.copilot` or, on installs that predate the XDG migration, under
-`.local/state/.copilot` and `.config/.copilot` (written `<home>` below);
-the bundle has no platform branch, so macOS, Linux and Windows share the
-layout.
+Reads, under `.copilot` (or `.local/state/.copilot` and `.config/.copilot` on installs from
+before the XDG move): `session-state/<id>/events.jsonl` (the primary store),
+`session-state/<id>/workspace.yaml`, and as secondary sources `session-store.db`,
+`session-state/<id>/rewind-file-snapshots/index.json` and `command-history-state.json`; the
+standing grants of `permissions-config.json` and `settings.json` (JSON with comments);
+`sidebar-sessions-state/*.json` (a session-to-cwd join, no rows); and `logs/process-*.log`.
 
-* `<home>/session-state/<session id>/events.jsonl`, the primary store: one
-  event per line, envelope `id`, `parentId`, `timestamp` (ISO 8601 UTC),
-  `type`, `data`, and `agentId` on a subagent's events. `parentId` is not
-  read: a rewind truncates the file rather than branching it. Rows follow
-  the log order, each at its line's `timestamp`; `session_id` is the
-  directory name (= `session.start` `sessionId`). By `type`:
-  - `session.start` (`copilotVersion`, `producer`, `context.cwd`,
-    `context.branch`): `session start: copilot <version> producer=<p>
-    cwd=<cwd>`; sets the project path and branch. `session.resume`
-    (`context`): `session resumed`, and updates them;
-    `session.context_changed` (the context, as `data` or `data.context`)
-    updates them with no row.
-  - `system.message` (`content`, `role`): `system prompt: <content>`, or
-    `developer message: <content>` for `role` `developer`, never shortened.
-  - `user.message` (`content`, `source`, `isAutopilotContinuation`, the
-    envelope's `agentId`): `user` for typed input (no `agentId`, `source`
-    absent or `user`, not a continuation), otherwise `system`
-    `<label>: <content>`, the label `auto-continuation`, `subagent task`
-    or the `source` value. `transformedContent` (the prompt with injected
-    context) is not read: `turns.user_message` and the history repeat
-    `content`.
-  - `assistant.message` (`content`, `model`, `reasoningText`,
-    `reasoningBlocks.blocks[].summary[].text`, `toolRequests[]` with
-    `toolCallId`, `name`, `arguments`): an `assistant` row when `content`
-    is not empty, a `thinking` row with `include_thinking` (`reasoningText`,
-    else the block summaries; the encrypted blobs are never read), then
-    one `tool_use` per request. `assistant.reasoning` (`content`) is a
-    `thinking` row with `include_thinking`.
-  - `tool.execution_start` (`toolCallId`, `toolName`, `arguments`): a
-    `tool_use` only when no earlier request had the call id (a call the
-    user or a subagent made). `tool.user_requested`: a `tool_use` prefixed
-    `user requested: `. A `tool_use` text is `arguments` when it is a
-    string (a `custom` grammar tool such as `apply_patch`), else its
-    `command`, `url`, `query`, `path` or `input`, else compact JSON.
-  - `tool.execution_complete` (`toolCallId`, `success`, `result.content`,
-    `result.detailedContent`, `error.message`,
-    `shellExecution.exitCode`): a `tool_result`. The schema calls
-    `content` the concise, possibly truncated text sent to the model and
-    `detailedContent` the complete one, so `detailedContent` is preferred;
-    but a successful skill invocation puts the concise text in
-    `detailedContent` (one observed record: 25 characters beside an
-    8091-character `content`), so `content` wins when it is the longer.
-    Prefixed `[exit N] ` for a non-zero exit code, and `error.message` on
-    a line of its own when `success` is false.
-  - Permissions (`permission.requested`: `permissionRequest.kind`,
-    `.toolCallId`, `.intention`, `.fullCommandText`, `.url`, `.fileName`,
-    `.path`, `.serverName`, `.toolName`, `permissionMode`, `agentMode`;
-    `permission.completed`: `toolCallId`, `decisionSource`, `result.kind`,
-    `.locationKey`, `.approval`, `.directories`, `.feedback`, `.rules`,
-    `.message`, `.reason`, `.path`): `system` rows beside the call,
-    `tool_use_id` the call id and `tool_name` the name its request gave:
-    `permission request: <kind> <target> intention=<intention>`, then
-    `permission mode: <mode> agent=<agentMode>` the first time and
-    `permission mode: <old> -> <new>` when either changes;
-    `permission decision: <kind> source=<decisionSource or ->` followed by
-    ` location=`, ` approval=`, ` directories=`, ` feedback=`, ` rules=`,
-    ` reason=`, ` path=` and ` message=` for the keys present (objects as
-    compact JSON). `permission.carriedForward` is `permission decision:
-    carried-forward source=<decisionSource>`. `session.permissions_changed`
-    (`previousMode`, `mode`) is `permission mode: <old> -> <new>` and
-    `session.mode_changed` (`previousMode`, `newMode`) `agent mode: <old>
-    -> <new>`; both update the tracked mode, so the next request does not
-    repeat the change. The Copilot Desktop app's bundled CLI (1.0.95-3,
-    real install, Linux, October 2026; issue 147) writes
-    `session.permissions_changed` with `previousAllowAllPermissions`,
-    `allowAllPermissions`, `previousAllowAllPermissionMode` and
-    `allowAllPermissionMode` instead, which the 1.0.98 schema does not
-    name: with no `mode` and no `previousMode` the row is `permission mode:
-    allow-all <previousAllowAllPermissionMode or -> ->
-    <allowAllPermissionMode or ->` and the tracked mode becomes
-    `allow-all <allowAllPermissionMode>`.
-  - Model (`session.model_change`: `newModel`, `previousModel`, `cause`,
-    `source`, `reasoningEffort`): `model: <id>` at the first and
-    `model: <old> -> <new>` after, kept when the two are equal (a change
-    the user typed), followed by ` cause=`, ` source=` and ` effort=` for
-    the keys present. `session.auto_mode_resolved` (`chosenModel`,
-    `routingMethod`) is `model: <old> -> <id> (auto, <routingMethod>)`.
-    The `model` column is the event's own `model`, else the tracked one.
-  - `session.info` (`infoType`, `message`, `url`, `tip`), the CLI's
-    categorised timeline notice (the `infoType` `model` lines of a `/model`
-    switch among them): `session.info <infoType>: <message>`, followed by
-    ` url=` and ` tip=` for the keys present, with the tracked model.
-  - `model.message` (`modelCall.model`, `message.content`): `utility model
-    <model>: <content>` with that model in the `model` column; these are
-    the runtime's calls to a utility model (the session-name generator,
-    the task-analytics classifier) and never change the session model.
-    The other `model.*` events are bookkeeping and give no row.
-  - `session.compaction_complete` (`summaryContent`): `compaction summary:
-    <text>`. `abort`, `session.error`, `session.warning` (`reason`,
-    `message`): `<type>: <text>`. `session.task_complete`,
-    `system.notification`, `session.schedule_created`, `skill.invoked`,
-    `subagent.*`, `session.handoff`: `<type>: <main text>`,
-    else compact JSON of `data`. `session.shutdown` (`shutdownType`,
-    `errorReason`, `codeChanges.filesModified`): `session end: <type>
-    <reason> files modified: <files>`.
-  - `hook.start` (`hookInvocationId`, `hookType`, `input`,
-    `parentToolCallId`) and `hook.end` (`hookInvocationId`, `hookType`,
-    `output`, `success`, `error`, `parentToolCallId`), the schema's
-    `HookStartData` and `HookEndData`, observed in the Copilot Desktop
-    app's sessions (issue 147): `hook <hookType> start: <compact JSON of
-    input, or {} when absent>` and `hook <hookType> end:
-    success=<true|false> output=<compact JSON of output, or {}>`, then
-    ` error=<compact JSON>` when `error` is present; `-` for a missing
-    `hookType` or a `success` that is not a boolean. `tool_use_id` is
-    `parentToolCallId` when present, `tool_name` empty; the payload is
-    never shortened.
-  - `assistant.turn_*`, `session.usage_*`, the other `model.*` events and
-    unknown types are skipped. Each bad line is its own `system` row at
-    the end, carrying the line in full (issue 136, `error_rows` in
-    `base.py`), and the other lines are still read.
-* `<home>/session-state/<id>/workspace.yaml` (`id`, `cwd`, `name`,
-  `user_named`, `fork_count`, `summary_count`, `created_at`,
-  `client_name`, `mc_session_id`, `mc_task_id`, `mc_last_event_id`,
-  `remote_steerable`), read with a flat `key: value` reader since only
-  top-level scalars are used: `session name: <name>` and `session
-  metadata: user_named=<b> forks=<n> compactions=<n> client=<client_name>`
-  at `created_at` (`client=` with an empty value when the key is absent).
-  `client_name` is `github/cli` for a CLI session and `github/autopilot`
-  for one the Copilot Desktop app ran through its bundled CLI (issue
-  147). Its `cwd` is the project path of the log's rows before a
-  `session.start` and of the snapshot rows. When the session directory
-  holds no `events.jsonl` beside the file and `cwd` is set, the session
-  is one the app pre-created and never prompted (Copilot Desktop's pool
-  and probe sessions), and one more row follows the metadata row with
-  the same columns: `scratch directory: <cwd> (working directory of a
-  session the app pre-created and never prompted: no events.jsonl)`, so
-  inventory.json lists the `cwd` under `scratch_directories` (issue
-  149). When the file has a
-  non-empty `mc_session_id`, the session is synced to the user's GitHub
-  account (issue 151); the keys can be present as `null` on a session
-  that is not, as in the research document's sample. One more row then, `session synced: remote session
-  <mc_session_id> task <mc_task_id> last event <mc_last_event_id>
-  remote_steerable=<remote_steerable> (from workspace.yaml, file mtime)`,
-  at the file's modification time, `-` for a key absent or empty. The
-  four keys were seen on Windows 1.0.98 (standalone, added at a resume)
-  and in every Copilot Desktop session (Linux 1.1.29, Windows 1.1.30);
-  the CLI deletes the file with the session, so the row is the only
-  local trace of the sync while the session exists.
-* Secondary sources, which repeat the log's events and are read always,
-  so a session whose log was rewound, cut or deleted is still recovered
-  (`dedup.py`):
-  - `<home>/session-store.db` (SQLite in WAL mode; the "chronicle" store):
-    `sessions` (`id`, `cwd`, `branch`, `summary`, `created_at`) gives
-    `session name: <summary>` at `created_at`, the text the
-    `workspace.yaml` row has, so the copy drops when the two agree;
-    `turns` (`session_id`, `turn_index`, `user_message`,
-    `assistant_response`, `timestamp`) a `user` and an `assistant` row per
-    turn; `session_files` (`file_path`, `tool_name`, `first_seen_at`)
-    `file changed: <path> tool=<tool>`; `session_refs` (`ref_type`,
-    `ref_value`, `created_at`) `reference: <type> <value>`; `checkpoints`
-    (`checkpoint_number`, `title`, `overview`, `history`, `work_done`,
-    `technical_details`, `important_files`, `next_steps`, `created_at`)
-    `checkpoint <n>: <title>` with each other non-null column on a line
-    of its own; `forge_trajectory_events` (`tool_call_id`, `command`,
-    `output`, `exit_code`, `created_at`) a `tool_use` and a `tool_result`
-    joined on the call id. `forge_trajectory_events` was empty on both
-    real installs and its `event_type` values are unknown, so it is not
-    observed on any real install, bundle-derived: every column is read as
-    possibly NULL and `event_type` is not used. `search_index`,
-    `assistant_usage_events`, `forge_skill_proposals` and
-    `dynamic_context_items` are not read (concatenated copies, accounting,
-    no session). `project_path` and `git_branch` come from `sessions`.
-    The runtime writes a turn as it ends, so `turns.timestamp` is the end
-    of the turn (4 to 293 seconds after the prompt observed, and a turn
-    with many tools runs longer): `secondary_tolerance()` is one hour, as
-    for Letta's turn-end transcript. The pairing is confined to one
-    session and one text, so the wide window only pairs a row with an
-    identical event of the same session.
-  - `<home>/session-state/<id>/rewind-file-snapshots/index.json`
-    (`snapshots[]`: `eventId`, `timestamp`, `userMessage`, `fileCount`,
-    `linesAdded`, `linesRemoved`, `files.<hex>.path`): a `user` row of the
-    prompt at `timestamp` and `rewind snapshot: <n> files +<a> -<r>:
-    <path>, ...`. The snapshot's time was not measured against the
-    prompt's on a real install, so it gets the same one-hour window.
-  - `<home>/command-history-state.json` (`commandHistory[]`, newest
-    first): a `user` row per prompt with an empty `timestamp_utc`,
-    `session_id` and `project_path`, since the file records none;
-    `source_line` the 1-based index.
-* `<home>/permissions-config.json` (`locations.<path>.tool_approvals[]`,
-  `.allowed_directories[]`) and `<home>/settings.json` (`allowedUrls[]`,
-  `deniedUrls[]`; JSON with comments, stripped before parsing): one
-  `permission setting: <key>=<value> (from <file>, file mtime)` row per
-  entry, at the file's modification time, `project_path` the location,
-  empty `session_id`. A file that is not a JSON object is one `system`
-  row.
-* `<home>/sidebar-sessions-state/<sha256 of cwd>.json` (`cwd`,
-  `sessionIds[]`): no rows; its `cwd` is the project path of database and
-  snapshot rows whose session names none.
-* `<home>/logs/process-<epoch ms>-<pid>.log`: `signed in: <host> as
-  <login>` from the `Signed in to <host> as <login>.` line, at the line's
-  time; `session_id` from `Workspace initialized: <uuid>` when the file
-  names exactly one session.
+Fields the parser depends on:
 
-Not read: `rewind-file-snapshots/tracking.json`, `checkpoints/index.md`,
-`session.db` (the agent's own todo tables), the legacy flat
-`session-state/<id>.jsonl` (its shape is not in the bundle),
-`config.json`, `open-sessions-state.json`.
+- event envelope: `type`, `timestamp`, `data`, `agentId` (`parentId` is not read: a rewind
+  truncates the file); `data`: `context.cwd`, `context.branch`, `copilotVersion`, `producer`,
+  `content`, `role`, `source`, `isAutopilotContinuation`, `model`, `reasoningText`,
+  `reasoningBlocks`, `toolRequests[]`, `toolCallId`, `toolName`, `arguments`, `success`,
+  `result`, `error`, `shellExecution.exitCode`, `permissionRequest`, `permissionMode`,
+  `agentMode`, `decisionSource`, `previousMode`, `mode`, `newMode`, `newModel`,
+  `previousModel`, `cause`, `reasoningEffort`, `chosenModel`, `routingMethod`, `infoType`,
+  `message`, `url`, `tip`, `modelCall.model`, `summaryContent`, `reason`, `hookType`, `input`,
+  `output`, `parentToolCallId`, `shutdownType`, `errorReason`, `codeChanges.filesModified`;
+- `workspace.yaml` top-level scalars: `id`, `cwd`, `name`, `user_named`, `fork_count`,
+  `summary_count`, `created_at`, `client_name`, `mc_session_id`, `mc_task_id`,
+  `mc_last_event_id`, `remote_steerable`;
+- `session-store.db` tables `sessions`, `turns`, `session_files`, `session_refs`,
+  `checkpoints` and `forge_trajectory_events` (every column possibly NULL).
+
+Validated against the shipped event schema, bundle and runtime addon of
+`@github/copilot-darwin-arm64` 1.0.98 and real installs. The Copilot Desktop app's bundled CLI
+1.0.95-3 writes `session.permissions_changed` with the `ALLOW_ALL_KEYS` instead of `mode`. See
+`research/copilot-cli.md`.
 """
 
 from __future__ import annotations
@@ -260,7 +81,7 @@ NOTE_TYPES = (
     "session.handoff",
 )
 NOTE_PREFIXES = ("subagent.",)
-# The Copilot Desktop app's form of `session.permissions_changed` (issue 147).
+# The Copilot Desktop app's form of `session.permissions_changed`.
 ALLOW_ALL_KEYS = (
     "previousAllowAllPermissions",
     "allowAllPermissions",
@@ -292,58 +113,64 @@ WORKSPACE_LINE_RX = re.compile(r"Workspace initialized: ([0-9a-f-]{36})")
 LOG_TIME_RX = re.compile(r"^(\d{4}-\d{2}-\d{2}T\S+Z)\s")
 
 
-def _dict(v) -> dict:
-    return v if isinstance(v, dict) else {}
+def _dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
-def _str(v) -> str:
-    if v is None:
+def _str(value) -> str:
+    if value is None:
         return ""
-    return v if isinstance(v, str) else compact_json(v)
+    return value if isinstance(value, str) else compact_json(value)
 
 
 def args_text(args) -> str:
-    """A `tool_use` text: a string argument (a `custom` grammar tool such as
-    `apply_patch`) as it is, else the first of `ARG_KEYS`, else compact
-    JSON."""
+    """Return the `tool_use` text of a call's arguments.
+
+    A string argument (a `custom` grammar tool such as `apply_patch`) is kept as it is, else the
+    first of `ARG_KEYS` is taken, else compact JSON.
+    """
     if isinstance(args, str):
         return args
     if isinstance(args, dict):
-        for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, ""):
-                return _str(v)
+        for key in ARG_KEYS:
+            value = args.get(key)
+            if value not in (None, ""):
+                return _str(value)
         return compact_json(args) if args else ""
     return _str(args)
 
 
 def result_text(data: dict) -> str:
-    """A `tool.execution_complete` text. `detailedContent` is the complete
-    result and `content` the concise one sent to the model, except that a
-    successful skill invocation puts the concise text in `detailedContent`,
-    so the longer of the two is taken, `detailedContent` on a tie."""
-    res = _dict(data.get("result"))
-    detailed = _str(res.get("detailedContent"))
-    concise = _str(res.get("content"))
+    """Return the `tool_result` text of a `tool.execution_complete` event.
+
+    `detailedContent` is the complete result and `content` the concise one sent to the model,
+    except that a successful skill invocation puts the concise text in `detailedContent`, so the
+    longer of the two is taken, `detailedContent` on a tie.
+    """
+    result = _dict(data.get("result"))
+    detailed = _str(result.get("detailedContent"))
+    concise = _str(result.get("content"))
     text = concise if len(concise) > len(detailed) else detailed
     code = _dict(data.get("shellExecution")).get("exitCode")
     if code not in (None, 0, "0") and not isinstance(code, bool):
         text = "[exit %s] %s" % (code, text)
     if data.get("success") is False:
-        msg = _str(_dict(data.get("error")).get("message"))
-        if msg:
-            text = text + "\n" + msg if text else msg
+        message = _str(_dict(data.get("error")).get("message"))
+        if message:
+            text = text + "\n" + message if text else message
     return text
 
 
-def request_target(req: dict) -> str:
-    """What a `permissionRequest` asks about: the command, URL, file or
-    path, or `<server>/<tool>` for an MCP tool."""
-    for k in ("fullCommandText", "url", "fileName", "path"):
-        v = req.get(k)
-        if v not in (None, ""):
-            return _str(v)
-    server, tool = _str(req.get("serverName")), _str(req.get("toolName"))
+def request_target(request: dict) -> str:
+    """Return what a `permissionRequest` asks about, or "".
+
+    It is the command, URL, file or path, or `<server>/<tool>` for an MCP tool.
+    """
+    for key in ("fullCommandText", "url", "fileName", "path"):
+        value = request.get(key)
+        if value not in (None, ""):
+            return _str(value)
+    server, tool = _str(request.get("serverName")), _str(request.get("toolName"))
     if server or tool:
         return "%s/%s" % (server, tool) if server else tool
     return ""
@@ -351,46 +178,50 @@ def request_target(req: dict) -> str:
 
 def decision_text(data: dict) -> str:
     """`permission decision: <kind> source=<decisionSource or -> ...`."""
-    res = _dict(data.get("result"))
+    result = _dict(data.get("result"))
     text = "permission decision: %s source=%s" % (
-        _str(res.get("kind")) or "-",
+        _str(result.get("kind")) or "-",
         _str(data.get("decisionSource")) or "-",
     )
     for key, label in DECISION_KEYS:
-        if res.get(key) not in (None, "", [], {}):
-            text += " %s=%s" % (label, setting_value(res.get(key)))
+        if result.get(key) not in (None, "", [], {}):
+            text += " %s=%s" % (label, setting_value(result.get(key)))
     return text
 
 
 def strip_jsonc(text: str) -> str:
-    """JSON with `//` and `/* */` comments and trailing commas made plain
-    JSON. Strings are copied untouched, so a URL's `//` survives."""
+    """Return JSON with `//` and `/* */` comments and trailing commas as plain JSON.
+
+    Strings are copied untouched, so a URL's `//` survives.
+    """
     out: list[str] = []
-    i, n = 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == '"':
+    i, length = 0, len(text)
+    while i < length:
+        character = text[i]
+        if character == '"':
             j = i + 1
-            while j < n and text[j] != '"':
+            while j < length and text[j] != '"':
                 j += 2 if text[j] == "\\" else 1
             out.append(text[i : j + 1])
             i = j + 1
         elif text.startswith("//", i):
             j = text.find("\n", i)
-            i = n if j < 0 else j
+            i = length if j < 0 else j
         elif text.startswith("/*", i):
             j = text.find("*/", i + 2)
-            i = n if j < 0 else j + 2
+            i = length if j < 0 else j + 2
         else:
-            out.append(c)
+            out.append(character)
             i += 1
     return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
 
 
 def read_flat_yaml(path: Path) -> dict[str, str | None]:
-    """The top-level `key: value` scalars of a YAML file, `null` and `~` as
-    None, quoted values unquoted. `workspace.yaml` holds only scalars; a
-    nested or multi-line value is skipped, since none is read."""
+    """Return the top-level `key: value` scalars of a YAML file.
+
+    `null` and `~` are None and quoted values are unquoted. `workspace.yaml` holds only scalars, so
+    a nested or multi-line value is skipped.
+    """
     out: dict[str, str | None] = {}
     try:
         lines = path.read_bytes().decode("utf-8", errors="replace").splitlines()
@@ -423,19 +254,22 @@ def _read_json(path: Path):
 
 
 class CopilotCliParser(Parser):
+    """Parse the Copilot CLI's events, session metadata, stores, grants and logs."""
     agent = "copilot-cli"
     name = "copilot-cli"
     has_secondary = True
     records_sync = True
 
     def __init__(self) -> None:
+        """Start with an empty cache of sidebar session directories."""
         self._sidebar_cache: dict[Path, dict[str, str]] = {}
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return whether the artifact is one of the files this parser reads."""
         rel = artifact.rel
         return any(
-            rx.match(rel)
-            for rx in (
+            pattern.match(rel)
+            for pattern in (
                 EVENTS_RX,
                 WORKSPACE_RX,
                 SNAPSHOTS_RX,
@@ -449,23 +283,26 @@ class CopilotCliParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return whether the artifact repeats events of the session logs."""
         rel = artifact.rel
         return bool(STORE_RX.match(rel) or HISTORY_RX.match(rel) or SNAPSHOTS_RX.match(rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return the pairing window: a turn's length for the store and the snapshots."""
         if STORE_RX.match(artifact.rel) or SNAPSHOTS_RX.match(artifact.rel):
             return TURN_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one artifact, by the file it is."""
         rel = artifact.rel
-        m = EVENTS_RX.match(rel)
-        if m:
-            yield from self._parse_events(artifact, m.group(1), opts)
-        elif m := WORKSPACE_RX.match(rel):
-            yield from self._parse_workspace(artifact, m.group(1))
-        elif m := SNAPSHOTS_RX.match(rel):
-            yield from self._parse_snapshots(artifact, m.group(1))
+        match = EVENTS_RX.match(rel)
+        if match:
+            yield from self._parse_events(artifact, match.group(1), opts)
+        elif match := WORKSPACE_RX.match(rel):
+            yield from self._parse_workspace(artifact, match.group(1))
+        elif match := SNAPSHOTS_RX.match(rel):
+            yield from self._parse_snapshots(artifact, match.group(1))
         elif STORE_RX.match(rel):
             yield from self._parse_store(artifact)
         elif HISTORY_RX.match(rel):
@@ -481,67 +318,68 @@ class CopilotCliParser(Parser):
 
     # -- helpers ------------------------------------------------------------
 
-    def _row(self, artifact: Artifact, line: int, turn: str, text: str, **cols) -> Row:
-        r = self.base_row(artifact)
-        r.source_line = line
-        r.turn_type = turn
-        r.text = compact(text)
-        for k, v in cols.items():
-            setattr(r, k, v or "")
-        return r
+    def _row(self, artifact: Artifact, line: int, turn: str, text: str, **columns) -> Row:
+        row = self.base_row(artifact)
+        row.source_line = line
+        row.turn_type = turn
+        row.text = compact(text)
+        for field, value in columns.items():
+            setattr(row, field, value or "")
+        return row
 
-    def _problem(self, artifact: Artifact, text: str, ts: str = "") -> Row:
-        return self._row(artifact, 1, "system", text, timestamp_utc=ts)
+    def _problem(self, artifact: Artifact, text: str, timestamp: str = "") -> Row:
+        return self._row(artifact, 1, "system", text, timestamp_utc=timestamp)
 
     def _sidebar(self, artifact: Artifact) -> dict[str, str]:
-        """Session id to cwd from the `sidebar-sessions-state/*.json` files of
-        the Copilot home `artifact` is in; {} when there are none. Symlinks
-        are not read."""
-        m = HOME_PREFIX_RX.match(artifact.rel)
-        if not m:
+        """Return session id -> cwd from the sidebar files of the Copilot home `artifact` is in.
+
+        The result is {} when there are none; symlinks are not read.
+        """
+        match = HOME_PREFIX_RX.match(artifact.rel)
+        if not match:
             return {}
-        d = artifact.home.disk_path / m.group(1) / "sidebar-sessions-state"
-        if d not in self._sidebar_cache:
+        directory = artifact.home.disk_path / match.group(1) / "sidebar-sessions-state"
+        if directory not in self._sidebar_cache:
             found: dict[str, str] = {}
-            if d.is_dir() and not d.is_symlink():
-                for f in sorted(d.glob("*.json")):
-                    if f.is_symlink() or not f.is_file():
+            if directory.is_dir() and not directory.is_symlink():
+                for path in sorted(directory.glob("*.json")):
+                    if path.is_symlink() or not path.is_file():
                         continue
-                    doc = _dict(_read_json(f))
+                    doc = _dict(_read_json(path))
                     cwd = _str(doc.get("cwd"))
                     ids = doc.get("sessionIds")
                     if cwd and isinstance(ids, list):
-                        for sid in ids:
-                            found.setdefault(_str(sid), cwd)
-            self._sidebar_cache[d] = found
-        return self._sidebar_cache[d]
+                        for session_id in ids:
+                            found.setdefault(_str(session_id), cwd)
+            self._sidebar_cache[directory] = found
+        return self._sidebar_cache[directory]
 
     @staticmethod
     def _workspace_cwd(session_dir: Path) -> str:
-        f = session_dir / "workspace.yaml"
-        if f.is_symlink() or not f.is_file():
+        path = session_dir / "workspace.yaml"
+        if path.is_symlink() or not path.is_file():
             return ""
-        return read_flat_yaml(f).get("cwd") or ""
+        return read_flat_yaml(path).get("cwd") or ""
 
-    def _fallback_project(self, artifact: Artifact, session_dir: Path, sid: str) -> str:
-        return self._workspace_cwd(session_dir) or self._sidebar(artifact).get(sid, "")
+    def _fallback_project(self, artifact: Artifact, session_dir: Path, session_id: str) -> str:
+        return self._workspace_cwd(session_dir) or self._sidebar(artifact).get(session_id, "")
 
     # -- events.jsonl -------------------------------------------------------
 
-    def _parse_events(self, artifact: Artifact, sid: str, opts: Options) -> Iterator[Row]:
+    def _parse_events(self, artifact: Artifact, session_id: str, opts: Options) -> Iterator[Row]:
         errors: list = []
-        project = self._fallback_project(artifact, artifact.disk_path.parent, sid)
+        project = self._fallback_project(artifact, artifact.disk_path.parent, session_id)
         state = {"project": project, "branch": "", "model": ""}
         names: dict[str, str] = {}
         requested: set[str] = set()
         models: dict = {}
         modes: dict = {}
-        perm = {"mode": "", "agent": ""}
+        permission = {"mode": "", "agent": ""}
 
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            etype = _str(rec.get("type"))
-            data = _dict(rec.get("data"))
-            ts = to_utc(rec.get("timestamp"))
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            event_type = _str(record.get("type"))
+            data = _dict(record.get("data"))
+            timestamp = to_utc(record.get("timestamp"))
 
             def row(
                 turn: str,
@@ -549,16 +387,16 @@ class CopilotCliParser(Parser):
                 tool_name: str = "",
                 tool_use_id: str = "",
                 model: str = "",
-                n=n,
-                ts=ts,
+                line_number=line_number,
+                timestamp=timestamp,
             ) -> Row:
                 return self._row(
                     artifact,
-                    n,
+                    line_number,
                     turn,
                     text,
-                    timestamp_utc=ts,
-                    session_id=sid,
+                    timestamp_utc=timestamp,
+                    session_id=session_id,
                     project_path=state["project"],
                     git_branch=state["branch"],
                     model=model or state["model"],
@@ -566,101 +404,105 @@ class CopilotCliParser(Parser):
                     tool_use_id=tool_use_id,
                 )
 
-            if etype in ("session.start", "session.resume", "session.context_changed"):
-                ctx = _dict(data.get("context")) if "context" in data else data
-                if ctx.get("cwd"):
-                    state["project"] = _str(ctx.get("cwd"))
-                if "branch" in ctx or etype == "session.context_changed":
-                    state["branch"] = _str(ctx.get("branch"))
-                if etype == "session.start":
+            if event_type in ("session.start", "session.resume", "session.context_changed"):
+                context = _dict(data.get("context")) if "context" in data else data
+                if context.get("cwd"):
+                    state["project"] = _str(context.get("cwd"))
+                if "branch" in context or event_type == "session.context_changed":
+                    state["branch"] = _str(context.get("branch"))
+                if event_type == "session.start":
                     yield row(
                         "system",
                         "session start: copilot %s producer=%s cwd=%s"
                         % (
                             _str(data.get("copilotVersion")) or "-",
                             _str(data.get("producer")) or "-",
-                            _str(ctx.get("cwd")) or "-",
+                            _str(context.get("cwd")) or "-",
                         ),
                     )
-                elif etype == "session.resume":
+                elif event_type == "session.resume":
                     yield row("system", "session resumed")
-            elif etype == "system.message":
+            elif event_type == "system.message":
                 label = "developer message" if data.get("role") == "developer" else "system prompt"
                 yield row("system", "%s: %s" % (label, _str(data.get("content"))))
-            elif etype == "user.message":
-                yield self._user_row(row, rec, data)
-            elif etype == "assistant.message":
+            elif event_type == "user.message":
+                yield self._user_row(row, record, data)
+            elif event_type == "assistant.message":
                 yield from self._assistant_rows(row, data, opts, names, requested)
-            elif etype == "assistant.reasoning":
+            elif event_type == "assistant.reasoning":
                 if opts.include_thinking and data.get("content"):
                     yield row("thinking", _str(data.get("content")))
-            elif etype in ("tool.execution_start", "tool.user_requested"):
-                cid = _str(data.get("toolCallId"))
+            elif event_type in ("tool.execution_start", "tool.user_requested"):
+                call_id = _str(data.get("toolCallId"))
                 name = _str(data.get("toolName"))
-                if cid and name:
-                    names.setdefault(cid, name)
-                if etype == "tool.execution_start" and cid in requested:
+                if call_id and name:
+                    names.setdefault(call_id, name)
+                if event_type == "tool.execution_start" and call_id in requested:
                     continue
-                requested.add(cid)
+                requested.add(call_id)
                 text = args_text(data.get("arguments"))
-                if etype == "tool.user_requested":
+                if event_type == "tool.user_requested":
                     text = "user requested: " + text
-                yield row("tool_use", text, name, cid, _str(data.get("model")))
-            elif etype == "tool.execution_complete":
-                cid = _str(data.get("toolCallId"))
+                yield row("tool_use", text, name, call_id, _str(data.get("model")))
+            elif event_type == "tool.execution_complete":
+                call_id = _str(data.get("toolCallId"))
                 yield row(
                     "tool_result",
                     result_text(data),
-                    names.get(cid, ""),
-                    cid,
+                    names.get(call_id, ""),
+                    call_id,
                     _str(data.get("model")),
                 )
-            elif etype.startswith("permission.") or etype in (
+            elif event_type.startswith("permission.") or event_type in (
                 "session.permissions_changed",
                 "session.mode_changed",
             ):
-                yield from self._permission_rows(row, etype, data, names, modes, perm, sid)
-            elif etype in ("session.model_change", "session.auto_mode_resolved"):
-                yield from self._model_rows(row, etype, data, models, state, sid)
-            elif etype == "session.info":
+                yield from self._permission_rows(
+                    row, event_type, data, names, modes, permission, session_id
+                )
+            elif event_type in ("session.model_change", "session.auto_mode_resolved"):
+                yield from self._model_rows(row, event_type, data, models, state, session_id)
+            elif event_type == "session.info":
                 yield row("system", self._info_text(data))
-            elif etype == "model.message":
+            elif event_type == "model.message":
                 call_model = _str(_dict(data.get("modelCall")).get("model"))
                 content = _str(_dict(data.get("message")).get("content"))
                 yield row(
                     "system", "utility model %s: %s" % (call_model, content), model=call_model
                 )
-            elif etype == "session.compaction_complete":
+            elif event_type == "session.compaction_complete":
                 yield row("system", "compaction summary: %s" % _str(data.get("summaryContent")))
-            elif etype in ("abort", "session.error", "session.warning"):
+            elif event_type in ("abort", "session.error", "session.warning"):
                 text = _str(data.get("reason")) or _str(data.get("message")) or compact_json(data)
-                yield row("system", "%s: %s" % (etype, text))
-            elif etype in ("hook.start", "hook.end"):
+                yield row("system", "%s: %s" % (event_type, text))
+            elif event_type in ("hook.start", "hook.end"):
                 yield row(
                     "system",
-                    self._hook_text(etype, data),
+                    self._hook_text(event_type, data),
                     tool_use_id=_str(data.get("parentToolCallId")),
                 )
-            elif etype in NOTE_TYPES or etype.startswith(NOTE_PREFIXES):
-                main = next((_str(data[k]) for k in NOTE_KEYS if data.get(k) not in (None, "")), "")
-                yield row("system", "%s: %s" % (etype, main or compact_json(data)))
-            elif etype == "session.shutdown":
+            elif event_type in NOTE_TYPES or event_type.startswith(NOTE_PREFIXES):
+                main = next(
+                    (_str(data[key]) for key in NOTE_KEYS if data.get(key) not in (None, "")), ""
+                )
+                yield row("system", "%s: %s" % (event_type, main or compact_json(data)))
+            elif event_type == "session.shutdown":
                 yield row("system", self._shutdown_text(data))
             # assistant.turn_*, session.usage_*, the other model.* events and
             # unknown types are bookkeeping: no row.
 
-        for r in error_rows(self, artifact, errors, sid, state["project"]):
-            r.git_branch = state["branch"]
-            yield r
+        for error_row in error_rows(self, artifact, errors, session_id, state["project"]):
+            error_row.git_branch = state["branch"]
+            yield error_row
 
     @staticmethod
-    def _user_row(row: Callable[..., Row], rec: dict, data: dict) -> Row:
+    def _user_row(row: Callable[..., Row], record: dict, data: dict) -> Row:
         """`user` for a typed prompt, else `system` with what sent it."""
         content = _str(data.get("content"))
         source = _str(data.get("source"))
         if data.get("isAutopilotContinuation"):
             label = "auto-continuation"
-        elif rec.get("agentId"):
+        elif record.get("agentId"):
             label = "subagent task"
         elif source and source != "user":
             label = source
@@ -681,98 +523,113 @@ class CopilotCliParser(Parser):
             if not thought:
                 parts = []
                 for block in _dict(data.get("reasoningBlocks")).get("blocks") or []:
-                    for s in _dict(block).get("summary") or []:
-                        t = _dict(s).get("text")
-                        if isinstance(t, str) and t:
-                            parts.append(t)
+                    for summary in _dict(block).get("summary") or []:
+                        text = _dict(summary).get("text")
+                        if isinstance(text, str) and text:
+                            parts.append(text)
                 thought = "\n\n".join(parts)
             if thought:
                 yield row("thinking", thought, model=model)
-        for req in data.get("toolRequests") or []:
-            req = _dict(req)
-            cid = _str(req.get("toolCallId"))
-            name = _str(req.get("name"))
-            if cid:
-                names[cid] = name
-                requested.add(cid)
-            yield row("tool_use", args_text(req.get("arguments")), name, cid, model)
+        for request in data.get("toolRequests") or []:
+            request = _dict(request)
+            call_id = _str(request.get("toolCallId"))
+            name = _str(request.get("name"))
+            if call_id:
+                names[call_id] = name
+                requested.add(call_id)
+            yield row("tool_use", args_text(request.get("arguments")), name, call_id, model)
 
     @staticmethod
     def _permission_rows(
         row: Callable[..., Row],
-        etype: str,
+        event_type: str,
         data: dict,
         names: dict,
         modes: dict,
-        perm: dict,
-        sid: str,
+        permission: dict,
+        session_id: str,
     ) -> Iterator[Row]:
-        """Request, decision and mode rows. The tracked mode is
-        `<permissionMode> agent=<agentMode>`; the two change events update
-        their half of it."""
-        if etype == "permission.requested":
-            req = _dict(data.get("permissionRequest"))
-            cid = _str(req.get("toolCallId"))
-            text = "permission request: %s" % (_str(req.get("kind")) or "-")
-            target = request_target(req)
+        """Yield the permission request, decision and mode rows of one event.
+
+        The tracked mode is `<permissionMode> agent=<agentMode>`; the two change events update their
+        half of it.
+        """
+        if event_type == "permission.requested":
+            request = _dict(data.get("permissionRequest"))
+            call_id = _str(request.get("toolCallId"))
+            text = "permission request: %s" % (_str(request.get("kind")) or "-")
+            target = request_target(request)
             if target:
                 text += " " + target
-            if req.get("intention") not in (None, ""):
-                text += " intention=%s" % _str(req.get("intention"))
-            yield row("system", text, names.get(cid, ""), cid)
+            if request.get("intention") not in (None, ""):
+                text += " intention=%s" % _str(request.get("intention"))
+            yield row("system", text, names.get(call_id, ""), call_id)
             if data.get("permissionMode"):
-                perm["mode"] = _str(data.get("permissionMode"))
+                permission["mode"] = _str(data.get("permissionMode"))
             if data.get("agentMode"):
-                perm["agent"] = _str(data.get("agentMode"))
-            if perm["mode"]:
-                value = perm["mode"] + (" agent=%s" % perm["agent"] if perm["agent"] else "")
-                mode_text = track_change("permission mode", modes, sid, value)
+                permission["agent"] = _str(data.get("agentMode"))
+            if permission["mode"]:
+                value = permission["mode"] + (
+                    " agent=%s" % permission["agent"] if permission["agent"] else ""
+                )
+                mode_text = track_change("permission mode", modes, session_id, value)
                 if mode_text:
-                    yield row("system", mode_text, names.get(cid, ""), cid)
-        elif etype == "permission.completed":
-            cid = _str(data.get("toolCallId"))
-            yield row("system", decision_text(data), names.get(cid, ""), cid)
-        elif etype == "permission.carriedForward":
-            cid = _str(data.get("toolCallId"))
+                    yield row("system", mode_text, names.get(call_id, ""), call_id)
+        elif event_type == "permission.completed":
+            call_id = _str(data.get("toolCallId"))
+            yield row("system", decision_text(data), names.get(call_id, ""), call_id)
+        elif event_type == "permission.carriedForward":
+            call_id = _str(data.get("toolCallId"))
             yield row(
                 "system",
                 "permission decision: carried-forward source=%s"
                 % (_str(data.get("decisionSource")) or "-"),
-                names.get(cid, ""),
-                cid,
+                names.get(call_id, ""),
+                call_id,
             )
-        elif etype == "session.permissions_changed":
+        elif event_type == "session.permissions_changed":
             allow_all = (
                 "mode" not in data
                 and "previousMode" not in data
-                and any(k in data for k in ALLOW_ALL_KEYS)
+                and any(key in data for key in ALLOW_ALL_KEYS)
             )
             if allow_all:
                 old = _str(data.get("previousAllowAllPermissionMode")) or "-"
                 new = _str(data.get("allowAllPermissionMode"))
                 yield row("system", "permission mode: allow-all %s -> %s" % (old, new or "-"))
-                perm["mode"] = "allow-all %s" % new if new else perm["mode"]
+                permission["mode"] = "allow-all %s" % new if new else permission["mode"]
             else:
                 old, new = _str(data.get("previousMode")) or "-", _str(data.get("mode")) or "-"
                 yield row("system", "permission mode: %s -> %s" % (old, new))
-                perm["mode"] = _str(data.get("mode"))
-            if perm["mode"]:
-                modes[sid] = perm["mode"] + (" agent=%s" % perm["agent"] if perm["agent"] else "")
-        elif etype == "session.mode_changed":
+                permission["mode"] = _str(data.get("mode"))
+            if permission["mode"]:
+                modes[session_id] = permission["mode"] + (
+                    " agent=%s" % permission["agent"] if permission["agent"] else ""
+                )
+        elif event_type == "session.mode_changed":
             old, new = _str(data.get("previousMode")) or "-", _str(data.get("newMode")) or "-"
             yield row("system", "agent mode: %s -> %s" % (old, new))
-            perm["agent"] = _str(data.get("newMode"))
-            if perm["mode"]:
-                modes[sid] = perm["mode"] + (" agent=%s" % perm["agent"] if perm["agent"] else "")
+            permission["agent"] = _str(data.get("newMode"))
+            if permission["mode"]:
+                modes[session_id] = permission["mode"] + (
+                    " agent=%s" % permission["agent"] if permission["agent"] else ""
+                )
 
     @staticmethod
     def _model_rows(
-        row: Callable[..., Row], etype: str, data: dict, models: dict, state: dict, sid: str
+        row: Callable[..., Row],
+        event_type: str,
+        data: dict,
+        models: dict,
+        state: dict,
+        session_id: str,
     ) -> Iterator[Row]:
-        """`model: <id>` at the first and `model: <old> -> <new>` after,
-        kept when unchanged, since a change event is a decision even when it
-        resolves to the same model."""
-        if etype == "session.auto_mode_resolved":
+        """Yield `model: <id>` at the first model and `model: <old> -> <new>` after.
+
+        A change to the same model is kept, since a change event is a decision even
+        when it resolves to the same model.
+        """
+        if event_type == "session.auto_mode_resolved":
             new = _str(data.get("chosenModel"))
             suffix = " (auto, %s)" % (_str(data.get("routingMethod")) or "-")
         else:
@@ -785,19 +642,22 @@ class CopilotCliParser(Parser):
                 suffix += " effort=%s" % _str(data.get("reasoningEffort"))
         if not new:
             return
-        old = models.get(sid) or _str(data.get("previousModel"))
-        models[sid] = new
+        old = models.get(session_id) or _str(data.get("previousModel"))
+        models[session_id] = new
         state["model"] = new
         text = "model: %s -> %s" % (old, new) if old else "model: %s" % new
         yield row("system", text + suffix, model=new)
 
     @staticmethod
-    def _hook_text(etype: str, data: dict) -> str:
-        """`hook <hookType> start: <input>` or `hook <hookType> end:
-        success=<b> output=<output>` and ` error=<error>` when present; each
-        payload as compact JSON in full, `{}` when absent."""
+    def _hook_text(event_type: str, data: dict) -> str:
+        """Return the text of a `hook.start` or `hook.end` event.
+
+        The text is `hook <hookType> start: <input>`, or `hook <hookType> end:
+        success=<b> output=<output>` and ` error=<error>` when present; each payload is
+        compact JSON in full, `{}` when absent.
+        """
         hook = _str(data.get("hookType")) or "-"
-        if etype == "hook.start":
+        if event_type == "hook.start":
             payload = data.get("input")
             return "hook %s start: %s" % (hook, "{}" if payload is None else compact_json(payload))
         success = data.get("success")
@@ -813,8 +673,7 @@ class CopilotCliParser(Parser):
 
     @staticmethod
     def _info_text(data: dict) -> str:
-        """`session.info <infoType>: <message>`, then ` url=` and ` tip=`
-        for the keys present."""
+        """Return `session.info <infoType>: <message>` and the `url` and `tip` present."""
         text = "session.info %s: %s" % (_str(data.get("infoType")), _str(data.get("message")))
         for key in ("url", "tip"):
             if data.get(key) not in (None, ""):
@@ -825,7 +684,7 @@ class CopilotCliParser(Parser):
     def _shutdown_text(data: dict) -> str:
         files = _dict(data.get("codeChanges")).get("filesModified")
         if isinstance(files, list):
-            files_text = ", ".join(_str(f) for f in files) or "none"
+            files_text = ", ".join(_str(path) for path in files) or "none"
         else:
             files_text = _str(files) or "none"
         parts = ["session end:", _str(data.get("shutdownType")) or "-"]
@@ -836,16 +695,16 @@ class CopilotCliParser(Parser):
 
     # -- workspace.yaml -----------------------------------------------------
 
-    def _parse_workspace(self, artifact: Artifact, sid: str) -> Iterator[Row]:
+    def _parse_workspace(self, artifact: Artifact, session_id: str) -> Iterator[Row]:
         meta = read_flat_yaml(artifact.disk_path)
-        sid = meta.get("id") or sid
-        cols = {
+        session_id = meta.get("id") or session_id
+        columns = {
             "timestamp_utc": to_utc(meta.get("created_at")),
-            "session_id": sid,
-            "project_path": meta.get("cwd") or self._sidebar(artifact).get(sid, ""),
+            "session_id": session_id,
+            "project_path": meta.get("cwd") or self._sidebar(artifact).get(session_id, ""),
         }
         if meta.get("name"):
-            yield self._row(artifact, 1, "system", "session name: %s" % meta.get("name"), **cols)
+            yield self._row(artifact, 1, "system", "session name: %s" % meta.get("name"), **columns)
         yield self._row(
             artifact,
             1,
@@ -857,11 +716,11 @@ class CopilotCliParser(Parser):
                 meta.get("summary_count") or "-",
                 meta.get("client_name") or "",
             ),
-            **cols,
+            **columns,
         )
         # A session the app pre-created and never prompted (Copilot
         # Desktop's pool and probe sessions) has no events.jsonl; its cwd
-        # is the agent's, not a project (issue 149).
+        # is the agent's, not a project.
         if meta.get("cwd") and not os.path.lexists(artifact.disk_path.parent / "events.jsonl"):
             yield self._row(
                 artifact,
@@ -869,7 +728,7 @@ class CopilotCliParser(Parser):
                 "system",
                 "%s %s (working directory of a session the app pre-created and never"
                 " prompted: no events.jsonl)" % (SCRATCH_PREFIX, meta.get("cwd")),
-                **cols,
+                **columns,
             )
         if meta.get("mc_session_id"):
             yield self._row(
@@ -879,43 +738,48 @@ class CopilotCliParser(Parser):
                 "session synced: remote session %s task %s last event %s remote_steerable=%s"
                 " (from workspace.yaml, file mtime)"
                 % tuple(
-                    meta.get(k) or "-"
-                    for k in ("mc_session_id", "mc_task_id", "mc_last_event_id", "remote_steerable")
+                    meta.get(key) or "-"
+                    for key in (
+                        "mc_session_id",
+                        "mc_task_id",
+                        "mc_last_event_id",
+                        "remote_steerable",
+                    )
                 ),
-                **{**cols, "timestamp_utc": file_mtime(artifact)},
+                **{**columns, "timestamp_utc": file_mtime(artifact)},
             )
 
     # -- rewind-file-snapshots/index.json -----------------------------------
 
-    def _parse_snapshots(self, artifact: Artifact, sid: str) -> Iterator[Row]:
+    def _parse_snapshots(self, artifact: Artifact, session_id: str) -> Iterator[Row]:
         doc = _read_json(artifact.disk_path)
         if not isinstance(doc, dict):
             yield self._problem(artifact, "parser: rewind snapshot index is not a JSON object")
             return
         session_dir = artifact.disk_path.parent.parent
-        project = self._fallback_project(artifact, session_dir, sid)
-        for i, snap in enumerate(doc.get("snapshots") or [], 1):
-            snap = _dict(snap)
-            cols = {
-                "timestamp_utc": to_utc(snap.get("timestamp")),
-                "session_id": sid,
+        project = self._fallback_project(artifact, session_dir, session_id)
+        for i, snapshot in enumerate(doc.get("snapshots") or [], 1):
+            snapshot = _dict(snapshot)
+            columns = {
+                "timestamp_utc": to_utc(snapshot.get("timestamp")),
+                "session_id": session_id,
                 "project_path": project,
             }
-            if snap.get("userMessage") not in (None, ""):
-                yield self._row(artifact, i, "user", _str(snap.get("userMessage")), **cols)
+            if snapshot.get("userMessage") not in (None, ""):
+                yield self._row(artifact, i, "user", _str(snapshot.get("userMessage")), **columns)
             paths = [
-                _str(_dict(f).get("path"))
-                for f in _dict(snap.get("files")).values()
-                if _dict(f).get("path")
+                _str(_dict(entry).get("path"))
+                for entry in _dict(snapshot.get("files")).values()
+                if _dict(entry).get("path")
             ]
             text = "rewind snapshot: %s files +%s -%s" % (
-                _str(snap.get("fileCount")) or "0",
-                _str(snap.get("linesAdded")) or "0",
-                _str(snap.get("linesRemoved")) or "0",
+                _str(snapshot.get("fileCount")) or "0",
+                _str(snapshot.get("linesAdded")) or "0",
+                _str(snapshot.get("linesRemoved")) or "0",
             )
             if paths:
                 text += ": " + ", ".join(paths)
-            yield self._row(artifact, i, "system", text, **cols)
+            yield self._row(artifact, i, "system", text, **columns)
 
     # -- session-store.db ---------------------------------------------------
 
@@ -924,66 +788,76 @@ class CopilotCliParser(Parser):
             yield self._problem(artifact, "parser: not a SQLite database")
             return
         try:
-            with open_copy(artifact.disk_path) as con:
-                rows = list(self._store_rows(artifact, con))
-        except sqlite3.DatabaseError as e:
-            yield self._problem(artifact, "parser: SQLite error: %s" % e)
+            with open_copy(artifact.disk_path) as connection:
+                rows = list(self._store_rows(artifact, connection))
+        except sqlite3.DatabaseError as error:
+            yield self._problem(artifact, "parser: SQLite error: %s" % error)
             return
         yield from rows
 
     @staticmethod
-    def _select(con: sqlite3.Connection, table: str, order: str) -> list[dict]:
+    def _select(connection: sqlite3.Connection, table: str, order: str) -> list[dict]:
         sql = "select rowid as _rowid, * from %s order by %s" % (table, order)
-        return [dict(r) for r in con.execute(sql)]
+        return [dict(row) for row in connection.execute(sql)]
 
-    def _store_rows(self, artifact: Artifact, con: sqlite3.Connection) -> Iterator[Row]:
-        tables = table_names(con)
+    def _store_rows(self, artifact: Artifact, connection: sqlite3.Connection) -> Iterator[Row]:
+        tables = table_names(connection)
         sidebar = self._sidebar(artifact)
         sessions: dict[str, dict] = {}
         if "sessions" in tables:
-            for s in self._select(con, "sessions", "created_at, rowid"):
-                sessions[_str(s.get("id"))] = s
+            for session in self._select(connection, "sessions", "created_at, rowid"):
+                sessions[_str(session.get("id"))] = session
 
-        def stamp(sid: str, line, turn: str, text: str, ts, **cols) -> Row:
-            s = sessions.get(sid, {})
+        def stamp(session_id: str, line, turn: str, text: str, timestamp, **columns) -> Row:
+            session = sessions.get(session_id, {})
             return self._row(
                 artifact,
                 int(line or 0),
                 turn,
                 text,
-                timestamp_utc=to_utc(ts),
-                session_id=sid,
-                project_path=_str(s.get("cwd")) or sidebar.get(sid, ""),
-                git_branch=_str(s.get("branch")),
-                **cols,
+                timestamp_utc=to_utc(timestamp),
+                session_id=session_id,
+                project_path=_str(session.get("cwd")) or sidebar.get(session_id, ""),
+                git_branch=_str(session.get("branch")),
+                **columns,
             )
 
-        for sid, s in sessions.items():
-            if s.get("summary") not in (None, ""):
+        for session_id, session in sessions.items():
+            if session.get("summary") not in (None, ""):
                 yield stamp(
-                    sid,
-                    s["_rowid"],
+                    session_id,
+                    session["_rowid"],
                     "system",
-                    "session name: %s" % s["summary"],
-                    s.get("created_at"),
+                    "session name: %s" % session["summary"],
+                    session.get("created_at"),
                 )
         if "turns" in tables:
-            for t in self._select(con, "turns", "session_id, turn_index, rowid"):
-                sid = _str(t.get("session_id"))
-                for col, turn in (("user_message", "user"), ("assistant_response", "assistant")):
-                    if t.get(col) not in (None, ""):
-                        yield stamp(sid, t["_rowid"], turn, _str(t[col]), t.get("timestamp"))
+            for turn_record in self._select(connection, "turns", "session_id, turn_index, rowid"):
+                session_id = _str(turn_record.get("session_id"))
+                for column, turn in (("user_message", "user"), ("assistant_response", "assistant")):
+                    if turn_record.get(column) not in (None, ""):
+                        yield stamp(
+                            session_id,
+                            turn_record["_rowid"],
+                            turn,
+                            _str(turn_record[column]),
+                            turn_record.get("timestamp"),
+                        )
         if "session_files" in tables:
-            for f in self._select(con, "session_files", "first_seen_at, rowid"):
+            for file_record in self._select(connection, "session_files", "first_seen_at, rowid"):
                 text = "file changed: %s tool=%s" % (
-                    _str(f.get("file_path")),
-                    _str(f.get("tool_name")) or "-",
+                    _str(file_record.get("file_path")),
+                    _str(file_record.get("tool_name")) or "-",
                 )
                 yield stamp(
-                    _str(f.get("session_id")), f["_rowid"], "system", text, f.get("first_seen_at")
+                    _str(file_record.get("session_id")),
+                    file_record["_rowid"],
+                    "system",
+                    text,
+                    file_record.get("first_seen_at"),
                 )
         if "session_refs" in tables:
-            for ref in self._select(con, "session_refs", "created_at, rowid"):
+            for ref in self._select(connection, "session_refs", "created_at, rowid"):
                 text = "reference: %s %s" % (_str(ref.get("ref_type")), _str(ref.get("ref_value")))
                 yield stamp(
                     _str(ref.get("session_id")),
@@ -993,47 +867,56 @@ class CopilotCliParser(Parser):
                     ref.get("created_at"),
                 )
         if "checkpoints" in tables:
-            for c in self._select(con, "checkpoints", "created_at, rowid"):
+            for checkpoint in self._select(connection, "checkpoints", "created_at, rowid"):
                 lines = [
-                    "checkpoint %s: %s" % (_str(c.get("checkpoint_number")), _str(c.get("title")))
+                    "checkpoint %s: %s"
+                    % (_str(checkpoint.get("checkpoint_number")), _str(checkpoint.get("title")))
                 ]
-                for col in CHECKPOINT_COLUMNS:
-                    if c.get(col) not in (None, ""):
-                        lines.append("%s: %s" % (col, _str(c[col])))
+                for column in CHECKPOINT_COLUMNS:
+                    if checkpoint.get(column) not in (None, ""):
+                        lines.append("%s: %s" % (column, _str(checkpoint[column])))
                 yield stamp(
-                    _str(c.get("session_id")),
-                    c["_rowid"],
+                    _str(checkpoint.get("session_id")),
+                    checkpoint["_rowid"],
                     "system",
                     "\n".join(lines),
-                    c.get("created_at"),
+                    checkpoint.get("created_at"),
                 )
         if "forge_trajectory_events" in tables:
-            yield from self._forge_rows(con, stamp)
+            yield from self._forge_rows(connection, stamp)
 
-    def _forge_rows(self, con: sqlite3.Connection, stamp: Callable[..., Row]) -> Iterator[Row]:
-        """`forge_trajectory_events`: not observed on any real install,
-        bundle-derived. A row with a `command` is a `tool_use`, one with an
-        `output` or an `exit_code` a `tool_result`, both joined on
-        `tool_call_id`; every column may be NULL."""
-        for e in self._select(con, "forge_trajectory_events", "created_at, rowid"):
-            sid = _str(e.get("session_id"))
-            cid = _str(e.get("tool_call_id"))
-            if e.get("command") not in (None, ""):
+    def _forge_rows(
+        self, connection: sqlite3.Connection, stamp: Callable[..., Row]
+    ) -> Iterator[Row]:
+        """Yield the `forge_trajectory_events` rows, read from the bundle's shape alone.
+
+        A row with a `command` is a `tool_use`, one with an `output` or an `exit_code` a
+        `tool_result`, both joined on `tool_call_id`; every column may be NULL.
+        """
+        for event in self._select(connection, "forge_trajectory_events", "created_at, rowid"):
+            session_id = _str(event.get("session_id"))
+            call_id = _str(event.get("tool_call_id"))
+            if event.get("command") not in (None, ""):
                 yield stamp(
-                    sid,
-                    e["_rowid"],
+                    session_id,
+                    event["_rowid"],
                     "tool_use",
-                    _str(e.get("command")),
-                    e.get("created_at"),
-                    tool_use_id=cid,
+                    _str(event.get("command")),
+                    event.get("created_at"),
+                    tool_use_id=call_id,
                 )
-            code = e.get("exit_code")
-            if e.get("output") is not None or code is not None:
-                text = _str(e.get("output"))
+            code = event.get("exit_code")
+            if event.get("output") is not None or code is not None:
+                text = _str(event.get("output"))
                 if code not in (None, 0, "0"):
                     text = "[exit %s] %s" % (code, text)
                 yield stamp(
-                    sid, e["_rowid"], "tool_result", text, e.get("created_at"), tool_use_id=cid
+                    session_id,
+                    event["_rowid"],
+                    "tool_result",
+                    text,
+                    event.get("created_at"),
+                    tool_use_id=call_id,
                 )
 
     # -- command-history-state.json -----------------------------------------
@@ -1049,20 +932,22 @@ class CopilotCliParser(Parser):
 
     # -- standing permissions -----------------------------------------------
 
-    def _setting(self, artifact: Artifact, ts: str, key: str, value, project: str = "") -> Row:
+    def _setting(
+        self, artifact: Artifact, timestamp: str, key: str, value, project: str = ""
+    ) -> Row:
         text = "permission setting: %s=%s (from %s, file mtime)" % (
             key,
             setting_value(value),
             artifact.rel,
         )
-        return self._row(artifact, 1, "system", text, timestamp_utc=ts, project_path=project)
+        return self._row(artifact, 1, "system", text, timestamp_utc=timestamp, project_path=project)
 
     def _parse_permissions(self, artifact: Artifact) -> Iterator[Row]:
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         doc = _read_json(artifact.disk_path)
         if not isinstance(doc, dict):
             yield self._problem(
-                artifact, "parser: permissions-config.json is not a JSON object", ts
+                artifact, "parser: permissions-config.json is not a JSON object", timestamp
             )
             return
         for path, entry in _dict(doc.get("locations")).items():
@@ -1072,23 +957,25 @@ class CopilotCliParser(Parser):
                 if not isinstance(items, list):
                     continue
                 for item in items:
-                    yield self._setting(artifact, ts, "locations.%s.%s" % (path, key), item, path)
+                    yield self._setting(
+                        artifact, timestamp, "locations.%s.%s" % (path, key), item, path
+                    )
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
-        ts = file_mtime(artifact)
+        timestamp = file_mtime(artifact)
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
             doc = json.loads(strip_jsonc(raw))
         except (OSError, ValueError):
             doc = None
         if not isinstance(doc, dict):
-            yield self._problem(artifact, "parser: settings.json is not a JSON object", ts)
+            yield self._problem(artifact, "parser: settings.json is not a JSON object", timestamp)
             return
         for key in ("allowedUrls", "deniedUrls"):
             items = doc.get(key)
             if isinstance(items, list):
                 for item in items:
-                    yield self._setting(artifact, ts, key, item)
+                    yield self._setting(artifact, timestamp, key, item)
 
     # -- logs/process-*.log -------------------------------------------------
 
@@ -1097,18 +984,20 @@ class CopilotCliParser(Parser):
             lines = artifact.disk_path.read_bytes().decode("utf-8", errors="replace").splitlines()
         except OSError:
             return
-        sessions = {m.group(1) for line in lines for m in [WORKSPACE_LINE_RX.search(line)] if m}
-        sid = next(iter(sessions)) if len(sessions) == 1 else ""
-        for n, line in enumerate(lines, 1):
-            m = SIGNED_IN_RX.search(line)
-            if not m:
+        sessions = {
+            match.group(1) for line in lines for match in [WORKSPACE_LINE_RX.search(line)] if match
+        }
+        session_id = next(iter(sessions)) if len(sessions) == 1 else ""
+        for line_number, line in enumerate(lines, 1):
+            match = SIGNED_IN_RX.search(line)
+            if not match:
                 continue
-            t = LOG_TIME_RX.match(line)
+            time_match = LOG_TIME_RX.match(line)
             yield self._row(
                 artifact,
-                n,
+                line_number,
                 "system",
-                "signed in: %s as %s" % (m.group(1), m.group(2)),
-                timestamp_utc=to_utc(t.group(1)) if t else "",
-                session_id=sid,
+                "signed in: %s as %s" % (match.group(1), match.group(2)),
+                timestamp_utc=to_utc(time_match.group(1)) if time_match else "",
+                session_id=session_id,
             )

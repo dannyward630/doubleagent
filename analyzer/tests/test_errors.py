@@ -26,8 +26,8 @@ SESSION_REL = ".claude/projects/-srv-proj/" + CLAUDE_SESSION + ".jsonl"
 def run_cli(argv):
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-        rc = cli.main(argv)
-    return rc, out.getvalue(), err.getvalue()
+        exit_code = cli.main(argv)
+    return exit_code, out.getvalue(), err.getvalue()
 
 
 def build_collected(root: Path, extra_rows=()) -> Path:
@@ -39,9 +39,9 @@ def build_collected(root: Path, extra_rows=()) -> Path:
     shutil.copyfile(home / SESSION_REL, dest)
     rows = [manifest_row(SESSION_REL), *extra_rows]
     col = root / "col"
-    with open(col / "manifest.jsonl", "w", encoding="utf-8") as fh:
-        for r in rows:
-            fh.write(json.dumps(r) + "\n")
+    with open(col / "manifest.jsonl", "w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
     (col / "collection.json").write_text('{"hostname": "h1"}', encoding="utf-8")
     return col
 
@@ -60,9 +60,9 @@ def manifest_row(rel: str) -> dict:
 
 
 def make_archive(src: Path, dest: Path) -> Path:
-    with tarfile.open(dest, "w:gz") as tf:
-        for p in sorted(src.iterdir()):
-            tf.add(p, arcname=p.name)
+    with tarfile.open(dest, "w:gz") as archive:
+        for entry in sorted(src.iterdir()):
+            archive.add(entry, arcname=entry.name)
     return dest
 
 
@@ -72,37 +72,39 @@ class ErrorTestBase(unittest.TestCase):
         self._locked: list[Path] = []
 
     def tearDown(self):
-        for p in self._locked:
-            os.chmod(p, stat.S_IRWXU)
+        for path in self._locked:
+            os.chmod(path, stat.S_IRWXU)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def lock(self, p: Path) -> None:
-        os.chmod(p, 0)
-        self._locked.append(p)
+    def lock(self, path: Path) -> None:
+        os.chmod(path, 0)
+        self._locked.append(path)
 
     def assertInputError(self, argv, path, reason):
-        rc, out, err = run_cli(argv)
-        self.assertEqual(rc, 2, out + err)
+        exit_code, out, err = run_cli(argv)
+        self.assertEqual(exit_code, 2, out + err)
         self.assertEqual(err, "error: %s: %s\n" % (path, reason))
         self.assertNotIn("Traceback", out + err)
 
 
 class MissingInputTests(ErrorTestBase):
     def test_detect(self):
-        p = self.tmp / "nope.tar.gz"
-        self.assertInputError(["detect", str(p)], p, "no such file or directory")
+        path = self.tmp / "nope.tar.gz"
+        self.assertInputError(["detect", str(path)], path, "no such file or directory")
 
     def test_timeline(self):
-        p = self.tmp / "nope.tar.gz"
+        path = self.tmp / "nope.tar.gz"
         self.assertInputError(
-            ["timeline", str(p), "-o", str(self.tmp / "out")], p, "no such file or directory"
+            ["timeline", str(path), "-o", str(self.tmp / "out")], path, "no such file or directory"
         )
         self.assertFalse((self.tmp / "out").exists())
 
     def test_inventory(self):
-        p = self.tmp / "nope.txt"
+        path = self.tmp / "nope.txt"
         self.assertInputError(
-            ["inventory", str(p), "-o", str(self.tmp / "f.csv")], p, "no such file or directory"
+            ["inventory", str(path), "-o", str(self.tmp / "f.csv")],
+            path,
+            "no such file or directory",
         )
         self.assertFalse((self.tmp / "f.csv").exists())
 
@@ -117,15 +119,15 @@ class MissingFromCollectionTests(ErrorTestBase):
         self.line = "/home/alice/.claude/projects/-srv-proj/gone.jsonl: missing from the collection"
 
     def check(self, path):
-        rc, out, err = run_cli(["timeline", str(path), "-o", str(self.tmp / "tl")])
-        self.assertEqual(rc, 0, out + err)
+        exit_code, out, err = run_cli(["timeline", str(path), "-o", str(self.tmp / "tl")])
+        self.assertEqual(exit_code, 0, out + err)
         self.assertEqual(out.count("problem:   " + self.line + "\n"), 1, out)
         rows = (self.tmp / "tl" / "timeline.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertGreater(len(rows), 0)
         inv = json.loads((self.tmp / "tl" / "inventory.json").read_text(encoding="utf-8"))
         self.assertEqual(inv["problems"], [self.line])
-        rc, out, err = run_cli(["detect", str(path)])
-        self.assertEqual(rc, 0, out + err)
+        exit_code, out, err = run_cli(["detect", str(path)])
+        self.assertEqual(exit_code, 0, out + err)
         self.assertIn("problem: " + self.line + "\n", out)
 
     def test_extracted_collection(self):
@@ -166,11 +168,11 @@ class PermissionTests(ErrorTestBase):
         self.assertInputError(["detect", str(col)], col / "manifest.jsonl", "permission denied")
 
     def test_unreadable_inventory_input(self):
-        f = self.tmp / "ws01.txt"
-        f.write_text("", encoding="utf-8")
-        self.lock(f)
+        path = self.tmp / "ws01.txt"
+        path.write_text("", encoding="utf-8")
+        self.lock(path)
         self.assertInputError(
-            ["inventory", str(f), "-o", str(self.tmp / "f.csv")], f, "permission denied"
+            ["inventory", str(path), "-o", str(self.tmp / "f.csv")], path, "permission denied"
         )
 
     def test_unreadable_directory_in_loose_tree(self):
@@ -181,25 +183,25 @@ class PermissionTests(ErrorTestBase):
         locked_agent = root / "home/alice/.codex"
         self.lock(locked_home)
         self.lock(locked_agent)
-        rc, out, err = run_cli(["detect", str(root)])
-        self.assertEqual(rc, 0, out + err)
+        exit_code, out, err = run_cli(["detect", str(root)])
+        self.assertEqual(exit_code, 0, out + err)
         self.assertIn("problem: %s: permission denied\n" % locked_home, out)
         self.assertIn("problem: %s: permission denied\n" % locked_agent, out)
         self.assertEqual(out.count("problem:"), 2, out)
-        rc, out, err = run_cli(["detect", str(root), "--json"])
+        exit_code, out, err = run_cli(["detect", str(root), "--json"])
         self.assertEqual(
             sorted(json.loads(out)["problems"]),
-            sorted("%s: permission denied" % p for p in (locked_home, locked_agent)),
+            sorted("%s: permission denied" % path for path in (locked_home, locked_agent)),
         )
-        rc, out, err = run_cli(["timeline", str(root), "-o", str(self.tmp / "tl")])
-        self.assertEqual(rc, 0, out + err)
+        exit_code, out, err = run_cli(["timeline", str(root), "-o", str(self.tmp / "tl")])
+        self.assertEqual(exit_code, 0, out + err)
         self.assertIn("problem:   %s: permission denied\n" % locked_agent, out)
 
     def test_unreadable_file_problem_names_path_once(self):
         col = build_collected(self.tmp)
         self.lock(col / "fs/home/alice" / SESSION_REL)
-        rc, out, err = run_cli(["timeline", str(col), "-o", str(self.tmp / "tl")])
-        self.assertEqual(rc, 1, out + err)  # the only transcript could not be read
+        exit_code, out, err = run_cli(["timeline", str(col), "-o", str(self.tmp / "tl")])
+        self.assertEqual(exit_code, 1, out + err)  # the only transcript could not be read
         self.assertNotIn("Traceback", out + err)
         self.assertIn("problem:   /home/alice/%s: permission denied\n" % SESSION_REL, out)
         self.assertNotIn("Errno", out)
@@ -274,11 +276,11 @@ class IterJsonlTests(unittest.TestCase):
             records = list(iter_jsonl(path, errors))
         self.assertEqual(records, [(1, {"a": 1}), (7, {"b": 2})])
         self.assertEqual(
-            [(n, raw) for n, _message, raw in errors],
+            [(line, raw) for line, _message, raw in errors],
             [(2, "[1, 2]"), (3, '"text"'), (4, "42"), (5, "null"), (6, "{bad")],
         )
         self.assertEqual(
-            [message for _n, message, _raw in errors[:4]],
+            [message for _line, message, _raw in errors[:4]],
             ["unparseable line (not a JSON object)"] * 4,
         )
         self.assertTrue(errors[4][1].startswith("unparseable line (Expecting"))

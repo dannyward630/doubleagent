@@ -133,7 +133,7 @@ class JsonlTests(ShapeBase):
             {"type": "system", "subtype": "compact_boundary", "content": PROMPT},
             {"type": "system", "subtype": "api_error", "error": {"status": 529}, "level": "x"},
         ]
-        body = "".join(json.dumps(r) + "\n" for r in lines)
+        body = "".join(json.dumps(record) + "\n" for record in lines)
         body += '{"type": "user", "message": "cut mid-wri\n'
         (self.root / "s.jsonl").write_text(body, encoding="utf-8")
 
@@ -175,7 +175,7 @@ class JsonlTests(ShapeBase):
                 "message": {"role": "user", "model": "/Users/alice/private-model", "content": []},
             },
         ]
-        body = "".join(json.dumps(r) + "\n" for r in lines)
+        body = "".join(json.dumps(record) + "\n" for record in lines)
         (self.root / "ids.jsonl").write_text(body, encoding="utf-8")
         out = shape(self.root / "ids.jsonl")
         self.assertIn("    subtype: <uuid>=1\n", out)
@@ -195,8 +195,8 @@ class JsonlTests(ShapeBase):
 
 class RedactionTests(ShapeBase):
     def test_uuid_key_and_path(self):
-        d = self.root / "agent" / UUID
-        d.mkdir(parents=True)
+        directory = self.root / "agent" / UUID
+        directory.mkdir(parents=True)
         hexname = "a" * 40
         doc = {
             "dxt:allowlistCache:%s" % UUID: {"ok": True},
@@ -205,7 +205,7 @@ class RedactionTests(ShapeBase):
             "/Users/bob/other": {"trusted": False},
             "alice@example.com": 2,
         }
-        (d / ("%s.json" % UUID)).write_text(json.dumps(doc), encoding="utf-8")
+        (directory / ("%s.json" % UUID)).write_text(json.dumps(doc), encoding="utf-8")
         out = shape(self.root / "agent")
         self.assertIn("== <uuid>/<uuid>.json (", out)
         self.assertIn("    dxt:allowlistCache:<uuid>: object", out)
@@ -218,8 +218,8 @@ class RedactionTests(ShapeBase):
     def test_openai_ids_and_array_keys(self):
         user = "user-" + "Ab1" * 8
         org = "org-" + "Cd2" * 8
-        d = self.root / user
-        d.mkdir()
+        directory = self.root / user
+        directory.mkdir()
         doc = {
             json.dumps([user, UUID]): 1,
             json.dumps(["local", "client-new-thread:" + UUID, "win32:/mnt/c/users/bob/x.py"]): 2,
@@ -230,7 +230,7 @@ class RedactionTests(ShapeBase):
             "local:C:\\Users\\bob\\.codex": 7,
             "host:/home/bob/.codex": 8,
         }
-        (d / "state.json").write_text(json.dumps(doc), encoding="utf-8")
+        (directory / "state.json").write_text(json.dumps(doc), encoding="utf-8")
         out = shape(self.root)
         self.assertIn("== <user-id>/state.json (", out)
         self.assertIn('    ["<user-id>","<uuid>"]: number', out)

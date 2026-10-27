@@ -100,7 +100,7 @@ class ParseRemotesTests(unittest.TestCase):
             '\turl = "/srv/in ner.git"\n'
         )
         self.assertEqual(
-            [(r["name"], r["urls"]) for r in gitmeta.parse_remotes(text)],
+            [(remote["name"], remote["urls"]) for remote in gitmeta.parse_remotes(text)],
             [
                 ("a", ["/srv/mirror.git "]),
                 ("b", [" /srv/lead.git"]),

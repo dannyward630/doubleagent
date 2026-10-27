@@ -8,6 +8,7 @@ import io
 import itertools
 import stat
 import sys
+import unittest
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "regenerate_examples.py"
@@ -96,7 +97,9 @@ def test_unreadable_document_exits_2(tmp_path):
         "CRLF": tmp_path / "crlf.md",
     }
     cases["not UTF-8"].write_bytes(b"caf\xe9\n")
-    cases["lone CR"].write_bytes(text.replace(b"Its keys, in order:", b"Its keys,\rin order:", 1))
+    with_cr = text.replace(b"Its keys, in order:", b"Its keys,\rin order:", 1)
+    assert with_cr != text, "the lone-CR case needs the phrase it edits"
+    cases["lone CR"].write_bytes(with_cr)
     cases["CRLF"].write_bytes(text.replace(b"\n", b"\r\n"))
     before = {case: path.read_bytes() for case, path in cases.items() if path.exists()}
     for case, document in cases.items():
@@ -135,3 +138,17 @@ def test_rewrite_keeps_the_file_mode(tmp_path):
     assert run_main("--document", str(document))[0] == 0
     assert stat.S_IMODE(document.stat().st_mode) == 0o640
     assert [path.name for path in tmp_path.iterdir()] == ["output.md"], "temporary file left"
+
+
+def test_symlinked_document_rewrites_its_target(tmp_path):
+    target = tmp_path / "output.md"
+    text = examples.DOCUMENT.read_text(encoding="utf-8")
+    target.write_text(text.replace('"kind": "collected"', '"kind": "loose"', 1), encoding="utf-8")
+    link = tmp_path / "link.md"
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        raise unittest.SkipTest("cannot create a symlink: %s" % error) from error
+    assert run_main("--document", str(link))[0] == 0
+    assert link.is_symlink()
+    assert target.read_text(encoding="utf-8") == text

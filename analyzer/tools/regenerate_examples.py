@@ -14,11 +14,13 @@ the marker comments of each example block:
 The collection's temporary path is printed as `/cases/ws01/ws01`; every other key and value
 is what the run wrote. Every time in the collection is fixed, so the output is the same on
 every run, platform and Python version. "Regenerating the output examples" in
-analyzer/docs/development.md documents the collection and the options.
+analyzer/docs/development.md documents the collection and the options. A symbolic-link
+`--document` is followed, so its target is rewritten.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
 stale block, 2 when the marker lines are not each block's begin and end, in order, the
-document cannot be read or is not UTF-8 with LF line ends, or a run fails. Only the text
+document cannot be read or is not UTF-8 with LF line ends, a run fails, or the new file cannot
+be written. Only the text
 between the markers changes, and the file is replaced in one rename.
 """
 
@@ -375,6 +377,7 @@ def regenerate(document: Path = DOCUMENT) -> None:
         DocumentError: The document is not UTF-8 or holds a carriage return.
         RunError: The `detect` or `timeline` run failed.
     """
+    document = document.resolve()
     text = render(_read(document), generate())
     _write(document, text)
 

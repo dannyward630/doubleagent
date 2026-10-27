@@ -660,25 +660,26 @@ a settings file holding no permission setting, so both are under
 no row.
 
 `deduplicated` is `{}` because none of the three history prompts is one
-a transcript records, so every history line is kept, and `collected_only`
-is `[]` because no agent of the input is one whose files hold nothing to
-parse. Every `synced_sessions`, `relayed_sessions`, `remote_sessions` and
-`recovered_sessions` is 0: no session carries a `session synced:`,
-`session relayed:` or `session origin: remote` row, and both sessions
-come from their transcripts rather than from a secondary source. The
-marks of `/srv/proj` and `outside_projects`, whose only sessions are
-Claude Code's, read `no` or `local` because an agent there has a parser
-that records the state: the `claude-code` parser records sync state, so
-`synced` is `no`; it records origin, so `origin` is `local`; it reads a
-secondary source, the history file, so `recovered` is `no`; and no
-parser here records relay, so `relayed` is `""`. At `/srv/proj` the
-`cursor` parser also records sync state and origin and reads a secondary
-source, and the `aider` parser reads a secondary source, which gives the
-same marks. `/srv/gone` and `/srv/shared` have no session, so all four
-of their marks are `""`. `scratch_directories` is `{}` because none of
-the project paths, `/srv/gone`, `/srv/proj` and `/srv/shared`, lies in or
-under a directory a home catalog entry claims or under one a project
-catalog entry names, and no row names a scratch directory. Every
+a transcript records, so every history line is kept, and
+`collected_only` is `[]` because no agent of the input is one whose
+files hold nothing to parse. Every `synced_sessions`,
+`relayed_sessions`, `remote_sessions` and `recovered_sessions` is 0: no
+session carries a `session synced:`, `session relayed:` or `session
+origin: remote` row, and both sessions come from their transcripts
+rather than from a secondary source. The marks of `/srv/proj` and
+`outside_projects`, whose only sessions are Claude Code's, read `no` or
+`local` because an agent there has a parser that records the state: the
+`claude-code` parser records sync state, so `synced` is `no`; it records
+origin, so `origin` is `local`; it reads a secondary source, the history
+file, so `recovered` is `no`; and no parser here records relay, so
+`relayed` is `""`. At `/srv/proj` the `cursor` parser also records sync
+state and origin and reads a secondary source, and the `aider` parser
+reads a secondary source, which gives the same marks. `/srv/gone` and
+`/srv/shared` have no session, so their `synced`, `relayed`, `origin`
+and `recovered` are all `""`. `scratch_directories` is `{}` because none
+of the project paths, `/srv/gone`, `/srv/proj` and `/srv/shared`, lies
+in or under a directory a home catalog entry claims or under one a
+project catalog entry names, and no row names a scratch directory. Every
 `remotes`, `head` and `recorded_remotes` is empty because the collection
 holds no `.git/` files and no parser here writes a `git remote:` row.
 Its keys, in order:

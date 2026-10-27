@@ -211,6 +211,7 @@ class MuseCodeParser(Parser):
 
     def __init__(self) -> None:
         """Start with an empty cache of parent-log workspaces."""
+        super().__init__()
         self._parent_cache: dict[Path, tuple[str, str]] = {}
 
     def wants(self, artifact: Artifact) -> bool:

@@ -904,12 +904,12 @@ reuses pi's), plus small readers for the session records, `audit.jsonl` and the 
 Select by `artifact.rel` relative to the userData root (any of the catalog bases):
 
 ```text
-TRANSCRIPT_RX  (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/(agent/)?[^/]+/\.claude/projects/[^/]+/[^/]+\.jsonl$
-STAGED_RX      claude-code-sessions/[^/]+/[^/]+/imported-staging/[^/]+\.jsonl$
-AUDIT_RX       local-agent-mode-sessions/[^/]+/[^/]+/(agent/)?[^/]+/audit\.jsonl$
-RECORD_RX      (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/(agent/)?local_[0-9a-f-]{36}\.json$
-SCHED_RX       (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/scheduled-tasks\.json$
-WORKTREE_RX    (^|/)git-worktrees\.json$  (only under a claude-desktop base)
+TRANSCRIPT_PATTERN       (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/(agent/)?[^/]+/\.claude/projects/[^/]+/[^/]+\.jsonl$
+STAGED_PATTERN           claude-code-sessions/[^/]+/[^/]+/imported-staging/[^/]+\.jsonl$
+AUDIT_PATTERN            local-agent-mode-sessions/[^/]+/[^/]+/(agent/)?[^/]+/audit\.jsonl$
+RECORD_PATTERN           (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/(agent/)?local_[0-9a-f-]{36}\.json$
+SCHEDULED_TASKS_PATTERN  (local-agent-mode-sessions|claude-code-sessions)/[^/]+/[^/]+/scheduled-tasks\.json$
+WORKTREE_PATTERN         (^|/)git-worktrees\.json$  (only under a claude-desktop base)
 ```
 
 Subagent files under a transcript's `<session>/subagents/` follow the claude-code layout and go

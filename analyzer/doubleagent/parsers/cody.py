@@ -39,7 +39,7 @@ from email.utils import parsedate_to_datetime
 from ..inputs import Artifact
 from ..model import Row, compact
 from ..timeutil import to_utc
-from ..vscode_state import EDITOR_AGENTS, STATE_DB_RX, read_item
+from ..vscode_state import EDITOR_AGENTS, STATE_DATABASE_PATTERN, read_item
 from .base import (
     Options,
     Parser,
@@ -237,7 +237,7 @@ class CodyParser(Parser):
         return any(
             pattern.search(rel)
             for pattern in (
-                STATE_DB_RX,
+                STATE_DATABASE_PATTERN,
                 JETBRAINS_PATTERN,
                 JETBRAINS_PREFERENCES_PATTERN,
                 SETTINGS_PATTERN,

@@ -39,7 +39,7 @@ from pathlib import Path
 from ..inputs import Artifact
 from ..model import Row, compact
 from ..timeutil import to_utc
-from ..vscode_state import EDITOR_AGENTS, STATE_DB_RX, read_items
+from ..vscode_state import EDITOR_AGENTS, STATE_DATABASE_PATTERN, read_items
 from .base import Options, error_rows, file_mtime, setting_value, text_of
 from .cline_legacy import (
     API_FILES,
@@ -131,7 +131,7 @@ class RooCodeParser(LegacyTaskParser):
             or MCP_PATTERN.match(rel)
             or WORKSPACE_STATE_PATTERN.match(rel)
             or rel in (CLI_HISTORY_REL, CLI_SETTINGS_REL, PROJECT_MCP_REL, GLOBAL_STATE_REL)
-            or STATE_DB_RX.search(rel)
+            or STATE_DATABASE_PATTERN.search(rel)
             or WORKSPACE_DATABASE_PATTERN.search(rel)
         )
 
@@ -188,7 +188,7 @@ class RooCodeParser(LegacyTaskParser):
                 yield self._bad_file(artifact, "workspace-state.json is not a JSON object")
             else:
                 yield from self._retry_queue_rows(artifact, state, rel)
-        elif STATE_DB_RX.search(rel) or WORKSPACE_DATABASE_PATTERN.search(rel):
+        elif STATE_DATABASE_PATTERN.search(rel) or WORKSPACE_DATABASE_PATTERN.search(rel):
             yield from self._parse_state_database(artifact)
 
     # ---- per-call permission decisions ---------------------------------------

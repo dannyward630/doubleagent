@@ -42,7 +42,7 @@ from ..inputs import Artifact
 from ..model import Row, compact
 from ..sqlite_util import is_sqlite, open_copy, table_names
 from ..timeutil import to_utc
-from ..vscode_state import EDITOR_AGENTS, STATE_DB_RX, read_item
+from ..vscode_state import EDITOR_AGENTS, STATE_DATABASE_PATTERN, read_item
 from .base import Options, Parser, compact_json, error_rows, file_mtime, iter_jsonl
 from .codex import flat_toml, load_toml
 
@@ -261,7 +261,7 @@ class TabbyParser(Parser):
         """Return True for a Tabby database, event log, config or history, or an editor's state."""
         rel = artifact.rel
         if not self._own(artifact):
-            return bool(STATE_DB_RX.search(rel))
+            return bool(STATE_DATABASE_PATTERN.search(rel))
         return bool(
             DATABASE_PATTERN.match(rel)
             or BACKUP_PATTERN.match(rel)
@@ -274,7 +274,7 @@ class TabbyParser(Parser):
         """Return True for a backup database, an event log or a command history."""
         rel = artifact.rel
         if not self._own(artifact):
-            return bool(STATE_DB_RX.search(rel))
+            return bool(STATE_DATABASE_PATTERN.search(rel))
         return bool(
             BACKUP_PATTERN.match(rel)
             or EVENTS_PATTERN.match(rel)

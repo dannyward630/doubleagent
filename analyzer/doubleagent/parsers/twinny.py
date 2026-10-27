@@ -38,7 +38,7 @@ from collections.abc import Iterator
 from ..inputs import Artifact, error_reason
 from ..model import Row, compact
 from ..timeutil import to_utc
-from ..vscode_state import EDITOR_AGENTS, STATE_DB_RX, read_item
+from ..vscode_state import EDITOR_AGENTS, STATE_DATABASE_PATTERN, read_item
 from .base import (
     Options,
     Parser,
@@ -133,7 +133,7 @@ class TwinnyParser(Parser):
         """Return True for a state database, agent-changes record or Twinny log."""
         rel = artifact.rel
         return bool(
-            STATE_DB_RX.search(rel)
+            STATE_DATABASE_PATTERN.search(rel)
             or WORKSPACE_DATABASE_PATTERN.search(rel)
             or CHANGES_PATTERN.search(rel)
             or LOG_PATTERN.search(rel)

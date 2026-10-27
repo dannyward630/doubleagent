@@ -181,6 +181,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (<reason>): <record>` row with the chat's session id, beside the rows
   of the chats it recovered; the record was dropped silently before
   ([#280]).
+- The `crush` and `gemini-cli` parsers give a `parser:` row, with the
+  file's project, for an unreadable Crush `projects.json`, Gemini CLI
+  `logs.json` or legacy Gemini CLI session file, so the failure sits in
+  the timeline beside the file's other rows; before, the error left the
+  parser and the command reported it as a `problem:` line ([#282]).
 
 ## [0.20.1] - 2026-10-21
 
@@ -2079,6 +2084,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#282]: https://github.com/seanthegeek/doubleagent/issues/282
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256

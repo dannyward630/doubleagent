@@ -444,9 +444,9 @@ The analyzer runs on the analyst's workstation, never on the host.
   ([Adding a parser](#adding-a-parser)). pytest is listed in
   `analyzer/requirements-dev.txt`, never among the package's dependencies.
 - **Tests.** `analyzer/tests/run.sh`, which runs pytest, passes. Every
-  parser has a fixture and
-  a test class, every new input shape a detection test. A proximity join of
-  two record kinds is bounded by the next record of the same kind and
+  parser has a fixture and a test class, every new input shape a detection
+  test. A proximity join of two record kinds is bounded by the next record
+  of the same kind and
   tested with two interleaved pairs (A, A's partner, B, B's partner). A
   test needing POSIX permissions or an unprivileged user skips with the
   `CAN_DENY` guard of `analyzer/tests/test_errors.py`.

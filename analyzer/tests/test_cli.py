@@ -382,7 +382,7 @@ class InventoryJsonTests(unittest.TestCase):
 # A synthetic catalog for the project tests, so they do not depend on which
 # agent the bundled project catalog gives a file: `.pi/approved-plan.md`
 # nests inside `.pi`, and `AGENTS.md` is left to `project`.
-SYNTHETIC_CATALOG = """# home artifacts (relative to each home)
+SYNTHETIC_CATALOG = """# home artifacts (agent|glob relative to home)
 claude-code|.claude
 pi|.pi
 
@@ -2298,7 +2298,10 @@ class ScratchDirectoryTests(unittest.TestCase):
         self.assertEqual(inv["scratch_directories"][CODEX_SCRATCH]["status"], "referenced")
 
     def test_catalog_rule(self):
-        cat = catalog.parse(SYNTHETIC_CATALOG + "\n# home artifacts\ncursor|.config/[Cc]ursor\n")
+        cat = catalog.parse(
+            SYNTHETIC_CATALOG
+            + "\n# home artifacts (agent|glob relative to home)\ncursor|.config/[Cc]ursor\n"
+        )
         claims = cat.claims_home_path
         self.assertEqual(claims(".claude/projects/x"), "claude-code")
         self.assertEqual(claims(".claude"), "claude-code")

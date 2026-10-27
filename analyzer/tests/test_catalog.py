@@ -105,3 +105,89 @@ class NoTranscriptsTests(unittest.TestCase):
         for agent in NO_TRANSCRIPTS:
             self.assertIn(agent, agents)
             self.assertNotIn(agent, parsers)
+
+
+def _heading(section):
+    """Return the `--list` heading line of one section, from the mapping in `catalog.py`."""
+    for text, name in catalog.SECTION_HEADINGS.items():
+        if name == section:
+            return f"# {text}"
+    raise KeyError(section)
+
+
+LOOKALIKE_COMMENTS = [
+    ("# excluded by the vendor's installer, see the research document", "", ""),
+    ("# project artifacts the vendor documents", "", ""),
+    ("# credential files are kept in the keychain", "", ""),
+    ("# docker volumes are not created by this tool", "", ""),
+    ("", "# home artifacts moved with the config directory", ""),
+    ("", "", "# Home Artifacts (agent|glob relative to home)"),
+]
+
+
+def test_comment_starting_with_heading_words_keeps_section():
+    """A comment opening with a heading's words, or differing from one in case, is ignored."""
+    for home_comment, project_comment, docker_comment in LOOKALIKE_COMMENTS:
+        text = "\n".join(
+            [
+                _heading("home"),
+                "first-agent|.first",
+                home_comment,
+                "second-agent|.second",
+                _heading("project"),
+                "first-agent|.first-project",
+                project_comment,
+                "second-agent|.second-project",
+                _heading("exclude"),
+                ".first/cache",
+                _heading("docker"),
+                "first-agent|*first_data",
+                docker_comment,
+                "second-agent|*second_data",
+            ]
+        )
+        parsed = catalog.parse(text)
+        comment = home_comment or project_comment or docker_comment
+        assert [entry.glob for entry in parsed.entries] == [".first", ".second"], comment
+        assert [entry.glob for entry in parsed.project_entries] == [
+            ".first-project",
+            ".second-project",
+        ], comment
+        assert parsed.excludes == [".first/cache"], comment
+        assert parsed.secrets == [], comment
+        volumes = [entry.glob for entry in parsed.docker_volumes]
+        assert volumes == ["*first_data", "*second_data"], comment
+
+
+def test_each_exact_heading_switches_section():
+    text = "\n".join(
+        [
+            _heading("home"),
+            "home-agent|.home-agent",
+            _heading("project"),
+            "project-agent|.project-agent",
+            "",
+            _heading("exclude"),
+            ".home-agent/cache",
+            "",
+            _heading("secret"),
+            ".home-agent/auth.json",
+            "",
+            _heading("docker"),
+            "volume-agent|*volume_data",
+        ]
+    )
+    parsed = catalog.parse(text)
+    assert [entry.glob for entry in parsed.entries] == [".home-agent"]
+    assert [entry.glob for entry in parsed.project_entries] == [".project-agent"]
+    assert parsed.excludes == [".home-agent/cache"]
+    assert parsed.secrets == [".home-agent/auth.json"]
+    assert [entry.glob for entry in parsed.docker_volumes] == ["*volume_data"]
+
+
+def test_bundled_catalog_holds_each_heading_once_in_order():
+    """A changed heading in the collectors fails here instead of emptying a table."""
+    headings = {f"# {text}" for text in catalog.SECTION_HEADINGS}
+    lines = catalog.CATALOG_FILE.read_text(encoding="utf-8").split("\n")
+    found = [line for line in lines if line in headings]
+    assert found == [f"# {text}" for text in catalog.SECTION_HEADINGS]

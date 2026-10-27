@@ -186,6 +186,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   error instead of Python's own conversion message, and every rejected
   bound's message now ends with the accepted forms, the out-of-range
   relative and epoch values included ([#283]).
+- Detection recognises the section headings of the bundled catalog by
+  their full text, so a comment inside a table that starts with a
+  heading's first words (`excluded`, `credential files`) can no longer
+  move the lines after it into another table and leave their agents
+  undetected ([#285]).
 - The `crush` and `gemini-cli` parsers give a `parser:` row, with the
   file's project, for an unreadable Crush `projects.json`, Gemini CLI
   `logs.json` or legacy Gemini CLI session file, so the failure sits in
@@ -2089,6 +2094,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#285]: https://github.com/seanthegeek/doubleagent/issues/285
 [#283]: https://github.com/seanthegeek/doubleagent/issues/283
 [#282]: https://github.com/seanthegeek/doubleagent/issues/282
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280

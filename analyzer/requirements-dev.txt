@@ -1,0 +1,5 @@
+# What the test suite needs beyond the analyzer's own dependencies.
+-r requirements.txt
+
+# The test runner; it runs the suite's unittest classes as they are.
+pytest

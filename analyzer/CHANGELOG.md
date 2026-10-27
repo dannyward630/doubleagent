@@ -154,6 +154,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   cannot be applied raise it or a subclass. Only the mutation-log error is
   still also a `ValueError`. The messages and exit codes are unchanged
   ([#277]).
+- The package builds with the `hatchling` backend instead of
+  `setuptools`; the wheel holds the same `doubleagent` package and
+  `catalog.txt`. The test suite runs under pytest, which
+  `requirements-dev.txt` installs: `tests/run.sh` passes its arguments to
+  `python3 -m pytest`, so a test is named by its pytest node id
+  (`tests/test_catalog.py::CatalogTests`) rather than its unittest name
+  ([#277]).
 
 ### Fixed
 

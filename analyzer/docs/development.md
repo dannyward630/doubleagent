@@ -1,6 +1,6 @@
 # Development
 
-A change to the analyzer is checked by the unittest suite under `tests/`,
+A change to the analyzer is checked by the test suite under `tests/`,
 which builds a fake image of synthetic agent state and runs every parser
 over it, and by ruff and pyright at the versions CI pins; both run locally
 before a push, since CI runs them on every pull request. A parser is
@@ -12,25 +12,25 @@ decoder and one opener for them.
 
 ## Testing
 
+The suite runs under pytest, which the development requirements add to
+the analyzer's own:
+
 ```sh
 cd analyzer
-tests/run.sh                 # python3 -m unittest discover -s tests -t tests
-tests/run.sh -v -k Glob      # options only: passed to unittest discover
-tests/run.sh test_catalog    # one module
-tests/run.sh test_parsers.ClaudeCodeTests            # one class
-tests/run.sh test_parsers.ClaudeCodeTests.test_rows  # one method
+python3 -m pip install -r requirements-dev.txt
+tests/run.sh                                            # the whole suite
+tests/run.sh tests/test_catalog.py                      # one module
+tests/run.sh tests/test_parsers.py::ClaudeCodeTests     # one class
+tests/run.sh tests/test_parsers.py::ClaudeCodeTests::test_rows  # one method
+tests/run.sh -k Glob -x                                 # pytest options
 ```
 
-`tests/run.sh` changes to the `analyzer/` directory itself, so it can be run
-from anywhere. What it runs depends on whether a test name is given:
-
-| Arguments | Command run | Options accepted |
-| --- | --- | --- |
-| none, or options only | `python3 -m unittest discover -s tests -t tests <options>` | every `unittest discover` option, including `-p`, `-k`, `-v`, `-f` |
-| one or more test names, module, `module.Class` or `module.Class.method` | `python3 -m unittest <options> <names>` with `tests/` prepended to `PYTHONPATH`, so the modules import under the same names as under discover | the `unittest` options `-v`, `-q`, `-k`, `-f`, `-c`, `-b`, `--locals`; `-p`, `-s` and `-t` (and their long forms) are discover-only, so the script prints `run.sh: <option> applies only without test names` and exits 2 |
-
-An argument that does not start with `-` and is not the value of `-k`,
-`-p`, `-s`, `-t` or `--durations` counts as a test name.
+`tests/run.sh` changes to the `analyzer/` directory and runs
+`python3 -m pytest` with its arguments, so it can be run from anywhere and
+takes every pytest option and node id. The `[tool.pytest.ini_options]` table
+of `pyproject.toml` sets `testpaths` to `tests` and puts `tests/` on the
+import path, so `python3 -m pytest` run from `analyzer/` is the same. The
+tests are `unittest.TestCase` classes, which pytest collects as they are.
 
 The suite builds a fake image with two Linux users and a Windows profile
 tree, each holding synthetic state for every parsed agent in the exact shapes
@@ -45,7 +45,7 @@ with `sh` available it also runs the collector's `--inventory` on the fake
 image and reads that. Tests that need the collector script, `sh` and `tar`,
 or permission to create symlinks are skipped, with the reason, when it is
 missing. CI runs the suite on Python 3.10, 3.11, 3.12, 3.13 and 3.14 with
-`requirements.txt` installed.
+`requirements-dev.txt` installed.
 
 Lint and type checks, from the repository root, at the versions CI pins
 (see "Quality gates" in [AGENTS.md](../../AGENTS.md#quality-gates)):

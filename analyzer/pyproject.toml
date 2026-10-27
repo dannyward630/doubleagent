@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=84.2.1"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "doubleagent"
@@ -21,14 +21,18 @@ Changelog = "https://seanthegeek.net/doubleagent/analyzer/CHANGELOG.html"
 [project.scripts]
 doubleagent = "doubleagent.cli:main"
 
-[tool.setuptools]
-packages = ["doubleagent", "doubleagent.parsers"]
+[tool.hatch.version]
+path = "doubleagent/__init__.py"
 
-[tool.setuptools.dynamic]
-version = { attr = "doubleagent.VERSION" }
+# The package directory holds the parsers and the bundled catalog.txt.
+[tool.hatch.build.targets.wheel]
+packages = ["doubleagent"]
 
-[tool.setuptools.package-data]
-doubleagent = ["catalog.txt"]
+# pytest runs the unittest classes as they are; tests/ is on the import path
+# so the test modules can import the shared fixtures module by name.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]
 
 # The rule set lives in the repository root's ruff.toml so analyzer/,
 # analyzer/tools/ and tools/ share it; this makes ruff run from inside

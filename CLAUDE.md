@@ -15,7 +15,7 @@ Notes for Claude Code on this workstation:
   it under the scratchpad and delete it afterwards.
 - This Mac's `python3` is 3.14 without `zstandard` or `python-dateutil`, so
   `analyzer/tests/run.sh` fails at import. Make a venv in the scratchpad
-  (`python3 -m venv venv && venv/bin/pip install -r analyzer/requirements.txt
+  (`python3 -m venv venv && venv/bin/pip install -r analyzer/requirements-dev.txt
   ruff==0.16.10 pyright==1.1.414`), run the suite from `analyzer/` with
   `venv/bin/python -m unittest discover -s tests -t tests`, and pyright with
   `--pythonpath venv/bin/python`.

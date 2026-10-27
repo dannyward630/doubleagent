@@ -51,10 +51,11 @@ analyzer/
                                output and JSONL schema, filtering, searching, inventory,
                                options, development
   CHANGELOG.md                 analyzer release history, one entry per VERSION
-  tests/                       unittest suite with synthetic fixtures; tests/run.sh
+  tests/                       pytest suite with synthetic fixtures; tests/run.sh
   pyproject.toml               installable as the doubleagent command
   requirements.txt             third-party dependencies (python-dateutil;
                                zstandard, for compressed transcripts)
+  requirements-dev.txt         requirements.txt plus the test runner, pytest
 research/<agent>.md            everything known about one agent, one per agent: the
                                Collection part (paths, credentials, exclusions, project
                                files, discovery) and the Parsing part (how it records
@@ -78,6 +79,8 @@ tools/check_doc_links.py       verifies every relative link and heading fragment
                                introduces this file's terms of art before using them,
                                and that this file and CLAUDE.md link no issue or pull
                                request
+tools/check_code_style.py      verifies the names, comments and docstring lengths of
+                               every Python, sh and PowerShell file against "Code style"
 mkdocs/mkdocs.yml              the documentation site: MkDocs with the Material theme,
                                built from the documents where they are; its nav: tree
 mkdocs/hooks.py                site build hooks: GitHub heading ids, code spans with
@@ -229,9 +232,14 @@ holds the architecture and function tables.
   why. The reader's guide lists the sections, the data flow in one
   paragraph and the naming rules, and changes with the flow. New code goes
   in the section owning its step; the main program is one call per step.
-- **One comment per function**, directly above it: its inputs (in sh, also
-  the globals it reads), what it returns, prints or writes, in sh its
-  temporaries' prefix, and any quirk it exists for.
+- **One comment per function**, directly above it and at most ten lines
+  long ([Code style](#code-style)): its purpose, its inputs (in sh, also the
+  globals it reads), what it returns, prints or writes, in sh its
+  temporaries' prefix, and at most one quirk it exists for, never a walk
+  through the body's branches. A quirk needing a paragraph gets one in the
+  matching section of
+  [`collectors/docs/internals.md`](collectors/docs/internals.md), and the
+  comment names that page.
 - **sh names.** Shared globals are `UPPER_CASE`; a function's temporaries
   `_<prefix>_<name>`, the prefix abbreviating its name (`_cp_` for
   `collect_path`); a function that assigns its result sets `_ret_<what>`
@@ -270,6 +278,57 @@ holds the architecture and function tables.
   and `archive` keys, timestamps, the output directory and the archive's
   size and hash may differ. A bug found on the way is fixed in its own
   commit, with an issue.
+
+## Code style
+
+These rules hold for every Python, sh and PowerShell file, tests included.
+`tools/check_code_style.py` enforces names, issue and pull request numbers,
+dates and the comment and docstring lengths, and ruff's pydocstyle rules
+with the `google` convention the docstring form
+([Quality gates](#quality-gates)).
+
+- **Comments say what the code cannot.** A comment states why the code is
+  as it is, the quirk of a platform, shell or format it works around, or the
+  specification it follows, in plain words. It never restates the lines
+  below it, narrates how the code came to be, or walks through what a
+  function does step by step. A fact about an agent's files belongs in
+  `research/<agent>.md`, a fact about a collector's design in
+  [`collectors/docs/internals.md`](collectors/docs/internals.md); the
+  comment names the page only when the reader must open it.
+- **No history in code.** A comment or docstring names no issue, pull
+  request, date, round, or anecdote of a build ("observed on the 2.1.310
+  macOS round"); the research documents and changelogs hold those. A
+  commit hash a docstring cites as the source of a record shape stays. A
+  build or version number stays only where the code branches on it or
+  names the version that writes a shape. The copyright line and the smoke
+  tests' dated fixture-block labels are the exceptions.
+- **Short comments.** A run of whole-line comments is at most ten lines;
+  the file header and the collectors' reader's guide are the exceptions. A
+  docstring is at most ten lines, a module docstring at most thirty. What
+  needs more is a paragraph in the owning documentation page.
+- **Plain language.** Comments, docstrings, commit messages and
+  documentation describe what the code does in words a newcomer
+  understands. A domain term is used only where the code implements that
+  concept, with a gloss at its first use in the file.
+- **Descriptive names.** A variable, parameter, function or class is named
+  by what it holds or does, as a word or words (`row`, `timestamp`,
+  `exit_code`, `handle`, `match`), never by an initial or a home-made
+  abbreviation (`msg`, `rec`, `ctx`, `src_path`); `ABBREVIATIONS` in the
+  checker names the common ones and rejects them as a name or a segment of
+  one. A name is at least three characters; `_`, `i`, `j` and `k` are
+  allowed for a throwaway value or a loop index whose scope is a few lines.
+  A class-body field declaration (`at: str`) mirrors an interface key and
+  is exempt. Abbreviations the project's interfaces spell that way
+  (`mtime`, `sha256`, `cwd`, `utc`) and format and protocol names (`json`,
+  `jsonl`, `sqlite`, `uuid`, `url`, `id` inside a longer name such as
+  `session_id`) are words. In sh the rule applies to the name after its
+  temporaries prefix (`_cp_user`); in PowerShell to the name after `$` or
+  `$script:`. A name an interface fixes (the `TZ` environment variable, a
+  pytest fixture such as `tmp_path`, a library's keyword parameter) is
+  exempt.
+- **Google-style docstrings** on every public Python module, class,
+  function and method, in the form the docstrings bullet of
+  [Analyzer standards](#analyzer-standards) gives.
 
 ## Analyzer standards
 
@@ -352,15 +411,44 @@ The analyzer runs on the analyst's workstation, never on the host.
   or CRLF only (not `str.splitlines()`), trims are ASCII only (not
   `str.strip()`), and an untrusted evidence file is read whole, uncapped,
   in linear time.
-- **Lint and types.** ruff and pyright in standard mode are clean
+- **Docstrings.** Google style: a one-line imperative summary that ends
+  with a period and fits on the line with its quotes, the normal case;
+  when there is more to say, a blank line, a short description and the
+  sections `Args:`, `Returns:` or `Yields:` and `Raises:`, each entry
+  `name: what it is`. A private name (`_name`) needs none. A module
+  docstring says what the module reads and yields, the fields a parser
+  depends on, the commit or install its shapes were validated against with
+  any drift, and the research document it follows; record shapes, versions
+  and history stay in that document. In tests every module and class has a
+  docstring, and a test method has one only when its name cannot say what it
+  proves.
+- **Types.** A function returning a dict with fixed keys returns a
+  `TypedDict`; `Row` and `SessionSummary` stay dataclasses.
+- **Exceptions.** Every exception the analyzer defines subclasses
+  `DoubleAgentError(RuntimeError)` from `doubleagent/errors.py`, and an
+  `except` that means one names it rather than a builtin base.
+- **Logging.** Only a module that logs has a module-level
+  `logger = logging.getLogger(__name__)`; the `problem:` lines and the
+  `parser:` rows are output, never log records.
+- **Packaging.** `pyproject.toml` builds with hatchling, reads the version
+  from `VERSION` in `doubleagent/__init__.py` and ships the `doubleagent`
+  package with its `catalog.txt`.
+- **Lint and types.** ruff (pydocstyle included), pyright in standard mode
+  and `tools/check_code_style.py` are clean
   ([Quality gates](#quality-gates)); fix a finding rather than suppress it,
   and give any `# noqa` or `# pyright: ignore` a reason.
-- **Tests.** `analyzer/tests/run.sh` passes. Every parser has a fixture and
-  a test class, every new input shape a detection test. A proximity join of
-  two record kinds is bounded by the next record of the same kind and
-  tested with two interleaved pairs (A, A's partner, B, B's partner). A
-  test needing POSIX permissions or an unprivileged user skips with the
-  `CAN_DENY` guard of `analyzer/tests/test_errors.py`.
+- **Test runner.** pytest runs the suite and collects the existing
+  `unittest` classes unchanged. A new test module or function is
+  pytest-style (plain functions and fixtures such as `tmp_path`), except a
+  parser's tests, which join `tests/test_parsers.py` as a class
+  ([Adding a parser](#adding-a-parser)). pytest is listed in
+  `analyzer/requirements-dev.txt`, never among the package's dependencies.
+- **Tests.** `analyzer/tests/run.sh`, which runs pytest, passes. Every
+  parser has a fixture and a test class, every new input shape a detection
+  test. A proximity join of two record kinds is bounded by the next record
+  of the same kind and tested with two interleaved pairs (A, A's partner,
+  B, B's partner). A test needing POSIX permissions or an unprivileged user
+  skips with the `CAN_DENY` guard of `analyzer/tests/test_errors.py`.
 
 ## Adding a parser
 
@@ -1037,9 +1125,11 @@ ruleset on `main` requires.
 
 A change touching only Markdown files and `.markdownlint-cli2.jsonc` is
 documentation only: CI skips every other job and the lint job runs only
-markdownlint, `tools/check_doc_links.py` and
-`tools/check_research_structure.py`, which are also all such a change needs
-locally. A push whose previous commit GitHub cannot name (a new branch, a
+markdownlint, `tools/check_doc_links.py`,
+`tools/check_research_structure.py` and `tools/check_code_style.py`. Locally
+such a change needs markdownlint, `tools/check_doc_links.py` and
+`tools/check_research_structure.py`, since the code style check reads no
+Markdown. A push whose previous commit GitHub cannot name (a new branch, a
 force push) counts as a code change. Before committing a collector change,
 run:
 
@@ -1062,6 +1152,7 @@ uvx --from pyright==1.1.414 --with zstandard --with python-dateutil pyright
 npx -y markdownlint-cli2@0.23.3 "**/*.md"
 python3 tools/check_doc_links.py
 python3 tools/check_research_structure.py
+python3 tools/check_code_style.py
 shfmt -ln posix $(shfmt -f .) >/dev/null && shellcheck -s sh $(shfmt -f .) && checkbashisms -p $(shfmt -f .)
 pwsh -NoProfile -Command '$r = @("collectors/Collect-AgentArtifacts.ps1","collectors/tests/smoke.ps1") | ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Settings collectors/PSScriptAnalyzerSettings.psd1 }; $r | Format-Table -AutoSize; exit @($r).Count'
 ```
@@ -1131,7 +1222,7 @@ documentation-only change needs only the last two rows and markdownlint.
 
 | Gate | Version | Local command | Configuration |
 | --- | --- | --- | --- |
-| ruff lint | 0.16.10 | `uvx ruff@0.16.10 check .` | `ruff.toml`; `analyzer/pyproject.toml` extends it |
+| ruff lint | 0.16.10 | `uvx ruff@0.16.10 check .` | `ruff.toml`, pydocstyle rules (`D`, `google` convention) included; `analyzer/pyproject.toml` extends it |
 | ruff format | 0.16.10 | `uvx ruff@0.16.10 format --check .` | `ruff.toml` (line length 100) |
 | pyright, standard mode, Python 3.10 | 1.1.414 | `uvx --from pyright==1.1.414 --with zstandard --with python-dateutil pyright` | `pyrightconfig.json` |
 | markdownlint | markdownlint-cli2 0.23.3 | `npx -y markdownlint-cli2@0.23.3 "**/*.md"` | `.markdownlint-cli2.jsonc` |
@@ -1139,6 +1230,7 @@ documentation-only change needs only the last two rows and markdownlint.
 | shellcheck | 0.11.0 | `shellcheck -s sh $(shfmt -f .)` | `.shellcheckrc` |
 | checkbashisms | devscripts v2.26.13 | `checkbashisms -p $(shfmt -f .)` | none |
 | PSScriptAnalyzer | 1.25.0 | the `pwsh` line in the block above | `collectors/PSScriptAnalyzerSettings.psd1` |
+| code style | none | `python3 tools/check_code_style.py` | none; see [Code style](#code-style) |
 | document links | none | `python3 tools/check_doc_links.py` | none; see the link rule under "Conventions" |
 | research document structure | none | `python3 tools/check_research_structure.py` | none; see [Research document structure](#research-document-structure) |
 

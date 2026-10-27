@@ -4174,10 +4174,6 @@ class ProjectRoutingTests(unittest.TestCase):
         self.assertNotIn("project", by_agent())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProtobufTests(unittest.TestCase):
     """Test the protobuf encoder and decoder against a small schema."""
 
@@ -8989,13 +8985,13 @@ from types import SimpleNamespace
 
 import zstandard
 
-from doubleagent.parsers.vscode import VsCodeParser, apply_mutation
+from doubleagent.parsers.vscode import MutationError, VsCodeParser, apply_mutation
 from doubleagent.parsers.vscode import confirmed_text as vscode_confirmed_text
 from doubleagent.parsers.zed import ZedParser
 from fixtures import (
     VSCODE_LEGACY_SESSION,
     VSCODE_SESSION,
-    VSCODE_WS,
+    VSCODE_WORKSPACE,
     ZED_EXTERNAL,
     ZED_TEMP_DIR,
     ZED_THREAD,
@@ -9587,7 +9583,7 @@ class ZedTests(ParserBase):
 class VsCodeTests(ParserBase):
     """Test the VS Code (Copilot Chat) parser."""
 
-    REL = VSCODE_WS + "/chatSessions/%s.jsonl" % VSCODE_SESSION
+    REL = VSCODE_WORKSPACE + "/chatSessions/%s.jsonl" % VSCODE_SESSION
     LEGACY = (
         ".vscode-server/data/User/globalStorage/emptyWindowChatSessions/%s.json"
         % VSCODE_LEGACY_SESSION
@@ -9745,8 +9741,8 @@ class VsCodeTests(ParserBase):
 
     def test_not_wanted(self):
         for rel in (
-            VSCODE_WS + "/workspace.json",
-            VSCODE_WS + "/chatEditingSessions/%s/contents/aaaaaaa" % VSCODE_SESSION,
+            VSCODE_WORKSPACE + "/workspace.json",
+            VSCODE_WORKSPACE + "/chatEditingSessions/%s/contents/aaaaaaa" % VSCODE_SESSION,
         ):
             art = next(artifact for artifact in self.col.artifacts if artifact.rel == rel)
             self.assertFalse(VsCodeParser().wants(art), rel)
@@ -9817,7 +9813,7 @@ class VsCodeTests(ParserBase):
         state = apply_mutation(state, {"kind": 3, "k": ["b"]})
         state = apply_mutation(state, {"kind": 2, "k": ["new"], "v": [1]})
         self.assertEqual(state, {"a": [1, 9], "new": [1]})
-        with self.assertRaises(ValueError):
+        with self.assertRaises(MutationError):
             apply_mutation(state, {"kind": 1, "k": ["missing", "x"], "v": 1})
 
     def _reopen_with_agents_window(self):
@@ -9827,7 +9823,7 @@ class VsCodeTests(ParserBase):
     def test_agents_window_project_is_working_directory(self):
         # The Agents window's workspace file is never the project.
         self._reopen_with_agents_window()
-        rel = VSCODE_AGENTS_WS + "/chatSessions/%s.jsonl" % VSCODE_SESSION
+        rel = VSCODE_AGENTS_WORKSPACE + "/chatSessions/%s.jsonl" % VSCODE_SESSION
         rows = self.rows_for(VsCodeParser(), rel)
         self.assertTrue(rows)
         self.assertEqual({row.project_path for row in rows}, {VSCODE_AGENTS_CWD})
@@ -9840,14 +9836,14 @@ class VsCodeTests(ParserBase):
 
     def test_multiroot_workspace_file_is_not_project(self):
         self._reopen_with_agents_window()
-        rel = VSCODE_MULTIROOT_WS + "/chatSessions/%s.json" % VSCODE_LEGACY_SESSION
+        rel = VSCODE_MULTIROOT_WORKSPACE + "/chatSessions/%s.json" % VSCODE_LEGACY_SESSION
         rows = self.rows_for(VsCodeParser(), rel)
         self.assertTrue(rows)
         self.assertEqual({row.project_path for row in rows}, {""})
         self.assertTrue(rows[0].text.endswith(" workspace=" + VSCODE_MULTIROOT_FILE), rows[0])
 
     def test_working_directory_before_workspace_folder(self):
-        workspace_file = self.home / VSCODE_WS / "workspace.json"
+        workspace_file = self.home / VSCODE_WORKSPACE / "workspace.json"
         workspace_file.write_text(json.dumps({"folder": "file:///srv/other"}), encoding="utf-8")
         rows = self.rows_for(VsCodeParser(), self.REL)
         self.assertEqual({row.project_path for row in rows}, {"/srv/proj"})
@@ -9865,14 +9861,14 @@ class VsCodeTests(ParserBase):
 
     def test_bad_workspace_json(self):
         clean = [(row.turn_type, row.text) for row in self.rows_for(VsCodeParser(), self.REL)]
-        (self.home / VSCODE_WS / "workspace.json").write_text("{not json", encoding="utf-8")
+        (self.home / VSCODE_WORKSPACE / "workspace.json").write_text("{not json", encoding="utf-8")
         rows = self.rows_for(VsCodeParser(), self.REL)
         self.assertEqual([(row.turn_type, row.text) for row in rows[:-1]], clean)
         last = rows[-1]
         self.assertEqual((last.turn_type, last.source_line, last.timestamp_utc), ("system", 0, ""))
         self.assertTrue(last.text.startswith("parser: workspace.json not read ("), last.text)
         self.assertEqual((last.session_id, last.project_path), (VSCODE_SESSION, "/srv/proj"))
-        (self.home / VSCODE_WS / "workspace.json").write_text("[1]", encoding="utf-8")
+        (self.home / VSCODE_WORKSPACE / "workspace.json").write_text("[1]", encoding="utf-8")
         rows = self.rows_for(VsCodeParser(), self.REL)
         self.assertEqual([(row.turn_type, row.text) for row in rows[:-1]], clean)
         self.assertEqual(rows[-1].text, "parser: workspace.json is not a JSON object")
@@ -9880,19 +9876,19 @@ class VsCodeTests(ParserBase):
 
 from fixtures import (
     VSCODE_AGENTS_CWD,
-    VSCODE_AGENTS_WS,
+    VSCODE_AGENTS_WORKSPACE,
     VSCODE_CLOUD_SESSIONS_MTIME,
     VSCODE_CLOUD_SESSIONS_REL,
     VSCODE_CLOUD_TASK,
     VSCODE_EDITING_REL,
     VSCODE_GRANTS_MTIME,
     VSCODE_MULTIROOT_FILE,
-    VSCODE_MULTIROOT_WS,
+    VSCODE_MULTIROOT_WORKSPACE,
     VSCODE_OLD_TASK,
     VSCODE_OTHER_MACHINE_SESSION,
     VSCODE_PROFILE_SETTINGS_REL,
     VSCODE_STATE_REL,
-    VSCODE_WS_STATE_REL,
+    VSCODE_WORKSPACE_STATE_REL,
     build_vscode_agents_window,
 )
 
@@ -10031,7 +10027,7 @@ class VsCodeSyncTests(ParserBase):
         self.assertEqual([row for row in rows if "gho_not_real" in row.text], [])
 
     def test_workspace_state_grants(self):
-        rows = self.rows_for(VsCodeParser(), VSCODE_WS_STATE_REL)
+        rows = self.rows_for(VsCodeParser(), VSCODE_WORKSPACE_STATE_REL)
         source = "(from User/workspaceStorage/abc123/state.vscdb, file mtime)"
         self.assertEqual(
             [row.text for row in rows],
@@ -10055,8 +10051,8 @@ class VsCodeSyncTests(ParserBase):
             )
 
     def test_grant_of_wrong_type_is_reported(self):
-        _vscdb(self.home / VSCODE_WS_STATE_REL, {"chat/autoconfirm-post": "7"})
-        rows = self.rows_for(VsCodeParser(), VSCODE_WS_STATE_REL)
+        _vscdb(self.home / VSCODE_WORKSPACE_STATE_REL, {"chat/autoconfirm-post": "7"})
+        rows = self.rows_for(VsCodeParser(), VSCODE_WORKSPACE_STATE_REL)
         self.assertEqual(len(rows), 5)
         self.assertEqual(
             rows[-1].text,
@@ -10098,7 +10094,7 @@ class VsCodeSyncTests(ParserBase):
     def test_editing_state_rows(self):
         self.assertTrue(VsCodeParser.has_secondary)
         self.assertTrue(VsCodeParser().secondary(self.artifact(VSCODE_EDITING_REL)))
-        self.assertFalse(VsCodeParser().secondary(self.artifact(VSCODE_WS_STATE_REL)))
+        self.assertFalse(VsCodeParser().secondary(self.artifact(VSCODE_WORKSPACE_STATE_REL)))
         rows = self.rows_for(VsCodeParser(), VSCODE_EDITING_REL)
         tail = " (from chatEditingSessions state.json, file mtime)"
         self.assertEqual(
@@ -10158,7 +10154,7 @@ class VsCodeSyncTests(ParserBase):
 
     def test_session_without_entry_has_no_sync_row(self):
         for rel in (
-            VSCODE_WS + "/chatSessions/" + VSCODE_SESSION + ".jsonl",
+            VSCODE_WORKSPACE + "/chatSessions/" + VSCODE_SESSION + ".jsonl",
             ".vscode-server/data/User/globalStorage/emptyWindowChatSessions/"
             + VSCODE_LEGACY_SESSION
             + ".json",
@@ -11675,8 +11671,8 @@ from fixtures import (
     ROO_GONE_TASK,
     ROO_TASK,
     ROO_VSCDB_REL,
-    ROO_WS_STATE_REL,
-    ROO_WS_VSCDB_REL,
+    ROO_WORKSPACE_STATE_REL,
+    ROO_WORKSPACE_VSCDB_REL,
     build_cline_blob_upload,
     build_cline_denied_and_imported,
     build_cline_hooks_log,
@@ -12960,7 +12956,7 @@ class RooCodeTests(ParserBase):
         for rel, name in (
             (".roo/cli-settings.json", "cli-settings.json"),
             (self.GLOBAL_STATE, "global-state.json"),
-            (ROO_WS_STATE_REL, "workspace-state.json"),
+            (ROO_WORKSPACE_STATE_REL, "workspace-state.json"),
             (".roo/mcp.json", "mcp.json"),
         ):
             write_bad_line(self.home / rel)
@@ -12979,8 +12975,11 @@ class RooCodeTests(ParserBase):
             "(Roo Code Cloud retry queue, from %s roo.retryQueue, request timestamp)"
         )
         for rel, source in (
-            (ROO_WS_STATE_REL, ROO_WS_STATE_REL),
-            (ROO_WS_VSCDB_REL, ROO_WS_VSCDB_REL + " ItemTable RooVeterinaryInc.roo-cline"),
+            (ROO_WORKSPACE_STATE_REL, ROO_WORKSPACE_STATE_REL),
+            (
+                ROO_WORKSPACE_VSCDB_REL,
+                ROO_WORKSPACE_VSCDB_REL + " ItemTable RooVeterinaryInc.roo-cline",
+            ),
         ):
             self.assertTrue(parser.wants(self.artifact(rel)), rel)
             rows = self.rows_for(parser, rel)
@@ -17492,7 +17491,7 @@ from fixtures import (
     NANOBOT_DATABASE_FROZEN_REL,
     NANOBOT_DATABASE_KEY,
     NANOBOT_DATABASE_REL,
-    NANOBOT_DATABASE_WS,
+    NANOBOT_DATABASE_WORKSPACE,
     NANOBOT_HISTORY_REL,
     NANOBOT_KEY,
     NANOBOT_LEGACY_REL,
@@ -18851,7 +18850,8 @@ class NanobotTests(ParserBase):
         # No database beside it: the session file is still the store of record.
         self.assertFalse(parser.secondary(self.artifact(NANOBOT_REL)))
         conflict = (
-            ".nanobot/sessions/%s/.migration-conflicts/Y2xpOmRpcmVjdA.jsonl" % NANOBOT_DATABASE_WS
+            ".nanobot/sessions/%s/.migration-conflicts/Y2xpOmRpcmVjdA.jsonl"
+            % NANOBOT_DATABASE_WORKSPACE
         )
         self.assertTrue(parser.wants(rel_only(conflict)))
         backup = self.rows_for(parser, NANOBOT_DATABASE_BACKUP_REL)
@@ -19238,8 +19238,8 @@ from fixtures import (
     TWINNY_415_LOG_OLD_REL,
     TWINNY_415_LOG_REL,
     TWINNY_415_REL,
+    TWINNY_415_WORKSPACE,
     TWINNY_415_WORKSPACE_DATABASE_REL,
-    TWINNY_415_WS,
     TWINNY_ACTIVE,
     TWINNY_API_KEY,
     TWINNY_CONVERSATION,
@@ -20184,7 +20184,7 @@ class TwinnyTests(ParserBase):
     def test_not_wanted_415(self):
         _, arts = self._415()
         exthost = TWINNY_415_LOG_DIR.rsplit("/", 1)[0] + "/exthost.log"
-        for rel in (TWINNY_415_WS + "/workspace.json", exthost):
+        for rel in (TWINNY_415_WORKSPACE + "/workspace.json", exthost):
             self.assertFalse(TwinnyParser().wants(arts[rel]), rel)
 
 
@@ -24825,3 +24825,7 @@ class CursorTests(ParserBase):
         self.assertEqual(
             [(row.turn_type, row.project_path) for row in rows], [("user", ""), ("assistant", "")]
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

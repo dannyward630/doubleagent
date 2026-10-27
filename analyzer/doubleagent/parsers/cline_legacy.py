@@ -81,11 +81,11 @@ TOOL_NAMES = {
 
 # ---- tolerant JSON readers ----------------------------------------------------
 
-_WS = " \t\r\n"
+_WHITESPACE = " \t\r\n"
 
 
-def _skip_ws(text: str, offset: int) -> int:
-    while offset < len(text) and text[offset] in _WS:
+def _skip_whitespace(text: str, offset: int) -> int:
+    while offset < len(text) and text[offset] in _WHITESPACE:
         offset += 1
     return offset
 
@@ -102,11 +102,11 @@ def iter_array_at(
     ""). When `end` is given, the index after the closing bracket is appended to it.
     """
     decoder = json.JSONDecoder()
-    offset = _skip_ws(text, offset)
+    offset = _skip_whitespace(text, offset)
     if offset >= len(text) or text[offset] != "[":
         errors.append((1, "not a JSON array", ""))
         return
-    offset = _skip_ws(text, offset + 1)
+    offset = _skip_whitespace(text, offset + 1)
     if offset < len(text) and text[offset] == "]":
         if end is not None:
             end.append(offset + 1)
@@ -114,7 +114,7 @@ def iter_array_at(
     position = 0
     while True:
         position += 1
-        start = _skip_ws(text, offset)
+        start = _skip_whitespace(text, offset)
         try:
             value, offset = decoder.raw_decode(text, start)
         except ValueError as error:
@@ -123,7 +123,7 @@ def iter_array_at(
             )
             return
         yield position, value
-        offset = _skip_ws(text, offset)
+        offset = _skip_whitespace(text, offset)
         if offset < len(text) and text[offset] == ",":
             offset += 1
             continue
@@ -162,7 +162,7 @@ def iter_json_array(path: Path, errors: list) -> Iterator[tuple[int, object]]:
     for position, value in iter_array_at(text, 0, errors, end):
         count = position
         yield position, value
-    if end and text[end[0] :].strip(_WS):
+    if end and text[end[0] :].strip(_WHITESPACE):
         errors.append((count + 1, "unparseable data after the JSON array", ""))
 
 

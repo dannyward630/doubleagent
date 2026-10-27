@@ -29,8 +29,10 @@ tests/run.sh -k Glob -x                                 # pytest options
 `python3 -m pytest` with its arguments, so it can be run from anywhere and
 takes every pytest option and node id. The `[tool.pytest.ini_options]` table
 of `pyproject.toml` sets `testpaths` to `tests` and puts `tests/` on the
-import path, so `python3 -m pytest` run from `analyzer/` is the same. The
-tests are `unittest.TestCase` classes, which pytest collects as they are.
+import path, so `python3 -m pytest` run from `analyzer/` is the same. Most
+tests are `unittest.TestCase` classes, which pytest collects as they are;
+newer ones, such as `test_check_code_style.py`, are plain pytest functions
+using fixtures such as `tmp_path`.
 
 The suite builds a fake image with two Linux users and a Windows profile
 tree, each holding synthetic state for every parsed agent in the exact shapes
@@ -47,12 +49,18 @@ or permission to create symlinks are skipped, with the reason, when it is
 missing. CI runs the suite on Python 3.10, 3.11, 3.12, 3.13 and 3.14 with
 `requirements-dev.txt` installed.
 
-Lint and type checks, from the repository root, at the versions CI pins
-(see "Quality gates" in [AGENTS.md](../../AGENTS.md#quality-gates)):
+Lint, type and style checks, from the repository root, at the versions CI
+pins (see "Quality gates" in [AGENTS.md](../../AGENTS.md#quality-gates)).
+ruff's pydocstyle rules require a Google-style docstring on every public
+module, class, function and method outside the test methods, and
+`tools/check_code_style.py` checks names, comments and docstring lengths
+against "Code style" in [AGENTS.md](../../AGENTS.md#code-style), printing
+each failure as `path:line: message`:
 
 ```sh
 uvx ruff@0.16.10 check . && uvx ruff@0.16.10 format --check .
 uvx --from pyright==1.1.414 --with zstandard --with python-dateutil pyright
+python3 tools/check_code_style.py
 ```
 
 ## Reading a real install

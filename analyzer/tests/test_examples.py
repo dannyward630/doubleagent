@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import itertools
 import sys
 from pathlib import Path
 
@@ -49,22 +50,37 @@ def test_check_reports_a_stale_block(tmp_path):
     assert document.read_text(encoding="utf-8") == text
 
 
-def test_missing_or_duplicated_marker_fails(tmp_path):
+def marker_faults(text: str) -> dict[str, str]:
+    """Return the document `text` broken in every way the marker rule rejects, by case name."""
+    markers = [
+        marker % name for name in examples.BLOCKS for marker in (examples.BEGIN, examples.END)
+    ]
+    lines = text.split("\n")
+    slots = [lines.index(marker) for marker in markers]
+    cases = {}
+    for order in itertools.permutations(markers):
+        if list(order) != markers:
+            moved = list(lines)
+            for slot, marker in zip(slots, order, strict=True):
+                moved[slot] = marker
+            cases["order " + " / ".join(order)] = "\n".join(moved)
+    for slot, marker in zip(slots, markers, strict=True):
+        cases["missing " + marker] = "\n".join(lines[:slot] + lines[slot + 1 :])
+        cases["duplicated " + marker] = "\n".join([*lines[:slot], marker, *lines[slot:]])
+    stray = examples.BEGIN % "other"
+    cases["stray marker"] = "\n".join([*lines[: slots[1] + 1], stray, *lines[slots[1] + 1 :]])
+    return cases
+
+
+def test_every_marker_fault_fails_and_writes_nothing(tmp_path):
     text = examples.DOCUMENT.read_text(encoding="utf-8")
-    end = examples.END % "inventory-json"
-    begin = examples.BEGIN % "detect-json"
-    cases = {
-        "missing end": text.replace(end + "\n", ""),
-        "duplicated begin": text.replace(begin, begin + "\n" + begin),
-        "overlapping blocks": text.replace(examples.END % "detect-json" + "\n", "").replace(
-            end + "\n", end + "\n" + examples.END % "detect-json" + "\n"
-        ),
-    }
+    cases = marker_faults(text)
+    assert len(cases) == 23 + 4 + 4 + 1
+    document = tmp_path / "output.md"
     for case, broken in cases.items():
-        document = tmp_path / "output.md"
         document.write_text(broken, encoding="utf-8")
-        status, stdout, stderr = run_main("--document", str(document))
-        assert status == 2, case
-        assert stdout == "" and "error: block" in stderr, case
-        assert document.read_text(encoding="utf-8") == broken, "%s: document rewritten" % case
-        assert run_main("--check", "--document", str(document))[0] == 2, case
+        for mode in ([], ["--check"]):
+            status, stdout, stderr = run_main(*mode, "--document", str(document))
+            assert status == 2, (case, mode)
+            assert stdout == "" and "error: markers must be" in stderr, (case, mode)
+            assert document.read_text(encoding="utf-8") == broken, (case, mode)

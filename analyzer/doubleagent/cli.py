@@ -14,6 +14,7 @@ from . import VERSION, gitmeta
 from . import catalog as catalog_mod
 from . import inventory as inventory_mod
 from .dedup import deduplicate
+from .errors import DoubleAgentError
 from .filters import FORMS_HELP, RowFilter, parse_bound
 from .inputs import PROJECT_AGENT, Collection, describe_error, error_reason, open_input
 from .model import (
@@ -173,9 +174,11 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_inventory(args)
     if args.command == "timeline":
         # Checked before an archive is extracted, so a typo fails at once.
+        # ValueError here and below is the standard library refusing a value,
+        # such as an integer too long to convert or a path with a null byte.
         try:
             args.row_filter = build_filter(args)
-        except ValueError as error:
+        except (DoubleAgentError, ValueError) as error:
             print("error: %s" % error, file=sys.stderr)
             return 2
     catalog = catalog_mod.load()
@@ -184,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     except OSError as error:
         print("error: %s" % describe_error(args.input, error), file=sys.stderr)
         return 2
-    except ValueError as error:
+    except (DoubleAgentError, ValueError) as error:
         print("error: %s" % error, file=sys.stderr)
         return 2
     try:
@@ -227,7 +230,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     except OSError as error:
         print("error: %s" % describe_error("", error), file=sys.stderr)
         return 2
-    except ValueError as error:
+    except (DoubleAgentError, ValueError) as error:
         print("error: %s" % error, file=sys.stderr)
         return 2
     rows: list[list[str]] = []
@@ -607,19 +610,19 @@ def build_filter(args: argparse.Namespace) -> RowFilter:
     """Return the row filter of `--since`, `--until`, `--keep-undated` and `--match`.
 
     Raises:
-        ValueError: A value is bad; the message is for the analyst.
+        DoubleAgentError: A value is bad; the message is for the analyst.
     """
     since = parse_bound(args.since) if args.since else ""
     until = parse_bound(args.until, end=True) if args.until else ""
     if since and until and since > until:
-        raise ValueError("--since %s is after --until %s" % (since, until))
+        raise DoubleAgentError("--since %s is after --until %s" % (since, until))
     flags = re.IGNORECASE if args.ignore_case else 0
     patterns = []
     for expression in args.match:
         try:
             patterns.append(re.compile(expression, flags))
         except re.error as error:
-            raise ValueError("--match %r: %s" % (expression, error)) from None
+            raise DoubleAgentError("--match %r: %s" % (expression, error)) from None
     return RowFilter(since, until, args.keep_undated, patterns)
 
 

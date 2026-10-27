@@ -74,8 +74,9 @@ tools/check_research_structure.py  verifies every research document follows the
                                outline; with --before, lists facts a rewrite dropped
 tools/check_doc_links.py       verifies every relative link and heading fragment in the
                                Markdown documents, that section and external
-                               references are links, and that a reader page
-                               introduces this file's terms of art before using them
+                               references are links, that a reader page
+                               introduces this file's terms of art before using them,
+                               and that this file links no issue or pull request
 mkdocs/mkdocs.yml              the documentation site: MkDocs with the Material theme,
                                built from the documents where they are; its nav: tree
 mkdocs/hooks.py                site build hooks: GitHub heading ids, code spans with
@@ -1261,6 +1262,16 @@ documentation-only change needs only the last two rows and markdownlint.
   the responder or analyst; `testing.md`, `development.md`, `internals.md`,
   `lab-vms.md`, the lab README and the research index a contributor. Only
   this file holds the rules for making a change.
+- This file states rules, not history. A new rule is one or two enforceable
+  sentences in the section that owns it, written as the lesson taught, not
+  the incident that taught it: no narrative, no date, and no issue or pull
+  request link as its provenance (a live pointer the reader must open, such
+  as the issue forms, the ruleset or [`SECURITY.md`](SECURITY.md), is the
+  exception). A concrete value (a glob, a name, a row form) stays only when
+  the rule depends on it; an example stays only when it is the
+  specification; a rule already stated elsewhere in this file is linked, not
+  repeated. `tools/check_doc_links.py` fails on an issue or pull request
+  link in this file.
 - An index table (the agents page, the survival table) gives a short cell
   and a link, never the documents' detail.
 - A document never says how it is maintained, never states its own

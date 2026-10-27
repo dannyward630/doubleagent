@@ -52,11 +52,14 @@ executed. Each claim names its evidence level, best first:
   [Claude Code IAM](https://code.claude.com/docs/en/iam),
   [Claude Code managed settings](https://code.claude.com/docs/en/managed-settings);
   [Claude Desktop data storage](https://claude.com/docs/third-party/claude-desktop/data-storage);
-  for the retention sweep and the session scratchpad,
+  for the retention sweep and the session scratchpad (the per-session temporary directory Claude
+  Code gives the model, [Scratch directories](#scratch-directories)),
   [Explore the .claude directory](https://code.claude.com/docs/en/claude-directory.md#cleaned-up-automatically),
   [Settings reference, `cleanupPeriodDays`](https://code.claude.com/docs/en/settings-reference#cleanupperioddays)
   and
   [Monitoring usage, Retention sweep event](https://code.claude.com/docs/en/monitoring-usage#retention-sweep-event)
+  (read 2026-10-26); for a Remote Control server's sessions after it stops,
+  [Resume sessions after stopping the server](https://code.claude.com/docs/en/remote-control#resume-sessions-after-stopping-the-server)
   (read 2026-10-26).
 - **Local**: the author's host ([Observed](#observed)). A shape the Parsing part marks observed
   was seen on the WSL2 install; one marked bundle rests on the binary only.
@@ -66,6 +69,10 @@ executed. Each claim names its evidence level, best first:
 - **Linux 2.1.310**: the clean-VM round of 2026-10-25 and 2026-10-26 ([Observed](#observed)). A
   claim marked "on Linux 2.1.310" rests on that round's listings, file modes and the shape tool's
   key names, types and enum values, in the same way.
+- **macOS 2.1.310**: the clean-VM round of 2026-10-26 ([Observed](#observed)). A claim marked "on
+  macOS 2.1.310" rests on that round's listings, file modes, the names of the keychain items whose
+  service or label mentions Claude (never their secrets) and the shape tool's key names, types and
+  enum values, in the same way.
 - **Vendor text in the bundle**: the built-in "Fewer Permission Prompts" prompt describes the
   transcript layout for the model itself (2.1.289 strings file, cc:489602: "Session transcripts
   live at `~/.claude/projects/<sanitized-cwd>/*.jsonl`. Each line is a JSON object. Tool calls
@@ -108,8 +115,10 @@ executed. Each claim names its evidence level, best first:
   local-scope MCP server ([CLI cache directory](#cli-cache-directory),
   [MCP state](#mcp-state)); `/install-github-app` and a read-only pull-request question
   ([Source-host integration](#source-host-integration)); Remote Control from the Claude iPhone app
-  ([Remote Control](#remote-control)); a cloud session, which the CLI did not offer this account;
-  `/loop` and `/schedule` ([Scheduled tasks](#scheduled-tasks)); the VS Code extension
+  ([Remote Control](#remote-control)); a cloud session (a Claude Code session that runs on
+  Anthropic's servers against a GitHub repository, [Cloud sessions](#cloud-sessions)), which the
+  CLI did not offer this account; `/loop` and `/schedule` ([Scheduled tasks](#scheduled-tasks));
+  the VS Code extension
   ([VS Code extension files](#vs-code-extension-files),
   [VS Code extension sessions](#vs-code-extension-sessions)); then `/clear`, a `cleanupPeriodDays`
   setting, the project directory removed and a reboot
@@ -144,6 +153,42 @@ executed. Each claim names its evidence level, best first:
   overnight, the project directory removed and a reboot
   ([What survives a delete](#what-survives-a-delete), [Scratch directories](#scratch-directories),
   [Files that hold evidence](#files-that-hold-evidence)).
+- macOS 26.6.2 arm64, CLI 2.1.310 darwin-arm64 from the native installer, a clean VM, 2026-10-26
+  ([issue 256](https://github.com/seanthegeek/doubleagent/issues/256)), one listing diff per step,
+  file names, sizes, modes, key names, keychain item names and enum values only; every step ran
+  over ssh inside `screen` (a terminal multiplexer that keeps the console running between ssh
+  commands), except the browser sign-ins, a session started from Terminal.app in the desktop
+  session and the prompt sent from claude.ai, which a person made by hand: the install
+  ([Native installer](#native-installer)); the first launch, browser sign-in and trust dialog
+  ([Credentials](#credentials), [`.claude.json`](#claudejson),
+  [CLI cache directory](#cli-cache-directory), [Scratch directories](#scratch-directories),
+  [Where the project path is recorded](#where-the-project-path-is-recorded)); an `/exit` with no
+  prompt, which registered a URL handler ([Files that hold evidence](#files-that-hold-evidence));
+  a question answered with a `Read` in `auto` mode and one answered with no tool call
+  ([Transcript stores](#transcript-stores), [Record schema](#record-schema)); the Shift+Tab mode
+  cycle, a one-time approval, two denials, the second through the dialog's amend option, and an
+  allow-always grant ([Permission decisions](#permission-decisions),
+  [Permission configuration](#permission-configuration)); a file edit and a prompt on a detached
+  head ([File-history records](#file-history-records),
+  [Joins and timestamps](#joins-and-timestamps)); accept-edits and plan mode with a task that
+  wrote a plan file ([Files that hold evidence](#files-that-hold-evidence)); a `/model` switch
+  ([Joins and timestamps](#joins-and-timestamps)); a subagent, a large output persisted to a file
+  and then written to the session scratchpad, a short and a long paste, a command the model ran in
+  the background, a prompt typed while an answer streamed, `/compact`, `/rename` and `/exit`
+  ([Record schema](#record-schema), [`history.jsonl`](#historyjsonl),
+  [Scratch directories](#scratch-directories)); `claude --resume` and `claude --continue`
+  ([Joins and timestamps](#joins-and-timestamps)); a local-scope MCP server
+  ([MCP state](#mcp-state)); `/install-github-app` before and after `gh auth login`, the login
+  made once over ssh and once from Terminal.app, and a read-only pull-request question
+  ([Source-host integration](#source-host-integration)); `claude remote-control` driven from
+  claude.ai ([Remote Control](#remote-control)); a cloud session created with `--cloud` and
+  brought into a local session with `--teleport` ([Cloud sessions](#cloud-sessions)); `/loop`
+  ([Scheduled tasks](#scheduled-tasks)); the VS Code extension
+  ([VS Code extension files](#vs-code-extension-files),
+  [VS Code extension sessions](#vs-code-extension-sessions)); then `/clear`, a `cleanupPeriodDays`
+  of 0, `/logout` and a sign-in from Terminal.app, the project directory removed and a reboot
+  ([What survives a delete](#what-survives-a-delete), [Credentials](#credentials),
+  [Scratch directories](#scratch-directories)).
 - macOS, CLI 2.1.296, the author's install, 2026-10-13
   ([issue 93](https://github.com/seanthegeek/doubleagent/issues/93)), key names, enum values and
   counts only: 308 `permission-mode` records across four session files, every one `permissionMode`
@@ -240,7 +285,15 @@ and `.device-keys.json` were never written. On Linux 2.1.310 the round saw the s
 plus `debug` (written only by a `claude --debug` session), and the same files except `daemon.lock`
 and `daemon.status.json`; `statsig`, `todos`, `startup-perf` and `.device-keys.json` were never
 written. `sessions/`, `daemon/` and `ide/` are mode 0700 there, and the files holding keys or
-tokens 0600 ([Credentials](#credentials)).
+tokens 0600 ([Credentials](#credentials)). On macOS 2.1.310 the round saw the Linux set less
+`daemon`, `jobs` and `debug` (no step started the session daemon or a `--debug` session), plus
+`bridge-spawn` while a Remote Control server ran ([Remote Control](#remote-control)) and
+`seed-admin`, created empty by `claude --cloud` ([Cloud sessions](#cloud-sessions));
+`.credentials.json` only while a session started over ssh held the sign-in
+([Credentials](#credentials)); and, outside the config home, a URL handler bundle under
+`~/Applications` ([Files that hold evidence](#files-that-hold-evidence)) and the socket directory
+`/tmp/cc-socks` ([Scratch directories](#scratch-directories)). `statsig`, `todos`, `startup-perf`
+and `.device-keys.json` were never written there either.
 
 #### Scratch directories
 
@@ -306,11 +359,47 @@ deleted ([What survives a delete](#what-survives-a-delete)), so the temp root is
 `cleanupPeriodDays` like the transcripts. `/tmp` on Ubuntu 26.04 is tmpfs, a file system held in
 memory and emptied at every boot, so the reboot removed the whole temp root, both project slugs,
 the `tasks/` files and symlink, `bash-edit-diff/` and the Bun module, while on Windows the temp root
-survived a reboot. A collection taken on Linux after a reboot finds none of it. The Claude Desktop
+survived a reboot. A collection taken on Linux after a reboot finds none of it. On macOS 26.6 a
+reboot emptied `/private/tmp` the same way (2.1.310, 2026-10-26: all nineteen process directories
+of the project slug, the scratchpad file, the `tasks/` outputs and `bash-edit-diff/`, and the
+`/tmp/cc-socks/` directory were gone after boot), which the vendor's scratchpad page states as the
+operating system clearing the temp location, such as on restart
+([Session scratchpad directory](https://code.claude.com/docs/en/claude-directory.md#session-scratchpad-directory)). The Claude Desktop
 Code tab's use of the same root is in [Where the project path is recorded in
 `claude-desktop.md`](claude-desktop.md#where-the-project-path-is-recorded); on Linux and macOS the
 temp root is not collected
 ([issue 163](https://github.com/seanthegeek/doubleagent/issues/163)).
+
+Observed on macOS 2.1.310 (2026-10-26), the temp root is `/private/tmp/claude-<uid>`
+(`/tmp/claude-501`, `/tmp` being a link to `/private/tmp`), the vendor's path, and not under the
+per-user `$TMPDIR` in `/var/folders`. The first launch created it empty (mode 0700) before the
+sign-in, and that first, onboarding session got no directory in it. From the second start on,
+every process got `<slug>/<uuid>/scratchpad/` (every level 0700) at its start, before any prompt:
+under the session id for a new session, and under a uuid of its own for `claude --resume` (one
+found in no transcript, registry or history line), `claude --continue`, each of `claude mcp add`
+and `claude mcp list`, `claude --cloud`, and a Remote Control server and the session it spawned; a
+VS Code extension session made two, and `/clear` added a directory named by the new session id.
+The project's slug held 19 such directories by the end. `tasks/` (mode 0755) appeared at a
+session's first shell call and held `<agent id>.output`, a symlink to the subagent's
+transcript, and `<9 base-36 chars>.output` (22 B, a regular file), the output of a
+command the model ran in the background. `scratchpad/words-3000.txt` (31,286 B, mode 0644) was
+written by a shell redirect the model chose after a 3,000-line output had been persisted, the
+first file seen inside a scratchpad on any platform: the scratchpad holds output of the model's
+own, which exists nowhere else. `bash-edit-diff/` beside the slugs was created empty at the exit
+of a session that ran `gh`, and while the VS Code extension's session ran it held one snapshot
+directory with the layout of the Linux one above (`HEAD`, `config`, `config.global`, an `index` of
+661 B, `info/attributes`, `info/exclude` a copy of the project's, one loose object,
+`objects/info/alternates` naming the project's `.git/objects`, and `refs/heads/main`), removed
+when that session exited.
+
+Each `claude` process on macOS 2.1.310 also creates `/tmp/cc-socks/<pid>.sock`, a Unix socket
+(mode 0600, in a directory of mode 0700) named by its process id, at its start. `/exit` removes
+it, and a process that ends otherwise leaves it: the `claude` process the native installer ran
+left its socket behind. Where the Linux and Windows builds put such a socket was not surveyed.
+The reboot cleared `/private/tmp`, removing the whole temp root with the scratchpad file, the
+`tasks/` outputs and symlink, and `/tmp/cc-socks/`, while nothing under `~/.claude` changed, so a
+collection taken on macOS after a reboot finds none of it, as on Linux. Neither directory is
+collected ([issue 163](https://github.com/seanthegeek/doubleagent/issues/163)).
 
 #### Files that hold evidence
 
@@ -321,12 +410,16 @@ temp root is not collected
   holding `<uuid>.jsonl`, `<uuid>/`, `memory/`; Windows 2.1.309 shows `C--Users-sean-lab-proj`
   holding `<uuid>.jsonl`, `<uuid>/` with `subagents/`, `tool-results/` and `custom-title.json`,
   and an empty `memory/` created at the first prompt; Linux 2.1.310 shows the same under
-  `-home-sean-lab-proj` ([Transcript stores](#transcript-stores)).
+  `-home-sean-lab-proj`, and macOS 2.1.310 under `-Users-sean-lab-proj`, with
+  `bridge-pointer.json` beside the transcripts once a Remote Control server had run there and
+  `ccr-tip.json` in the directory of the session it spawned
+  ([Transcript stores](#transcript-stores), [Remote Control](#remote-control)).
 - `history.jsonl`: prompt history, with retention pruning (cc:338013-15, 478233); the vendor page
   says the retention sweep keeps it ([What survives a delete](#what-survives-a-delete)).
 - `paste-cache/<16 hex>.txt`: the text of a long paste, named by the hash `history.jsonl` records
   ([`history.jsonl`](#historyjsonl)); created at the first such paste (6,604 B on Windows 2.1.309;
-  15,108 B, mode 0600, on Linux 2.1.310).
+  15,108 B, mode 0600, on Linux 2.1.310; 2,415 B, mode 0600 in a directory of mode 0755, on macOS
+  2.1.310, the paste without its trailing newline).
 - `debug/<sessionId>.txt`: per-session debug logs (cc:472977); `debug/latest` symlink (local). On
   Linux 2.1.310 only a session started with `claude --debug` wrote them: the log (31 KB after the
   start, 48.3 KB when the session exited 10 h 52 min later) and `debug/latest`, a symlink to it,
@@ -339,23 +432,29 @@ temp root is not collected
 - `file-history/<sessionId>/`: pre-edit file backups (cc:482923), one `<16 hex>@v<n>` file per
   tracked path and version on Windows 2.1.309 ([File-history records](#file-history-records));
   `session-env/<sessionId>/` (cc:480109), an empty directory created at the session's first tool
-  run on Windows 2.1.309 and at its first shell call on Linux 2.1.310, kept after the exit;
+  run on Windows 2.1.309 and at its first shell call on Linux and macOS 2.1.310 (mode 0755 on
+  macOS), kept after the exit;
   `shell-snapshots/snapshot-<shell>-<epoch>-<rand>.sh` (shell function
   dumps, cc:480528 region, local name confirms), on Windows a 2.3 KB `snapshot-bash-*` of Git Bash
   (the bash that Git for Windows installs), on Linux 2.1.310 a 7.5 KB
   `snapshot-bash-<epoch ms>-<6 chars>.sh`, written at a session's first Bash call and removed when
-  the console exits; `todos/`, `tasks/<sessionId>/`, `plans/*.md` (cc:476220; on Windows 2.1.309
+  the console exits, and on macOS 2.1.310 `snapshot-zsh-<epoch ms>-<6 chars>.sh` (3.4 to 3.8 KB,
+  mode 0644), named for the user's login shell, written and removed the same way; `todos/`,
+  `tasks/<sessionId>/`, `plans/*.md` (cc:476220; on Windows 2.1.309
   `plans/<adjective-adjective-noun>.md`, a 1.3 KB Markdown plan under a random three-word name,
   written with the `Write` tool in plan mode; on Linux 2.1.310 the same form, 1,010 B, written when
   the plan-mode prompt was a task and not when it was a question, so `plans/` is not written for
-  every plan-mode session), `teams/`,
+  every plan-mode session; on macOS 2.1.310 1.4 KB, written for a task by a `Write` call after a
+  `ToolSearch`, the directory created at that turn), `teams/`,
   `jobs/<id>/parent-transcript.jsonl` (cc "jobs" ctx), `dump-prompts/*.jsonl` (full outgoing
   prompts, cc "dump-prompts" ctx), `api-dumps`, `traces/*.json`,
   `usage-data/{facets,session-meta}/*.json` and `report-*.html` (cc:492127),
   `feedback-bundles/*.zip`, `shares/*.zip`, `uploads/<sessionId>/`, `ide/<port>.lock` (local
   `13502.lock`; Windows/WSL also probes `%USERPROFILE%\.claude\ide`, cc "ide" ctx; on Windows
   2.1.309 `ide/` was created when the VS Code extension activated and the lock removed when VS Code
-  closed, and on Linux 2.1.310 the same, `ide/` being mode 0700), `backups/` (`.claude.json`
+  closed, and on Linux 2.1.310 the same, `ide/` being mode 0700, and on macOS 2.1.310 the same,
+  the lock's keys being under [VS Code extension files](#vs-code-extension-files)), `backups/`
+  (`.claude.json`
   snapshots; docs: `~/.claude/backups/.claude.json.corrupted.<ts>`).
 - `backups/.claude.json.backup.<epoch ms>` on Windows 2.1.309: a dated full copy of `.claude.json`
   written at every start and exit, the first (84 B, `firstStartTime` and `firstStartVersion`) by
@@ -365,13 +464,21 @@ temp root is not collected
   and the sign-in (84, 517, 558 and 2,290 B), and the set was capped at the five newest with no
   sweep involved: each new copy removed the oldest, as the vendor's
   [Explore the .claude directory](https://code.claude.com/docs/en/claude-directory.md#cleaned-up-automatically)
-  says ("keeps the five newest, plus a copy of any version it couldn't parse").
+  says ("keeps the five newest, plus a copy of any version it couldn't parse"). On macOS 2.1.310
+  the installer wrote two copies, 84 B and then 423 B (adding
+  `hasResetAutoModeOptInForDefaultOffer`,
+  `machineID`, `migrationVersion`, `opusProMigrationComplete`, `seenNotifications`,
+  `sonnet1m45MigrationComplete` and `userID`), the five newest were kept after that, and the copies
+  kept after a `/logout` still held the logged-out account
+  ([What survives a delete](#what-survives-a-delete)).
 - `.last-cleanup`: a 24-byte printable marker, not JSON, rewritten when the housekeeping sweep runs;
   on Windows 2.1.309 that was at a start, at a turn and on a timer while idle, and the sweep pruned
   `backups/` and the temp root ([Scratch directories](#scratch-directories)). On Linux 2.1.310 it
   was first written 30 minutes into the second session, by the retention sweep, whose timing is
   under [What survives a delete](#what-survives-a-delete); that sweep also removed the session
-  daemon's empty `daemon/auth/` directory.
+  daemon's empty `daemon/auth/` directory. On macOS 2.1.310 it was first written 20 minutes after
+  the second session's first prompt, and that run removed the empty `.staging/` the first skills
+  sync had left.
 - `skills/synced/<org uuid>_<account uuid>/`: copies of the claude.ai account's skills, written at
   the first prompt after sign-in (286 entries, 3.9 MB on Windows 2.1.309: `manifest.json`,
   `.last-complete-round`, a transient `.staging/`, one directory per skill) and refreshed on a
@@ -381,13 +488,16 @@ temp root is not collected
   `manifest.json` 11.5 KB, `.last-complete-round` 40 B, an empty `.staging/`, 14 skill directories
   such as `docx/`, `pdf/`, `deep-research/` and `computer-use/`), and `.last-complete-round` was
   rewritten at most starts and on a timer while a session ran (42 minutes after the first sync,
-  then at intervals of hours overnight).
+  then at intervals of hours overnight). On macOS 2.1.310 it was written at the second start
+  (285 entries, 3.9 MB: `manifest.json` 11,500 B, `.last-complete-round` 40 B, 14 skill
+  directories) and refreshed about ten and twenty minutes later while the session ran.
 - `state/mcp-discover-verdicts.json`: one entry per MCP server the CLI probed
   ([MCP state](#mcp-state)).
 - `~/.config/git/ignore`, outside the config home: the user's global git excludes file. Claude Code
   appends `**/.claude/settings.local.json` to it, creating it when absent: on Windows 2.1.309 it
   created the file (31 B, the length of that pattern and a newline) in the same second it wrote a
-  project's `settings.local.json`, and on Linux 2.1.310 the same (31 B, creating `~/.config/git/`).
+  project's `settings.local.json`, and on Linux and macOS 2.1.310 the same (31 B, creating
+  `~/.config/git/`).
   The collector does not take it, because the file exists on hosts
   that never ran Claude Code and a catalog line would mark them as Claude Code homes; a responder
   checks it by hand.
@@ -408,7 +518,10 @@ temp root is not collected
   (the alias picked when `/model` was saved as the default), `agentPushNotifEnabled` (written when
   Remote Control started) and `cleanupPeriodDays` (set by hand). On Linux 2.1.310 it held the same
   keys but `autoUpdatesChannel`: `theme` written at the first launch (22 B), not by the installer,
-  then `model` (`opus`), `agentPushNotifEnabled` and `cleanupPeriodDays` (99 B).
+  then `model` (`opus`), `agentPushNotifEnabled` and `cleanupPeriodDays` (99 B). On macOS 2.1.310:
+  `theme` at the theme choice (22 B), `model` (`fable`) at `/model` (42 B), rewritten to `opus` by
+  the VS Code extension's start with no command ([Joins and timestamps](#joins-and-timestamps)),
+  and `cleanupPeriodDays` set by hand.
 - `plugins/`: `installed_plugins.json`, `known_marketplaces.json`, `marketplaces/<name>/` git
   clones, `cache/` zip cache (cc plugins ctx); local also `blocklist.json`,
   `plugin-directory-cache-v2.json`, `synced/`. On Windows 2.1.309 the first sign-in auto-installed
@@ -424,7 +537,14 @@ temp root is not collected
   `synced/` files (`.marketplaces.json` 392 B, `.last-complete-round` 37 B, rewritten at every
   start) and, during its second turn, `plugin-directory-cache-v2.json` (2.7 MB); the directory
   cache and `known_marketplaces.json` were refreshed again on timers, once two minutes after a
-  prompt with `Plugin autoupdate: checking installed plugins` in the `--debug` log.
+  prompt with `Plugin autoupdate: checking installed plugins` in the `--debug` log. On macOS
+  2.1.310 the first session start wrote `known_marketplaces.json` (275 B) and the official
+  marketplace as a download rather than a clone: `marketplaces/claude-plugins-official/` with 821
+  entries and 13.8 MB, no `.git`, and a 40-byte `.gcs-sha` file, by its name the hash of the
+  Google Cloud Storage object it came from (`.claude-plugin/marketplace.json` 186.3 KB, `plugins/`
+  709 entries, `external_plugins/` 102). The second start wrote `synced/` (`.marketplaces.json`
+  391 B, `.last-complete-round` 37 B), and `plugin-directory-cache-v2.json` (2,718,950 B) came 20
+  seconds after the session's second prompt, refreshed later on a timer.
 - `cache/changelog.md` (1.0 MB, written by the installer) and
   `cache/model-catalog/<org uuid>-<12 hex>-cc.json` (14 KB, `catalog, fetchedAt, staleAt, version`,
   refreshed at starts and at a `/model` change), on Windows 2.1.309. On Linux 2.1.310 the installer
@@ -432,7 +552,10 @@ temp root is not collected
   `.claude.json`), and the second start the model catalog (14.4 KB), whose
   `catalog{config{id, models, provider_alias_targets, settings_vocabulary}, state{id, model,
   selection_source, thinking, thinking_by_model}, surface}` records where the default model came
-  from ([Joins and timestamps](#joins-and-timestamps)).
+  from ([Joins and timestamps](#joins-and-timestamps)). On macOS 2.1.310 the first launch wrote
+  `changelog.md` and the first session start after the sign-in the model catalog (14,383 B); a
+  start with no usable sign-in wrote `cache/model-catalog/published-floor.json` (138 B, mode 0600)
+  and `published-<32 hex>.json` (288,506 B, mode 0600), a catalog not keyed to an account.
 - Writes with no user action, on Linux 2.1.310 in a `--debug` session left open overnight: the
   OAuth access token was refreshed (OAuth being the authorisation protocol of the claude.ai
   sign-in), rewriting `.credentials.json` ([Credentials](#credentials)); `.claude.json` was
@@ -447,6 +570,24 @@ temp root is not collected
   `remote/` (cloud sessions: `/home/claude/.claude/remote/.oauth_token`, `.api_key`,
   `.session_ingress_token`, cc `.session_ingress_token` ctx).
 - The session daemon's files and `jobs/`: [Session daemon files](#session-daemon-files).
+- `bridge-spawn/<cse id>/` (`<cse id>` an id starting `cse_`), on macOS 2.1.310 while a Remote
+  Control server ran: the system prompt it appends to the sessions it spawns and the definition
+  of a remote MCP endpoint whose headers identify the session ([Remote Control](#remote-control),
+  [Credentials](#credentials)); removed when the server stops, the empty `bridge-spawn/` staying.
+  Remote Control is the feature that lets claude.ai or the mobile app drive a local Claude Code
+  process through a bridge, the relay through Anthropic's servers that carries the other device's
+  prompts to the local process and its output back.
+- `seed-admin/`: created empty (mode 0700) by `claude --cloud` on macOS 2.1.310
+  ([Cloud sessions](#cloud-sessions)).
+- `~/Applications/Claude Code URL Handler.app/`, outside the config home, on macOS 2.1.310: a
+  1.1 KB application bundle written at the first `/exit`, whose `Contents/Info.plist` (805 B)
+  declares `CFBundleURLTypes[0].CFBundleURLSchemes` `["claude-cli"]`, `LSBackgroundOnly` true,
+  `CFBundlePackageType` `APPL` and `CFBundleVersion` `1.0` beside `CFBundleExecutable`,
+  `CFBundleIdentifier`, `CFBundleName` and `CFBundleURLName`, and whose `Contents/MacOS/claude` is
+  a symlink to `~/.local/bin/claude`. It registers Claude Code with Launch Services, the macOS
+  registry of which application opens which URL scheme, as the handler of `claude-cli:` links, and
+  it stays when `~/.local` is removed, so it marks a host where Claude Code ran. Collected since
+  this round (`claude-code|Applications/Claude Code URL Handler.app`).
 
 #### Native installer
 
@@ -480,11 +621,23 @@ and `~/.claude.json` (517 B, 12 keys). Unlike the Windows installer it fetched n
 `cache/changelog.md`, `settings.json` or `changelogLastFetched` key until the first launch. It
 changed no shell profile; Ubuntu's `.profile` already adds `~/.local/bin` at login when it exists.
 
+On macOS 26.6.2 arm64 the same command (2026-10-26, run over ssh) took 4 minutes 13 seconds, most
+of it the download, and printed the Linux output with its setup notes twice, naming `~/.zshrc`
+where Linux names `~/.bashrc`; it created no `~/.zshrc` and left `~/.zprofile` unchanged. It wrote
+`~/.local/share/claude/versions/2.1.310` (274,068,224 bytes, a Mach-O 64-bit arm64 executable,
+Mach-O being the macOS executable format) with `~/.local/bin/claude` a symlink to it (48 B), the
+empty `locks` and `staging` directories, empty `downloads/` and `sessions/`, `~/.claude.json`
+(517 B, the twelve Linux keys, `installMethod` `native`) and two `backups/` copies
+([Files that hold evidence](#files-that-hold-evidence)); again no `changelog.md`, `settings.json`
+or `changelogLastFetched`. The `claude` process the installer ran left its socket in
+`/tmp/cc-socks/` ([Scratch directories](#scratch-directories)).
+
 `~/.local/state/claude/locks/<version>.lock` (138 B, mode 0644, JSON `acquiredAt, execPath, pid,
 version`) is a per-version lock held by a running `claude` process: on Linux 2.1.310 it was written
 at each start and removed at each exit, so it exists only while a session runs and names that
-process's executable and pid. `~/.cache/claude/staging/` stayed empty whenever listed, on Windows
-and Linux alike. Both directories are collected since this round (`claude-code|.local/state/claude`
+process's executable and pid; macOS 2.1.310 did the same. `~/.cache/claude/staging/` stayed
+empty whenever listed, on Windows, Linux and macOS alike. Both directories are collected since
+this round (`claude-code|.local/state/claude`
 and `claude-code|.cache/claude`).
 
 #### Session daemon files
@@ -527,6 +680,9 @@ No `daemon.lock`, `daemon.status.json`, `daemon/pipe.key`, `daemon/pty-pids/`,
 left through the reboot, except `daemon/auth/`, which a later sweep removed
 ([Files that hold evidence](#files-that-hold-evidence)).
 
+On macOS 2.1.310 no step started the daemon: one `claude` process ran per session, none remained
+after any exit, and none was running after the reboot.
+
 #### VS Code extension files
 
 The Claude Code extension for VS Code (2.1.309 on Windows, installed from the marketplace on
@@ -553,6 +709,18 @@ lines). Its start wrote one connector MCP log per server and a skills sync, its 
 CLI's `projects/` tree, and `ide/` was empty again after VS Code closed. VS Code 1.143 itself wrote
 `~/.copilot/logs/` at its first start, before the extension was installed
 ([Per-user storage in `copilot-cli.md`](copilot-cli.md#per-user-storage)).
+
+On macOS `code --install-extension anthropic.claude-code` (2026-10-26) installed 2.1.310 as
+`~/.vscode/extensions/anthropic.claude-code-2.1.310-darwin-arm64/` (58 entries, 273.3 MB, the CLI
+binary of the same build inside) and rewrote `extensions.json` (751 B). The extension's session
+ran that bundled binary, `resources/native-binary/claude`, as a child of VS Code's extension host,
+with the usual registry file (`entrypoint` `claude-vscode`), `.key`, version lock and socket. While
+it ran, `ide/<port>.lock` (181 B) held `authToken` (a uuid), `ideName`, `runningInWindows`,
+`transport` (`ws`, a WebSocket) and `workspaceFolders` (one path): the extension's listener for the
+CLI and the token that authenticates to it ([Credentials](#credentials)). Quitting VS Code removed
+the lock, the empty `ide/` staying. There was again no `globalStorage/anthropic.claude-code*`; the
+`agent-host-config.json`, `agent-host-storage.json`, `chatSessions/` and `chatEditingSessions/`
+files VS Code wrote mention no Claude and are VS Code's own ([`vscode.md`](vscode.md)).
 
 #### CLI cache directory
 
@@ -584,7 +752,15 @@ console, resume, `--continue`, the VS Code extension) wrote one file per claude.
 account under `~/.cache/claude-cli-nodejs/-home-sean-lab-proj/` (`mcp-logs-claude-ai-Claude-Docs/`
 9 lines, `mcp-logs-claude-ai-Monarch/` 8, `mcp-logs-claude-artifacts/` 12 with two `error` lines),
 and the local-scope stdio server `fs` logged to `mcp-logs-fs/` (2,302 B, 10 lines, one of them an
-`error`); no `errors/` directory appeared. Evidence, `claude 2.1.295 linux-arm64` (the binary
+`error`); no `errors/` directory appeared. Observed on macOS 2.1.310 on a clean install:
+`~/Library/Caches/claude-cli-nodejs/-Users-sean-lab-proj/` got, from the first session start on
+and before any prompt, one file per claude.ai connector of the account per start (9, 8 and 12
+lines, two of them `error` lines); `claude mcp list`, a health check of every server, wrote one for
+every connector of the account, three of which no session had logged, and one under `mcp-logs-fs/`
+(175 B) for the local server, whose session start then logged 2.0 KB (six `debug` lines and one
+`error`); a Remote Control server added `mcp-logs-claude-code-remote/` (3.0 KB, 11 `debug` lines)
+for its remote endpoint ([Remote Control](#remote-control)); and a start with no usable sign-in
+logged the local server only. Evidence, `claude 2.1.295 linux-arm64` (the binary
 recorded in
 [Source and evidence](#source-and-evidence)):
 
@@ -674,7 +850,17 @@ install):
 - macOS: Keychain generic password, account = OS user, service = `"Claude Code"` + `"-credentials"`
   (keyed to the config dir when non-default), read with
   `security find-generic-password -a <user> -w -s <service>` (cc:473906, cc:494949,
-  `HAn="-credentials"` chunk near cc:473906). Fallback and Linux/Windows:
+  `HAn="-credentials"` chunk near cc:473906). Observed on macOS 2.1.310 (2026-10-26): a session
+  started from Terminal.app in the desktop session stored the token in the login keychain as a
+  generic password with service `Claude Code-credentials` and account the OS user name, wrote no
+  `.credentials.json`, and left the item in place after it exited. A session started over ssh,
+  which cannot use the login keychain, wrote `.credentials.json` instead (559 B, mode 0600, the
+  Windows and Linux key set) and created no keychain item, and an ssh-launched start after the
+  desktop sign-in found neither store and came up `Not logged in · Run /login`: the two launch
+  paths do not share a store, and a macOS home whose user signs in from the desktop holds no Claude
+  Code token file at all. The file's modification time stayed at the sign-in for two hours, and
+  `/logout` removed it ([What survives a delete](#what-survives-a-delete)). Fallback and
+  Linux/Windows:
   `<config>/.credentials.json` mode 0600 (docs /iam). Local file present. On Windows 2.1.309 it was
   written at the browser sign-in (559 B) and rewritten at each token refresh; its fields are in
   [Secrets](#secrets). On Linux 2.1.310 it was written at the sign-in (559 B, mode 0600, the
@@ -698,8 +884,9 @@ install):
   `.claude-*/sessions/*.key`). On Windows 2.1.309 it is 118 B, a JSON object whose fields are in
   [Secrets](#secrets), and is removed with its `<pid>.json` when the process exits. On Linux 2.1.310
   it is 138 or 139 B, mode 0600, in a `sessions/` of mode 0700, a JSON object with a different third
-  key ([Secrets](#secrets)), removed at the exit in the same way. The `<pid>.json` itself is not
-  flagged ([Remote Control](#remote-control)).
+  key ([Secrets](#secrets)), removed at the exit in the same way; on macOS 2.1.310 it is 108 B,
+  mode 0600, the Linux key set ([Secrets](#secrets)). The `<pid>.json` itself is not flagged
+  ([Remote Control](#remote-control)).
 - The session daemon's `daemon/control.key`, `daemon/pipe.key` and `daemon/roster.json`
   ([Session daemon files](#session-daemon-files)): the first two are raw keys, the roster holds two
   auth tokens per worker. Flagged `secret: true` since this round (`.claude/daemon/control.key`,
@@ -709,8 +896,15 @@ install):
   round (`.claude/backups/.claude.json.*` and the `.claude-*/` form, which also takes the
   `.claude.json.corrupted.<ts>` copy of [Per-user storage](#per-user-storage)). The home-level
   `.claude.json.backup*` files of the older layout, beside `~/.claude.json`, are flagged with them.
+  On macOS 2.1.310 the copies kept the account block after a `/logout`.
+- `ide/<port>.lock` (its `authToken`) and `bridge-spawn/<cse id>/mcp.json` (the headers that
+  identify a session to the remote MCP endpoint), each on disk only while the VS Code extension or
+  a Remote Control server runs ([VS Code extension files](#vs-code-extension-files),
+  [Remote Control](#remote-control)): flagged `secret: true` since this round
+  (`.claude/ide/*.lock`, `.claude/bridge-spawn/*/mcp.json` and their `.claude-*/` forms).
 - The GitHub account Claude Code acts through, and its token, are in the `gh` tool's store, not in
-  Claude Code's files ([Source-host integration](#source-host-integration)).
+  Claude Code's files; on macOS that store is a plaintext `hosts.yml` or a keychain item depending
+  on how `gh` was launched ([Source-host integration](#source-host-integration)).
 - Config files that can embed keys: `settings.json` / `settings.local.json`, `.mcp.json`,
   `managed-mcp.json` (the fields are in [Secrets](#secrets)). Env: `ANTHROPIC_API_KEY`,
   `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` (docs /iam precedence list). Anthropic profiles
@@ -719,12 +913,14 @@ install):
 ### Exclusions
 
 Patterns are relative to the home: `.claude/plugins/marketplaces` (git clones, 13.7 MB for the
-official marketplace on Windows 2.1.309), `.claude/plugins/cache`,
+official marketplace on Windows 2.1.309; on macOS 2.1.310 a 13.8 MB download with no `.git`),
+`.claude/plugins/cache`,
 `.claude/plugins/plugin-directory-cache*` (the 2.6 MB download of the plugin directory, excluded
 since this round), `.claude/plugins/*/node_modules`, `.claude/local/node_modules`,
 `.claude/image-cache`, `.claude/chrome`, `.claude/cache` (the changelog and the model catalog),
 `.claude/statsig` (flag cache, optional), `.local/share/claude/versions` (~245 MB per version, 282.7
-MB for 2.1.309 win32-arm64). `.claude/paste-cache` is collected since this round: `history.jsonl`
+MB for 2.1.309 win32-arm64, 274 MB for 2.1.310 darwin-arm64). `.claude/paste-cache` is collected
+since this round: `history.jsonl`
 names a long paste by its hash alone, so once the transcript is gone the paste cache holds the only
 copy of the text ([`history.jsonl`](#historyjsonl)). `skills/synced/` is a copy of account state
 and is collected, as the list of skills the agent could use on the host. Project-side:
@@ -737,8 +933,10 @@ Desktop exclusion `*/Claude*/Cache` does not prune it
 ([`collectors/docs/coverage.md`](../collectors/docs/coverage.md) says why). The VS Code
 extension's copy of the CLI binary
 (`.vscode/extensions/anthropic.claude-code-*/resources/native-binary/claude`, 291 MB on Linux
-2.1.310, [VS Code extension files](#vs-code-extension-files)) needs no exclusion: the `vscode`
-catalog entry takes `extensions.json` only.
+2.1.310, most of the 273.3 MB extension directory on macOS 2.1.310,
+[VS Code extension files](#vs-code-extension-files)) is a copy of a published binary; no
+catalog entry reaches the extensions directory (the `vscode` entry takes only `extensions.json`
+from it), so the copy is not collected and needs no exclusion.
 
 ### Project-local files
 
@@ -777,6 +975,21 @@ behind after the loop was stopped, with no `scheduled_tasks.json` beside it
 ([Scheduled tasks](#scheduled-tasks)). Removing the project (52 entries) removed these files and
 nothing in the home.
 
+Observed on macOS 2.1.310: the allow-always answer created `.claude/settings.local.json` (72 B, mode
+0644, one 15-character rule) with `~/.config/git/ignore` in the same second; `/loop` wrote
+`.claude/scheduled_tasks.lock` (130 B, mode 0644, the same four keys), removed at `/exit`, and
+appended ten patterns to the repository's own `.git/info/exclude` (541 B), which name the
+project-local files the build can write: `**/.claude/scheduled_tasks.lock`,
+`**/.claude/scheduled_tasks.json`, `**/.claude/routines/.state/`, `**/.claude/worktrees/`,
+`**/.claude/checkpoints/`, `**/.claude/mailbox/`, `**/.claude/agent-registry.json`,
+`**/.claude/agent-memory-local`, `**/.claude/first-run` and
+`**/.claude/assistant-daemon-state.json`. `claude --cloud` rewrote one tree object under
+`.git/objects/` (the same size, a new modification time, no new commit), and `claude --teleport`
+stashed the uncommitted change with `git stash`, leaving `.git/refs/stash`, `.git/logs/refs/stash`
+and `.git/ORIG_HEAD` and the stash message `Teleport auto-stash`
+([Cloud sessions](#cloud-sessions)).
+Removing the project (62 entries) removed these files and nothing in the home.
+
 ### Where the project path is recorded
 
 - `~/.claude.json` → `projects` object, keys are absolute cwd paths (cc:474276 `e.projects`; docs
@@ -790,7 +1003,10 @@ nothing in the home.
   stopped at the trust prompt added no key. On Linux 2.1.310 the key is the plain absolute path
   (`/home/sean/lab/proj`), written at the trust dialog, with the transcript directory
   `projects/-home-sean-lab-proj/`; a start in the home that stopped at the trust prompt added no
-  key, no `projects/-home-sean/` directory and no history line. `projects.<path>.lastSessionId`
+  key, no `projects/-home-sean/` directory and no history line. On macOS 2.1.310 the key is
+  `/Users/sean/lab/proj`, written at the trust dialog with eleven keys, with the transcript
+  directory `projects/-Users-sean-lab-proj/`, and a start in the home that stopped at the trust
+  prompt again wrote nothing. `projects.<path>.lastSessionId`
   names the last session run there ([`.claude.json`](#claudejson)). The `environment` attachment's
   `snapshot.scratchpadDirectory` spelled the same project's slug two ways across sessions on
   Windows 2.1.309, `C--Users-sean-lab-proj` and `c--Users-sean-lab-proj` (the drive letter's case
@@ -799,7 +1015,7 @@ nothing in the home.
 - `~/.claude.json` → `githubRepoPaths`, `{"<owner>/<repo>": ["<local path>", ...]}`: every GitHub
   repository the CLI has seen as a checkout's `origin` remote, with the local checkouts of it. On
   Windows 2.1.309 it was filled at the first launch in the lab checkout, with no GitHub sign-in, and
-  still listed the path after the checkout was removed; Linux 2.1.310 did the same.
+  still listed the path after the checkout was removed; Linux and macOS 2.1.310 did the same.
 - `history.jsonl` → `project` on every line ([`history.jsonl`](#historyjsonl)).
 - Transcript records: every `projects/<key>/<id>.jsonl` record carries `"cwd"` (cc:482870 parser;
   the envelope is in [Record schema](#record-schema)). The directory key is lossy (dashes), so read
@@ -821,9 +1037,11 @@ The config home is `$CLAUDE_CONFIG_DIR`, else `~/.claude`, on every OS
 | --- | --- | --- |
 | `.claude/projects/<key>/<session id>.jsonl` | the session transcript; `<key>` is the cwd with every `[^a-zA-Z0-9]` replaced by `-`, cut at 200 characters plus `-` and a base-36 hash when longer (cc:473717, cc:474429); the session id is a UUID (cc:477784 `${q()}.jsonl`) | yes |
 | `.claude/projects/<key>/<session id>/subagents/agent-<agent id>.jsonl` | one transcript per subagent, same record format; an optional extra directory level sits between `subagents/` and the file when the agent has a transcript subdirectory (cc:477784 `agentTranscriptSubdirs`, cc:484031 parses `subagents/<dirs...>/agent-(.+).jsonl`) | yes |
-| `.claude/projects/<key>/<session id>/subagents/agent-<agent id>.meta.json` | one JSON object per subagent: `agentType`, `description`, `toolUseId`, `model`, `spawnDepth`, `requestShape`, `requestNonInteractive`, and for some `isFork`, `parentAgentId`, `spawnedWithWorktree`, `worktreePath`, `worktreeBranch` (observed, 80 of 80; cc:484010 maps `.meta.json` to `.jsonl`); on Windows 2.1.309 `agentType, description, finished, launchedWithDefaults, requestNonInteractive, requestShape, spawnDepth, toolUseId`, with no `model` (226 B); on Linux 2.1.310 the same plus `isBuiltIn` (243 B, `requestShape` `background`) | no, [Joins and timestamps](#joins-and-timestamps) |
+| `.claude/projects/<key>/<session id>/subagents/agent-<agent id>.meta.json` | one JSON object per subagent: `agentType`, `description`, `toolUseId`, `model`, `spawnDepth`, `requestShape`, `requestNonInteractive`, and for some `isFork`, `parentAgentId`, `spawnedWithWorktree`, `worktreePath`, `worktreeBranch` (observed, 80 of 80; cc:484010 maps `.meta.json` to `.jsonl`); on Windows 2.1.309 `agentType, description, finished, launchedWithDefaults, requestNonInteractive, requestShape, spawnDepth, toolUseId`, with no `model` (226 B); on Linux 2.1.310 the same plus `isBuiltIn` (243 B, `requestShape` `background`), and on macOS 2.1.310 the Linux set (243 B) | no, [Joins and timestamps](#joins-and-timestamps) |
 | `.claude/projects/<key>/<session id>/tool-results/<name>.txt` | full output of a tool result too large to keep inline (`tool-results` constant, cc:474483); the inline result holds a `<persisted-output>` stub (cc:382991); on Windows 2.1.309 `<name>` is nine base-36 characters (1.2 MB for a 20,000-line listing; on Linux 2.1.310 191,741 B for 20,000 lines of a word list) | yes, [Persisted output files](#persisted-output-files) |
-| `.claude/projects/<key>/<session id>/custom-title.json` | `{customTitle}`, the name given with `/rename` (27 B on Windows 2.1.309), beside the transcript's `custom-title` line | no; the line is read |
+| `.claude/projects/<key>/<session id>/custom-title.json` | `{customTitle}`, the name given with `/rename` (27 B on Windows 2.1.309 and macOS 2.1.310), beside the transcript's `custom-title` line | no; the line is read |
+| `.claude/projects/<key>/bridge-pointer.json` | `{environmentId, pid, procStart, sessionId, source}`, written when a Remote Control server starts in the project and left after it stops (macOS 2.1.310, [Remote Control](#remote-control)) | yes, [Sync, relay and origin rows](#sync-relay-and-origin-rows) |
+| `.claude/projects/<key>/<session id>/ccr-tip.json` | `{eventId, updatedAt}`, the last claude.ai event the local side of a Remote Control session processed (macOS 2.1.310, [Remote Control](#remote-control)) | yes, [Sync, relay and origin rows](#sync-relay-and-origin-rows) |
 | `.claude/jobs/<short>/state.json`, `.claude/jobs/<short>/timeline.jsonl` | a daemon worker's job state and its state changes ([Session daemon records](#session-daemon-records)) | no |
 | `.claude/projects/<key>/<session id>/remote-agents/remote-agent-<id>.meta.json`, `.../mcp-tasks/mcp-task-<id>.meta.json` | sidecars for remote agents and MCP tasks (cc:484010, cc:488428) | no; not observed |
 | `.claude/projects/<key>/memory/*.md` | per-project memory files (observed) | no |
@@ -855,6 +1073,16 @@ process; a resumed or continued session stays in its own file
 are mode 0600, the `.meta.json` and `tool-results/` files 0664. `/rename` wrote `custom-title.json`
 (27 B) and a `custom-title` and an `agent-name` line.
 
+Observed on macOS 2.1.310 the same: the empty session's six lines (2,063 B) and history line, a new
+file at `/clear`, and `--resume` and `--continue` appending to the session's own file. A session a
+Remote Control server spawned and a cloud session brought in with `--teleport` each have a file of
+their own, the first created empty when the server connects, the second only at the first local
+turn ([Remote Control](#remote-control), [Cloud sessions](#cloud-sessions)). The `entrypoint` on a
+session's lines says which surface wrote it: `cli` for the console, `sdk-cli` for a session a
+Remote Control server spawned and `claude-vscode` for the VS Code extension; a teleported
+session's lines say `cli`, and its replayed cloud lines carry `remoteSourced`
+([Transcript envelope](#transcript-envelope)).
+
 #### VS Code extension sessions
 
 A session started from the VS Code extension's panel (2.1.309 on Windows, 2026-10-23) is an
@@ -876,7 +1104,13 @@ a CLI session's ([CLI cache directory](#cli-cache-directory)). `.claude.json`
 line, `queue-operation` lines without `content`
 ([`queue-operation` records](#queue-operation-records)), and its `Bash` call was allowed by the
 classifier in `auto` mode. Its prompt is not a `history.jsonl` line
-([`history.jsonl`](#historyjsonl)).
+([`history.jsonl`](#historyjsonl)). On macOS 2.1.310 (2026-10-26) the session file (335,118 B, 42
+lines) again carried `entrypoint` `claude-vscode` on every line, `promptSource` `sdk` with
+`origin.kind` `human` and `permissionMode` `auto` on the prompt, a `queue-operation` pair, and a
+`Bash` call allowed by the classifier; its model was `claude-opus-5-5`, because the extension's
+start had rewritten the user `settings.json` `model` from the CLI's saved `fable` to `opus`
+([Joins and timestamps](#joins-and-timestamps)), and it made two temp-root directories
+([Scratch directories](#scratch-directories)).
 
 #### What survives a delete
 
@@ -938,6 +1172,21 @@ minutes of the `--debug` session, whose log has no retention, cleanup or houseke
 time. The vendor's "after a session starts" is the claim; the condition observed on 2.1.310 Linux
 is a session with at least one prompt.
 
+On macOS 2.1.310 (2026-10-26) `.last-cleanup` was written twice, each time about 20 minutes after a
+session's first prompt: at 16:39:36Z in a session whose first prompt was at 16:19:31Z, removing
+nothing visible but the empty `.staging/` of the skills sync, since every file was younger than the
+30-day default; and at 18:03:08Z, 20 minutes 7 seconds after the 17:43:01Z prompt of a session
+started with `cleanupPeriodDays` 0, removing nothing. 2.1.310 rejects 0 with the message quoted
+below, and on macOS the start then ran a settings fix of its own: the session began with the prompt
+`Help me fix these Claude Code settings issues.`, which the person had not typed, quoting the
+settings error with a guard that the quoted text is configuration data and not instructions; the
+model read `settings.json` through the shell and asked, offering `Set it to 3650 (Recommended)`,
+`Remove the setting`, `Don't change anything`, `Type something` and `Chat about this`, and the
+question was declined. The vendor's page says the sweep is paused while `cleanupPeriodDays` is set
+with a settings error, so the marker alone does not say whether that run paused or found nothing
+older than 30 days. The run with a backdated session was not repeated on macOS, and the vendor's
+list above is the account of what the sweep removes.
+
 Since 2.1.309 the setting cannot be 0:
 on Windows (2026-10-23) a `settings.json` with `"cleanupPeriodDays": 0` stopped the start with a
 Settings Error screen reading `cleanupPeriodDays: Number must be greater than or equal to 0`, then
@@ -955,17 +1204,30 @@ files written that day. The Windows round therefore did not observe what the ret
 removes; the only sweep seen there is the housekeeping one that pruned `backups/` and the temp root
 ([Scratch directories](#scratch-directories)).
 
-Observed on Windows 2.1.309 and Linux 2.1.310 for the user's other ways to end a session:
+Observed on Windows 2.1.309, Linux 2.1.310 and macOS 2.1.310 for the user's other ways to end a
+session:
 
 - `/clear` is not a delete: it starts a new transcript file with the full session preamble, the old
   file keeps every turn and gains only a `cost-state` line, no marker, and `history.jsonl` keeps the
   old session's lines and records the next prompt under the new id. On Linux the old file gained a
   `system` line beside the `cost-state` line, and the `/clear` command's lines were in the new file.
+  On macOS the old file ended with its `cost-state` line and nothing else, the new file opened
+  with the `/clear` command's lines, and the temp root got a directory named by the new session id.
 - `/exit` removes the process's `sessions/<pid>.json` and `.key` and its shell snapshot, and nothing
   of the transcript; with the daemon running, the worker holding the session and its registry file
   stay ([Session daemon files](#session-daemon-files)). On Linux it also removed the version lock
   ([Native installer](#native-installer)) and the session's `bash-edit-diff/` snapshots, and kept
-  `session-env/<session id>/` and the temp root ([Scratch directories](#scratch-directories)).
+  `session-env/<session id>/` and the temp root ([Scratch directories](#scratch-directories)). On
+  macOS it also removed the process's socket in `/tmp/cc-socks/`. Stopping a Remote Control server
+  removed `bridge-spawn/<cse id>/` and the spawned session's process files, and left
+  `bridge-pointer.json`, the spawned session's transcript with its `ccr-tip.json` and the
+  `.claude.json` keys ([Remote Control](#remote-control)); quitting VS Code removed
+  `ide/<port>.lock` and the `bash-edit-diff/` snapshot
+  ([VS Code extension files](#vs-code-extension-files)).
+- `/logout` (macOS 2.1.310) ended the process, removed `.credentials.json` and rewrote
+  `.claude.json` without `oauthAccount` and `githubWebConnectionStatusCache`
+  (`claudeAiMcpEverConnected` stayed), while the `backups/` copies kept the logged-out account's
+  `oauthAccount` ([Credentials](#credentials)).
 - Removing the project directory (`Remove-Item -Recurse -Force`) removed only the project's files
   ([Project-local files](#project-local-files)). Every trace in the home stayed: the
   `projects/<key>/` directory with all eight transcripts, `subagents/`, `tool-results/` and
@@ -977,9 +1239,13 @@ Observed on Windows 2.1.309 and Linux 2.1.310 for the user's other ways to end a
   (`rm -rf`) the same held: `projects/-home-sean-lab-proj/` kept its 12 entries, `.claude.json`
   kept `projects."/home/sean/lab/proj"` and `githubRepoPaths`, all 43 `history.jsonl` lines named
   the path, and the CLI cache and the temp root kept the project's slug, `bash-edit-diff/`
-  included.
-- A reboot removed nothing on Windows; on Linux it cleared the temp root and changed nothing in the
-  home ([Scratch directories](#scratch-directories)).
+  included. On macOS (`rm -rf`, 62 entries) the same: `projects/-Users-sean-lab-proj/` kept its 19
+  entries, `.claude.json` kept the project's entry with its `mcpServers.fs` and
+  `remoteControlSpawnMode`, 58 `history.jsonl` lines named the path, and `file-history/`,
+  `session-env/`, `plans/`, `paste-cache/`, `~/.config/git/ignore`, the CLI cache's slug and the
+  temp root's slug stayed.
+- A reboot removed nothing on Windows; on Linux and macOS it cleared the temp root, on macOS with
+  `/tmp/cc-socks/`, and changed nothing in the home ([Scratch directories](#scratch-directories)).
 
 The per-prompt history ([`history.jsonl`](#historyjsonl)) usually outlives its transcript and is
 then the only record of the prompt, except a prompt sent through `claude agents` or from the VS Code
@@ -1001,6 +1267,10 @@ source and the session records and `.claude.json` for their own rows, not `file-
 name with the `referenced` status; the other agents' copies are read, if at all, under those agents
 (see [Secondary sources](../analyzer/docs/output.md#secondary-sources)).
 
+- **Copies on Anthropic's servers.** A session driven through a Remote Control server stayed
+  listed on claude.ai, marked disconnected, after the local server stopped (macOS 2.1.310), and a
+  cloud session's transcript is on the servers only ([Remote Control](#remote-control),
+  [Cloud sessions](#cloud-sessions)).
 - **Copies held by other agents.** Three agents copy these transcripts into stores of their own,
   where the copy outlives the original file (from source; none seen on a real install):
   - Hermes Agent's `hermes_cli/foreign_sessions.py` reads Claude Code's
@@ -1084,6 +1354,14 @@ equalled Windows 2.1.309's for the `cli` entrypoint, and a session that ran ever
 re-attached after the boundary. The key-set differences the round found are in the subsections
 below.
 
+On macOS 2.1.310 (2026-10-26) the line types and key sets of a turn matched Linux 2.1.310's, and the
+session that ran most steps reached 1,332,231 B and 513 lines after two resumes, `api-request-shape`
+lines holding 356,893 B of it and `attachment` lines 489 KB. A resumed session gained `agent-name`
+and `cost-state` lines, and its `custom-title` line was re-appended at each resume. The
+differences from Linux, a refusal with no `permissionDecision`, the `auto_mode` and
+`auto_mode_exit` attachments, and the lines of Remote Control and teleported sessions, are in the
+subsections below.
+
 #### Transcript envelope
 
 The envelope of `user`, `assistant`, `system` and `attachment` records (observed on every one unless
@@ -1099,7 +1377,11 @@ session on Windows 2.1.309, [VS Code extension sessions](#vs-code-extension-sess
 file and of a subagent file also carry `sessionKind` (`bg` on every type) and `slug`. On Linux
 2.1.310, with no daemon, no line carried `sessionKind`; `slug` appeared on every type once the
 session had a title; subagent lines carry `agentId` on every type; and on a detached head
-`gitBranch` is `HEAD` ([Joins and timestamps](#joins-and-timestamps)).
+`gitBranch` is `HEAD` ([Joins and timestamps](#joins-and-timestamps)). On macOS 2.1.310 the same,
+and two values of `entrypoint` more: `sdk-cli` on every line of a session a Remote Control server
+spawned ([Remote Control](#remote-control)), while the lines of a teleported session say `cli`, the
+cloud session's replayed lines carrying `remoteSourced` (true) instead
+([Cloud sessions](#cloud-sessions)).
 
 #### `assistant` records
 
@@ -1120,7 +1402,15 @@ fallback_credit, inference_geo, input_tokens, iterations, output_tokens, output_
 server_tool_use, service_tier, speed`. On Linux 2.1.310 the 22-key `assistant` set was identical
 to Windows 2.1.309's; `wireIngestContext` was on the Remote Control turn's lines,
 `attributionAgent` on a subagent's, and the `claude-sonnet-5-5` turns carried no `thinking` block
-while the `claude-opus-5-5` ones did.
+while the `claude-opus-5-5` ones did. On macOS 2.1.310 the set was `advisorModel, apiBlockIndex,
+cwd, effort, entrypoint, gitBranch, isSidechain, message, parentUuid, perTurnEffort, requestId,
+requestRef, requestedModel, serverClassifierRequest, sessionId, session_id, thinkingDisplay,
+thinkingDurationMs, timestamp, type, userType, uuid, version, wireToolInputs`, with
+`wireIngestContext` from the first shell call on, `slug` once the session had a title,
+`attributionMcpServer` and `attributionMcpTool` on an MCP call, and `attributionAgent` in a
+subagent file; the lines of a session a Remote Control server spawned lacked `requestRef`,
+`serverClassifierRequest`, `session_id` and `slug`. A start with no usable sign-in wrote the API
+error form, with `error` and `isApiErrorMessage`.
 
 #### `user` records
 
@@ -1145,7 +1435,15 @@ executed shell call, absent from a denied call's and from other tools' lines;
 call was allowed by configuration; `mcpMeta` on an MCP tool's result line; `queueSkipAttachments`
 (true) on a prompt typed while a turn ran; `queueSkipSlashCommands` on the Remote Control prompt;
 `promptSource` `suggestion_accepted` on the prompt the `/schedule` flow left; and `permissionMode`
-`default` on a prompt typed in the mode the status line calls manual.
+`default` on a prompt typed in the mode the status line calls manual. On macOS 2.1.310:
+`promptSource` `queued` on a prompt typed while an answer streamed, `system` on a background
+command's completion notice and on a `/loop` firing, and `sdk` on a prompt from claude.ai to a
+session a Remote Control server spawned, on a cloud prompt replayed by `--teleport` and on the VS
+Code extension's prompt; `permissionMode` `default` on the claude.ai prompt and the replayed cloud
+prompt, where local sessions started in `auto`; `queueSkipAttachments` on queued records;
+`isVisibleInTranscriptOnly` on the compaction summary; and `remoteSourced` on the replayed cloud
+lines ([Cloud sessions](#cloud-sessions)). A refused call's result line carried `toolDenialKind`
+and neither `permissionDecision` nor `userFeedback` ([Permission decisions](#permission-decisions)).
 
 #### Permission decisions
 
@@ -1163,10 +1461,31 @@ values first and the Linux ones after the semicolon:
 | an allow-always rule the person had granted (Windows), or the allow-always answer itself (Linux) | `accept` | `user_permanent` | - | - | `other`; `bashMiss:no-rule-match` | - |
 | the person refused, typing a reason | `reject` | `user_reject` | - | - | `other`; `bashMiss:no-rule-match` | `toolDenialKind` `user-rejected`, `userFeedback` (the typed reason) |
 | the person declined a plan ("tell Claude what to do instead") | `reject` | `user_reject` | - | - | `unknown` | `toolDenialKind` `user-rejected`, on the `ExitPlanMode` call |
+| the person refused, with or without the dialog's amend option, or declined a plan (macOS 2.1.310) | no `permissionDecision` | - | - | - | - | `toolDenialKind` `user-rejected`, no `userFeedback`; a reason is the next typed prompt |
+| a rule given on the command line, on the cloud turn a teleported session replayed (macOS 2.1.310) | `accept` | `config` | `rule` | - | - | `ruleSource` `cliArg` inside the decision |
 
 One accept with `reasonType` `other` was also seen in plan mode, on both platforms. A file edit is
 approved like a command. The shape of the denial is the one of
 [issue 97](https://github.com/seanthegeek/doubleagent/issues/97).
+
+On macOS 2.1.310 (2026-10-26) the accepts took the forms of the table, with these details: an
+accepted `Edit` in manual mode was `user_temporary` without `grantScope`; the allow-always answer's
+own line was `user_permanent` with `reasonCode` `bashMiss:no-rule-match` and no `grantScope`; a
+read-only shell command run without a dialog in manual mode was `config` with `reasonType`
+`subcommandResults` and `reasonCode` `unknown`; an `Edit` in accept-edits mode was `config` with
+`reasonType` `mode`; and the classifier's accept of an MCP call came with `serverClassifierContext`
+on the line. Every refusal took the form with no decision record: the shell dialog's `No`, the same
+answer after Tab had turned it into `No, and tell Claude what to do differently`, and option 3 of
+the plan dialog each ended the turn at once with `Interrupted · What should Claude do instead?`,
+wrote `toolDenialKind` `user-rejected` with no `permissionDecision` and no `userFeedback`, and took
+the reason as the next prompt. Linux 2.1.310 wrote the `user_reject` form with `userFeedback` for a
+refusal with a reason, so one build writes both forms. The dialogs offered, for a shell command,
+`1. Yes`, `2. Yes, and don't ask again for: python *`,
+`3. Yes, and switch to auto mode · auto mode handles these prompts for you` and `4. No` (footer
+`Esc to cancel · Tab to amend`); for a file edit, `1. Yes`,
+`2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session (shift+tab)`
+and `3. No`; and for a plan, `1. Yes, and use auto mode`, `2. Yes, manually approve edits` and
+`3. Tell Claude what to change`.
 
 #### `system` records
 
@@ -1200,10 +1519,22 @@ timestamp, type, userType, uuid, version`) were written for `/rename`, `/exit`, 
 Remote Control start and stop, and not for `/model`, `/compact`, `/install-github-app`, `/loop` or
 `/schedule`, which left only their `user` command lines, nor for an `/exit` after a resume.
 `compact_boundary` carries `compactMetadata{cumulativeDroppedTokens, durationMs, postTokens,
-preCompactDiscoveredTools, preTokens, preservedMessages{allUuids, anchorUuid, headUuid, tailUuid,
-uuids}, preservedSegment, trigger}` beside `content`, `level` and `logicalParentUuid`, and an
+preCompactDiscoveredTools, preTokens, preservedMessages{allUuids, uuids},
+preservedSegment{headUuid, anchorUuid, tailUuid}, trigger}` beside `content`, `level` and
+`logicalParentUuid` (the shape tool's merged key list of the Linux round had put the three
+segment uuids under `preservedMessages`; the macOS record read directly places them under
+`preservedSegment`), and an
 `away_summary` written for an idle gap carries the branch of the time it was computed.
 `pendingBackgroundAgentCount` appeared on the `system` lines from the first backgrounded command.
+
+Observed on macOS 2.1.310: `compact_boundary` with the envelope and `compactMetadata, content,
+level, logicalParentUuid, slug, subtype`, `compactMetadata` holding `trigger, preTokens, postTokens,
+cumulativeDroppedTokens, durationMs, preCompactDiscoveredTools`, `preservedSegment{headUuid,
+anchorUuid, tailUuid}` and `preservedMessages{allUuids, uuids}`;
+`scheduled_task_fire` with `content, cron, prompt, taskId`; `turn_duration` with
+`pendingBackgroundAgentCount`; and, on the cloud turn a teleported session replayed,
+`stop_hook_summary` with the 2.1.295 keys, naming a hook of the cloud environment, and
+`informational` with `Session resumed` ([Cloud sessions](#cloud-sessions)).
 
 #### `attachment` records
 
@@ -1227,7 +1558,7 @@ Key sets on Windows 2.1.309, where the shape tool gave them (none was read for a
 | `attachment.type` | Keys |
 | --- | --- |
 | `auto_mode` | `autoModeConsentFlow, bashFirst, bashFirstSteer, bypass, finishExposedWork, steerOnly`: the auto-mode configuration of the turn, not a decision ([issue 98](https://github.com/seanthegeek/doubleagent/issues/98)) |
-| `auto_mode_exit` | new type: written when the Shift+Tab cycle left `auto` |
+| `auto_mode_exit` | new type: written when the Shift+Tab cycle left `auto`; keys `bashFirst, finishExposedWork, steerOnly` (macOS 2.1.310) |
 | `plan_mode` | `isSubAgent, planExists, planFilePath, reminderType, type` |
 | `plan_mode_exit` | `planExists, planFilePath, type`; also written when the cycle passed through plan mode |
 | `plan_file_reference`, `file` | new types: the plan and the files a `/compact` carried over |
@@ -1266,6 +1597,15 @@ A turn in `auto` mode that ran only a `Read` wrote no `auto_mode`, `bash_output_
 an MCP tool wrote `auto_mode`. No `auto_mode_exit` was written when the Shift+Tab cycle left
 `auto`.
 
+On macOS 2.1.310 `auto_mode` came at the first turn, which ran only a `Read`, and `auto_mode_exit`
+when the Shift+Tab cycle left `auto`, both unlike Linux ([issue 98](https://github.com/seanthegeek/doubleagent/issues/98));
+`command_permissions{allowedTools}` came with `/loop`; `bash_output_audience_note` and
+`batching_reminder_sent` with a command the model ran in the background;
+`compact_file_reference`, `plan_file_reference` and `file` after `/compact`; and no
+`edited_text_file` for a file edit, which is recorded in `toolUseResult` and the file-history
+lines. The `environment` attachment a teleported session replayed names the cloud machine's
+scratchpad, `/tmp/claude-0/-home-user-repo/<uuid>/scratchpad` ([Cloud sessions](#cloud-sessions)).
+
 #### `queue-operation` records
 
 A `queue-operation` record has `operation` (`enqueue`, `dequeue`, `remove`), `timestamp`,
@@ -1274,7 +1614,11 @@ A `queue-operation` record has `operation` (`enqueue`, `dequeue`, `remove`), `ti
 timestamp, type`: an `enqueue` and `dequeue` pair for a prompt typed while a turn ran, for the
 Remote Control prompt, for a `/loop` firing and for a subagent's completion notice. On Linux
 2.1.310 the CLI's lines had the same keys, and the VS Code extension's session wrote
-`operation, sessionId, timestamp, type`, with no `content`.
+`operation, sessionId, timestamp, type`, with no `content`. On macOS 2.1.310 the keys were
+`content, operation, sessionId, timestamp, type`, in `enqueue` and `dequeue` pairs for a prompt
+typed while an answer streamed (the input area showed `ctrl+x ctrl+s to send now` and
+`Press up to edit queued messages`), for a background command's completion notice, for the prompt
+from claude.ai and for each `/loop` firing.
 
 #### Completeness and streaming
 
@@ -1321,7 +1665,10 @@ to the temp root's `tasks/<id>.output` ([Scratch directories](#scratch-directori
 came back as a `task-notification` turn. Linux 2.1.310 showed the same keys, Agent adding
 `resolvedModel` with the session's model, Bash `{interrupted, isImage, noOutputExpected, stderr,
 stdout, type}`, and ToolSearch, which the model called to load a deferred tool (an MCP tool, a
-cron tool) before using it, `matches`, `query` and `total_deferred_tools`. On an error it is the
+cron tool) before using it, `matches`, `query` and `total_deferred_tools`. On macOS 2.1.310 the
+Agent result held `agentId, canContinueAgent, canReadOutputFile, content, description, isAsync,
+outputFile, prompt, resolvedModel, status`, and Edit's `filePath, newString, oldString,
+originalFile, replaceAll, structuredPatch, userModified`. On an error it is the
 error string (183 observed, all with
 `is_error:true`). The model-visible text is the `tool_result.content`; `toolUseResult` repeats or
 extends it.
@@ -1345,7 +1692,8 @@ cc:474483); `toolUseResult.persistedOutputPath` names the file (37 observed) and
 `<session id>/tool-results/<9 base-36 chars>.txt` (1.2 MB and 49.6 KB); the stub kept in the
 transcript was about 38 KB. A 3,000-line listing the model only counted was not persisted. On Linux
 2.1.310 the same two keys named `tool-results/<9 base-36 chars>.txt` for a 20,000-line `head` of a
-word list and a `gh` output, and the stub was again about 37 KB.
+word list and a `gh` output, and the stub was again about 37 KB. On macOS 2.1.310 a 3,000-line
+`head` of the word list was persisted (31,286 B, mode 0644), and so was a `gh` output (51,455 B).
 
 #### Tool names
 
@@ -1358,7 +1706,9 @@ model for `ls` and `gh`, and by the VS Code extension's session); also seen `Rea
 On Linux 2.1.310 the shell tool is `Bash`, and a question about a file the Windows model answered
 with a shell `cat` was answered with `Read`; also seen `Write`, `Edit`, `Agent`, `ToolSearch`,
 `ExitPlanMode`, `AskUserQuestion`, `CronCreate`, `CronDelete`, `Skill` (for `/loop` and
-`/schedule`) and `mcp__fs__list_directory`. Input keys observed: `command`, `description`,
+`/schedule`) and `mcp__fs__list_directory`. On macOS 2.1.310 `Bash`, `Read`, `Edit`, `Write`,
+`Agent`, `ToolSearch`, `ExitPlanMode`, `CronCreate`, `CronDelete` and `mcp__fs__list_directory`.
+Input keys observed: `command`, `description`,
 `timeout`, `run_in_background` (Bash); `file_path`, `offset`, `limit` (Read); `file_path`,
 `content` (Write); `file_path`, `old_string`, `new_string` (Edit); `url`, `prompt` (WebFetch);
 `query` (WebSearch); `description`, `prompt`, `subagent_type`, `model`, `isolation` (Agent).
@@ -1372,6 +1722,8 @@ A `user` record is not always typed by the person:
 | `origin.kind:"human"`, `promptSource` `typed`, `queued` or `suggestion_accepted` | a prompt the person submitted | 165 |
 | `origin.kind:"human"`, `promptSource` `sdk` | a prompt typed in the VS Code extension's panel | Windows 2.1.309 |
 | `turnOrigin:"scheduled"`, `promptSource:"system"`, with `scheduledTaskId` | the prompt of a `/loop` firing, after a `scheduled_task_fire` system line | Windows 2.1.309 |
+| `entrypoint` `sdk-cli`, `origin.kind:"human"`, `promptSource` `sdk` | a prompt sent from claude.ai to a session a Remote Control server spawned | macOS 2.1.310 |
+| `remoteSourced:true`, `promptSource` `sdk` | a cloud session's prompt, replayed into a local session by `--teleport` | macOS 2.1.310 |
 | no `origin`, `parentUuid` null, first line of a subagent file | the task the parent agent gave the subagent | 80 of 80 subagent files |
 | `origin.kind:"task-notification"`, content `<task-notification>...` | a background task's completion notice; `isMeta` absent in 62 of 66; on Windows 2.1.309 with `promptSource` `system` and `turnOrigin` `task_notification`, for a subagent's end and a backgrounded command's | 66 |
 | `origin.kind` `peer`, `coordinator`, `auto-continuation` | messages from other sessions or the runtime; `isMeta:true` | 65 |
@@ -1387,7 +1739,9 @@ whose text is in no `user` record of the file. On Windows 2.1.309 a prompt typed
 was an `enqueue` and `dequeue` pair and then an ordinary `user` line with `promptSource` `typed`,
 with no `queued_command` attachment; the Remote Control prompt from the phone was the line with
 `promptSource` `queued` ([Remote Control](#remote-control)). Linux 2.1.310 confirmed both forms
-and the task-notification turns, one per backgrounded command ([`user` records](#user-records)).
+and the task-notification turns, one per backgrounded command ([`user` records](#user-records)). On
+macOS 2.1.310 a prompt typed while an answer streamed was an `enqueue` and `dequeue` pair and then
+a `user` line with `promptSource` `queued`.
 
 ### Joins and timestamps
 
@@ -1409,6 +1763,13 @@ and the task-notification turns, one per backgrounded command ([`user` records](
   `claude --continue` both appended to the session's own file, and their prompts to
   `history.jsonl`, under the same `sessionId`, with no `continued-in` line; each resuming process
   got its own temp-root directory under a new uuid ([Scratch directories](#scratch-directories)).
+  On macOS 2.1.310 the same: after a `--resume` and a `--continue` the file held one `sessionId`
+  value; the resumed session came back in `auto` mode although it had been left in `default`; and
+  since the resuming process's temp-root uuid is in no transcript, registry or history line, a
+  scratchpad cannot be joined to its transcript by name after a resume. A session a Remote Control
+  server spawned and a teleported cloud session have files of their own; the cloud session's id
+  (`session_01<22 chars>`) is in the teleported file only inside URL and text values
+  ([Cloud sessions](#cloud-sessions)).
 - **Daemon handover**: the console file's `continued-in` `continuedInSessionId` is the worker's
   session id, the worker's `jobs/<short>/state.json` `resumeSessionId` is the console's, and the
   console's `sessions/<pid>.json` carries the job as `parkedJobId`
@@ -1419,7 +1780,9 @@ and the task-notification turns, one per backgrounded command ([`user` records](
   On Linux 2.1.310 no worker held a session and `--continue` resumed the latest one in place, so
   the refusal is the daemon's behaviour, not a rule of `--continue`.
 - **`/clear`**: a new session id and file in the same process; the old file is not linked to the
-  new one by any record seen (its last line is a `cost-state`).
+  new one by any record seen (its last line is a `cost-state`). On macOS 2.1.310 the new file
+  opens with the `/clear` command's lines, and `history.jsonl` records the prompts before and
+  after it under the two ids.
 - **Project path**: `cwd` on every transcript record; can change within a session (4 of 15 session
   files had more than one) and `relocated` records it (cc:484038); the directory `<key>` is lossy
   ([Where the project path is recorded](#where-the-project-path-is-recorded)).
@@ -1427,7 +1790,7 @@ and the task-notification turns, one per backgrounded command ([`user` records](
   session (2 files). On a detached head it is the literal string `HEAD`, never empty and never a
   commit hash (Linux 2.1.310, a `git checkout --detach` before one prompt: four of the turn's five
   envelope lines carried `HEAD`, and the fifth, an `away_summary` computed before the checkout,
-  `main`).
+  `main`; macOS 2.1.310, every line of the detached-head turn).
 - **Model**: `message.model` on `assistant` records (`claude-<family>-N-N` observed, `<synthetic>`
   for local errors); `requestedModel`, the model the request asked for
   (`claude 2.1.296 darwin-arm64 @198072824` `requestedModel:X.model`), equal to `message.model` on
@@ -1450,11 +1813,23 @@ and the task-notification turns, one per backgrounded command ([`user` records](
   (2.1.309 asked), and left two `user` lines (the command and a `<local-command-stdout>` with
   `Set model to`); the next `assistant` lines carried `claude-opus-5-5` in both `message.model` and
   `requestedModel`, with a second `model` attachment (`identity{knowledgeCutoff, marketingName,
-  modelId}, text`). A subagent again inherited the session's model.
+  modelId}, text`). A subagent again inherited the session's model. On macOS 2.1.310 the default
+  before any switch was `claude-opus-5-5`, the account's again. `/model` listed
+  `1. Default (recommended) Opus 5.5`, `2. Opus 5.5`, `3. Fable 5.1` and `+10 models` with an
+  effort line, and picking Fable opened a confirmation, `Switch model?`, saying
+  `Your next response will be slower and use more tokens` and that the cached conversation would be
+  re-read, after which the output was
+  ``Set model to `Fable 5.1` and saved as your default for new sessions``; `settings.json` got the
+  alias `fable`, the model catalog was rewritten, and the next `assistant` line carried
+  `claude-fable-5-1` in both keys, with a second `model` attachment and a new `api-request-shape`.
+  A subagent run after the switch reported `resolvedModel` `claude-opus-5-5`, the account default
+  rather than the session's model. The VS Code extension's start rewrote `settings.json` `model` to
+  `opus` with no command, so a change of that key is not always a `/model`.
 - **Subagents**: the parent's `Agent` `tool_use.id` equals the subagent's `.meta.json` `toolUseId`,
   and the parent's `toolUseResult.agentId` equals the file's agent id (76 of 76 non-fork subagents).
   Forked agents (`agentType:"fork"`, 4) have a `toolUseId` that is not in the parent transcript.
-  Confirmed on Windows 2.1.309 and Linux 2.1.310, where every subagent line carries `agentId`.
+  Confirmed on Windows 2.1.309 and on Linux and macOS 2.1.310, where every subagent line carries
+  `agentId` and the parent's only `agentId` is on the `Agent` result line.
 - **Tool results**: `sourceToolAssistantUUID` on the result line is the `uuid` of the `assistant`
   line with the call (observed on Windows 2.1.309 as on WSL2). A backgrounded command's result
   carries `toolUseResult.backgroundTaskId`; its output went to a temp-root `tasks/<id>.output` file
@@ -1491,7 +1866,10 @@ On Linux 2.1.310 both forms were written to one file. A short multi-line paste (
 in `content` and no `paste-cache/` file, so the history line holds the paste and outlives the
 transcript with it; a long one (300 lines of a manual page) gave `{"2": {contentHash, id, type}}`
 and `paste-cache/<contentHash>.txt`. The key is the paste's number within the session, not always
-`1`.
+`1`. On macOS 2.1.310 a 269-character paste of four lines took the inline `content` form and a
+2,416-character one of 19 lines the `contentHash` form with its `paste-cache/` file, so the cut is
+at the 1,024 characters of the bundle; `display` held the `[Pasted text #N +M lines]` placeholder
+and the typed text, where the transcript's prompt holds the paste expanded.
 
 On Windows 2.1.309 every typed prompt and slash command was a line (`/model`, `/compact`,
 `/rename`, `/exit`, `/install-github-app`), a mistyped subcommand (`claude ls`) became a prompt
@@ -1500,7 +1878,10 @@ A prompt sent through a console attached with `claude agents` was not recorded, 
 is its only record. On Linux 2.1.310 the same held except that `/model` was not a line, while
 `/compact`, `/rename`, `/exit`, `/clear` and the prompts after `--resume` and `--continue` were; a
 prompt sent from the VS Code extension's panel was not a line either, and the retention sweep left
-the line of the session whose transcript it deleted.
+the line of the session whose transcript it deleted. On macOS 2.1.310 every slash command was a
+line, `/model` included, with the command as typed in `display` (`/rename lab-round`,
+`/loop 1m echo hi`), while the transcript records the same command in a `user` line wrapped in
+`<command-name>` tags ([User-record kinds](#user-record-kinds)).
 
 #### File-history records
 
@@ -1524,7 +1905,9 @@ the source's time differs between the platforms. A new `@v<n>` was written at ev
 file was tracked, a prompt that edited nothing included, while the transcript held one
 `file-history-delta` line per tracked file. The plan file written in plan mode was tracked from the
 next prompt, its first copy `@v2` with no `@v1`, since the `Write` that created it had no earlier
-content.
+content. On macOS 2.1.310 the same: the directory came with the first edit's pre-edit `@v1` (190 B,
+mode 0644), the next prompt wrote `@v2` with no edit in its turn, and the plan file got a hash of
+its own, its first copy `@v2` (1.4 KB); the `file-history-delta` keys were the Windows set.
 
 #### Permission configuration
 
@@ -1574,6 +1957,13 @@ content.
   the user `settings.json` or `projects.<path>.allowedTools`, and the answer's own result line was
   recorded as `source` `user_permanent` ([Permission decisions](#permission-decisions)). Again no
   mode was kept as a default.
+- Observed on macOS 2.1.310: the allow-always option read
+  `Yes, and don't ask again for: python3 *` and wrote the project's `settings.local.json` (72 B)
+  with one 15-character rule, again the length of `Bash(python3 *)`, and nothing in the user files
+  or `allowedTools`. A shell read of a file outside the project offered a directory-scoped grant
+  instead, `Yes, allow reading from /usr/share/dict from this project`, whose settings form was not
+  exercised. A fresh install starts in `auto`, the Shift+Tab cycle runs auto, manual, accept edits,
+  plan, and a resumed session comes back in `auto`. No mode was kept as a default.
 
 #### `.claude.json`
 
@@ -1622,6 +2012,30 @@ On Linux 2.1.310 the installer wrote 517 B with twelve keys, the Windows set les
 entry's metrics added `lastFpsAverage`, `lastFpsLow1Pct` and, in `lastSessionMetrics`,
 `frame_duration_ms_{avg,count,max,min,p50,p95,p99}`. The file was also rewritten, with a backup,
 in a session left idle overnight ([Files that hold evidence](#files-that-hold-evidence)).
+
+On macOS 2.1.310 the installer wrote the twelve Linux keys (517 B). The sign-in made it 2,218 B,
+adding `oauthAccount` ([Secrets](#secrets)), `clientDataCacheSlots.<slot id>{at, data, entrypoint,
+model, org}` (`entrypoint` `cli`), `additionalModelOptionsCache[{description, label, value}]`,
+`additionalModelOptionsAnsweredAt`, `additionalModelCostsCache`, `autoCompactWindowsCache`,
+`claudeCodeFirstTokenDate`, `modelAccessCache` and `orgModelDefaultCache`. The first session start
+made it 65,874 B with 44 top-level keys, adding the Linux set (`apiCreditLinkStatusCache`,
+`cachedExperimentData` with 14 `tengu_*` experiments, `cachedExperimentFeatures`,
+`cachedExtraUsageDisabledReason`, `cachedGrowthBookFeatures` and `cachedGrowthBookFeaturesAt`,
+`claudeAiMcpEverConnected`, `closedIssuesLastChecked`, `githubRepoPaths`, `groveConfigCache`,
+`hasCompletedOnboarding`, `hasSeenAutoDefaultNotice`, `lastOnboardingVersion`,
+`lastReleaseNotesSeen`, `numStartups`, `officialMarketplaceAutoInstallAttempted`,
+`officialMarketplaceAutoInstalled`, `passesEligibilityCache`, `penguinModeOrgEnabled`,
+`pluginUsage`, `projects`); the project entry had eleven keys at the trust dialog. The second start
+added `announcementImpressions`, `cachedArtifactRoster`, `fullscreenUpsellSeenCount`,
+`tipLifetimeShownCounts` and `tipsHistory` (49 keys), and later steps `remoteDialogSeen`,
+`lastPlanModeUse`, `promptQueueUseCount`, `tipsHistoryByCommand`, `remoteControlMachineId` (a uuid)
+and `hasRemoteEnvironment` (56 keys), with `remoteControlSpawnMode` and the per-session usage
+counters (`lastAPIDuration`, `lastCost`, `lastFpsAverage`, `lastLinesAdded` and the rest) in the
+project entry ([Remote Control](#remote-control), [Cloud sessions](#cloud-sessions)).
+`githubWebConnectionStatusCache` came with the account's GitHub connection
+([Source-host integration](#source-host-integration)). `/logout` removed `oauthAccount` and
+`githubWebConnectionStatusCache` and left the rest
+([What survives a delete](#what-survives-a-delete)).
 
 #### Session daemon records
 
@@ -1684,6 +2098,18 @@ configuration in `auto` mode, the result line carrying `mcpMeta`. `state/mcp-dis
 key of the form `mcpsrv_<24 chars>` (`{modernProtocolVersion, observedAt}`), the claude.ai
 connectors' id form, and gained no key for the stdio server.
 
+On macOS 2.1.310 `claude mcp add -s local fs -- npx -y @modelcontextprotocol/server-filesystem
+<project>` printed the Linux lines, naming `/Users/sean/.claude.json`, and wrote
+`projects.<path>.mcpServers.fs{args, command, env, type}` (three `args`, `command` `npx`, an empty
+`env`, `type` `stdio`), with no `.mcp.json` in the project or the home; `claude mcp list` printed
+`Checking MCP server health` and logged every server ([CLI cache directory](#cli-cache-directory)).
+In the next session, in `auto` mode, the model loaded the tool with `ToolSearch` and called
+`mcp__fs__list_directory` with no dialog, the classifier allowing it; the `assistant` line carried
+`attributionMcpServer` and `attributionMcpTool`, the result line `mcpMeta`.
+`mcp-needs-auth-cache.json`
+was not written, the server needing no sign-in. `state/mcp-discover-verdicts.json` (101 B, the
+`mcpsrv_` key form) was written at the first session start.
+
 #### Scheduled tasks
 
 On Windows 2.1.309 `/loop 1m <prompt>` is run through tools: a `CronCreate` call starts it and a
@@ -1705,6 +2131,19 @@ left behind after the stop ([Project-local files](#project-local-files)). The ca
 `/schedule` again created no routine, and its `AskUserQuestion` left a prompt line with
 `promptSource` `suggestion_accepted`.
 
+On macOS 2.1.310 `/loop 1m echo hi` answered with the job's terms
+(`Expiry: recurring jobs auto-expire after 7 days`,
+`Runs until you close this session · For durable cloud-based loops, use /schedule`) and the same
+record set: a `CronCreate` call after a `ToolSearch`, three `scheduled_task_fire` lines, each
+followed by a `user` line with `turnOrigin` `scheduled`, `promptSource` `system`, `scheduledFireId`,
+`scheduledTaskId`, `wakeupSource`, `queuePriority`, `queueSkipSlashCommands` and `turnCompanion`
+and a `queue-operation` pair, the firing's `Bash` call allowed by the classifier (the screen read
+`Allowed by auto mode classifier`), a `command_permissions{allowedTools}` attachment, and a
+`CronDelete` call for "Stop the loop.". `.claude/scheduled_tasks.lock` lived from the `/loop` to
+the `/exit` ([Project-local files](#project-local-files)); no `scheduled_tasks.json`, `routines/`,
+`jobs/` or `systemd/` was written, so the loop is held by the session and ends with it. `/schedule`
+was not run.
+
 #### Source-host integration
 
 Observed on Windows 2.1.309, with the GitHub CLI `gh` installed and no GitHub sign-in at first:
@@ -1719,7 +2158,10 @@ Observed on Windows 2.1.309, with the GitHub CLI `gh` installed and no GitHub si
   `.claude.json` key, no new file under `~/.claude`; the transcript gained the command's lines.
 - The connected account is in `gh`'s own store, `%APPDATA%\GitHub CLI\config.yml` and
   `hosts.yml` (which names the user), with the token in the Windows Credential Manager. These are
-  `gh`'s files, not in the catalog; a responder reads `hosts.yml` for the account.
+  `gh`'s files, attributed to the `shared` catalog agent and flagged as credentials since the
+  macOS round (the
+  `.config/gh/hosts.yml` and `AppData/Roaming/GitHub CLI/hosts.yml` lines), because the login they
+  name is the account an agent pushed to: an insider's personal account beside the work one.
 - A read-only question about the repository's pull requests ran `gh` through the `Bash` tool; the
   only trace beyond the transcript was one persisted `gh` output in `tool-results/`
   ([Persisted output](#persisted-output)). No `pr-link` line was written, since no pull request was
@@ -1746,6 +2188,36 @@ Claude Code was asked:
   `auto` mode, one output persisted to `tool-results/` (49.6 KB); the first shell call also
   snapshotted the working tree under the temp root's `bash-edit-diff/`
   ([Scratch directories](#scratch-directories)).
+
+Observed on macOS 2.1.310, with Homebrew's `gh` installed:
+
+- `/install-github-app` with `gh` not signed in showed `GitHub CLI not authenticated`, then
+  `Opening browser to install the Claude GitHub App` for the repository read from the git remote;
+  cancelled there, it left only the command's two `user` lines (the output
+  `Installation cancelled by user`). `githubRepoPaths` was already filled from the remote with no
+  GitHub sign-in at all.
+- `gh auth login` over ssh, a browser device-code flow, printed
+  `! Authentication credentials saved in plain text` and wrote the token into
+  `~/.config/gh/hosts.yml` (218 B, mode 0600), which names the account, with `config.yml`
+  (1,965 B, mode 0600) in a `~/.config/gh` of mode 0751, and no keychain item. The same login from
+  Terminal.app in the desktop session stored the token in the login keychain as a generic password,
+  service `gh:github.com`, account the GitHub login, and rewrote `hosts.yml` to 94 B, the host
+  entry without the token. `gh auth logout` truncated `hosts.yml` to 3 B, an empty document, and
+  kept the file. Both forms are collected under the `shared` catalog agent and flagged as
+  credentials (the
+  `.config/gh/hosts.yml` line and its Windows twin `AppData/Roaming/GitHub CLI/hosts.yml`); a
+  94-byte file means the token sits in the keychain, a 218-byte one holds it.
+- `/install-github-app` with `gh` signed in asked `Select GitHub repository`
+  (`Use current repository: <owner>/<repo>` or `Enter a different repository`), opened the app's
+  install page with `Important: Make sure to grant access to this specific repository`, and, once
+  the app was installed, offered `1. Set up GitHub Actions workflows` and
+  `2. Skip for now (you can run /install-github-app again later)`; skipping wrote no workflow and
+  pushed nothing. `.claude.json` gained `githubWebConnectionStatusCache{accountUuid, orgUuid,
+  status}` at the start of that session, before the command ran: the start-up check writes it once
+  the account's GitHub connection exists. No other file under `~/.claude` came from the install.
+- A read-only pull-request question ran two `gh` calls, allowed by the classifier, with one output
+  persisted to `tool-results/` (51,455 B); there was no `gh-pr-status-cache.json` and no `pr-link`
+  line, the branch having no pull request.
 
 #### Remote Control
 
@@ -1816,6 +2288,51 @@ the local process and its output back. The evidence is the 2.1.295 Linux binary 
   `replBridgePlaceholders{}` and `seenNotifications.rc-active-badge`. After the disconnect no local
   file said whether the session was still visible on claude.ai: the `bridge-session` lines, the
   nulled registry key and `hasUsedRemoteControl` are the only marks.
+- **macOS 2.1.310, server mode.** `claude remote-control`, run from the project (2026-10-26),
+  described itself (`Take this session with you and pick up right where you left off on any
+  device. ... The session keeps running on this machine.`), asked `Enable Remote Control? (y/n)`,
+  then announced `Remote Control is launching in spawn mode, which lets you start new sessions in
+  this project from claude.ai/code or the Claude mobile app` and asked for the spawn mode,
+  `[1] same-dir` (the default) or `[2] worktree` (each session in its own git worktree;
+  `--spawn=same-dir|worktree`). Spawn mode is this server form, in which claude.ai starts new local
+  sessions in the folder, rather than the in-session `/remote-control` above, which shares a
+  running console. It printed `Spawn mode: same-dir (saved for this folder; press w to change)`,
+  `Connected · logsleuth · main`,
+  `Capacity: 1/32 · New sessions will be created in the current directory`, a device label
+  `<hostname>-local-<word>` and an environment id `nv_<22 chars>`. The server process wrote no
+  registry file of its own; its child, a second `claude` process from `versions/2.1.310`, got
+  `sessions/<pid>.json` (578 B, the 18 keys plus `bridgeSessionId`, 32 hex, and `entrypoint`
+  `sdk-cli`) with its `.key` and socket. The start wrote `bridge-spawn/<cse id>/` with
+  `append-system-prompt.txt` (24,994 B of text, the system prompt appended to spawned sessions) and
+  `mcp.json` (491 B, `mcpServers.claude-code-remote{alwaysLoad, headers{X-MCP-Server-ID,
+  X-Session-UUID, anthropic-version}, type, url}` with `type` `http`, a remote MCP endpoint keyed
+  by session ids); `projects/<key>/bridge-pointer.json` (168 B, `environmentId`, `pid`,
+  `procStart`, `sessionId` of 32 hex, `source` `standalone`); an empty transcript for the child,
+  named by a uuid whose third group starts with `5`, a name-based id; `remoteControlMachineId` and
+  `projects.<path>.remoteControlSpawnMode` (`same-dir`) in `.claude.json`; and
+  `mcp-logs-claude-code-remote/` ([CLI cache directory](#cli-cache-directory)).
+- **macOS 2.1.310, a prompt from claude.ai.** A new session started on claude.ai for the machine,
+  with a prompt asking for `ls -la`, ran with no approval asked on either side. The child's file
+  (342,863 B, 28 lines) carried `entrypoint` `sdk-cli` on every line; the prompt's `user` line had
+  `promptSource` `sdk`, `origin.kind` and `turnOrigin` `human` and `permissionMode` `default`, and
+  came through a `queue-operation` pair; the `Bash` call was allowed by `config` with `reasonType`
+  `subcommandResults`, a read-only command; the model was the saved default. No `bridge-session`
+  line was written: the bridge id is in the registry file only. The turn created
+  `projects/<key>/<session id>/ccr-tip.json` (89 B, `eventId`, a uuid, and `updatedAt`), the last
+  claude.ai event the local side processed; "ccr" stands for Claude Code Remote, the name the MCP
+  log directory `mcp-logs-claude-code-remote` uses too.
+- **macOS 2.1.310, the stop.** Ctrl+C printed `Shutting down 1 active session(s)` and
+  ``Environment preserved. Restart `claude remote-control` to reconnect existing sessions.``. It
+  removed `bridge-spawn/<cse id>/` with both files, the child's registry file, `.key`, lock, socket
+  and shell snapshot; it kept `bridge-pointer.json`, now naming a dead process, the child's
+  transcript (grown by a `cost-state` and a `last-prompt` line) with its `ccr-tip.json`,
+  `session-env/`, the temp-root directories, and `remoteControlMachineId` and
+  `remoteControlSpawnMode`. No `hasUsedRemoteControl` or `remoteControlSurfacesSeen` key was
+  written. On claude.ai the session stayed listed, marked disconnected, after the stop, as the
+  vendor's
+  [Resume sessions after stopping the server](https://code.claude.com/docs/en/remote-control#resume-sessions-after-stopping-the-server)
+  describes: the remote copy outlives the local server, `bridge-pointer.json` and `ccr-tip.json`
+  being the local half of the join.
 - **Historical.** `~/.claude.json` keys `hasUsedRemoteControl`, `remoteControlUpsellSeenCount`,
   `remoteControlSurfacesSeen` and `remoteDialogSeen` (`@224457799`
   `return!e.hasUsedRemoteControl&&!ore()&&(e.remoteControlUpsellSeenCount??0)<c`, `@224460306`
@@ -1830,6 +2347,40 @@ the local process and its output back. The evidence is the 2.1.295 Linux binary 
 
 [Sync, relay and origin rows](#sync-relay-and-origin-rows) says which rows the parser makes of
 these fields ([issue 80](https://github.com/seanthegeek/doubleagent/issues/80)).
+
+#### Cloud sessions
+
+A cloud session is a Claude Code session that runs on Anthropic's servers against a GitHub
+repository; to teleport one is to bring it into a local session that continues it. Neither the
+Windows nor the Linux round was offered one. On macOS 2.1.310 (2026-10-26) the help listed
+`--cloud [description|session_id|url]`, `--environment <environment_id>`, `--teleport [session]`,
+`--remote-control [name]` and `--bg`, and the subcommands `agents`, `attach`, `logs`, `respawn`,
+`purge`, `auto-mode`, `auth`, `import`, `gateway` and `ultrareview`, but no `config`.
+
+- `claude --cloud "<task>"` in the project printed `Created cloud session: <title>`, `View: <url>`
+  and `Resume with: claude --teleport session_01<22 chars>` within three seconds and returned to
+  the shell, the account's GitHub connection supplying the repository. Locally it created the
+  empty `seed-admin/` (mode 0700), added `hasRemoteEnvironment` to `.claude.json`, made a temp-root
+  directory and rewrote one tree object in the project's `.git/objects/`
+  ([Project-local files](#project-local-files)). It wrote no `.session_ingress_token`, `remote/`,
+  `server-sessions.json` or `remote-settings.json`, and no transcript: the session's id is only
+  printed, and its record is on the servers.
+- `claude --teleport session_01<id>` in the project found the uncommitted change and asked
+  `Working directory has changes · Teleport will switch git branches. ... Would you like to stash
+  these changes and continue with teleport?`; `1. Stash changes and continue` ran `git stash`
+  (`Teleport auto-stash`) and switched no branch, the cloud session having made no commit. The
+  cloud session's turn was replayed on screen, `Session resumed` shown, and the session continued
+  in `auto` mode, with its registry file (`entrypoint` `cli`), `.key`, lock, socket, a temp-root
+  directory and connector logs, but no transcript yet.
+- The first local prompt created the transcript (427,839 B, 56 lines), holding the cloud turn and
+  the local one: the replayed cloud `user` and `assistant` lines carry `remoteSourced` (true, 7
+  lines), the cloud prompt `promptSource` `sdk`, `origin.kind` `human` and `permissionMode`
+  `default`, the local prompt `typed` and `auto`; every line says `entrypoint` `cli`. The cloud
+  session id appears 7 times, inside URL and text values only, and the word `teleport` not at all.
+  The replayed lines include a `stop_hook_summary` naming a hook of the cloud environment, an
+  `informational` line, a decision with `reasonType` `rule` and `ruleSource` `cliArg`, and an
+  `environment` attachment naming the cloud machine's scratchpad
+  ([`attachment` records](#attachment-records)).
 
 ### Format versions
 
@@ -1876,9 +2427,31 @@ these fields ([issue 80](https://github.com/seanthegeek/doubleagent/issues/80)).
   adds `isBuiltIn` ([Transcript stores](#transcript-stores)); a project entry in `.claude.json`
   adds `lastFpsAverage` and `lastFpsLow1Pct` ([`.claude.json`](#claudejson)); and a shell call
   snapshots the working tree under the temp root's `bash-edit-diff/`
-  ([Scratch directories](#scratch-directories)). Some differences from the Windows cell are the
+  ([Scratch directories](#scratch-directories)). Some differences from the Windows round are the
   platform's, not the version's: the `.key` file's `procStart` for `procStartFt`, the symlink
   launcher, the `file-history` backup's modification time.
+- 2.1.310 on macOS 26.6.2 arm64 (2026-10-26), against the same build on Linux: a refusal in a
+  permission dialog, with or without its amend option, and a declined plan were recorded with
+  `toolDenialKind` and no `permissionDecision` or `userFeedback`
+  ([Permission decisions](#permission-decisions)); `auto_mode` came at a first turn that ran only
+  a `Read`, and `auto_mode_exit` was written ([`attachment` records](#attachment-records)); the
+  second start offered `Try the new fullscreen renderer?` (`Flicker-free output`,
+  `Mouse support`, `Selected text auto-copies to your clipboard`; `1. Yes, try it`, `2. Not now`);
+  `/model` asked `Switch model?` before switching, still saving the pick as the default
+  ([Joins and timestamps](#joins-and-timestamps)), and was a `history.jsonl` line; a subagent ran
+  on the account default after a switch; the `config` subcommand is gone, so `cleanupPeriodDays`
+  is set in `settings.json` only; `--cloud` and `--teleport` worked for this account
+  ([Cloud sessions](#cloud-sessions)); `claude remote-control` runs a server in spawn mode, which
+  writes `bridge-spawn/`, `bridge-pointer.json` and `ccr-tip.json` and no `bridge-session` line
+  ([Remote Control](#remote-control)); `scheduled_tasks.lock` is removed at `/exit`; and the
+  official plugin marketplace arrives as a download, not a git clone
+  ([Files that hold evidence](#files-that-hold-evidence)). The help overlay (`?` or `/help`) listed
+  `! for shell mode`, `/ for commands`, `@ for file paths`, `/btw for side question`,
+  `double tap esc to clear input`, `shift + tab to auto-accept edits`,
+  `ctrl + o for verbose output`, `ctrl + t to toggle tasks`, `backslash + return for newline`,
+  `ctrl + shift + _ to undo`, `ctrl + z to suspend`, `ctrl + v to paste images`,
+  `opt + p to switch model`, `opt + o to toggle fast mode`, `ctrl + s to stash prompt`,
+  `ctrl + g to edit in $EDITOR` and `/keybindings to customize`.
 - No compressed or archived transcript form exists; deletion by `cleanupPeriodDays` is the only
   rotation.
 
@@ -1895,13 +2468,25 @@ these fields ([issue 80](https://github.com/seanthegeek/doubleagent/issues/80)).
   ([`.claude.json`](#claudejson)). Every `backups/.claude.json.backup.<epoch ms>` holds the same.
   On Linux 2.1.310 `oauthAccount` had 20 keys, `hasExtraUsageEnabled`, `seatTier` and
   `workspaceRole` among them, and `githubWebConnectionStatusCache` names the account and
-  organisation of the GitHub connection by `accountUuid` and `orgUuid`.
+  organisation of the GitHub connection by `accountUuid` and `orgUuid`. On macOS 2.1.310 the 20
+  `oauthAccount` keys were `accountCreatedAt, accountUuid, billingType, ccOnboardingFlags,
+  claudeCodeTrialDurationDays, claudeCodeTrialEndsAt, displayName, emailAddress, fullName,
+  hasExtraUsageEnabled, organizationName, organizationRateLimitTier, organizationRole,
+  organizationType, organizationUuid, profileFetchedAt, seatTier, subscriptionCreatedAt,
+  userRateLimitTier, workspaceRole`; `remoteControlMachineId` is a uuid naming the machine to
+  Remote Control; and the `backups/` copies keep `oauthAccount` after a `/logout`.
 - `.credentials.json` on Windows 2.1.309 and Linux 2.1.310:
   `claudeAiOauth{accessToken, refreshToken, expiresAt, refreshTokenExpiresAt, scopes,
   subscriptionType, subscriptionTypeSource, rateLimitTier}`, `scopes` six strings.
 - `sessions/<pid>.<sha256>.key` on Windows 2.1.309: `{peerToken, pidDomain, procStartFt}`,
   `peerToken` 32 hex; on Linux 2.1.310 `{peerToken, pidDomain, procStart}`, `procStart` a decimal
-  string, the process's start tick. `daemon/control.key` (32 B of hex on Linux) and
+  string, the process's start tick; on macOS 2.1.310 the Linux set with `pidDomain` `darwin`.
+  `ide/<port>.lock` holds `authToken`, a uuid that authenticates to the VS Code extension's
+  listener; `bridge-spawn/<cse id>/mcp.json` holds the `X-MCP-Server-ID` and `X-Session-UUID`
+  headers that identify a Remote Control session to the remote endpoint;
+  `bridge-pointer.json` names the Remote Control `environmentId` and `ccr-tip.json` the last
+  claude.ai `eventId` ([Remote Control](#remote-control)). `daemon/control.key` (32 B of hex on
+  Linux) and
   `daemon/pipe.key` are raw key bytes, and
   `daemon/roster.json` carries `ptyAuth` and `rvAuth` per worker
   ([Session daemon records](#session-daemon-records)).
@@ -1926,13 +2511,17 @@ these fields ([issue 80](https://github.com/seanthegeek/doubleagent/issues/80)).
 ^\.claude(?:-[^/]+)?/sessions/\d+\.json$
 ^\.claude(?:-[^/]+)?/settings(?:\.local)?\.json$
 ^(?:\.claude-[^/]+/)?\.claude\.json$
+^\.claude(?:-[^/]+)?/projects/[^/]+/([^/]+)/ccr-tip\.json$
+^\.claude(?:-[^/]+)?/projects/[^/]+/bridge-pointer\.json$
 ```
 
 The `.claude-<name>` form is a config home moved with `CLAUDE_CONFIG_DIR`; what the catalog
 collects from one is under [Relocated config homes](#relocated-config-homes-claude_config_dir). A
 project's `.claude/settings.json` and `.claude/settings.local.json` reach the parser as `project`
 artifacts (the collector's project catalog has `project|.claude`), with the project directory as
-their home.
+their home. The parser also reads a project's `projects/<key>/bridge-pointer.json` and a session's
+`projects/<key>/<session id>/ccr-tip.json`, the Remote Control marks of
+[Sync, relay and origin rows](#sync-relay-and-origin-rows).
 
 Lines are read with `iter_jsonl`; each bad line becomes the row described under [Bad
 lines](#bad-line-rows). Each session file is read twice: a first pass collects the prompts that
@@ -1957,9 +2546,12 @@ Coverage. A label is the start of a `system` row's text, `<label>: ` and then th
 | `user`, any other string, `text` or `image` block | `user` (one row per block); the rules above are tried in this order, the record-level ones for every block |
 | `user`, `tool_result` block | `tool_result`; `tool_reference` blocks as their `tool_name`; a `<persisted-output>` stub replaced by its `tool-results/` file, named by `toolUseResult.persistedOutputPath` when that key is set and the line has one `tool_result` block, else by the stub's text (below); text prefixed `[error]` when `is_error` |
 | `user`, `permissionDecision` (2.1.295) | one `system` row after the line's `tool_result` rows, `permission decision: <decision> source=<source> reason=<reasonType>` (`-` for a missing key), then a space and the object's compact JSON when it has other keys (`grantScope` and `reasonCode` on 2.1.309, [Permission decisions](#permission-decisions)); `tool_use_id` of the line's first `tool_result` block, `tool_name` empty as on `tool_result` rows |
-| `user`, `toolDenialKind`, `userFeedback` (factory key list, [Record schema](#record-schema)) | appended to that line's `permission decision:` row as ` toolDenialKind=<value> userFeedback=<value>`, in that order, each only when set, printed as recorded (no value set is recorded; `userFeedback` is free text, so it comes last); a line with either key and no `permissionDecision` gets the row with `-` for `decision`, `source` and `reasonType` ([issue 97](https://github.com/seanthegeek/doubleagent/issues/97)) |
+| `user`, `toolDenialKind`, `userFeedback` (factory key list, [Record schema](#record-schema)) | appended to that line's `permission decision:` row as ` toolDenialKind=<value> userFeedback=<value>`, in that order, each only when set, printed as recorded (no value set is recorded; `userFeedback` is free text, so it comes last); a line with `toolDenialKind` and no `permissionDecision`, the form 2.1.310 wrote on macOS for every refusal and a declined plan, gets `permission decision: reject (interrupted) toolDenialKind=user-rejected` (the value as recorded), the source being unknown ([issue 97](https://github.com/seanthegeek/doubleagent/issues/97)) |
 | `attachment` `plan_mode`, `plan_mode_exit`, `plan_mode_reentry`, `auto_mode`, `auto_mode_exit` | skip: their keys are now recorded ([`attachment` records](#attachment-records)); `auto_mode` is the turn's auto-mode configuration, not a decision, and every mode change they mark is also a `permissionMode` value or a `permission-mode` record, which the `permission mode:` rows read |
-| first record of a transcript file that carries `entrypoint` | before its rows, a `system` row `session surface: <entrypoint>` (values `cli`, `claude-vscode`, `claude-desktop` for the Code tab), and `session surface: <old> -> <new>` on a change; a subagent file gets its own row |
+| first record of a transcript file that carries `entrypoint` | before its rows, a `system` row `session surface: <entrypoint>` (values `cli`, `claude-vscode`, `claude-desktop` for the Code tab, `sdk-cli` for a session a Remote Control server spawned), and `session surface: <old> -> <new>` on a change; a subagent file gets its own row |
+| a session whose lines carry `entrypoint` `sdk-cli` and whose prompt has `promptSource` `sdk` | `system`, `session origin: remote (Remote Control, entrypoint sdk-cli)` at its first line ([Sync, relay and origin rows](#sync-relay-and-origin-rows)) |
+| first line with `remoteSourced` true | `system`, `session origin: remote (teleport, remoteSourced)`, once per session, and beside it `session synced: cloud session (teleported: remoteSourced records replayed from the vendor's copy)`, since the vendor holds the conversation (`synced` `yes`); the cloud `session_01...` id, which sits inside URL and text values, is not extracted |
+| a session whose lines carry `entrypoint` `claude-vscode` | `system`, `session origin: local (VS Code extension)`; `promptSource` `sdk` on such a prompt is not a remote mark on its own |
 | `user` record with `promptSource` set and not `typed`, or `turnOrigin` set and not `human` | after the record's rows, a `system` row `prompt trigger: promptSource=<promptSource> turnOrigin=<turnOrigin>`, `-` for a missing key; the pairs seen on Windows 2.1.309 are `promptSource=suggestion_accepted turnOrigin=human`, `promptSource=system turnOrigin=task_notification` (a subagent's or a background command's end), `promptSource=queued turnOrigin=human` (the Remote Control phone), `promptSource=system turnOrigin=scheduled` (a `/loop` firing) and `promptSource=sdk turnOrigin=human` (the VS Code extension); `origin.kind` still picks the label above |
 | `continued-in` | `system`, `session continued in: <continuedInSessionId>`, at the record's `timestamp` |
 | `bridge-session` | `system`, `remote control: bridge session <bridgeSessionId or none> lastSequenceNum=<lastSequenceNum or ->`, written when the (id, sequence) pair changes, `none` being the detach; the owner uuids are never printed. At the first record naming an id, once per session and bridge id, `session synced: remote control bridge <bridgeSessionId> url <url>` ([Sync, relay and origin rows](#sync-relay-and-origin-rows)) |
@@ -1972,6 +2564,7 @@ Coverage. A label is the start of a `system` row's text, `<label>: ` and then th
 | `assistant`, `thinking` | `thinking` with `include_thinking`; an empty `thinking` (signature only) is skipped |
 | `assistant`, `redacted_thinking` | `thinking` with `include_thinking`, text `[redacted]` |
 | `assistant`, other block types | skip |
+| `system` `scheduled_task_fire` | `system`, `scheduled task fired: <taskId> cron=<cron>`; the next `user` line, with `turnOrigin` `scheduled`, keeps its `prompt trigger:` row |
 | `system` | `system`, text `<subtype>: <content>`; `turn_duration` as `<durationMs> ms, <messageCount> messages`; without `content`, `<subtype>: ` and the compact JSON of the fields other than the envelope (`api_error`: `level`, `retryInMs`, `retryAttempt`, `maxRetries`, `error`) |
 | `attachment` `queued_command`, `origin.kind` `human` | `user`, text `prompt` (a text marker above still makes it `system`) |
 | `attachment` `queued_command`, other origin | `system`, the marker or origin label, else `queued command` |
@@ -1985,8 +2578,10 @@ Coverage. A label is the start of a `system` row's text, `<label>: ` and then th
 | every other type ([Record schema](#record-schema) table) | skip |
 | `history.jsonl` line | `user` |
 | `sessions/<pid>.json` | one `system` row at `startedAt` (epoch ms), `claude-code process <pid> <kind> status=<status> entrypoint=<entrypoint> bridge=<bridgeSessionId or none> host_session=<hostSessionId or none>` (`-` for a missing `kind`, `status` or `entrypoint`), `session_id` `sessionId`, `project_path` `cwd`, `source_line` 1; a file that is not a JSON object is one `system` row `parser: session registry file is not a JSON object`. A `bridge=` value means the process was under Remote Control when the collector ran ([Remote Control](#remote-control)), and the file then gives a second `system` row, `session synced: remote control bridge <bridgeSessionId> url - (from <path>, file mtime)`, at the file's modification time ([Sync, relay and origin rows](#sync-relay-and-origin-rows)) |
-| `settings.json`, `settings.local.json` (user, `.claude-<name>`, or a project's) | one `system` row per `permissions.allow`, `deny`, `ask` and `additionalDirectories` entry, then one for `permissions.defaultMode` and `permissions.disableBypassPermissionsMode` when set: `permission setting: permissions.<key>=<value> (from <path relative to the home or project>, file mtime)`, a non-string value as compact JSON; `timestamp_utc` the manifest `mtime`, else the file's own; `session_id` empty; `project_path` the project directory for a `project` artifact, else empty; `source_line` 1; beside them, when `cleanupPeriodDays` is set, one `system` row `retention setting: cleanupPeriodDays=<n> (from <file>, file mtime)` at the same time, since the value decides what the retention sweep removes ([What survives a delete](#what-survives-a-delete)); no other key read; a file that is not a JSON object is one `system` row `parser: settings file is not a JSON object` |
-| `.claude.json`, `.claude-<name>/.claude.json` | per `projects.<path>`: one row per `allowedTools` entry, then one each for `hasTrustDialogAccepted` and `hasClaudeMdExternalIncludesApproved` when present, `permission setting: <key>=<value> (from .claude.json, file mtime)`, `project_path` the `<path>` key, times as above; when `githubWebConnectionStatusCache` is present (2.1.310), one `system` row `source host: github status=<status> (from .claude.json, file mtime)` at the file's modification time, its `accountUuid` and `orgUuid` never printed ([Sync, relay and origin rows](#sync-relay-and-origin-rows)); nothing else in the file is read (it holds the account's OAuth details); `.claude.json.backup*` is not wanted |
+| `projects/<key>/<session id>/ccr-tip.json` | one `system` row at the file's modification time, `session synced: remote event <eventId> at <updatedAt> (from <path>, file mtime)`, `session_id` the directory's session ([Sync, relay and origin rows](#sync-relay-and-origin-rows)) |
+| `projects/<key>/bridge-pointer.json` | one `system` row at the file's modification time, `remote control: environment <environmentId> session <sessionId> source=<source> (from <path>, file mtime)` |
+| `settings.json`, `settings.local.json` (user, `.claude-<name>`, or a project's) | one `system` row per `permissions.allow`, `deny`, `ask` and `additionalDirectories` entry, then one for `permissions.defaultMode` and `permissions.disableBypassPermissionsMode` when set: `permission setting: permissions.<key>=<value> (from <path relative to the home or project>, file mtime)`, a non-string value as compact JSON; `timestamp_utc` the manifest `mtime`, else the file's own; `session_id` empty; `project_path` the project directory for a `project` artifact, else empty; `source_line` 1; beside them, when `cleanupPeriodDays` is set, one `system` row `retention setting: cleanupPeriodDays=<n> (from <file>, file mtime)` at the same time, since the value decides what the retention sweep removes ([What survives a delete](#what-survives-a-delete)); when `model` is set, one `system` row `model setting: <alias> (from settings.json, file mtime)` ([Model rows](#model-rows)); no other key read; a file that is not a JSON object is one `system` row `parser: settings file is not a JSON object` |
+| `.claude.json`, `.claude-<name>/.claude.json` | per `projects.<path>`: one row per `allowedTools` entry, then one each for `hasTrustDialogAccepted` and `hasClaudeMdExternalIncludesApproved` when present, `permission setting: <key>=<value> (from .claude.json, file mtime)`, `project_path` the `<path>` key, times as above; when `githubWebConnectionStatusCache` is present (2.1.310), one `system` row `source host: github status=<status> (from .claude.json, file mtime)` at the file's modification time, its `accountUuid` and `orgUuid` never printed ([Sync, relay and origin rows](#sync-relay-and-origin-rows)); at the same time, `remote control: machine id set` when `remoteControlMachineId` is present, `remote control: spawn mode <mode> for <path>` per `projects.<path>.remoteControlSpawnMode`, and `cloud: hasRemoteEnvironment=<value> (from .claude.json, file mtime)`, no uuid printed; nothing else in the file is read (it holds the account's OAuth details); `.claude.json.backup*` is not wanted |
 
 Columns:
 
@@ -2010,8 +2605,10 @@ the other `sessions/<pid>.json` keys (`procStart`, `version`, `peerProtocol`, `p
 `perTurnEffort`, `serverClassifierRequest`, `thinkingDurationMs`; `requestedModel` is read only for
 the model row and `wireToolInputs` only for Bash), `sourceToolAssistantUUID` and
 `serverClassifierContext`, the 2.1.309 request capture lines (`api-request-shape`, `api-request`,
-`api-request-blob`), `cost-state`, `mode`, `atis-latch`, `custom-title.json` (the `custom-title`
-line is read), the session daemon's files (`daemon.log`, `roster.json`) and `jobs/`,
+`api-request-blob`), `cost-state` (the line that ends a file at `/clear` included), `mode`,
+`atis-latch`, `custom-title.json` (the `custom-title` line is read), `bridge-spawn/`, `seed-admin/`,
+`ide/<port>.lock`, `cache/model-catalog/`, the session daemon's files (`daemon.log`,
+`roster.json`) and `jobs/`,
 `backups/`, `file-history/`, `plans/`, `state/mcp-discover-verdicts.json`, `skills/synced/`,
 `plugins/synced/`, the registry keys `formerNames`, `parkedJobId` and `jobId`, `sessionKind` (kept
 in the row's envelope, not printed), `githubRepoPaths`, the `debug/` logs written by
@@ -2033,7 +2630,10 @@ and the mode's automatic accepts (`source=config reason=classifier` or `reason=m
 `once` in the JSON suffix), the allow-always rule's use (`source=user_permanent`), the denial
 (`source=user_reject` with `toolDenialKind` and `userFeedback`) and the declined plan (a rejected
 `ExitPlanMode`); the `reasonCode` values, `bashMiss:no-rule-match` on 2.1.310 among them, are in
-the JSON suffix. The allow-always grant itself is a
+the JSON suffix. The refusal with no decision record that macOS 2.1.310 wrote, for a shell command
+and for a declined plan alike, is
+`permission decision: reject (interrupted) toolDenialKind=user-rejected`; the reason the person
+typed afterwards is the next `user` row. The allow-always grant itself is a
 `permission setting: permissions.allow=PowerShell(...)` row from the project's
 `settings.local.json` on Windows, and a `Bash(...)` one on Linux. The `plan_mode`,
 `plan_mode_exit`, `plan_mode_reentry`, `auto_mode` and `auto_mode_exit` attachments are not read;
@@ -2044,9 +2644,13 @@ the mode changes they mark are `permission mode:` rows.
 The `model:` rows come from `message.model` and `requestedModel` (the `assistant` row of the
 coverage table). A `/model` switch keeps its own `slash command` and `command output` rows
 ([Joins and timestamps](#joins-and-timestamps)). The `model` attachment and `cost-state` records are
-not read. Confirmed on Windows 2.1.309 and Linux 2.1.310: the lines carry the resolved id only, so
-the change row is the evidence of a switch, and the alias the person picked is in `settings.json`
-`model`, which the parser does not read.
+not read. Confirmed on Windows 2.1.309 and Linux and macOS 2.1.310: the lines carry the resolved
+id only, so the change row is the evidence of a switch. The alias the person picked is in
+`settings.json` `model`, read as `model setting: <alias> (from settings.json, file mtime)`, a row
+that also shows a change no `/model` made: the VS Code extension's start rewrote the key on macOS
+2.1.310 ([Joins and timestamps](#joins-and-timestamps)). A subagent's
+`toolUseResult.resolvedModel` that differs from the parent's model yields nothing new, since the
+subagent file's `assistant` lines carry that model.
 
 #### Past-use rows and secondary sources
 
@@ -2060,7 +2664,12 @@ through `claude agents` or from the VS Code extension's panel is in the transcri
 `paste-cache/` (collected; the paste is inline in the transcript, and `history.jsonl` names it by
 hash), `backups/` (dated copies of `.claude.json`), `jobs/` and the daemon's files, the
 `.meta.json` sidecars and the `claude-cli-nodejs` MCP logs, which each name the session, the
-project and a time and so could become rows of their own.
+project and a time and so could become rows of their own. A history line whose `display` is a
+slash command (`/model`, `/rename ...`, `/clear`, `/loop ...`) matches the transcript's `user` line
+that wraps the same command in `<command-name>` and `<command-args>` tags, and one whose `display`
+starts with a `[Pasted text #N +M lines]` placeholder matches the `user` line that carries the paste
+expanded with the typed text after it ([`history.jsonl`](#historyjsonl)), so only a history line
+with no transcript counterpart is a recovered row.
 
 #### Sync, relay and origin rows
 
@@ -2075,18 +2684,45 @@ after it, else the nearest before it, else `-`, so a second bridge in one file n
 first bridge's URL, and it sets
 `records_sync`, so `sessions.jsonl` `synced` reads `yes` or `no` for this agent's sessions. The
 row rests on the `bridge_status` URL (`https://claude.ai/code/session_<id>`) naming the session on
-claude.ai while the bridge is up; whether claude.ai keeps the transcript after the detach was not
-determined. A `sessions/<pid>.json` registry file that names a `bridgeSessionId` gives the same
+claude.ai while the bridge is up; for the server form, claude.ai kept the session listed after the
+local stop ([Remote Control](#remote-control)). A `sessions/<pid>.json` registry file that names a
+`bridgeSessionId` gives the same
 marker, `session synced: remote control bridge <bridgeSessionId> url - (from <path>, file mtime)`,
 at the file's modification time, because the id says the process was under Remote Control when
 the collector ran ([Remote Control](#remote-control)); it is the marker that is left when the
 transcript is gone, and a session with both keeps both rows, which `sessions.jsonl` counts once
 as `synced` `yes`. The daemon handover is local and is a `session continued in:`
-row, not a sync row. The agent records no relay, and the parser sets neither `records_relay` nor
-`records_origin`: a cloud session could not be started from the CLI on the Windows or the Linux
-round, and the files the bundle names for one (`.session_ingress_token`, `remote/`,
-`server-sessions.json`, `remote-settings.json`) were never written; the `remote_session_change`
-attachment, present in plain local sessions with nothing to link, is skipped. The source host is
+row, not a sync row.
+
+The server form of Remote Control (macOS 2.1.310) writes no `bridge-session` line, so its marks are
+files and keys. A session it spawned, whose lines carry `entrypoint` `sdk-cli` and whose prompt
+`promptSource` `sdk`, gets `session origin: remote (Remote Control, entrypoint sdk-cli)` at its
+first line; its `ccr-tip.json` gives
+`session synced: remote event <eventId> at <updatedAt> (from <path>, file mtime)` at the file's
+modification time, with the session's own id; the project's `bridge-pointer.json` gives
+`remote control: environment <environmentId> session <sessionId> source=<source> (from <path>,
+file mtime)` with an empty session id (`pid` and `procStart` are not printed); and `.claude.json`
+gives `remote control: machine id set (from .claude.json, file mtime)` and
+`remote control: spawn mode <mode> for <path> (from .claude.json, file mtime)`, with no uuid
+printed. A teleported cloud session gets `session origin: remote (teleport, remoteSourced)` once,
+with `session synced: cloud session (teleported: remoteSourced records replayed from the vendor's
+copy)` beside it (the vendor holds the conversation, so `synced` reads `yes`),
+at its first line with `remoteSourced`; its replayed `environment` attachment, naming the cloud
+machine's scratchpad, yields `session origin: remote (teleport, cloud scratchpad <path>)` in place
+of the `scratch directory:` row. The replayed records come first in the file and the local
+process's own after them, so the attachment is the replayed one when it sits on or before the
+file's last `remoteSourced` line, whatever its project slug: the cloud checkout and the local one
+may share a path (`/home/user/repo`), and a local slug may differ by case
+([issue 112](https://github.com/seanthegeek/doubleagent/issues/112)) or after a `relocated`
+record. A cloud session created with `--cloud` and never teleported leaves no local session, so
+its only row is `cloud: hasRemoteEnvironment=<value> (from .claude.json, file mtime)`; the
+files the bundle names for one (`.session_ingress_token`, `remote/`, `server-sessions.json`,
+`remote-settings.json`) were not written. A VS Code extension session gets
+`session origin: local (VS Code extension)`. The parser sets `records_sync` and `records_origin`,
+so `sessions.jsonl` `synced` reads `yes` or `no` and `origin` `remote` or `local` for every
+session of this agent. The agent records
+no relay, so the parser does not set `records_relay`. The `remote_session_change` attachment,
+present in plain local sessions with nothing to link, is skipped. The source host is
 a row since 2.1.310: `.claude.json` `githubWebConnectionStatusCache` gives one `system` row
 `source host: github status=<status> (from .claude.json, file mtime)` at the file's modification
 time, the account and organisation uuids not printed
@@ -2106,14 +2742,20 @@ and not collected ([issue 163](https://github.com/seanthegeek/doubleagent/issues
 names a directory the collection lacks. On Linux the temp root also holds one directory per
 process, so a resume, a `--continue`, `claude agents` or `claude mcp add` leaves directories that a
 session's row may not name, and the whole tree is gone after a reboot or when the retention sweep
-deletes the session's transcript. The files under the temp root's `tasks/` and `bash-edit-diff/`
-are not read.
+deletes the session's transcript. On macOS the temp root, `/private/tmp/claude-<uid>`, is not
+collected either and is gone after a reboot ([Scratch directories](#scratch-directories)); a
+teleported session's row names the cloud machine's scratchpad, a path that never existed on the
+host ([Cloud sessions](#cloud-sessions)). The files under the temp root's `tasks/` and
+`bash-edit-diff/` are not read.
 
 #### Deletion rows
 
-The agent records none: no deletion marker is stated or was seen on Windows 2.1.309 or Linux
-2.1.310 ([What survives a delete](#what-survives-a-delete)). A `/clear` is a `local_command` row,
-`local_command: ` and the command, in the new session's file, with nothing in the old one. A removed
+The agent records none: no deletion marker is stated or was seen on Windows 2.1.309 or on Linux
+and macOS 2.1.310 ([What survives a delete](#what-survives-a-delete)). A `/clear` deletes nothing:
+it is the command's rows (a `local_command` row, `local_command: ` and the command, where the build
+writes one, and the `slash command` row of its `user` line) at the start of the new session's
+file, and the `cost-state` line that ends the old file is not read. A `/logout` is no row either:
+it removes `.credentials.json` and the account keys of `.claude.json`. A removed
 project is not a row: the analyzer's inventory lists it with the `referenced` status, a project the
 collected files still name with no files of its own. The retention sweep deletes silently, so the
 setting that drives it is the row: `cleanupPeriodDays` in a settings file gives
@@ -2207,6 +2849,42 @@ environment attachment)` (line 1); the `user` row and then
 `session continued in: 33333333-4444-4555-8666-777777777777` (line 6). The surface change is a
 fixture device, not something a real file was seen to do.
 
+Records in the 2.1.310 shapes of the macOS round, values synthetic: a refusal with no decision
+record and a `/loop` firing in
+`.claude/projects/-srv-proj/44444444-5555-4666-8777-888888888888.jsonl`,
+
+```json
+{"parentUuid":"00000000-0000-4000-c000-000000000001","isSidechain":false,"type":"user","message":{"role":"user","content":[{"tool_use_id":"toolu_21","type":"tool_result","content":"rejected","is_error":true}]},"toolDenialKind":"user-rejected","sourceToolAssistantUUID":"00000000-0000-4000-c000-000000000001","uuid":"00000000-0000-4000-c000-000000000002","timestamp":"2026-10-26T16:25:19.000Z","userType":"external","entrypoint":"cli","cwd":"/srv/proj","sessionId":"44444444-5555-4666-8777-888888888888","version":"2.1.310","gitBranch":"main"}
+{"parentUuid":"00000000-0000-4000-c000-000000000002","isSidechain":false,"type":"system","subtype":"scheduled_task_fire","content":"Running scheduled task","cron":"* * * * *","prompt":"echo hi","taskId":"task01","isMeta":false,"level":"info","uuid":"00000000-0000-4000-c000-000000000003","timestamp":"2026-10-26T17:20:00.000Z","userType":"external","entrypoint":"cli","cwd":"/srv/proj","sessionId":"44444444-5555-4666-8777-888888888888","version":"2.1.310","gitBranch":"main"}
+```
+
+a prompt from claude.ai to a session a Remote Control server spawned, in
+`.claude/projects/-srv-proj/55555555-6666-5777-8888-999999999999.jsonl`, with its
+`55555555-6666-5777-8888-999999999999/ccr-tip.json` and the project's `bridge-pointer.json`,
+
+```json
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"list the files here"},"uuid":"00000000-0000-4000-d000-000000000001","timestamp":"2026-10-26T17:10:53.000Z","permissionMode":"default","origin":{"kind":"human"},"promptSource":"sdk","turnOrigin":"human","userType":"external","entrypoint":"sdk-cli","cwd":"/srv/proj","sessionId":"55555555-6666-5777-8888-999999999999","version":"2.1.310","gitBranch":"main"}
+{"eventId":"00000000-0000-4000-e000-000000000001","updatedAt":"2026-10-26T17:11:00.000Z"}
+{"environmentId":"env_0123456789abcdefghijkl","pid":15081,"procStart":"1234567","sessionId":"0123456789abcdef0123456789abcdef","source":"standalone"}
+```
+
+and a replayed cloud prompt in a teleported session,
+`.claude/projects/-srv-proj/66666666-7777-4888-8999-aaaaaaaaaaaa.jsonl`:
+
+```json
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"describe this repository"},"uuid":"00000000-0000-4000-f000-000000000001","timestamp":"2026-10-26T17:13:40.000Z","permissionMode":"default","origin":{"kind":"human"},"promptSource":"sdk","remoteSourced":true,"userType":"external","entrypoint":"cli","cwd":"/srv/proj","sessionId":"66666666-7777-4888-8999-aaaaaaaaaaaa","version":"2.1.310","gitBranch":"main"}
+```
+
+They yield, in the forms of the coverage table: the `tool_result` row and
+`permission decision: reject (interrupted) toolDenialKind=user-rejected`;
+`scheduled task fired: task01 cron=* * * * *`;
+`session origin: remote (Remote Control, entrypoint sdk-cli)` before the claude.ai prompt's rows;
+`session synced: remote event 00000000-0000-4000-e000-000000000001 at 2026-10-26T17:11:00.000Z
+(from <path>, file mtime)`;
+`remote control: environment env_0123456789abcdefghijkl session 0123456789abcdef0123456789abcdef
+source=standalone (from <path>, file mtime)`; and
+`session origin: remote (teleport, remoteSourced)` before the replayed prompt's rows.
+
 #### Forked subagents
 
 A forked subagent's file begins with a copy of the forking agent's context (observed in the 4 fork
@@ -2251,13 +2929,20 @@ resolved.
   the transcript record set, the `permissionDecision` forms, the detached-head `gitBranch`, the
   two `pastedContents` forms, the GitHub connection key, and what the retention sweep removed and
   kept in its one observed run.
-- Medium: the exact keychain service string (built from `"Claude Code"` + `"-credentials"`; not seen
-  as one literal); contents of `storage-v2`, `seed-admin`, `remote`, `systemd` (names only), and of
-  `~/.cache/claude/staging` beyond its being empty whenever listed.
+- High (observed on macOS 2.1.310, key names, enum values, file modes and keychain item names
+  only, one install): the keychain service string and account of a desktop-launched sign-in and
+  the file of an ssh-launched one, the native installer's layout, the macOS temp root and the
+  per-process sockets, the URL handler bundle, the refusal recorded without a decision, the
+  compaction keys, the server form of Remote Control, a cloud session and its teleport, `/loop`,
+  and what an exit, `/clear`, `/logout`, a removed project and a reboot leave.
+- Medium: contents of `storage-v2`, `remote` and `systemd` (names only), of `seed-admin` beyond its
+  being created empty by `claude --cloud`, and of `~/.cache/claude/staging` beyond its being empty
+  whenever listed.
 - Medium (bundle only, not exercised): `api_error`, `memory_saved`, `relocated`, `ended-by-model`,
-  `content-replacement`, `frame-link`, `summary`, `progress`, nested subagent subdirectories; a
-  cloud session's files and an origin row for it, which neither the Windows nor the Linux round
-  could start from the CLI.
+  `content-replacement`, `frame-link`, `summary`, `progress`, nested subagent subdirectories; the
+  cloud-session files the bundle names (`.session_ingress_token`, `remote/`,
+  `server-sessions.json`, `remote-settings.json`), which a cloud session created and teleported on
+  macOS did not write.
 - Medium (vendor documentation only, not exercised): what `claude purge` deletes and leaves, and
   the sweep's rules for `file-history/` checkpoints, auto memory and Claude Desktop transcripts.
 - Not determined: how common config-home names other than `.claude-<name>` are; other `.claude-`
@@ -2270,8 +2955,10 @@ resolved.
   repository; the layout before 2.1.286.
 - Not determined on Windows 2.1.309: what triggered the daemon handover and
   what ended the daemon; whether a prompt sent through `claude agents` was answered, since no
-  `assistant` line followed it; whether claude.ai keeps a Remote Control session's transcript after
-  the detach, which the `session synced:` row assumes only for while the bridge is up; the meaning
+  `assistant` line followed it; whether claude.ai keeps the transcript of a session shared with the
+  in-session `/remote-control` after the detach (the server form's session stayed listed on
+  macOS; the `session synced:` row of the in-session form assumes it only while the bridge is up);
+  the meaning
   of the two-character `kind` of a worker's registry file; `defaultMode` for
   a mode kept as the default, which no step chose.
 - Not determined on Linux 2.1.310: the exact trigger of the retention sweep (the observed
@@ -2282,5 +2969,14 @@ resolved.
   `/tmp/.bun-<uid>-<hex>.node` and whether it is reused across starts; whether the `bash-edit-diff/`
   snapshots of a session whose process died stay until a reboot or the sweep; whether the
   `file-history` backup's modification time differs from Windows by platform or by version; why
-  `/model` was a `history.jsonl` line on Windows 2.1.309 and not on Linux 2.1.310; and where `gh`
-  keeps the token on a headless Linux host.
+  `/model` was not a `history.jsonl` line on Linux 2.1.310 when it was on Windows 2.1.309 and on
+  macOS 2.1.310; where `gh` keeps the token on a headless Linux host; and whether the Linux build
+  writes the per-process socket that macOS keeps in `/tmp/cc-socks/`, and where (`/tmp` held none,
+  and `$XDG_RUNTIME_DIR` was not surveyed).
+- Not determined on macOS 2.1.310: why every refusal there took the form with no decision record,
+  while Linux 2.1.310 wrote `userFeedback` for a refusal with a reason (the macOS console ran in
+  `screen` with `TERM=screen`, so a terminal difference is not ruled out); whether the retention
+  run in the session started with `cleanupPeriodDays` 0 was paused by the settings error or found
+  nothing older than 30 days, and what the sweep removes there, which rests on the vendor's page;
+  whether a process without access to the login keychain other than an ssh-launched one falls back
+  to `.credentials.json`; and what `append-system-prompt.txt` says, which was not read.

@@ -32,3 +32,17 @@ gets a `WARNING: not running as root` (or `as Administrator`) line, and:
   row.
 - The root-owned Docker and Podman data roots are reported as unreadable
   (see [docker.md](docker.md#unreadable-volumes)).
+
+On macOS, root is not always enough. Transparency, Consent and Control
+(TCC), the macOS privacy system, refuses some directories to any process
+that has not been given Full Disk Access in System Settings, root
+included, and a root shell reached over ssh does not have it. On a live
+macOS 26.6 host the sh collector run that way as root (October 2026)
+wrote three `error_read` rows with `Operation not permitted` in `error`
+and `agent` empty, one each for `/var/db/lockdown`,
+`/var/db/appinstalld` and `/var/db/installcoordinationd`. These are the
+home directories of macOS service accounts, which the Users step lists
+from the directory service (`dscl`) and tries as homes like any other;
+they hold no agent state, so the three rows are expected and harmless.
+The user homes on that host were collected with no error rows; a run
+from a process with Full Disk Access was not tried.

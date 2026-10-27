@@ -66,6 +66,11 @@ that need it:
   AGENTS.md. Subagent reports are evidence, not approval; a claim that
   tests pass is re-run, not trusted.
 
+For a real-install round of a CLI agent, Fable drives the agent in the
+VM itself (ssh + a detached `screen`, one listing per step) and the user
+does only the browser, phone and GUI steps; the rules are under
+[Real-install rounds](AGENTS.md#real-install-rounds) in AGENTS.md.
+
 The brief for each subagent lives in the scratchpad as one file every
 subagent in that round reads, so the rules are identical and the prompt per
 agent is only its assignment. The brief names the files to read first, the

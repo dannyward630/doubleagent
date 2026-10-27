@@ -59,15 +59,16 @@ inside them goes to the extension's agent.
   `Code/logs/<start>/window1/exthost/Anthropic.claude-code/Claude VSCode.log`,
   is collected as `vscode` by the editor's `logs` entry, and the extension
   directory `.vscode/extensions/anthropic.claude-code-<version>-<platform>`
-  (282 MB on Windows, 297 MB on Linux, each holding a full copy of the CLI
-  binary in `resources/native-binary/`) is not collected, since the
-  `vscode` entry takes only `extensions.json` from the extensions
-  directory (observed with 2.1.309 on Windows and 2.1.310 on Linux,
-  October 2026).
+  (282 MB on Windows, 297 MB on Linux, 273 MB on macOS, each holding a full
+  copy of the CLI binary in `resources/native-binary/`, which is the binary
+  the extension runs) is not collected, since the `vscode` entry takes only
+  `extensions.json` from the extensions directory (observed with 2.1.309 on
+  Windows and 2.1.310 on Linux and macOS, October 2026).
 - **VS Code 1.143's bundled Copilot agent** writes
   `~/.copilot/logs/.copilot-log.lock` and
   `~/.copilot/logs/process-<epoch>-<pid>.log` at the editor's first start,
-  with no Copilot CLI installed (observed on Ubuntu 26.04, October 2026).
+  with no Copilot CLI installed (observed on Ubuntu 26.04 and macOS 26.6,
+  October 2026).
   `.copilot` is a `copilot-cli` catalog line, so both files are collected
   as `copilot-cli`. The Copilot CLI writes the same two paths itself
   ([Process logs in `research/copilot-cli.md`](../../research/copilot-cli.md#process-logs)),
@@ -151,6 +152,8 @@ names collected there:
 | `sessions/*.*.key` (the `<pid>.<sha256>.key` session keys) | yes |
 | `daemon/control.key`, `daemon/pipe.key`, `daemon/roster.json` | yes |
 | `backups/.claude.json.*` | yes |
+| `ide/*.lock` | yes |
+| `bridge-spawn/*/mcp.json` | yes |
 
 The rest of a relocated home (`settings.json`, `todos/`, `plans/`,
 `shell-snapshots/` and the other subdirectories) is not collected, because
@@ -182,13 +185,25 @@ collect them. A relocated `XDG_CACHE_HOME` on Linux is not found.
 
 Two more directories outside the config home are collected as
 `claude-code` from collector 1.19.0, at the same paths under the home on
-Linux and Windows (observed with CLI 2.1.309 on Windows and 2.1.310 on
-Linux, October 2026; not observed on macOS):
+Linux, macOS and Windows (observed with CLI 2.1.309 on Windows and 2.1.310
+on Linux and macOS, October 2026):
 
 | Location | What it holds |
 | --- | --- |
-| `.local/state/claude` | `locks/<version>.lock`, a JSON object with `acquiredAt`, `execPath`, `pid` and `version` (138 bytes on Linux), written when a session of that version starts and removed when it exits; the `locks/` directory is empty otherwise, so a lock in a collection names the process and binary of a session that had not exited. |
-| `.cache/claude` | `staging/`, which the native installer creates on Linux and Windows; it was empty whenever it was listed on either. |
+| `.local/state/claude` | `locks/<version>.lock`, a JSON object with `acquiredAt`, `execPath`, `pid` and `version` (138 bytes on Linux and macOS), written when a session of that version starts and removed when it exits; the `locks/` directory is empty otherwise, so a lock in a collection names the process and binary of a session that had not exited. |
+| `.cache/claude` | `staging/`, which the native installer creates on every platform; it was empty whenever it was listed. |
+
+On macOS the CLI also writes `~/Applications/Claude Code URL Handler.app`
+when its first session exits, a small application bundle (1.1 KB) that
+registers the CLI as the handler of `claude-cli:` links with Launch
+Services, the macOS registry of which application opens which kind of
+link (observed with CLI 2.1.310 on macOS 26.6, October 2026). It is
+collected as `claude-code` from collector 1.19.0: `Contents/Info.plist`
+names the `claude-cli` URL scheme, and `Contents/MacOS/claude` is a
+symbolic link to `~/.local/bin/claude`, recorded as a `symlink` row with
+its target. The bundle is outside `~/.local` and `~/.claude`, so it is
+evidence that the CLI was installed and run even when those directories
+were removed by hand.
 
 ## Claude Code temp root and git excludes
 
@@ -203,24 +218,32 @@ included, and the directories outlived a reboot (observed with CLI
 | Platform | Temp root | Collected |
 | --- | --- | --- |
 | Windows | `AppData/Local/Temp/claude` under the home | From collector 1.19.0, as `claude-code`, none flagged `secret: true` |
-| Linux, macOS | `/tmp/claude-<uid>` on Linux, in the system temp directory on macOS | No: outside every home; copy it by hand ([issue 163](https://github.com/seanthegeek/doubleagent/issues/163)) |
+| Linux, macOS | `/tmp/claude-<uid>` on Linux; `/private/tmp/claude-<uid>` on macOS, also reached as `/tmp/claude-<uid>`, not the per-user temporary directory in `$TMPDIR` | No: outside every home; copy it by hand ([issue 163](https://github.com/seanthegeek/doubleagent/issues/163)) |
 
-On Linux the temp root holds more than the session directories, and
-lasts a shorter time (observed with CLI 2.1.310 on Ubuntu 26.04, October
-2026):
+On Linux and macOS the temp root holds more than the session directories,
+and lasts a shorter time (observed with CLI 2.1.310 on Ubuntu 26.04 and
+macOS 26.6, October 2026):
 
 - **One directory per process, not per session.** A new session's
   directory is named by its session id. A resumed session
   (`claude --resume`, `claude --continue`), the `claude agents` console
-  and a command that starts no session, such as `claude mcp add`, each
-  get a directory of their own under another id, so the directories
-  outnumber the sessions in `~/.claude/projects/`. Every level is mode
-  0700 except `tasks/`, which is 0775 and appears at the session's first
-  shell command.
+  and a command that starts no session, such as `claude mcp add` or
+  `claude mcp list`, each get a directory of their own under another id,
+  so the directories outnumber the sessions in `~/.claude/projects/`. On
+  macOS a `/clear` added a directory under the new session's id, and one
+  session of the VS Code extension made two. Every level is mode 0700
+  except `tasks/`, which is 0775 on Linux and 0755 on macOS and appears at
+  the session's first shell command. On macOS a session's directory is
+  created when the session starts, before its first prompt; the first
+  session after the sign-in made none, and left the temp root itself
+  empty.
+- **`scratchpad/`** holds files the model writes there for later use, and
+  they exist nowhere else: on macOS a shell command the model proposed
+  wrote a 31 KB word list to `scratchpad/words-3000.txt` (mode 0644).
 - **`tasks/`** holds a background command's output as
   `<9 base-36 characters>.output` (22 bytes each for two `sleep`
   commands on the install observed), and a subagent's as
-  `<agent id>.output`, which on Linux is a symbolic link to the
+  `<agent id>.output`, which on Linux and macOS is a symbolic link to the
   subagent's transcript
   `~/.claude/projects/<slug>/<session id>/subagents/agent-<agent id>.jsonl`
   (on Windows it was an empty file).
@@ -228,18 +251,34 @@ lasts a shorter time (observed with CLI 2.1.310 on Ubuntu 26.04, October
   the temp root, is a git repository Claude Code makes at a shell command
   to see what the command changed: a snapshot commit of the project's
   working tree, with an `objects/info/alternates` file (git's list of
-  other object stores to read) naming the project's `.git/objects`. It is
-  removed when the session exits; the empty `bash-edit-diff/` stays.
+  other object stores to read) naming the project's `.git/objects`. On
+  macOS it is a bare repository (one with no working tree) holding
+  `HEAD`, `config`, `config.global`, `index`, `info/attributes`,
+  `info/exclude` (a copy of the project's), `objects/` and
+  `refs/heads/<branch>`. It is removed when the session exits; the empty
+  `bash-edit-diff/` stays.
 - **The session directories outlive `/exit`** and are removed by
   Claude Code's retention sweep, which deletes a transcript older than
   `cleanupPeriodDays` (30 days unless set) together with its session's
   `scratchpad/` directory. On the install observed the sweep ran 10 to 20
   minutes after a session's last prompt and never in a session that had
-  none, so the temp root reaches back about as far as the transcripts.
+  none, so the temp root reaches back about as far as the transcripts; on
+  macOS its marker, `~/.claude/.last-cleanup`, was written about 20
+  minutes after a session's first prompt.
 - **A reboot clears it.** `/tmp` on Ubuntu 26.04 is a tmpfs, a
-  file system held in memory, so after a reboot nothing of the temp root
-  is left: no scratchpads, task outputs or snapshot repositories. On
-  Windows the temp root outlived a reboot.
+  file system held in memory, and macOS empties `/private/tmp` at boot, so
+  after a reboot nothing of the temp root is left: no scratchpads, task
+  outputs or snapshot repositories. On Windows the temp root outlived a
+  reboot.
+
+On macOS each CLI process also creates a Unix socket,
+`/tmp/cc-socks/<pid>.sock` (mode 0600, in a directory of mode 0700), when
+it starts, and removes it when it exits through `/exit`; a process that
+ends another way leaves its socket behind, as the native installer's own
+run of the CLI did. The socket holds no data and is outside every home,
+so it is not collected; its name is the process ID of a CLI process, and
+a reboot removes the directory. No `cc-socks` directory was seen in
+`/tmp` on Linux.
 
 With `claude --debug` the CLI also writes `~/.claude/debug/<session id>.txt`
 and a `debug/latest` symbolic link to it, both kept after the session
@@ -1001,9 +1040,41 @@ the full pattern list.
   account and MCP server settings as the flagged `.claude.json`, as do the
   older `.claude.json.backup*` files beside `.claude.json` in the home or
   a `~/.claude-<name>` config home.
+- **Claude Code's connection files for a running process**, flagged from
+  collector 1.19.0, in the home and in a `~/.claude-<name>` config home:
+  `.claude/ide/<port>.lock`, which an editor extension's session writes
+  with the `authToken` an editor needs to connect to it, and
+  `.claude/bridge-spawn/<id>/mcp.json`, which a Remote Control bridge
+  (`claude remote-control`, which lets the user start and drive sessions
+  on the host from claude.ai or the Claude mobile app) writes with the
+  address and session-bound
+  headers of its remote MCP server. Each is removed when its process
+  exits, so only a collection taken while one runs, or after a crash,
+  holds it (observed with 2.1.310 on macOS 26.6, October 2026).
 - **Databases flagged whole:** Kilo Code's `kilo.db` and OpenCode's
   `opencode.db`, which embed tokens in their `account` and `credential`
   tables.
+
+On macOS, Claude Code keeps its sign-in in the login keychain, as a
+generic password with service `Claude Code-credentials` and the macOS
+user name as account, when the CLI is started from a terminal in the
+logged-in desktop session, and then writes no `.credentials.json`. The
+collector does not read the keychain, so the collection of such a user
+holds no Claude Code token, only the account details in `.claude.json`
+and its backups. A CLI started over ssh cannot reach the login keychain
+and writes `~/.claude/.credentials.json` instead; the two are not shared,
+so a CLI started over ssh after a desktop sign-in is not signed in
+(observed with 2.1.310 on macOS 26.6, October 2026).
+
+The GitHub CLI's login store is attributed to the `shared` catalog agent, the cross-agent block,
+and flagged as a credential (`secret: true`), since several agents (Claude Code's `/install-github-app` and pull-request status, Copilot) act on GitHub
+through `gh`: `~/.config/gh/hosts.yml` on macOS and Linux, `AppData/Roaming/GitHub CLI/hosts.yml`
+on Windows. The file names the GitHub login an agent acted as, which is what a responder needs
+when work was pushed to a personal account; it holds the OAuth token only when `gh` could not
+reach the OS credential store (a process started from an SSH session on macOS wrote a 218-byte
+file with the token, a GUI-launched one a 94-byte entry without it, the token then being a
+keychain item of service `gh:github.com`). `config.yml` beside it holds preferences only and is
+not collected.
 
 Cursor and Windsurf keep their auth tokens inside the same `state.vscdb`
 that holds the chat history, so that file is collected unflagged; the keys

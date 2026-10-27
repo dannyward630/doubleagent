@@ -240,10 +240,20 @@ jobs:
       - name: checkbashisms
         if: needs.changes.outputs.docs-only != 'true'
         run: checkbashisms -p $(shfmt -f .)
+      # The GitHub release carries the same nupkg the PowerShell Gallery
+      # serves (identical sha256), and Install-Module stops at the Gallery's
+      # intermittent v2 API failures with "Source Location ... is not valid".
+      # Unzipped into the user module path, the package is the module.
       - name: Install PSScriptAnalyzer
         if: needs.changes.outputs.docs-only != 'true'
-        shell: pwsh
-        run: Install-Module PSScriptAnalyzer -Scope CurrentUser -RequiredVersion $env:PSSA_VERSION -Force
+        run: |
+          nupkg="/tmp/PSScriptAnalyzer.$PSSA_VERSION.nupkg"
+          curl -sfL -o "$nupkg" "https://github.com/PowerShell/PSScriptAnalyzer/releases/download/$PSSA_VERSION/PSScriptAnalyzer.$PSSA_VERSION.nupkg"
+          printf '%s  %s\n' \
+            14e634c828eb98efb9f40b2918ba90f139ed5eccdf663a2a747736d996995d60 "$nupkg" | sha256sum -c -
+          module_dir="$HOME/.local/share/powershell/Modules/PSScriptAnalyzer/$PSSA_VERSION"
+          mkdir -p "$module_dir"
+          unzip -q "$nupkg" -d "$module_dir"
       - name: PSScriptAnalyzer
         if: needs.changes.outputs.docs-only != 'true'
         shell: pwsh

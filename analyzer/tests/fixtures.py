@@ -39,6 +39,21 @@ CLAUDE_309_PERSISTED = "first line of the listing\nsecond line of the listing"
 # session of the same build; neither is written by build_home.
 CLAUDE_310_SESSION = "11111111-2222-4333-8444-dddddddddddd"
 CLAUDE_310_VSCODE_SESSION = "11111111-2222-4333-8444-eeeeeeeeeeee"
+# Sessions of the macOS round of 2.1.310 (issue 256): a terminal session, a
+# Remote Control spawn and a teleported cloud session; none is written by
+# build_home.
+CLAUDE_MAC_SESSION = "11111111-2222-4333-8444-ffffffffffff"
+CLAUDE_MAC_SPAWN_SESSION = "11111111-2222-5333-8444-000000000001"
+CLAUDE_MAC_TELEPORT_SESSION = "11111111-2222-4333-8444-000000000002"
+CLAUDE_MAC_CLEARED_SESSION = "11111111-2222-4333-8444-000000000003"
+CLAUDE_MAC_CLOUD_SCRATCH = (
+    "/tmp/claude-0/-home-user-repo/22222222-3333-4444-8555-666666666666/scratchpad"
+)
+CLAUDE_MAC_LOCAL_SCRATCH = "/private/tmp/claude-501/-srv-proj/%s/scratchpad" % (
+    CLAUDE_MAC_TELEPORT_SESSION
+)
+CLAUDE_MAC_PASTE_HASH = "0f1e2d3c4b5a6978"
+CLAUDE_MAC_LONG_PASTE = "alpha\nbeta\ngamma\ndelta\nepsilon"
 # Modification time given to the settings fixtures: 2026-10-01T09:00:00Z.
 CLAUDE_SETTINGS_MTIME = 1790845200
 CLAUDE_REGISTRY_KEY = "4242." + "ab" * 32 + ".key"
@@ -1072,14 +1087,11 @@ def claude_310_records():
                 "postTokens": 4000,
                 "preCompactDiscoveredTools": [],
                 "preTokens": 40000,
-                "preservedMessages": {
-                    "allUuids": [],
-                    "anchorUuid": "u4",
-                    "headUuid": "u1",
-                    "tailUuid": "u4",
-                    "uuids": [],
-                },
-                "preservedSegment": {},
+                # The 2.1.310 macOS shape (research/claude-code.md, Record
+                # schema): the segment holds the three uuids, the messages
+                # object the two lists.
+                "preservedMessages": {"allUuids": [], "uuids": []},
+                "preservedSegment": {"anchorUuid": "u4", "headUuid": "u1", "tailUuid": "u4"},
                 "trigger": "manual",
             },
         ),  # 11
@@ -1241,6 +1253,418 @@ def claude_310_global_config():
             "accountUuid": "00000000-0000-4000-8000-0000000000aa",
             "orgUuid": "00000000-0000-4000-8000-0000000000bb",
             "status": "connected",
+        },
+    }
+
+
+def _claude_command(name, args=""):
+    """A slash command's `user` text in the transcript's tag form."""
+    return (
+        "<command-name>/%s</command-name>\n            <command-message>%s</command-message>\n"
+        "            <command-args>%s</command-args>" % (name, name, args)
+    )
+
+
+def claude_mac_records():
+    """A 2.1.310 terminal session of the macOS round (issue 256;
+    research/claude-code.md, Record schema): a `No` at the permission
+    dialog and a declined plan, each a result line with `toolDenialKind`
+    and no `permissionDecision`; `/model` twice and `/rename` in tag form;
+    a short and a long paste expanded in the prompt; a `/loop` firing (a
+    `scheduled_task_fire` record and a `turnOrigin` `scheduled` prompt); the
+    `auto_mode`, `auto_mode_exit` and `command_permissions` attachments; and
+    `cost-state`. Values are invented. Line numbers are what
+    ClaudeCodeMacTests asserts; `claude_mac_history_records` gives the
+    history lines of the same events."""
+    c = _claude_common("/srv/proj", "main")
+    c.update(sessionId=CLAUDE_MAC_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round")
+    sid = CLAUDE_MAC_SESSION
+
+    def ts(t):
+        return "2026-10-01T11:00:%s.000Z" % t
+
+    def prompt(uuid, t, text, **keys):
+        rec = dict(
+            c,
+            type="user",
+            uuid=uuid,
+            timestamp=ts(t),
+            message={"role": "user", "content": text},
+            origin={"kind": "human"},
+            promptSource="typed",
+            turnOrigin="human",
+            permissionMode="default",
+        )
+        rec.update(keys)
+        return rec
+
+    def call(uuid, t, tool_id, name, inp):
+        return dict(
+            _claude_assistant(
+                c, uuid, t, [{"type": "tool_use", "id": tool_id, "name": name, "input": inp}]
+            ),
+            timestamp=ts(t),
+        )
+
+    def denied(uuid, t, tool_id):
+        # 2.1.310 macOS: the denial kind only, no decision record and no
+        # `userFeedback`.
+        return dict(
+            c,
+            type="user",
+            uuid=uuid,
+            timestamp=ts(t),
+            message={
+                "role": "user",
+                "content": _claude_result(
+                    tool_id, "The user doesn't want to proceed with this tool use."
+                ),
+            },
+            toolUseResult="User rejected tool use",
+            toolDenialKind="user-rejected",
+            sourceToolAssistantUUID="a" + uuid,
+        )
+
+    def att(uuid, t, attachment):
+        return dict(_claude_attachment(c, uuid, t, attachment), timestamp=ts(t))
+
+    return [
+        dict(type="permission-mode", permissionMode="default", sessionId=sid),  # 1
+        prompt("u2", "01", "run python3 calc.py 2 3"),  # 2
+        call("a3", "02", "toolu_m1", "Bash", {"command": "python3 calc.py 2 3"}),  # 3
+        denied("u4", "03", "toolu_m1"),  # 4
+        prompt("u5", "04", "Do not run it again."),  # 5
+        call("a6", "05", "toolu_m2", "ExitPlanMode", {"plan": "1. add subtract"}),  # 6
+        denied("u7", "06", "toolu_m2"),  # 7
+        dict(prompt("u8", "07", _claude_command("model")), isMeta=False),  # 8
+        dict(
+            c,
+            type="user",
+            uuid="u9",
+            timestamp=ts("07"),
+            message={
+                "role": "user",
+                "content": "<local-command-stdout>Set model to Fable 5.1 and saved as your "
+                "default for new sessions</local-command-stdout>",
+            },
+        ),  # 9
+        prompt(
+            "u10",
+            "10",
+            '<pasted_content id="0bb3">\none\ntwo\nthree\nfour\n</pasted_content>'
+            " Summarise the pasted text in one sentence.",
+        ),  # 10: a short paste, wrapped in the prompt as 2.1.310 writes it
+        dict(
+            c,
+            type="system",
+            uuid="s11",
+            timestamp=ts("20"),
+            subtype="scheduled_task_fire",
+            content="Running scheduled task (Oct 1 11:00am)",
+            cron="*/1 * * * *",
+            prompt="echo hi",
+            taskId="a1b2c3d4",
+            level="info",
+        ),  # 11
+        prompt(
+            "u12",
+            "20",
+            "echo hi",
+            promptSource="system",
+            turnOrigin="scheduled",
+            scheduledFireId="f1",
+            scheduledTaskId="a1b2c3d4",
+            wakeupSource="cron",
+            queuePriority="next",
+            queueSkipSlashCommands=True,
+            turnCompanion=False,
+        ),  # 12
+        att(
+            "t13",
+            "21",
+            {
+                "type": "auto_mode",
+                "autoModeConsentFlow": "default",
+                "bashFirst": False,
+                "bashFirstSteer": False,
+                "bypass": False,
+                "finishExposedWork": False,
+                "steerOnly": False,
+            },
+        ),  # 13
+        att(
+            "t14",
+            "21",
+            {
+                "type": "auto_mode_exit",
+                "bashFirst": False,
+                "finishExposedWork": False,
+                "steerOnly": False,
+            },
+        ),  # 14
+        att("t15", "21", {"type": "command_permissions", "allowedTools": ["Bash(echo:*)"]}),
+        # 15
+        prompt("u16", "30", _claude_command("rename", "lab-round")),  # 16
+        prompt(
+            "u17",
+            "40",
+            '<pasted_content id="a91f">\n'
+            + CLAUDE_MAC_LONG_PASTE
+            + "\n</pasted_content> Summarise again.",
+        ),  # 17: a long paste
+        # 18: a second /model, recorded 27 s after its history line, when
+        # the picker closed (rows 10 and 27a of the round)
+        prompt("u18", "50", _claude_command("model")),
+        dict(
+            type="cost-state",
+            hasUnknownModelCost=False,
+            modelUsage={},
+            sessionId=sid,
+            startTime=1790852400000,
+            totalCostUSD=0.01,
+        ),  # 19
+        dict(
+            c,
+            type="system",
+            uuid="s20",
+            timestamp=ts("55"),
+            subtype="local_command",
+            commandRun="help",
+            content=_claude_command("help"),
+            level="info",
+        ),  # 20: `/help`, a `local_command:` row with empty args
+    ]
+
+
+def claude_mac_cleared_records():
+    """The file a `/clear` in `claude_mac_records`'s session opens
+    (2.1.310 macOS, row 24a): its first lines are the `/clear` command in
+    tag form and its output, under the new session's id."""
+    c = _claude_common("/srv/proj", "main")
+    c.update(sessionId=CLAUDE_MAC_CLEARED_SESSION, version="2.1.310", entrypoint="cli")
+    return [
+        dict(
+            _claude_user(c, "k1", "57", _claude_command("clear")),
+            timestamp="2026-10-01T11:00:57.000Z",
+        ),
+        dict(
+            _claude_user(c, "k2", "57", "<local-command-stdout></local-command-stdout>"),
+            timestamp="2026-10-01T11:00:57.000Z",
+        ),
+    ]
+
+
+def claude_mac_history_records():
+    """`history.jsonl` lines of the events of `claude_mac_records`: the
+    commands as typed, the short paste inline and the long one by hash
+    (`paste-cache/<CLAUDE_MAC_PASTE_HASH>.txt`, written by the test), and
+    the three lines no transcript record matches: `/clear` under the ended
+    session's id (its record is in `claude_mac_cleared_records`' file),
+    `/logout` (the process ends before any line) and `/exit` typed while a
+    turn ran (no line written)."""
+    sid = CLAUDE_MAC_SESSION
+
+    def line(t, display, **pasted):
+        return {
+            "display": display,
+            "pastedContents": pasted,
+            # 2026-10-01T11:00:<t>Z in epoch milliseconds.
+            "timestamp": 1790852400000 + int(t) * 1000,
+            "project": "/srv/proj",
+            "sessionId": sid,
+        }
+
+    return [
+        line("01", "run python3 calc.py 2 3"),
+        line("07", "/model"),
+        line(
+            "10",
+            "[Pasted text #1 +3 lines] Summarise the pasted text in one sentence.",
+            **{"1": {"content": "one\ntwo\nthree\nfour", "id": 1, "type": "text"}},
+        ),
+        line("23", "/model"),
+        line("30", "/rename lab-round"),
+        line(
+            "40",
+            "[Pasted text #2 +4 lines] Summarise again.",
+            **{"2": {"contentHash": CLAUDE_MAC_PASTE_HASH, "id": 2, "type": "text"}},
+        ),
+        line("55", "/help"),
+        line("57", "/clear"),
+        line("58", "/logout"),
+        line("59", "/exit"),
+    ]
+
+
+def claude_mac_spawn_records():
+    """A Remote Control spawn's transcript (2.1.310 macOS, issue 256): the
+    prompt from claude.ai arrives through the queue, every line has
+    `entrypoint` sdk-cli, the prompt `promptSource` sdk and
+    `permissionMode` default, and the file ends with `cost-state` when the
+    bridge stops. Line numbers are what ClaudeCodeMacTests asserts."""
+    c = _claude_common("/srv/proj", "main")
+    c.update(sessionId=CLAUDE_MAC_SPAWN_SESSION, version="2.1.310", entrypoint="sdk-cli")
+    sid = CLAUDE_MAC_SPAWN_SESSION
+    text = "Run ls -la in this folder and tell me what files are here."
+    t0 = "2026-10-01T12:00:00.000Z"
+    return [
+        dict(
+            type="queue-operation", operation="enqueue", content=text, sessionId=sid, timestamp=t0
+        ),
+        dict(type="queue-operation", operation="dequeue", sessionId=sid, timestamp=t0),
+        dict(
+            _claude_user(c, "r3", "01", text),
+            timestamp="2026-10-01T12:00:01.000Z",
+            origin={"kind": "human"},
+            promptSource="sdk",
+            turnOrigin="human",
+            permissionMode="default",
+        ),  # 3
+        dict(
+            _claude_assistant(
+                c,
+                "r4",
+                "02",
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_r1",
+                        "name": "Bash",
+                        "input": {"command": "ls -la"},
+                    }
+                ],
+            ),
+            timestamp="2026-10-01T12:00:02.000Z",
+        ),  # 4
+        dict(
+            _claude_user(c, "r5", "03", _claude_result("toolu_r1", "calc.py\nREADME.md")),
+            timestamp="2026-10-01T12:00:03.000Z",
+            permissionDecision={
+                "decision": "accept",
+                "source": "config",
+                "reasonType": "subcommandResults",
+            },
+        ),  # 5
+        dict(type="cost-state", sessionId=sid, totalCostUSD=0.01),  # 6
+    ]
+
+
+def claude_mac_teleport_records():
+    """A teleported cloud session's local file (2.1.310 macOS, issue 256):
+    the cloud turn replayed with `remoteSourced` on its `user` and
+    `assistant` lines, the cloud machine's `environment` attachment (its
+    scratchpad under `/tmp/claude-0/-home-user-repo/`), a cloud decision
+    by rule (`ruleSource` cliArg), the `stop_hook_summary` and
+    `informational` system lines, then the local environment and one local
+    prompt. `entrypoint` is cli throughout. Line numbers are what
+    ClaudeCodeMacTests asserts."""
+    c = _claude_common("/srv/proj", "main")
+    c.update(sessionId=CLAUDE_MAC_TELEPORT_SESSION, version="2.1.310", entrypoint="cli")
+
+    def ts(t):
+        return "2026-10-01T13:00:%s.000Z" % t
+
+    def att(uuid, t, scratch):
+        return dict(
+            _claude_attachment(
+                c,
+                uuid,
+                t,
+                {"type": "environment", "snapshot": {"scratchpadDirectory": scratch}},
+            ),
+            timestamp=ts(t),
+        )
+
+    remote = {"remoteSourced": True}
+    return [
+        att("e1", "00", CLAUDE_MAC_CLOUD_SCRATCH),  # 1
+        dict(
+            _claude_user(c, "c2", "01", "Describe this repository in three sentences."),
+            timestamp=ts("01"),
+            origin={"kind": "human"},
+            promptSource="sdk",
+            turnOrigin="human",
+            permissionMode="default",
+            **remote,
+        ),  # 2
+        dict(
+            _claude_assistant(
+                c,
+                "c3",
+                "02",
+                [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_t1",
+                        "name": "Read",
+                        "input": {"file_path": "/home/user/repo/README.md"},
+                    }
+                ],
+                model="claude-opus-5-5",
+            ),
+            timestamp=ts("02"),
+            **remote,
+        ),  # 3
+        dict(
+            _claude_user(c, "c4", "03", _claude_result("toolu_t1", "# logsleuth")),
+            timestamp=ts("03"),
+            permissionDecision={
+                "decision": "accept",
+                "source": "config",
+                "reasonType": "rule",
+                "ruleSource": "cliArg",
+            },
+            **remote,
+        ),  # 4
+        dict(
+            c,
+            type="system",
+            uuid="c5",
+            timestamp=ts("04"),
+            subtype="stop_hook_summary",
+            hookCount=1,
+            hookErrors=[],
+            hookInfos=[],
+            hookAdditionalContext=[],
+            hasOutput=False,
+            preventedContinuation=False,
+            stopReason="",
+            toolUseID="",
+            level="info",
+        ),  # 5
+        dict(
+            c,
+            type="system",
+            uuid="c6",
+            timestamp=ts("05"),
+            subtype="informational",
+            content="Session resumed",
+            level="info",
+        ),  # 6
+        att("e7", "10", CLAUDE_MAC_LOCAL_SCRATCH),  # 7
+        dict(
+            _claude_user(c, "l8", "11", "In one sentence, what did you do so far?"),
+            timestamp=ts("11"),
+            origin={"kind": "human"},
+            promptSource="typed",
+            turnOrigin="human",
+            permissionMode="auto",
+        ),  # 8
+    ]
+
+
+def claude_mac_global_config():
+    """`~/.claude.json` of 2.1.310 after Remote Control and a cloud session
+    (macOS round): the machine id (never printed), the project's spawn
+    mode and `hasRemoteEnvironment`."""
+    return {
+        "remoteControlMachineId": "00000000-0000-4000-8000-0000000000cc",
+        "hasRemoteEnvironment": True,
+        "projects": {
+            "/srv/proj": {
+                "hasTrustDialogAccepted": True,
+                "remoteControlSpawnMode": "same-dir",
+            }
         },
     }
 

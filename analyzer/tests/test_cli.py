@@ -856,13 +856,16 @@ class SyncedSessionTests(unittest.TestCase):
             (("cursor", CURSOR_CLOUD), "remote"),
             (("cursor", CURSOR_CLOUD_LISTED), "remote"),
             (("copilot-cli", COPILOT_SESSION), ""),
-            (("claude-code", CLAUDE_SESSION), ""),
+            # Claude Code records origin since the macOS round of issue 256;
+            # its fixture session is a local CLI one.
+            (("claude-code", CLAUDE_SESSION), "local"),
         ):
             self.assertEqual(by_id[key], want, key)
         origin_agents = {p.agent for p in ALL if p.records_origin}
         # Cline records origin since issue 190; its fixture sessions are local.
         self.assertEqual(
-            origin_agents, {"vscode", "chatgpt-desktop", "cursor", "agent-zero", "cline"}
+            origin_agents,
+            {"vscode", "chatgpt-desktop", "cursor", "agent-zero", "cline", "claude-code"},
         )
         self.assertEqual({v for (agent, _), v in by_id.items() if agent not in origin_agents}, {""})
         self.assertEqual(
@@ -1007,7 +1010,7 @@ class SyncedSessionTests(unittest.TestCase):
         self.assertEqual(cli.project_mark([remote, remote], mark, {"vscode"}), "remote")
         self.assertEqual(cli.project_mark([remote, local], mark, {"vscode"}), "mixed")
         self.assertEqual(cli.project_mark([local], mark, {"vscode"}), "local")
-        self.assertEqual(cli.project_mark([session("")], mark, {"claude-code"}), "")
+        self.assertEqual(cli.project_mark([session("")], mark, {"copilot-cli"}), "")
         self.assertEqual(cli.project_mark([], mark, {"vscode"}), "")
 
     def test_recovered_ignores_parser_rows(self):

@@ -7,6 +7,8 @@ import unittest
 from pathlib import Path
 from typing import ClassVar, cast
 
+from test_errors import CAN_DENY, DENY_REASON
+
 from doubleagent import catalog, cli, protobuf, sqlite_util
 from doubleagent.dedup import deduplicate
 from doubleagent.inputs import Artifact, Home, open_input
@@ -549,7 +551,7 @@ class ClaudeCode295Tests(ParserBase):
                 (
                     "system",
                     "toolu_95",
-                    "permission decision: - source=- reason=- toolDenialKind=user_rejected",
+                    "permission decision: reject (interrupted) toolDenialKind=user_rejected",
                 ),
             ],
         )
@@ -788,6 +790,7 @@ class ClaudeCode296Tests(ParserBase):
                 "permission setting: permissions.additionalDirectories=/srv/shared " + src,
                 "permission setting: permissions.defaultMode=acceptEdits " + src,
                 "permission setting: permissions.disableBypassPermissionsMode=disable " + src,
+                "model setting: model=opus " + src,
             ],
         )
         for r in rows:
@@ -882,6 +885,12 @@ class ClaudeCode296Tests(ParserBase):
     def test_settings_without_permissions_and_unreadable(self):
         path = self.home / ".claude/settings.json"
         path.write_text('{"model": "opus", "env": {"X": "y"}}', encoding="utf-8")
+        # Only the model alias is read; `env` is never printed.
+        self.assertEqual(
+            [r.text for r in self.rows_for(ClaudeCodeParser(), ".claude/settings.json")],
+            ["model setting: model=opus (from .claude/settings.json, file mtime)"],
+        )
+        path.write_text('{"env": {"X": "y"}}', encoding="utf-8")
         self.assertEqual(self.rows_for(ClaudeCodeParser(), ".claude/settings.json"), [])
         for body in ("[1]", "{not json"):
             path.write_text(body, encoding="utf-8")
@@ -1165,9 +1174,10 @@ class ClaudeCode309Tests(ParserBase):
         )
         rows = self.rows_for(ClaudeCodeParser(), self.REL)
         self.assertEqual(
-            [(r.source_line, r.text) for r in rows[-3:]],
+            [(r.source_line, r.text) for r in rows[-4:]],
             [
                 (22, "session surface: cli -> claude-vscode"),
+                (22, "session origin: local (VS Code extension)"),
                 (22, "from the panel"),
                 (22, "prompt trigger: promptSource=sdk turnOrigin=human"),
             ],
@@ -1220,6 +1230,7 @@ class ClaudeCode309Tests(ParserBase):
             [(r.source_line, r.turn_type, r.text) for r in rows],
             [
                 (1, "system", "session surface: claude-vscode"),
+                (1, "system", "session origin: local (VS Code extension)"),
                 (1, "system", "permission mode: auto"),
                 (1, "user", "Run python calc.py 6 1"),
                 (1, "system", "prompt trigger: promptSource=sdk turnOrigin=human"),
@@ -1234,7 +1245,8 @@ class ClaudeCode309Tests(ParserBase):
         self.assertEqual(rows[-1].project_path, scratch)
 
     def test_history_pasted_contents(self):
-        # `pastedContents` is not read: the row is the display text.
+        # The paste is named by its hash and no `paste-cache/<hash>.txt` is
+        # on disk, so the row keeps the placeholder as written.
         path = self.home / ".claude/history.jsonl"
         path.write_text(
             "".join(json.dumps(x) + "\n" for x in claude_309_history_records()), encoding="utf-8"
@@ -1400,6 +1412,7 @@ class ClaudeCode310Tests(ParserBase):
                 (1, "system", "queue enqueue:"),
                 (2, "system", "queue dequeue:"),
                 (3, "system", "session surface: claude-vscode"),
+                (3, "system", "session origin: local (VS Code extension)"),
                 (3, "system", "permission mode: auto"),
                 (3, "user", "Run python3 calc.py 6 1"),
                 (3, "system", "prompt trigger: promptSource=sdk turnOrigin=human"),
@@ -1421,7 +1434,14 @@ class ClaudeCode310Tests(ParserBase):
                     "",
                     "retention setting: cleanupPeriodDays=1 "
                     "(from .claude/settings.json, file mtime)",
-                )
+                ),
+                (
+                    "system",
+                    self.SETTINGS_TS,
+                    "",
+                    "",
+                    "model setting: model=opus (from .claude/settings.json, file mtime)",
+                ),
             ],
         )
 
@@ -1436,6 +1456,7 @@ class ClaudeCode310Tests(ParserBase):
             [
                 "permission setting: permissions.allow=Bash(python3 *) " + src,
                 "retention setting: cleanupPeriodDays=1 " + src,
+                "model setting: model=opus " + src,
             ],
         )
 
@@ -1483,7 +1504,8 @@ class ClaudeCode310Tests(ParserBase):
 
     def test_history_inline_paste(self):
         # A short paste is kept inline (`content`) in pastedContents; the row
-        # is the display text all the same.
+        # is the display text with the placeholder replaced by the paste, as
+        # the transcript's prompt holds it.
         line = {
             "display": "[Pasted text #1 +3 lines] Summarise the text above in one sentence",
             "pastedContents": {"1": {"content": "one\ntwo\nthree", "id": 1, "type": "text"}},
@@ -1493,7 +1515,10 @@ class ClaudeCode310Tests(ParserBase):
         }
         (self.home / ".claude/history.jsonl").write_text(json.dumps(line) + "\n", "utf-8")
         rows = self.rows_for(ClaudeCodeParser(), ".claude/history.jsonl")
-        self.assertEqual([(r.turn_type, r.text) for r in rows], [("user", line["display"])])
+        self.assertEqual(
+            [(r.turn_type, r.text) for r in rows],
+            [("user", "one\ntwo\nthree Summarise the text above in one sentence")],
+        )
 
     def test_debug_log_and_key_not_wanted(self):
         home = self.artifact(".claude/settings.json").home
@@ -1527,6 +1552,865 @@ class ClaudeCode310Tests(ParserBase):
             [(30, "user", "after the cut"), (29, "system", bad_line_text())],
         )
         self.assertEqual(rows[-1].session_id, CLAUDE_310_SESSION)
+
+
+from doubleagent.model import Row
+from doubleagent.parsers.claude_code import match_form, match_tolerance
+from fixtures import (
+    CLAUDE_MAC_CLEARED_SESSION,
+    CLAUDE_MAC_CLOUD_SCRATCH,
+    CLAUDE_MAC_LOCAL_SCRATCH,
+    CLAUDE_MAC_LONG_PASTE,
+    CLAUDE_MAC_PASTE_HASH,
+    CLAUDE_MAC_SESSION,
+    CLAUDE_MAC_SPAWN_SESSION,
+    CLAUDE_MAC_TELEPORT_SESSION,
+    claude_mac_cleared_records,
+    claude_mac_global_config,
+    claude_mac_history_records,
+    claude_mac_records,
+    claude_mac_spawn_records,
+    claude_mac_teleport_records,
+)
+
+
+class ClaudeCodeMacTests(ParserBase):
+    """Claude Code 2.1.310, the macOS round (issue 256): denials recorded
+    as an interrupt with no decision, history lines that match their
+    transcript records across the command and paste forms, the origin rows
+    of a Remote Control spawn, a teleported cloud session and the VS Code
+    extension, `ccr-tip.json` and `bridge-pointer.json`, the `.claude.json`
+    Remote Control and cloud keys, and the scheduled-task firing."""
+
+    PROJ = ".claude/projects/-srv-proj/"
+    REL = PROJ + "%s.jsonl" % CLAUDE_MAC_SESSION
+    SPAWN_REL = PROJ + "%s.jsonl" % CLAUDE_MAC_SPAWN_SESSION
+    TELEPORT_REL = PROJ + "%s.jsonl" % CLAUDE_MAC_TELEPORT_SESSION
+    CCR_REL = PROJ + "%s/ccr-tip.json" % CLAUDE_MAC_SPAWN_SESSION
+    POINTER_REL = PROJ + "bridge-pointer.json"
+    MTIME_TS = "2026-10-01T09:00:00.000Z"
+    DENIED = "permission decision: reject (interrupted) toolDenialKind=user-rejected"
+    REFUSED = "The user doesn't want to proceed with this tool use."
+
+    EXPECTED: ClassVar[list[tuple[int, str, str]]] = [
+        (1, "system", "permission mode: default"),
+        (2, "system", "session surface: cli"),
+        (2, "user", "run python3 calc.py 2 3"),
+        (3, "system", "model: claude-fable-5-1"),
+        (3, "tool_use", "python3 calc.py 2 3"),
+        (4, "tool_result", REFUSED),
+        (4, "system", DENIED),
+        (5, "user", "Do not run it again."),
+        (6, "tool_use", '{"plan":"1. add subtract"}'),
+        (7, "tool_result", REFUSED),
+        (7, "system", DENIED),
+        (
+            8,
+            "system",
+            "slash command: <command-name>/model</command-name>\n"
+            "            <command-message>model</command-message>\n"
+            "            <command-args></command-args>",
+        ),
+        (
+            9,
+            "system",
+            "command output: <local-command-stdout>Set model to Fable 5.1 and saved as "
+            "your default for new sessions</local-command-stdout>",
+        ),
+        (
+            10,
+            "user",
+            '<pasted_content id="0bb3">\none\ntwo\nthree\nfour\n</pasted_content>'
+            " Summarise the pasted text in one sentence.",
+        ),
+        (11, "system", "scheduled task fired: a1b2c3d4 cron=*/1 * * * *"),
+        (12, "user", "echo hi"),
+        (12, "system", "prompt trigger: promptSource=system turnOrigin=scheduled"),
+        (
+            16,
+            "system",
+            "slash command: <command-name>/rename</command-name>\n"
+            "            <command-message>rename</command-message>\n"
+            "            <command-args>lab-round</command-args>",
+        ),
+        (
+            17,
+            "user",
+            '<pasted_content id="a91f">\n'
+            + CLAUDE_MAC_LONG_PASTE
+            + "\n</pasted_content> Summarise again.",
+        ),
+        (
+            18,
+            "system",
+            "slash command: <command-name>/model</command-name>\n"
+            "            <command-message>model</command-message>\n"
+            "            <command-args></command-args>",
+        ),
+        (
+            20,
+            "system",
+            "local_command: <command-name>/help</command-name>\n"
+            "            <command-message>help</command-message>\n"
+            "            <command-args></command-args>",
+        ),
+    ]
+    # The history lines no transcript record matches (rows 27a and 27b).
+    HISTORY_ONLY: ClassVar[list[str]] = ["/clear", "/logout", "/exit"]
+
+    def _write(self, rel, records):
+        path = self.home / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(records, str):
+            path.write_text(records, encoding="utf-8")
+        else:
+            path.write_text("".join(json.dumps(x) + "\n" for x in records), encoding="utf-8")
+        os.utime(path, (CLAUDE_SETTINGS_MTIME, CLAUDE_SETTINGS_MTIME))
+        home = self.artifact(".claude/settings.json").home
+        return Artifact(path, rel, rel, "claude-code", home)
+
+    def _rows(self, rel, records, **kw):
+        return list(ClaudeCodeParser().parse(self._write(rel, records), Options(**kw)))
+
+    def _history(self):
+        self._write(".claude/paste-cache/%s.txt" % CLAUDE_MAC_PASTE_HASH, CLAUDE_MAC_LONG_PASTE)
+        return self._rows(".claude/history.jsonl", claude_mac_history_records())
+
+    def test_rows(self):
+        rows = self._rows(self.REL, claude_mac_records())
+        self.assertEqual([(r.source_line, r.turn_type, r.text) for r in rows], self.EXPECTED)
+        for r in rows:
+            self.assertEqual(r.session_id, CLAUDE_MAC_SESSION)
+        # The denial rows join the denied calls.
+        self.assertEqual(
+            [r.tool_use_id for r in rows if r.text == self.DENIED], ["toolu_m1", "toolu_m2"]
+        )
+
+    def test_denial_with_feedback_keeps_its_form(self):
+        # A denial kind beside a decision record (the Linux form) is not an
+        # interrupt; only the kind alone is.
+        records = claude_mac_records()
+        records[3] = dict(
+            records[3],
+            permissionDecision={"decision": "reject", "source": "user_reject"},
+            userFeedback="no",
+        )
+        rows = self._rows(self.REL, records)
+        self.assertEqual(
+            [r.text for r in rows if r.source_line == 4][1],
+            "permission decision: reject source=user_reject reason=- "
+            "toolDenialKind=user-rejected userFeedback=no",
+        )
+
+    def test_history_expands_pastes(self):
+        rows = self._history()
+        self.assertEqual(
+            [r.text for r in rows],
+            [
+                "run python3 calc.py 2 3",
+                "/model",
+                "one\ntwo\nthree\nfour Summarise the pasted text in one sentence.",
+                "/model",
+                "/rename lab-round",
+                CLAUDE_MAC_LONG_PASTE + " Summarise again.",
+                "/help",
+                *self.HISTORY_ONLY,
+            ],
+        )
+
+    def test_history_paste_not_followed_through_symlink(self):
+        cache = self.home / ".claude/paste-cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        target = self.tmp / "elsewhere.txt"
+        target.write_text("not the paste", encoding="utf-8")
+        try:
+            (cache / ("%s.txt" % CLAUDE_MAC_PASTE_HASH)).symlink_to(target)
+        except OSError:
+            self.skipTest("symlinks not available")
+        rows = self._rows(".claude/history.jsonl", claude_mac_history_records())
+        self.assertEqual(rows[5].text, "[Pasted text #2 +4 lines] Summarise again.")
+
+    @unittest.skipUnless(CAN_DENY, DENY_REASON)
+    def test_history_paste_cache_unreadable_is_reported(self):
+        # A cache file that is there but cannot be read is evidence, not an
+        # absent entry: the history line keeps its placeholder and a
+        # `parser:` row names the file (issue 136).
+        cache = self.home / ".claude/paste-cache"
+        cache.mkdir(parents=True, exist_ok=True)
+        f = cache / ("%s.txt" % CLAUDE_MAC_PASTE_HASH)
+        f.write_text(CLAUDE_MAC_LONG_PASTE, encoding="utf-8")
+        f.chmod(0)
+        try:
+            rows = self._rows(".claude/history.jsonl", claude_mac_history_records())
+        finally:
+            f.chmod(0o600)
+        self.assertEqual(rows[5].text, "[Pasted text #2 +4 lines] Summarise again.")
+        problems = [r for r in rows if r.turn_type == "system" and r.text.startswith("parser:")]
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(
+            problems[0].text.startswith(
+                "parser: paste-cache/%s.txt unreadable (" % CLAUDE_MAC_PASTE_HASH
+            ),
+            problems[0].text,
+        )
+        self.assertEqual(problems[0].source_line, 6)
+
+    def _primary(self):
+        rows = self._rows(self.REL, claude_mac_records())
+        return rows + self._rows(
+            self.PROJ + "%s.jsonl" % CLAUDE_MAC_CLEARED_SESSION, claude_mac_cleared_records()
+        )
+
+    def test_history_matches_transcript_commands_and_pastes(self):
+        # Rows 27a and 27b of the round: every history line but the three
+        # history-only ones is the same event as a transcript record; the
+        # two `/model` lines pair with their own command records, the
+        # second recorded 27 s after it was typed.
+        primary = self._primary()
+        rows, dropped = deduplicate(primary, [(r, 2.0) for r in self._history()])
+        kept = rows[len(primary) :]
+        self.assertEqual(
+            [(r.text, r.recovered) for r in kept], [(t, "yes") for t in self.HISTORY_ONLY]
+        )
+        self.assertEqual(dropped["claude-code"], 7)
+
+    def test_command_without_args_matches_both_labels(self):
+        # The real shape: a tag block with an empty `<command-args>`, under
+        # the `slash command:` label (a user record) or `local_command:` (a
+        # system record, `/help`); the match text has no trailing space.
+        block = (
+            "<command-name>/%s</command-name>\n            <command-message>%s"
+            "</command-message>\n            <command-args></command-args>"
+        )
+        for label, name in (("slash command: ", "model"), ("local_command: ", "help")):
+            form = match_form(Row(turn_type="system", text=label + block % (name, name)))
+            self.assertEqual(form, match_form(Row(turn_type="user", text="/" + name)))
+            self.assertEqual(form, ("user", "/" + name))
+        with_args = block.replace("<command-args></command-args>", "<command-args>x</command-args>")
+        self.assertEqual(
+            match_form(Row(turn_type="system", text="slash command: " + with_args % ("a", "a"))),
+            match_form(Row(turn_type="user", text="/a x")),
+        )
+        # A command line gets the wide window; a prompt keeps the source's.
+        self.assertEqual(match_tolerance(Row(turn_type="user", text="/model")), 600.0)
+        self.assertIsNone(match_tolerance(Row(turn_type="user", text="run /bin/ls")))
+        self.assertIsNone(match_tolerance(Row(turn_type="system", text="/model")))
+
+    def test_pasted_content_wrapper_matches_history_paste(self):
+        transcript = Row(
+            turn_type="user",
+            text='<pasted_content id="0bb3">\none\ntwo\n</pasted_content> Summarise it.',
+        )
+        history = Row(turn_type="user", text="one\ntwo Summarise it.")
+        self.assertEqual(match_form(transcript), match_form(history))
+        # Only the wrapper goes: other text still differs.
+        self.assertNotEqual(
+            match_form(transcript), match_form(Row(turn_type="user", text="one two Summarise"))
+        )
+
+    def test_history_only_lines_stay_recovered(self):
+        # `/exit` typed while a turn ran and `/logout` write no transcript
+        # line; `/clear` is under the ended session's id while its record
+        # is the first line of the new session's file.
+        primary = self._primary()
+        cleared = [
+            r
+            for r in primary
+            if r.session_id == CLAUDE_MAC_CLEARED_SESSION and r.text.startswith("slash command:")
+        ]
+        self.assertEqual([match_form(r) for r in cleared], [("user", "/clear")])
+        rows, _ = deduplicate(primary, [(r, 2.0) for r in self._history()])
+        kept = rows[len(primary) :]
+        self.assertEqual([r.text for r in kept], self.HISTORY_ONLY)
+        self.assertEqual({r.session_id for r in kept}, {CLAUDE_MAC_SESSION})
+        self.assertEqual({r.recovered for r in kept}, {"yes"})
+
+    def test_history_command_without_transcript_is_recovered(self):
+        # With the second `/model` record gone, its history line stays: the
+        # first record is taken by the first line, nearer in time.
+        primary = [r for r in self._primary() if r.source_line != 18]
+        rows, _ = deduplicate(primary, [(r, 2.0) for r in self._history()])
+        self.assertEqual(
+            [r.text for r in rows[len(primary) :]],
+            ["/model", *self.HISTORY_ONLY],
+        )
+        self.assertEqual(rows[len(primary)].timestamp_utc, "2026-10-01T11:00:23.000Z")
+
+    def test_history_command_missing_first_record_keeps_its_own_line(self):
+        # With the first `/model` record gone, the first history line may not
+        # take the second line's record, 43 s later: the second line pairs
+        # with it and the first stays, under its own time (the proximity rule
+        # bounded by the next line of the same command).
+        primary = [r for r in self._primary() if r.source_line != 8]
+        rows, _ = deduplicate(primary, [(r, 2.0) for r in self._history()])
+        self.assertEqual(
+            [r.text for r in rows[len(primary) :]],
+            ["/model", *self.HISTORY_ONLY],
+        )
+        self.assertEqual(rows[len(primary)].timestamp_utc, "2026-10-01T11:00:07.000Z")
+
+    def test_history_bounds_skip_equal_time_copies(self):
+        # The same `/model` line in two history files, at the same time, is
+        # bounded by the next strictly later line, not by its copy: with the
+        # first record gone, the 23 line takes the 50 record, one 07 copy is
+        # dropped as a copy of the other, and the surviving 07 line keeps its
+        # own time.
+        primary = [r for r in self._primary() if r.source_line != 8]
+        copy = self._rows(".claude-work/history.jsonl", [claude_mac_history_records()[1]])
+        self.assertEqual([r.text for r in copy], ["/model"])
+        history = self._history() + copy
+        rows, _ = deduplicate(primary, [(r, 2.0) for r in history])
+        kept = rows[len(primary) :]
+        self.assertEqual([r.text for r in kept], ["/model", *self.HISTORY_ONLY])
+        self.assertEqual(kept[0].timestamp_utc, "2026-10-01T11:00:07.000Z")
+
+    def test_history_command_window_is_forward_only(self):
+        # A record is written after its line, never before: with the first
+        # `/model` history line gone and only the first record left, the
+        # second line (16 s after that record) stays recovered instead of
+        # taking it.
+        primary = [r for r in self._primary() if r.source_line != 18]
+        history = [
+            r
+            for r in self._history()
+            if not (r.text == "/model" and r.timestamp_utc.endswith("07.000Z"))
+        ]
+        rows, _ = deduplicate(primary, [(r, 2.0) for r in history])
+        kept = rows[len(primary) :]
+        self.assertEqual([r.text for r in kept], ["/model", *self.HISTORY_ONLY])
+        self.assertEqual(kept[0].timestamp_utc, "2026-10-01T11:00:23.000Z")
+
+    def test_history_bounds_follow_the_matching_scope(self):
+        # Two session-less lines of different projects do not bound each
+        # other: project A's line still takes A's delayed record although
+        # project B typed the same command in between.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def line(t, project, session="", source="h"):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type="user",
+                text="/model",
+                timestamp_utc="2026-10-01T11:00:%02d.000Z" % t,
+                project_path=project,
+                session_id=session,
+                source_file=source,
+            )
+
+        record = Row(
+            host="h",
+            user="u",
+            agent="claude-code",
+            turn_type="system",
+            text=block,
+            timestamp_utc="2026-10-01T11:00:40.000Z",
+            project_path="/a",
+            session_id="s1",
+            source_file="t",
+        )
+        rows, dropped = deduplicate([record], [(line(0, "/a"), 2.0), (line(30, "/b"), 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        self.assertEqual([(r.project_path, r.recovered) for r in rows[1:]], [("/b", "yes")])
+
+    def test_history_bounds_cover_narrower_scopes(self):
+        # A session-less line of project P is bounded by a later line of a
+        # session of P: with only that session's record left, the earlier
+        # line may not take it, so it stays under its own time and the
+        # session's line pairs with its record.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def row(turn_type, text, t, session, source):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type=turn_type,
+                text=text,
+                timestamp_utc="2026-10-01T11:00:%02d.000Z" % t,
+                project_path="/srv/proj",
+                session_id=session,
+                source_file=source,
+            )
+
+        primary = [row("system", block, 50, "s1", "t")]
+        no_session = row("user", "/model", 7, "", "h")
+        in_session = row("user", "/model", 23, "s1", "h")
+        rows, dropped = deduplicate(primary, [(no_session, 2.0), (in_session, 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        kept = rows[len(primary) :]
+        self.assertEqual(
+            [(r.timestamp_utc, r.recovered) for r in kept], [("2026-10-01T11:00:07.000Z", "yes")]
+        )
+
+    def test_history_bounds_cover_broader_scopes(self):
+        # The inverse: a session line is bounded by a later session-less
+        # line of its project, since both could take the session's record;
+        # a line of another session never bounds it.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def row(turn_type, text, t, session, source):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type=turn_type,
+                text=text,
+                timestamp_utc="2026-10-01T11:00:%02d.000Z" % t,
+                project_path="/srv/proj",
+                session_id=session,
+                source_file=source,
+            )
+
+        primary = [row("system", block, 50, "s1", "t")]
+        in_session = row("user", "/model", 7, "s1", "h")
+        no_session = row("user", "/model", 23, "", "h")
+        rows, dropped = deduplicate(primary, [(in_session, 2.0), (no_session, 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        kept = rows[len(primary) :]
+        self.assertEqual(
+            [(r.timestamp_utc, r.recovered) for r in kept], [("2026-10-01T11:00:07.000Z", "yes")]
+        )
+        # A later line of a different session leaves the session line free
+        # to take its own record.
+        other = row("user", "/model", 23, "s2", "h")
+        rows, dropped = deduplicate(primary, [(in_session, 2.0), (other, 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        self.assertEqual([r.session_id for r in rows[len(primary) :]], ["s2"])
+
+    def test_history_bounds_follow_the_candidate_session(self):
+        # A session-less line is bounded only by lines that could take the
+        # record it is matched against: with records in two sessions, the
+        # later line of session S2 does not keep the session-less line from
+        # S1's record, and each line takes its own.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def row(turn_type, text, t, session, source):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type=turn_type,
+                text=text,
+                timestamp_utc="2026-10-01T11:00:%02d.000Z" % t,
+                project_path="/srv/proj",
+                session_id=session,
+                source_file=source,
+            )
+
+        primary = [row("system", block, 50, "s1", "t1"), row("system", block, 30, "s2", "t2")]
+        free = row("user", "/model", 7, "", "h")
+        in_s2 = row("user", "/model", 23, "s2", "h")
+        rows, dropped = deduplicate(primary, [(free, 2.0), (in_s2, 2.0)])
+        self.assertEqual(dropped["claude-code"], 2)
+        self.assertEqual(rows[len(primary) :], [])
+
+    def test_history_bounds_follow_the_candidate_project(self):
+        # A session's line is bounded by a later session-less line of the
+        # project the record was written in, not of the line's own project:
+        # the session moved from P to Q, the :23 line of Q can take the :50
+        # record in S/Q, so the :07 line of S/P stays under its own time.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def row(turn_type, text, t, session, project, source):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type=turn_type,
+                text=text,
+                timestamp_utc="2026-10-01T11:00:%02d.000Z" % t,
+                project_path=project,
+                session_id=session,
+                source_file=source,
+            )
+
+        primary = [row("system", block, 50, "s", "/srv/Q", "t")]
+        moved = row("user", "/model", 7, "s", "/srv/P", "h")
+        in_q = row("user", "/model", 23, "", "/srv/Q", "h")
+        rows, dropped = deduplicate(primary, [(moved, 2.0), (in_q, 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        self.assertEqual(rows[len(primary) :], [moved])
+
+    def test_widened_window_stays_between_history_files(self):
+        # Two history files of one session each hold a `/model` a minute
+        # apart; only the later one's record survives. The earlier line is
+        # bounded by the later line against the transcript, and the 600 s
+        # window does not make it a copy of the later line: it stays.
+        block = (
+            "slash command: <command-name>/model</command-name>\n<command-message>model"
+            "</command-message>\n<command-args></command-args>"
+        )
+
+        def row(turn_type, text, t, source):
+            return Row(
+                host="h",
+                user="u",
+                agent="claude-code",
+                turn_type=turn_type,
+                text=text,
+                timestamp_utc="2026-10-01T11:%02d:%02d.000Z" % divmod(t, 60),
+                project_path="/srv/proj",
+                session_id="s1",
+                source_file=source,
+            )
+
+        primary = [row("system", block, 80, ".claude/projects/-srv-proj/s1.jsonl")]
+        early = row("user", "/model", 7, ".claude/history.jsonl")
+        late = row("user", "/model", 67, ".claude-work/history.jsonl")
+        rows, dropped = deduplicate(primary, [(early, 2.0), (late, 2.0)])
+        self.assertEqual(dropped["claude-code"], 1)
+        kept = rows[len(primary) :]
+        self.assertEqual([(r.source_file, r.recovered) for r in kept], [(early.source_file, "yes")])
+
+    def test_match_form_keeps_whitespace_distinctions(self):
+        # Runs of whitespace collapse, but the whitespace stays: prompts and
+        # arguments that differ only by a space are different events.
+        self.assertEqual(
+            match_form(Row(turn_type="user", text="echo  a\tb")),
+            match_form(Row(turn_type="user", text="echo a b")),
+        )
+        self.assertNotEqual(
+            match_form(Row(turn_type="user", text="echo a b")),
+            match_form(Row(turn_type="user", text="echo ab")),
+        )
+        block = (
+            "slash command: <command-name>/a</command-name>\n<command-message>a"
+            "</command-message>\n<command-args>%s</command-args>"
+        )
+        self.assertEqual(
+            match_form(Row(turn_type="system", text=block % "x  y")),
+            match_form(Row(turn_type="user", text="/a x y")),
+        )
+        self.assertNotEqual(
+            match_form(Row(turn_type="system", text=block % "x y")),
+            match_form(Row(turn_type="user", text="/a xy")),
+        )
+
+    def test_remote_control_spawn(self):
+        rows = self._rows(self.SPAWN_REL, claude_mac_spawn_records())
+        self.assertEqual(
+            [(r.source_line, r.turn_type, r.text) for r in rows],
+            [
+                (1, "system", "prompt queued: delivered at line 3"),
+                (2, "system", "queue dequeue:"),
+                (3, "system", "session surface: sdk-cli"),
+                (3, "system", "session origin: remote (Remote Control, entrypoint sdk-cli)"),
+                (3, "system", "permission mode: default"),
+                (3, "user", "Run ls -la in this folder and tell me what files are here."),
+                (3, "system", "prompt trigger: promptSource=sdk turnOrigin=human"),
+                (4, "system", "model: claude-fable-5-1"),
+                (4, "tool_use", "ls -la"),
+                (5, "tool_result", "calc.py\nREADME.md"),
+                (5, "system", "permission decision: accept source=config reason=subcommandResults"),
+            ],
+        )
+
+    def test_sdk_cli_without_sdk_prompt_is_not_a_spawn(self):
+        records = claude_mac_spawn_records()
+        records[2] = dict(records[2], promptSource="typed")
+        rows = self._rows(self.SPAWN_REL, records)
+        self.assertFalse([r for r in rows if r.text.startswith("session origin:")])
+
+    def test_teleported_session(self):
+        rows = self._rows(self.TELEPORT_REL, claude_mac_teleport_records())
+        got = [(r.source_line, r.turn_type, r.text) for r in rows]
+        self.assertEqual(
+            got[:6],
+            [
+                (1, "system", "session surface: cli"),
+                (
+                    1,
+                    "system",
+                    "session origin: remote (teleport, cloud scratchpad %s)"
+                    % CLAUDE_MAC_CLOUD_SCRATCH,
+                ),
+                (2, "system", "session origin: remote (teleport, remoteSourced)"),
+                (
+                    2,
+                    "system",
+                    "session synced: cloud session (teleported: remoteSourced records "
+                    "replayed from the vendor's copy)",
+                ),
+                (2, "system", "permission mode: default"),
+                (2, "user", "Describe this repository in three sentences."),
+            ],
+        )
+        self.assertIn(
+            (
+                4,
+                "system",
+                "permission decision: accept source=config reason=rule "
+                '{"decision":"accept","reasonType":"rule","ruleSource":"cliArg","source":"config"}',
+            ),
+            got,
+        )
+        self.assertIn((6, "system", "informational: Session resumed"), got)
+        self.assertTrue(any(n == 5 and t.startswith("stop_hook_summary: ") for n, _, t in got))
+        # The local environment's scratchpad is this host's: a scratch row.
+        local = [r for r in rows if r.source_line == 7]
+        self.assertEqual(
+            [(r.text, r.project_path) for r in local],
+            [
+                (
+                    "scratch directory: %s (session scratchpad, from the environment"
+                    " attachment)" % CLAUDE_MAC_LOCAL_SCRATCH,
+                    CLAUDE_MAC_LOCAL_SCRATCH,
+                )
+            ],
+        )
+        self.assertEqual(
+            [r.text for r in rows if r.text.startswith("session origin:")][1:],
+            ["session origin: remote (teleport, remoteSourced)"],
+        )
+
+    def test_relocated_local_scratchpad_stays_scratch(self):
+        # After a `relocated` record the local process runs under the new
+        # cwd's slug; its scratchpad follows the replayed block, so it is
+        # this host's even in a teleported file, not the cloud machine's.
+        records = claude_mac_teleport_records()
+        k = next(
+            i
+            for i, r in enumerate(records)
+            if r.get("type") == "attachment"
+            and r["attachment"]["snapshot"].get("scratchpadDirectory") == CLAUDE_MAC_LOCAL_SCRATCH
+        )
+        moved = CLAUDE_MAC_LOCAL_SCRATCH.replace("/-srv-proj/", "/-srv-new/")
+        records[k]["attachment"]["snapshot"]["scratchpadDirectory"] = moved
+        records.insert(
+            k,
+            dict(type="relocated", relocatedCwd="/srv/new", sessionId=CLAUDE_MAC_TELEPORT_SESSION),
+        )
+        rows = self._rows(self.TELEPORT_REL, records)
+        self.assertIn(
+            (moved, moved),
+            [
+                (r.project_path, r.text.split(" ")[2])
+                for r in rows
+                if r.text.startswith("scratch directory:")
+            ],
+        )
+        self.assertEqual(
+            [r.text for r in rows if r.text.startswith("session origin:")],
+            [
+                "session origin: remote (teleport, cloud scratchpad %s)" % CLAUDE_MAC_CLOUD_SCRATCH,
+                "session origin: remote (teleport, remoteSourced)",
+            ],
+        )
+        self.assertIn("cwd changed: /srv/new", [r.text for r in rows])
+
+    def test_foreign_scratchpad_without_remote_sourced_stays_scratch(self):
+        records = [r for r in claude_mac_teleport_records() if not r.get("remoteSourced")]
+        rows = self._rows(self.TELEPORT_REL, records)
+        self.assertFalse([r for r in rows if r.text.startswith("session origin:")])
+        self.assertIn(
+            CLAUDE_MAC_CLOUD_SCRATCH,
+            [r.project_path for r in rows if r.text.startswith("scratch directory:")],
+        )
+
+    def test_same_slug_cloud_scratchpad_is_replayed(self):
+        # The cloud checkout and the local one share a path, so the cloud
+        # scratchpad sits under the transcript's own slug: it is still the
+        # replayed one, on or before the last `remoteSourced` line, and
+        # never a scratch directory of this host.
+        records = claude_mac_teleport_records()
+        same = "/tmp/claude-0/-srv-proj/22222222-3333-4444-8555-666666666666/scratchpad"
+        k = next(
+            i
+            for i, r in enumerate(records)
+            if r.get("type") == "attachment"
+            and r["attachment"]["snapshot"].get("scratchpadDirectory") == CLAUDE_MAC_CLOUD_SCRATCH
+        )
+        records[k]["attachment"]["snapshot"]["scratchpadDirectory"] = same
+        rows = self._rows(self.TELEPORT_REL, records)
+        self.assertEqual(
+            [r.text for r in rows if r.text.startswith("session origin:")],
+            [
+                "session origin: remote (teleport, cloud scratchpad %s)" % same,
+                "session origin: remote (teleport, remoteSourced)",
+            ],
+        )
+        self.assertEqual(
+            [r.project_path for r in rows if r.text.startswith("scratch directory:")],
+            [CLAUDE_MAC_LOCAL_SCRATCH],
+        )
+
+    def test_case_variant_local_scratchpad_stays_scratch(self):
+        # A local slug spelled in another case than the project directory
+        # (issue 112) is still this host's: the attachment follows the
+        # replayed block.
+        records = claude_mac_teleport_records()
+        k = next(
+            i
+            for i, r in enumerate(records)
+            if r.get("type") == "attachment"
+            and r["attachment"]["snapshot"].get("scratchpadDirectory") == CLAUDE_MAC_LOCAL_SCRATCH
+        )
+        cased = CLAUDE_MAC_LOCAL_SCRATCH.replace("/-srv-proj/", "/-Srv-Proj/")
+        records[k]["attachment"]["snapshot"]["scratchpadDirectory"] = cased
+        rows = self._rows(self.TELEPORT_REL, records)
+        self.assertEqual(
+            [r.project_path for r in rows if r.text.startswith("scratch directory:")], [cased]
+        )
+        self.assertEqual(
+            [r.text for r in rows if r.text.startswith("session origin:")],
+            [
+                "session origin: remote (teleport, cloud scratchpad %s)" % CLAUDE_MAC_CLOUD_SCRATCH,
+                "session origin: remote (teleport, remoteSourced)",
+            ],
+        )
+
+    def test_ccr_tip(self):
+        doc = {"eventId": "33333333-4444-4555-8666-777777777777", "updatedAt": 1790856300000}
+        art = self._write(self.CCR_REL, json.dumps(doc))
+        self.assertTrue(ClaudeCodeParser().wants(art))
+        self.assertFalse(ClaudeCodeParser().secondary(art))
+        rows = list(ClaudeCodeParser().parse(art, Options()))
+        self.assertEqual(
+            [(r.turn_type, r.timestamp_utc, r.session_id, r.text) for r in rows],
+            [
+                (
+                    "system",
+                    self.MTIME_TS,
+                    CLAUDE_MAC_SPAWN_SESSION,
+                    "session synced: remote event 33333333-4444-4555-8666-777777777777 at "
+                    "1790856300000 (from %s, file mtime)" % self.CCR_REL,
+                )
+            ],
+        )
+
+    def test_ccr_tip_unreadable(self):
+        for body in ('{"eventId": "cut', "[1]"):
+            rows = self._rows(self.CCR_REL, body)
+            self.assertEqual(
+                [(r.turn_type, r.session_id, r.text) for r in rows],
+                [("system", CLAUDE_MAC_SPAWN_SESSION, "parser: ccr-tip.json is not a JSON object")],
+            )
+
+    def test_bridge_pointer(self):
+        doc = {
+            "environmentId": "env_0123456789abcdefghijkl",
+            "pid": 15081,
+            "procStart": "Mon Oct  1 12:00:00 2026",
+            "sessionId": "0123456789abcdef0123456789abcdef",
+            "source": "standalone",
+        }
+        rows = self._rows(self.POINTER_REL, json.dumps(doc))
+        self.assertEqual(
+            [(r.turn_type, r.timestamp_utc, r.session_id, r.project_path, r.text) for r in rows],
+            [
+                (
+                    "system",
+                    self.MTIME_TS,
+                    "",
+                    "",
+                    "remote control: environment env_0123456789abcdefghijkl session "
+                    "0123456789abcdef0123456789abcdef source=standalone "
+                    "(from %s, file mtime)" % self.POINTER_REL,
+                )
+            ],
+        )
+        self.assertNotIn("15081", rows[0].text)
+
+    def test_bridge_pointer_unreadable(self):
+        rows = self._rows(self.POINTER_REL, "{cut mid-write")
+        self.assertEqual(
+            [(r.turn_type, r.text) for r in rows],
+            [("system", "parser: bridge-pointer.json is not a JSON object")],
+        )
+
+    def test_global_config_remote_keys(self):
+        rows = self._rows(".claude.json", json.dumps(claude_mac_global_config()))
+        src = "(from .claude.json, file mtime)"
+        self.assertEqual(
+            [(r.text, r.project_path, r.timestamp_utc) for r in rows],
+            [
+                (
+                    "permission setting: hasTrustDialogAccepted=true " + src,
+                    "/srv/proj",
+                    self.MTIME_TS,
+                ),
+                (
+                    "remote control: spawn mode same-dir for /srv/proj " + src,
+                    "/srv/proj",
+                    self.MTIME_TS,
+                ),
+                ("remote control: machine id set " + src, "", self.MTIME_TS),
+                ("cloud: hasRemoteEnvironment=true " + src, "", self.MTIME_TS),
+            ],
+        )
+        for r in rows:
+            self.assertNotIn("0000000000cc", r.text)
+
+    def test_session_summary_origin_and_sync(self):
+        rows = self._rows(self.REL, claude_mac_records())
+        rows += self._rows(self.SPAWN_REL, claude_mac_spawn_records())
+        rows += self._rows(self.TELEPORT_REL, claude_mac_teleport_records())
+        rows += self._rows(self.CCR_REL, json.dumps({"eventId": "e1", "updatedAt": "t"}))
+        p = ClaudeCodeParser()
+        self.assertTrue(p.records_origin and p.records_sync)
+        agents = frozenset({p.agent})
+        got = {
+            s.session_id: (s.origin, s.synced) for s in summarise(rows, agents, frozenset(), agents)
+        }
+        self.assertEqual(
+            got,
+            {
+                CLAUDE_MAC_SESSION: ("local", "no"),
+                CLAUDE_MAC_SPAWN_SESSION: ("remote", "yes"),
+                CLAUDE_MAC_TELEPORT_SESSION: ("remote", "yes"),
+            },
+        )
+
+    def test_desktop_subclass_records_no_origin(self):
+        self.assertFalse(_ClaudeDesktopParser().records_origin)
+
+    def test_truncated_line_is_reported_not_fatal(self):
+        art = self._write(self.SPAWN_REL, claude_mac_spawn_records())
+        write_bad_line(art.disk_path)
+        after = dict(ClaudeCodeTests.AFTER_CUT, sessionId=CLAUDE_MAC_SPAWN_SESSION)
+        with open(art.disk_path, "a", encoding="utf-8") as fh:
+            fh.write("\n" + json.dumps(after) + "\n")
+        rows = list(ClaudeCodeParser().parse(art, Options()))
+        self.assertIn(
+            "session origin: remote (Remote Control, entrypoint sdk-cli)", [r.text for r in rows]
+        )
+        self.assertEqual(
+            [(r.source_line, r.turn_type, r.text) for r in rows[-2:]],
+            [(8, "user", "after the cut"), (7, "system", bad_line_text())],
+        )
+
+    def test_thinking_opt_in(self):
+        rows = self._rows(self.REL, claude_mac_records(), include_thinking=True)
+        self.assertEqual(len(rows), len(self.EXPECTED))
+
+    def test_sidecars_not_wanted(self):
+        home = self.artifact(".claude/settings.json").home
+        for rel in (
+            self.PROJ + "%s/custom-title.json" % CLAUDE_MAC_SESSION,
+            self.PROJ + "%s/subagents/agent-a1.meta.json" % CLAUDE_MAC_SESSION,
+            ".claude/paste-cache/%s.txt" % CLAUDE_MAC_PASTE_HASH,
+            ".claude/bridge-spawn/cse_01/mcp.json",
+            ".claude/ide/50123.lock",
+        ):
+            art = Artifact(self.home / rel, rel, rel, "claude-code", home)
+            self.assertFalse(ClaudeCodeParser().wants(art), rel)
 
 
 from fixtures import (

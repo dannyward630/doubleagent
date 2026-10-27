@@ -284,6 +284,21 @@ Control (the URL from the `bridge_status` line), and a `scratch
 directory: <path> (session scratchpad, from the environment attachment)`
 row per session; a persisted tool output is found through
 `toolUseResult.persistedOutputPath` when the line has one tool result.
+The server form of Remote Control (`claude remote-control`) adds the
+project's `.claude/projects/<slug>/bridge-pointer.json`, a `remote control:
+environment <environmentId> session <sessionId> source=<source> (from
+bridge-pointer.json, file mtime)` row, and a session's `ccr-tip.json`, a
+`session synced: remote event <eventId> at <updatedAt> (from
+ccr-tip.json)` row. A session gets a `session origin:` row: `remote
+(Remote Control, entrypoint sdk-cli)` for one that server spawned,
+`remote (teleport, remoteSourced)` for a cloud session brought in with
+`--teleport`, `local (VS Code extension)` for the extension's. A refusal
+recorded without a decision is `permission decision: reject (interrupted)
+toolDenialKind=user-rejected`; a `/loop` firing is `scheduled task fired:
+<taskId> cron=<cron>`; `settings.json` `model` gives `model setting:
+<alias> (from settings.json, file mtime)`; and `.claude.json` gives
+`remote control: machine id set`, `remote control: spawn mode <mode> for
+<path>` and `cloud: hasRemoteEnvironment=<bool>` rows.
 
 Validated against: Real installs, Claude Code 2.1.286 to 2.1.289 on Linux
 (WSL2) and 2.1.295 on macOS (launched from the Claude Desktop Code tab),
@@ -320,6 +335,19 @@ app, `/loop`, the VS Code extension's session, `/clear`, the retention
 sweep deleting a transcript older than `cleanupPeriodDays` and keeping its
 `history.jsonl` line, and a removed project; the `source host:` and
 `retention setting:` rows rest on that install's key names and are
+checked against fixtures. Claude Code 2.1.310 darwin-arm64 from the native
+installer on macOS 26.6.2 arm64, a clean VM, 2026-10-26, one step at a
+time: the transcript layout under `projects/-Users-<user>-...`, the
+keychain item `Claude Code-credentials` of a sign-in from the desktop and
+the `.credentials.json` of a session started over ssh, refusals recorded
+with `toolDenialKind` and no decision, compaction, `--resume` and
+`--continue`, the server form of Remote Control driven from claude.ai
+(`bridge-pointer.json`, `ccr-tip.json`, `entrypoint` `sdk-cli`), a cloud
+session created with `--cloud` and brought in with `--teleport`
+(`remoteSourced`), `/loop`, the VS Code extension's session, `/clear`,
+`/logout` and a removed project; the `session origin:`, `session synced:
+remote event`, `remote control:`, `scheduled task fired:`, `model
+setting:` and `cloud:` rows rest on that install's key names and are
 checked against fixtures.
 
 ### `claude-desktop`

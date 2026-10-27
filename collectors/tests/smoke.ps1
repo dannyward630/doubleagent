@@ -156,6 +156,8 @@ excl||.local/share/Cody-nodejs/dist
 excl||AppData/Roaming/Cody-nodejs/Config/dist
 secret||.config/Cody-nodejs/user-settings.json
 secret||AppData/Roaming/Cody-nodejs/Config/user-settings.json
+secret||.config/gh/hosts.yml
+secret||AppData/Roaming/GitHub CLI/hosts.yml
 agent|cody|.config/Code/User/globalStorage/sourcegraph.cody-ai/symf/indexroot/meta.json
 agent|cody|.vscode/cody.json
 agent|cody|.local/share/Cody-nodejs/JetBrains-globalState/cody-local-chatHistory-v2
@@ -1373,6 +1375,33 @@ Mk "$g253/info/exclude" "# git ls-files --others --exclude-from=.git/info/exclud
 Mk 'Users/alice/.local/state/claude/locks/2.1.310.lock' "{`"acquiredAt`":1792800000000,`"execPath`":`"/x`",`"pid`":1,`"version`":`"2.1.310`"}`n"
 Mk 'Users/alice/.cache/claude/staging/entry' "staged`n"
 
+# 2026-10-26 claude-code macOS round (#256)
+# Claude Code 2.1.310 on macOS 26.6 (real install, 2026-10-26) writes
+# ~/Applications/Claude Code URL Handler.app at the first exit: an
+# Info.plist registering the claude-cli: URL scheme and Contents/MacOS/claude,
+# a symlink to ~/.local/bin/claude, collected as claude-code with the link
+# recorded. While an IDE session runs, .claude/ide/<port>.lock holds an
+# authToken; while a Remote Control bridge runs,
+# .claude/bridge-spawn/<id>/mcp.json holds the session-bound headers of the
+# remote MCP endpoint. Both are secret globs, in a relocated config home
+# too. Checks follow the default and --no-secrets runs below; the same
+# files are in smoke.sh under alice.
+$u256 = 'Users/alice/Applications/Claude Code URL Handler.app/Contents'
+$s256 = 'bridge-spawn/cse_0123456789abcdef0123'
+Mk "$u256/Info.plist" "<plist version=`"1.0`"><dict><key>CFBundleURLSchemes</key></dict></plist>`n"
+foreach ($d256 in @('Users/alice/.claude', 'Users/alice/.claude-work')) {
+  Mk "$d256/ide/53256.lock" "{`"authToken`":`"00000000-0000-4000-8000-000000000256`",`"transport`":`"ws`"}`n"
+  Mk "$d256/$s256/mcp.json" "{`"mcpServers`":{`"claude-code-remote`":{`"headers`":{`"X-Session-UUID`":`"x`"}}}}`n"
+}
+Mk "Users/alice/.claude/$s256/append-system-prompt.txt" "appended system prompt`n"
+$link256 = $false
+try {
+  New-Item -ItemType Directory -Path (P "$u256/MacOS") -Force | Out-Null
+  $target256 = [System.IO.Path]::Combine('..', '..', '..', '..', '.local', 'bin', 'claude')
+  New-Item -ItemType SymbolicLink -Path (P "$u256/MacOS/claude") -Target $target256 -ErrorAction Stop | Out-Null
+  $link256 = $true
+} catch { Write-Output 'note: symlink creation not permitted here, #256 URL handler symlink check skipped' }
+
 # 2026-10-15 special files (#120)
 # Codex CLI 0.162.1 keeps Unix domain sockets under .codex; on Windows each
 # is a reparse point (tag IO_REPARSE_TAG_AF_UNIX) with an empty LinkType,
@@ -2042,6 +2071,11 @@ Check '#256 project git info/exclude collected as project' { Is253 @('info/exclu
 Check '#256 Claude Code version lock collected as claude-code' { Is113 'Users/alice/.local/state/claude/locks/2.1.310.lock' 'claude-code' $false }
 Check '#256 Claude Code cache staging collected as claude-code' { Is113 'Users/alice/.cache/claude/staging/entry' 'claude-code' $false }
 
+# 2026-10-26 claude-code macOS round (#256)
+Check '#256 Claude Code URL handler bundle collected as claude-code' { $r = Row "$u256/MacOS/claude"; (Is113 "$u256/Info.plist" 'claude-code' $false) -and ((-not $link256) -or ($r -and $r.agent -eq 'claude-code' -and $r.type -eq 'symlink' -and $r.status -eq 'symlink' -and ($r.target -replace '\\', '/') -like '*.local/bin/claude')) }
+Check '#256 Claude Code IDE lock and bridge-spawn mcp.json flagged secret' { (Is113 'Users/alice/.claude/ide/53256.lock' 'claude-code' $true) -and (Is113 "Users/alice/.claude/$s256/mcp.json" 'claude-code' $true) -and (Is113 "Users/alice/.claude/$s256/append-system-prompt.txt" 'claude-code' $false) }
+Check '#256 relocated claude home IDE lock and bridge-spawn mcp.json flagged secret' { (Is113 'Users/alice/.claude-work/ide/53256.lock' 'claude-code' $true) -and (Is113 "Users/alice/.claude-work/$s256/mcp.json" 'claude-code' $true) }
+
 # cross-check archived bytes against manifest hashes
 $x = Join-Path $Work 'x'; New-Item -ItemType Directory -Path $x -Force | Out-Null
 if ($script:A.Name -like '*.tar.gz') { & tar -xzf $script:A.FullName -C $x 2>$null } else { [System.IO.Compression.ZipFile]::ExtractToDirectory($script:A.FullName, $x) }
@@ -2276,6 +2310,9 @@ Check '#230 Qwen Code session registry skipped without secrets' { (StatusOf 'Use
 Check '#256 Claude Code daemon keys and .claude.json backup skipped without secrets' { (StatusOf 'Users/alice/.claude/daemon/control.key') -eq 'skipped_secret' -and (StatusOf 'Users/alice/.claude/daemon/roster.json') -eq 'skipped_secret' -and (StatusOf 'Users/alice/.claude/backups/.claude.json.backup.1792800000000') -eq 'skipped_secret' }
 Check '#256 relocated claude home session key, daemon key and backup skipped without secrets' { (StatusOf $CcwK) -eq 'skipped_secret' -and (StatusOf 'Users/alice/.claude-work/daemon/control.key') -eq 'skipped_secret' -and (StatusOf 'Users/alice/.claude-work/backups/.claude.json.backup.1792800000000') -eq 'skipped_secret' }
 
+# 2026-10-26 claude-code macOS round (#256)
+Check '#256 Claude Code IDE lock and bridge-spawn mcp.json skipped without secrets' { (StatusOf 'Users/alice/.claude/ide/53256.lock') -eq 'skipped_secret' -and (StatusOf "Users/alice/.claude/$s256/mcp.json") -eq 'skipped_secret' -and (StatusOf 'Users/alice/.claude-work/ide/53256.lock') -eq 'skipped_secret' -and (StatusOf "Users/alice/.claude-work/$s256/mcp.json") -eq 'skipped_secret' }
+
 # ---- -Full ----------------------------------------------------------------
 Run 'full' @{ Full = $true }
 Check 'Full exit 0' { $script:rc -eq 0 }
@@ -2404,7 +2441,7 @@ Check 'Inventory every later line is an agent line, keys in order' { $script:inv
 $r = InvAgent 'bob' 'ollama'
 Check 'Inventory ollama line: history and manifest, excluded blobs not counted' { $r -and $r.files -eq 2 -and $r.bytes -eq 23 -and (InvRaw 'bob' 'ollama').Contains('"first":"2026-09-14T00:00:00Z","last":"2026-09-15T01:02:03Z"') -and $r.evidence -eq '.ollama' }
 $r = InvAgent 'alice' 'claude-code'
-Check 'Inventory claude-code evidence in catalog order' { $r -and $r.evidence -eq '.claude,.claude.json*,.claude-*/projects,.claude-*/history.jsonl,.claude-*/.claude.json*,.claude-*/.credentials.json,.claude-*/sessions/*.*.key,.claude-*/daemon/control.key,.claude-*/daemon/roster.json,.claude-*/backups/.claude.json.*,.local/state/claude,.cache/claude,Library/Caches/claude-cli-nodejs,AppData/Local/claude-cli-nodejs/Cache/*,AppData/Local/Temp/claude' }
+Check 'Inventory claude-code evidence in catalog order' { $r -and $r.evidence -eq '.claude,.claude.json*,.claude-*/projects,.claude-*/history.jsonl,.claude-*/.claude.json*,.claude-*/.credentials.json,.claude-*/sessions/*.*.key,.claude-*/daemon/control.key,.claude-*/daemon/roster.json,.claude-*/backups/.claude.json.*,.claude-*/ide/*.lock,.claude-*/bridge-spawn/*/mcp.json,.local/state/claude,.cache/claude,Library/Caches/claude-cli-nodejs,AppData/Local/claude-cli-nodejs/Cache/*,AppData/Local/Temp/claude,Applications/Claude Code URL Handler.app' }
 Check 'Inventory first and last set for alice claude-code' { (InvRaw 'alice' 'claude-code') -match '"first":"20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ","last":"20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ"' }
 Check 'Inventory: matched directory with no files of its own gives no line' { $null -eq (InvAgent 'bob' 'gemini-cli') -and ($b = InvAgent 'bob' 'antigravity') -and $b.files -eq 1 -and $b.bytes -eq 2 -and $b.evidence -eq '.gemini/antigravity-cli' }
 Check 'Inventory: no agent line has zero files' { -not ($script:inv | Where-Object { $_.type -eq 'agent' } | Where-Object { $_.files -eq 0 }) }

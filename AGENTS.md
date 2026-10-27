@@ -1149,7 +1149,12 @@ documentation-only change needs only the last two rows and markdownlint.
   release binaries (CI checks their sha256), and checkbashisms as the
   single `scripts/checkbashisms.pl` from the devscripts tag or
   `apt install devscripts`. PSScriptAnalyzer installs with
-  `pwsh -NoProfile -Command 'Install-Module PSScriptAnalyzer -Scope CurrentUser -RequiredVersion 1.25.0 -Force'`.
+  `pwsh -NoProfile -Command 'Install-Module PSScriptAnalyzer -Scope CurrentUser -RequiredVersion 1.25.0 -Force'`;
+  CI instead downloads the same nupkg from the
+  [PSScriptAnalyzer release](https://github.com/PowerShell/PSScriptAnalyzer/releases)
+  on GitHub, checks its sha256 and unzips it into the user module path,
+  because the Gallery's v2 API fails intermittently and `Install-Module`
+  does not retry.
 - The one `ruff format` commit is listed in `.git-blame-ignore-revs`;
   enable it with `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
 - The pre-commit hook (`.githooks/pre-commit`, enabled once per clone with

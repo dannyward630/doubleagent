@@ -156,6 +156,8 @@ excl||.local/share/Cody-nodejs/dist
 excl||AppData/Roaming/Cody-nodejs/Config/dist
 secret||.config/Cody-nodejs/user-settings.json
 secret||AppData/Roaming/Cody-nodejs/Config/user-settings.json
+secret||.config/gh/hosts.yml
+secret||AppData/Roaming/GitHub CLI/hosts.yml
 agent|cody|.config/Code/User/globalStorage/sourcegraph.cody-ai/symf/indexroot/meta.json
 agent|cody|.vscode/cody.json
 agent|cody|.local/share/Cody-nodejs/JetBrains-globalState/cody-local-chatHistory-v2
@@ -1485,6 +1487,31 @@ printf '{"acquiredAt":1792800000000,"execPath":"/x","pid":1,"version":"2.1.310"}
   >"$H/.local/state/claude/locks/2.1.310.lock"
 printf 'staged\n' >"$H/.cache/claude/staging/entry"
 
+# 2026-10-26 claude-code macOS round (#256)
+# Claude Code 2.1.310 on macOS 26.6 (real install, 2026-10-26) writes
+# ~/Applications/Claude Code URL Handler.app at the first exit: an
+# Info.plist registering the claude-cli: URL scheme and Contents/MacOS/claude,
+# a symlink to ~/.local/bin/claude, collected as claude-code with the link
+# recorded. While an IDE session runs, .claude/ide/<port>.lock holds an
+# authToken; while a Remote Control bridge runs,
+# .claude/bridge-spawn/<id>/mcp.json holds the session-bound headers of the
+# remote MCP endpoint. Both are secret globs, in a relocated config home
+# too. Checks follow the default and --no-secrets runs below; the same
+# files are in smoke.ps1 under alice.
+U256="$H/Applications/Claude Code URL Handler.app/Contents"
+S256="bridge-spawn/cse_0123456789abcdef0123"
+mkdir -p "$U256/MacOS" "$H/.claude/ide" "$H/.claude/$S256" "$CCW/ide" "$CCW/$S256"
+printf '<plist version="1.0"><dict><key>CFBundleURLSchemes</key></dict></plist>\n' \
+  >"$U256/Info.plist"
+ln -s /home/alice/.local/bin/claude "$U256/MacOS/claude"
+for _d256 in "$H/.claude" "$CCW"; do
+  printf '{"authToken":"00000000-0000-4000-8000-000000000256","transport":"ws"}\n' \
+    >"$_d256/ide/53256.lock"
+  printf '{"mcpServers":{"claude-code-remote":{"headers":{"X-Session-UUID":"x"}}}}\n' \
+    >"$_d256/$S256/mcp.json"
+done
+printf 'appended system prompt\n' >"$H/.claude/$S256/append-system-prompt.txt"
+
 run() { # run NAME ARGS...
   _n=$1; shift
   mkdir -p "$OUT/$_n"
@@ -1979,6 +2006,11 @@ check "#256 project git info/exclude collected as project" "is253 info/exclude"
 check "#256 Claude Code version lock collected as claude-code" "row \"$H/.local/state/claude/locks/2.1.310.lock\" | grep -q '\"agent\":\"claude-code\".*\"secret\":false,\"status\":\"collected\"'"
 check "#256 Claude Code cache staging collected as claude-code" "row \"$H/.cache/claude/staging/entry\" | grep -q '\"agent\":\"claude-code\".*\"secret\":false,\"status\":\"collected\"'"
 
+# 2026-10-26 claude-code macOS round (#256)
+check "#256 Claude Code URL handler bundle collected as claude-code" "row \"$U256/Info.plist\" | grep -q '\"agent\":\"claude-code\".*\"secret\":false,\"status\":\"collected\"' && row \"$U256/MacOS/claude\" | grep -q '\"agent\":\"claude-code\".*\"type\":\"symlink\".*\"status\":\"symlink\",\"target\":\"/home/alice/.local/bin/claude\"'"
+check "#256 Claude Code IDE lock and bridge-spawn mcp.json flagged secret" "row \"$H/.claude/ide/53256.lock\" | grep -q '\"agent\":\"claude-code\".*\"secret\":true,\"status\":\"collected\"' && row \"$H/.claude/$S256/mcp.json\" | grep -q '\"agent\":\"claude-code\".*\"secret\":true,\"status\":\"collected\"' && row \"$H/.claude/$S256/append-system-prompt.txt\" | grep -q '\"secret\":false,\"status\":\"collected\"'"
+check "#256 relocated claude home IDE lock and bridge-spawn mcp.json flagged secret" "row \"$CCW/ide/53256.lock\" | grep -q '\"agent\":\"claude-code\".*\"secret\":true,\"status\":\"collected\"' && row \"$CCW/$S256/mcp.json\" | grep -q '\"agent\":\"claude-code\".*\"secret\":true,\"status\":\"collected\"'"
+
 # ---- --no-secrets ---------------------------------------------------------
 run nosecrets --no-secrets; check "no-secrets exit 0" "[ $? -eq 0 ]"
 check "credentials skipped_secret" "[ \"\$(status_of \"$ROOT/home/alice/.claude/.credentials.json\")\" = skipped_secret ]"
@@ -2033,6 +2065,9 @@ check "#230 Qwen Code session registry skipped without secrets" "[ \"\$(status_o
 # 2026-10-23 claude-code Windows round (#256)
 check "#256 Claude Code daemon keys and .claude.json backup skipped without secrets" "[ \"\$(status_of \"$H/.claude/daemon/control.key\")\" = skipped_secret ] && [ \"\$(status_of \"$H/.claude/daemon/roster.json\")\" = skipped_secret ] && [ \"\$(status_of \"$H/.claude/backups/.claude.json.backup.1792800000000\")\" = skipped_secret ]"
 check "#256 relocated claude home session key, daemon key and backup skipped without secrets" "[ \"\$(status_of \"$CCW_K\")\" = skipped_secret ] && [ \"\$(status_of \"$CCW/daemon/control.key\")\" = skipped_secret ] && [ \"\$(status_of \"$CCW/backups/.claude.json.backup.1792800000000\")\" = skipped_secret ]"
+
+# 2026-10-26 claude-code macOS round (#256)
+check "#256 Claude Code IDE lock and bridge-spawn mcp.json skipped without secrets" "[ \"\$(status_of \"$H/.claude/ide/53256.lock\")\" = skipped_secret ] && [ \"\$(status_of \"$H/.claude/$S256/mcp.json\")\" = skipped_secret ] && [ \"\$(status_of \"$CCW/ide/53256.lock\")\" = skipped_secret ] && [ \"\$(status_of \"$CCW/$S256/mcp.json\")\" = skipped_secret ]"
 
 # ---- --full ---------------------------------------------------------------
 run full --full; check "full exit 0" "[ $? -eq 0 ]"
@@ -2158,7 +2193,7 @@ check "inventory first line is the host line, keys in order" "head -n1 \"$OUT/in
 check "inventory host line counts" "head -n1 \"$OUT/inventory.stdout\" | grep -q '\"users_unreadable\":0,\"docker_volumes\":3}\$'"
 check "inventory every later line is an agent line, keys in order" "[ \"\$(sed 1d \"$OUT/inventory.stdout\" | grep -vc '$INV_AGENT_RE')\" = 0 ] && [ \"\$(grep -c . \"$OUT/inventory.stdout\")\" -gt 10 ]"
 check "inventory ollama line: history and manifest, excluded blobs not counted" "agent_line inventory ollama ollama | grep -q '\"files\":2,\"bytes\":25,\"first\":\"2026-09-14T00:00:00Z\",\"last\":\"2026-09-15T01:02:03Z\",\"projects\":0,\"evidence\":\".ollama\"}\$'"
-check "inventory claude-code evidence in catalog order" "agent_line inventory alice claude-code | grep -q '\"evidence\":\".claude,.claude.json\\*,.claude-\\*/projects,.claude-\\*/history.jsonl,.claude-\\*/.claude.json\\*,.claude-\\*/.credentials.json,.claude-\\*/sessions/\\*.\\*.key,.claude-\\*/daemon/control.key,.claude-\\*/daemon/roster.json,.claude-\\*/backups/.claude.json.\\*,.local/state/claude,.cache/claude,Library/Caches/claude-cli-nodejs,AppData/Local/claude-cli-nodejs/Cache/\\*,AppData/Local/Temp/claude\"}\$'"
+check "inventory claude-code evidence in catalog order" "agent_line inventory alice claude-code | grep -q '\"evidence\":\".claude,.claude.json\\*,.claude-\\*/projects,.claude-\\*/history.jsonl,.claude-\\*/.claude.json\\*,.claude-\\*/.credentials.json,.claude-\\*/sessions/\\*.\\*.key,.claude-\\*/daemon/control.key,.claude-\\*/daemon/roster.json,.claude-\\*/backups/.claude.json.\\*,.claude-\\*/ide/\\*.lock,.claude-\\*/bridge-spawn/\\*/mcp.json,.local/state/claude,.cache/claude,Library/Caches/claude-cli-nodejs,AppData/Local/claude-cli-nodejs/Cache/\\*,AppData/Local/Temp/claude,Applications/Claude Code URL Handler.app\"}\$'"
 check "inventory first and last set for alice claude-code" "agent_line inventory alice claude-code | grep -q '\"first\":\"20[0-9-]*T[0-9:]*Z\",\"last\":\"20[0-9-]*T[0-9:]*Z\"'"
 check "inventory nested entry claimed from the enclosing agent" "agent_line inventory alice antigravity | grep -q '\"evidence\":\"[^\"]*.gemini/antigravity-cli' && agent_line inventory alice gemini-cli | grep -q '\"evidence\":\".gemini\"'"
 check "inventory: matched directory with no files of its own gives no line" "[ -z \"\$(agent_line inventory bob gemini-cli)\" ] && agent_line inventory bob antigravity | grep -q '\"files\":1,\"bytes\":3,.*\"evidence\":\".gemini/antigravity-cli\"}\$'"

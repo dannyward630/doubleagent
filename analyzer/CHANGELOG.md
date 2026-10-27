@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- The bundled catalog copy gains the Claude Code macOS lines of collector 1.19.0 (the `claude-cli` URL handler bundle under `~/Applications`, the relocated-home `ide/*.lock` and `bridge-spawn/*/mcp.json` entries, and the GitHub CLI `hosts.yml` lines under the `shared` agent), so detection follows them ([#256]).
 - The bundled catalog copy has the collector's Claude Code lines from the
   [Windows round](../research/claude-code.md#observed): the Windows temp
   root `AppData/Local/Temp/claude` and the
@@ -95,6 +96,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that Claude Code 2.1.310 keeps in `.claude.json` once the GitHub app is
   connected; the account and organization UUIDs beside it are not
   printed ([#256]).
+- The `claude-code` parser records where a session began, so its sessions
+  have `origin` `remote` or `local` in `sessions.jsonl` (and the
+  inventory's `remote_sessions` follows): `session origin: remote (Remote
+  Control, entrypoint sdk-cli)` for a session started from claude.ai
+  through `claude remote-control`, `session origin: remote (teleport,
+  remoteSourced)` for a cloud session brought local with `claude
+  --teleport`, `session origin: remote (teleport, cloud scratchpad
+  <path>)` in place of the scratch directory row for the cloud machine's
+  replayed scratchpad, and `session origin: local (VS Code extension)`.
+  `claude-desktop` sessions keep `origin` `""` ([#256]).
+- The `claude-code` parser reads `projects/<slug>/<session>/ccr-tip.json`
+  as `session synced: remote event <eventId> at <updatedAt> (from <file>,
+  file mtime)`, so a Remote Control session reads `synced` `yes` after
+  its bridge has stopped, and `projects/<slug>/bridge-pointer.json` as
+  `remote control: environment <environmentId> session <sessionId>
+  source=<source> (from <file>, file mtime)` ([#256]).
+- A teleported cloud session (`remoteSourced` records) gets `session synced: cloud session (teleported: remoteSourced records replayed from the vendor's copy)` beside its origin row, so it reads `synced` `yes` like a Remote Control spawn: the conversation is held on Anthropic's servers ([#256]).
+- The `claude-code` parser writes `remote control: spawn mode <mode> for
+  <path>`, `remote control: machine id set` and `cloud:
+  hasRemoteEnvironment=<value>` rows from `.claude.json`, and `model
+  setting: model=<alias>` from a settings file's `model`, each `(from
+  <file>, file mtime)`; the machine id is not printed ([#256]).
 
 ### Changed
 
@@ -111,6 +134,35 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   2.1.309 `toolUseResult.persistedOutputPath` when the line has one tool
   result, and from the `<persisted-output>` stub's text otherwise; the
   file must still be in the session's own `tool-results/` ([#256]).
+- A `claude-code` denial recorded with `toolDenialKind` and no decision
+  object, which Claude Code 2.1.310 writes on macOS for `No` at the
+  permission dialog and for a declined plan, now reads `permission
+  decision: reject (interrupted) toolDenialKind=<kind>` instead of
+  `permission decision: - source=- reason=- toolDenialKind=<kind>`
+  ([#256]).
+- A `scheduled_task_fire` record (a `/loop` firing) is now `scheduled task
+  fired: <taskId> cron=<cron>` instead of `scheduled_task_fire: <content>`
+  ([#256]).
+- A `claude-code` `history.jsonl` row now carries the pasted text in place
+  of a `[Pasted text #<n> +<m> lines]` placeholder, from the line's
+  `pastedContents` or `paste-cache/<contentHash>.txt` when either still
+  holds it, as the transcript's prompt does ([#256]).
+
+### Fixed
+
+- `claude-code` sessions no longer read `recovered` `partial` or `yes`
+  because of their own slash commands and pastes: a `history.jsonl` line
+  with a command as typed (`/model`, `/help`, `/rename lab-round`) now
+  pairs with the transcript's tag-form command record, within 600 seconds
+  because a command that opens a picker is recorded when it completes, and
+  a line with a paste with the prompt that wraps it in `<pasted_content>`,
+  so only lines no transcript records match stay recovered: `/clear`
+  (filed under the ended session), `/logout` and an `/exit` typed during
+  a turn. The match keeps whitespace (only runs of it collapse), the wider
+  window reaches forward only and against transcript records only, a line
+  whose own record is missing keeps its own time instead of taking a later
+  line's record, and a `paste-cache` file that is there but cannot be read
+  gives a `parser:` row naming it ([#256]).
 
 ## [0.20.1] - 2026-10-21
 

@@ -169,6 +169,10 @@ claude-code|.claude-*/daemon/control.key
 claude-code|.claude-*/daemon/pipe.key
 claude-code|.claude-*/daemon/roster.json
 claude-code|.claude-*/backups/.claude.json.*
+# Running-process credentials in a relocated config home: the IDE bridge
+# lock (authToken) and the Remote Control spawn MCP definition (2.1.310, #256)
+claude-code|.claude-*/ide/*.lock
+claude-code|.claude-*/bridge-spawn/*/mcp.json
 claude-code|.local/share/claude
 # Claude Code version locks and its staging/ directory, home-relative on Linux
 # and Windows alike: locks/<version>.lock exists only while a session
@@ -185,6 +189,10 @@ claude-code|AppData/Local/claude-cli-nodejs/Cache/*
 # scratchpad/ and tasks/ (2.1.309, #256); the Linux and macOS roots are
 # outside every home (#163)
 claude-code|AppData/Local/Temp/claude
+# Claude Code macOS URL handler: a two-file bundle registering the claude-cli:
+# URL scheme, written at the first exit, whose executable is a symlink to
+# ~/.local/bin/claude; install evidence that outlives ~/.local (2.1.310, #256)
+claude-code|Applications/Claude Code URL Handler.app
 claude-desktop|Library/Application Support/Claude
 claude-desktop|Library/Application Support/Claude-3p
 claude-desktop|Library/Logs/Claude
@@ -660,6 +668,11 @@ pydantic-clai|.local/state/pydantic-clai2
 shared|.agents
 shared|.config/AGENTS.md
 shared|.config/agents
+# GitHub CLI login that agents use for source-host access (gh auth login):
+# the token in plaintext when the login keychain is unreachable, a token-less
+# host entry when it is in the keychain (macOS, Claude Code 2.1.310 round, #256)
+shared|.config/gh/hosts.yml
+shared|AppData/Roaming/GitHub CLI/hosts.yml
 # Ollama
 ollama|.ollama
 ollama|Library/Application Support/Ollama
@@ -1359,6 +1372,8 @@ $SECRET_GLOBS = @'
 .claude/daemon/pipe.key
 .claude/daemon/roster.json
 .claude/backups/.claude.json.*
+.claude/ide/*.lock
+.claude/bridge-spawn/*/mcp.json
 .claude.json
 .claude.json.backup*
 .claude-*/.credentials.json
@@ -1371,6 +1386,8 @@ $SECRET_GLOBS = @'
 .claude-*/daemon/pipe.key
 .claude-*/daemon/roster.json
 .claude-*/backups/.claude.json.*
+.claude-*/ide/*.lock
+.claude-*/bridge-spawn/*/mcp.json
 .claude-*/.claude.json
 .claude-*/.claude.json.backup*
 Library/Application Support/Claude*/config.json
@@ -1474,6 +1491,8 @@ AppData/Roaming/devin/credentials.toml
 .cline/data/connectors/settings.json
 .cline/data/db/connectors.db*
 */User/globalStorage/saoudrizwan.claude-dev/cache/remote_config_*.json
+.config/gh/hosts.yml
+AppData/Roaming/GitHub CLI/hosts.yml
 Documents/Cline/webhook_config.json
 .vscode-mock/global-storage/secrets.json
 .roo/cli-credentials.json

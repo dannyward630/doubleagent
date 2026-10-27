@@ -1020,7 +1020,19 @@ github status=<status> (from .claude.json, file mtime)` from the
 `githubWebConnectionStatusCache` object of `.claude.json` (written by
 Claude Code 2.1.310 once the GitHub app is connected; `connected` is the
 value seen), with an empty `project_path`. The account and organization
-UUIDs beside that status are not printed. A Claude Desktop session record adds ` permission_mode=<mode>
+UUIDs beside that status are not printed. A settings file's string `model`
+gives `model setting: model=<alias> (from <file>, file mtime)` after its
+retention row: the model alias (`fable`, `opus`) `/model` saves as the
+default for new sessions, which the VS Code extension's start can also
+rewrite, so it is the file's value when collected, not a session's model.
+`.claude.json` adds, timestamped the same way, `remote control: spawn mode
+<mode> for <path> (from .claude.json, file mtime)` for a project with a
+saved Remote Control spawn mode (`same-dir` or `worktree`), with
+`project_path` the project, then `remote control: machine id set (from
+.claude.json, file mtime)` when Remote Control has been enabled on the
+machine (the id is not printed) and `cloud: hasRemoteEnvironment=<value>
+(from .claude.json, file mtime)` once a cloud session has been created
+from the CLI, both with an empty `project_path`. A Claude Desktop session record adds ` permission_mode=<mode>
 effort=<effort>` to its row and one `permission grant: <key> <entry>` or
 `permission grant: <key>=<value>` row per session grant, timestamped at
 the record's `lastActivityAt` (else `createdAt`), which the text names as
@@ -1042,17 +1054,27 @@ rows from a session transcript:
 | Row text | From | When |
 | --- | --- | --- |
 | `session surface: <entrypoint>`, then `session surface: <old> -> <new>` | the `entrypoint` key of the file's records: `cli` (the terminal), `claude-vscode` (the VS Code extension), `claude-desktop` (the desktop app's Code tab) | at the first record of each transcript file that carries it, and at each change |
-| `prompt trigger: promptSource=<promptSource> turnOrigin=<turnOrigin>` | a prompt's `promptSource` and `turnOrigin`, `-` for a missing key | after a `user` record's rows when `promptSource` is set and not `typed` or `turnOrigin` is set and not `human`: `queued` is a prompt sent from a Remote Control client such as the phone, `sdk` one from the VS Code extension, `suggestion_accepted` a prompt Claude suggested, `turnOrigin=scheduled` a `/loop` firing, `task_notification` a background task's completion |
+| `prompt trigger: promptSource=<promptSource> turnOrigin=<turnOrigin>` | a prompt's `promptSource` and `turnOrigin`, `-` for a missing key | after a `user` record's rows when `promptSource` is set and not `typed` or `turnOrigin` is set and not `human`: `queued` is a prompt sent from a Remote Control client such as the phone or one typed while a turn ran, `sdk` one from the VS Code extension, from claude.ai to a Remote Control spawn, or the cloud prompt of a teleported session, `system` a task notification, a background shell's completion notice or a `/loop` firing, `suggestion_accepted` a prompt Claude suggested, `turnOrigin=scheduled` a `/loop` firing, `task_notification` a background task's completion |
 | `scratch directory: <path> (session scratchpad, from the environment attachment)` | `snapshot.scratchpadDirectory` of an `environment` attachment | once per session and path, with `project_path` the scratchpad, so inventory.json lists it under `scratch_directories` |
 | `session continued in: <continuedInSessionId>` | a `continued-in` record | when the session daemon hands a console session to a worker session, whose own file holds the later turns |
 | `remote control: bridge session <bridgeSessionId or none> lastSequenceNum=<n>` | a `bridge-session` record (Remote Control) | when the bridge id or sequence number changes; `none` is the detach |
 | `session synced: remote control bridge <bridgeSessionId> url <url>` | the first `bridge-session` record of a session that names a bridge id, and the `url` of the `bridge_status` system record that belongs to that bridge (among the status records between the previous and the next `bridge-session` record of another id, the first at or after it, else the nearest before, else `-`); also a `.claude/sessions/<pid>.json` registry file that names a bridge id, as `... url - (from <path>, file mtime)` at the file's modification time | once per session and bridge id: the bridge puts the session on claude.ai, so `sessions.jsonl` `synced` is `yes` for it and `no` for a `claude-code` session without one |
+| `session synced: remote event <eventId> at <updatedAt> (from <path>, file mtime)` | a `.claude/projects/<slug>/<session>/ccr-tip.json` file (Claude Code Remote), the last claude.ai event the local side of a Remote Control session processed | one row per file, at the file's modification time, with `session_id` the session directory's name: the session is `synced` `yes` |
+| `session synced: cloud session (teleported: remoteSourced records replayed from the vendor's copy)` | the first `remoteSourced` record of a session, a turn of a cloud session replayed by `claude --teleport` | beside the session's `session origin: remote (teleport, remoteSourced)` row; the conversation is held on Anthropic's servers, so the session reads `synced` `yes`, like a Remote Control spawn |
+| `remote control: environment <environmentId> session <sessionId> source=<source> (from <path>, file mtime)` | a `.claude/projects/<slug>/bridge-pointer.json` file, the Remote Control environment enabled for the project, which stays after the bridge stops | one row per file, at the file's modification time; `sessionId` is the bridge's, so `session_id` is empty |
+| `session origin: remote (Remote Control, entrypoint sdk-cli)` | a transcript whose records have `entrypoint` `sdk-cli` and a prompt with `promptSource` `sdk`: a session started from claude.ai through `claude remote-control` | at the session's first `sdk-cli` record: `sessions.jsonl` `origin` is `remote` |
+| `session origin: remote (teleport, remoteSourced)` | a record with `remoteSourced` true: a turn of a cloud session replayed by `claude --teleport` | at the session's first such record |
+| `session origin: remote (teleport, cloud scratchpad <path>)` | an `environment` attachment on or before the file's last `remoteSourced` record, in the block a teleport replayed before the local process wrote its own records: the cloud machine's scratchpad, whatever its project directory name | once per session and path, in place of a `scratch directory:` row, since the path is not on this host |
+| `session origin: local (VS Code extension)` | a record with `entrypoint` `claude-vscode` | once per session; a `claude-code` session without a `session origin: remote` row reads `origin` `local` |
+| `scheduled task fired: <taskId> cron=<cron>` | a `scheduled_task_fire` system record (a `/loop` firing; `-` for a missing key) | in place of the `scheduled_task_fire: <content>` row; the prompt it fires follows as a `user` row with `prompt trigger: promptSource=system turnOrigin=scheduled` |
 
 Each takes its record's timestamp, or the latest one seen in the file for
 a record with none (`bridge-session`). The owner account and organization
 UUIDs of a `bridge-session` record are not printed. A `/clear` is not a
-deletion row: it starts a new transcript file whose `local_command:` row
-records it, and leaves the old file as it was.
+deletion row: it starts a new transcript file whose first records are the
+`/clear` command and its output (`slash command:` and `command output:`
+rows, or a `local_command:` row), and leaves the old file as it was,
+ending with its `cost-state` line.
 
 A remote URL an agent recorded for the repository it worked in is a
 `system` row too, `git remote: <url>`, with the URL exactly as the agent
@@ -2333,8 +2355,12 @@ carrying the call's `tool_name` and `tool_use_id`; and one
 The `claude-code` decision row also ends with
 ` toolDenialKind=<value> userFeedback=<text>` when the same line records
 either key, each printed as recorded and `userFeedback` last because it
-is free text; a line with either key and no `permissionDecision` yields
-`permission decision: - source=- reason=- toolDenialKind=<value>`. The
+is free text. A line with `toolDenialKind` and no `permissionDecision` is
+a denial that interrupted the turn (Claude Code 2.1.310 wrote it on macOS
+for `No` at the permission dialog and for a declined plan, the reason
+being the next prompt) and yields `permission decision: reject
+(interrupted) toolDenialKind=<value>`; a line with only `userFeedback`
+yields `permission decision: - source=- reason=- userFeedback=<text>`. The
 `claude-desktop` parser writes `model: <id>` from each audit log's
 `system` `init` line and `model: <old> -> <new>` when an `assistant`
 line's model changes, from every audit log whether or not the session's
@@ -2370,7 +2396,29 @@ secondary source is dropped when a row from the agent's primary store has
   ids differ, because a mirror can record a call in another form than
   the transcript does (Codex CLI's `thread_history_1.sqlite` holds the
   parsed command, the rollout the model's arguments) and a call id is
-  unique within a session; a tool row without an id matches on text;
+  unique within a session; a tool row without an id matches on text.
+  Claude Code's rows compare a slash command and a prompt in one form on
+  both sides: its `history.jsonl` keeps a command as typed (`/rename
+  lab-round`) where the transcript has the command in tags (a `slash
+  command:` or `local_command:` row), and a paste as the expanded text
+  the parser builds from the placeholder, which the transcript's prompt
+  wraps in `<pasted_content id="...">` ... `</pasted_content>`; so the
+  command matches as the `user` text `/<name>`, plus ` <args>` when its
+  `<command-args>` is not empty, and a prompt with the wrapper removed and
+  each run of whitespace collapsed to one space (the whitespace itself
+  stays, so prompts that differ by a space stay distinct). A command
+  line's window is 600 seconds, because a command that opens a picker or
+  an overlay (`/model`, `/help`) is recorded in the transcript when it
+  completes; the window extends forward only (a record never precedes
+  its line by more than the source's own window), it applies against
+  transcript records only (two history files keep their own window with
+  each other), and within it a command line may not take a record
+  written at or after the next line of the same command that could take
+  that record (a line of the record's session, a session-less line of its
+  project, or a line with neither), so a line whose own record is missing
+  stays, under its own time, rather than taking a later line's record. A `/clear` (its history
+  line carries the ended session, its record the new one), a `/logout` and
+  an `/exit` typed while a turn ran have no record to pair with and stay;
 - the same `session_id`, when the secondary row has one; when it has
   none, the same `project_path` (whatever the primary row's
   `session_id`), when it has one; when it has neither, as a text-only
@@ -2468,7 +2516,7 @@ beside its `session synced: server conversation` row.
 | `agent-zero` | `usr/scheduler/tasks.json` of the install directory or volume (each task's prompt, with no timestamp, matches on text within the task's chat; its last result is stamped when the run ends: a 60-second window); the Telegram plugin's `usr/plugins/_telegram_integration/state.json` (only `system` rows, for a mapped chat that is gone) | `usr/chats/<ctxid>/chat.json` |
 | `aider` | `.aider.input.history` and `.aider.llm.history`, in a home or a repository | `.aider.chat.history.md` beside them |
 | `antigravity` | `.gemini/antigravity-cli/history.jsonl`; the brain mirror `.gemini/<dir>/brain/<uuid>/.system_generated/logs/transcript_full.jsonl`, else its chunks, else `transcript.jsonl`, else its chunks, `<dir>` each of `antigravity-cli`, `antigravity`, `antigravity-ide` and `antigravity-backup` (600 seconds: the mirror records a step's start, the database row its completion) | `.gemini/<dir>/conversations/<uuid>.db` |
-| `claude-code` | `.claude/history.jsonl` (and `.claude-<name>/history.jsonl`) | `.claude/projects/<slug>/*.jsonl` and its subagent files |
+| `claude-code` | `.claude/history.jsonl` (and `.claude-<name>/history.jsonl`; a `[Pasted text #<n> ...]` placeholder is expanded from the line's `pastedContents` or `paste-cache/<contentHash>.txt` when either holds the paste; `/exit` and other commands the transcript does not record never pair) | `.claude/projects/<slug>/*.jsonl` and its subagent files |
 | `claude-desktop` | each Cowork session's `local-agent-mode-sessions/<acct>/<org>/[agent/]<session dir>/audit.jsonl` under the app-data directory; the session records `local_<uuid>.json` beside the session dirs and under `claude-code-sessions/` (a Cowork record's first prompt has no timestamp: matches on text within the session) | the session dir's `.claude/projects/<slug>/*.jsonl` and its subagent files |
 | `cline` | `.cline/data/db/session-search.db` (no timestamp per message: matches on text and session; a message of content blocks keeps their type names and tool ids, so only plain-string prompts match); `.cline/data/cache/user_input_history.jsonl` (only the last line timestamped: the others match on text alone); `.cline/data/logs/hooks.jsonl` (tolerance one hour; tool rows match on the call id) | `.cline/data/sessions/<id>/<id>.messages.json` |
 | `codex-cli` | `.codex/history.jsonl`; `.codex/state_5.sqlite` (first prompt with no timestamp: matches on text alone); `.codex/thread_history_1.sqlite`; `.codex/.codex-global-state.json` (the desktop app's prompt history, no timestamp: matches on text within the thread); `.codex/db-backups/<folder>/state_5.sqlite` (a copy Codex set aside as corrupt, read as `state_5.sqlite`) | the rollouts under `.codex/sessions/` and `.codex/archived_sessions/` |
@@ -2623,7 +2671,7 @@ no timestamp come first. Its fields, in order:
 | `source_file` | string | The `source_file` that contributed the most of the session's records, the first met on a tie, so a transcript wins over a one-line-per-prompt history file; `""` when no record names one. |
 | `synced` | string | Whether the session is synced to a remote account, from the agent's own record of it: `yes` when one of the session's records is a `system` row whose `text` starts with `session synced:` (written by the `agent-zero`, `chatgpt-desktop`, `claude-code` (since 0.21.0), `cline`, `codex-cli`, `copilot-cli`, `cursor`, `kilo-code`, `letta`, `little-coder`, `open-interpreter`, `openclaw`, `opencode`, `pi` and `vscode` parsers); `no` when the agent's parser records sync state and no record carries that row; `""` when the agent's parser records no sync state, so nothing is known. A string rather than a boolean, because `false` would say the agent can sync and did not. Since analyzer 0.14.0. |
 | `relayed` | string | Whether the session was carried through a messaging platform (Telegram, WhatsApp, email, a GitHub thread), which keeps its own copy of the conversation, from the agent's own record of it: `yes` when one of the session's records is a `system` row whose `text` starts with `session relayed:` (written by the `agent-zero`, `goose` and `qwen-code` parsers, and since analyzer 0.20.1 by the `crush`, `hermes`, `letta`, `little-coder`, `nanobot` and `openclaw` parsers); `no` when the agent's parser records relay state and no record carries that row; `""` when the agent's parser records no relay state, so nothing is known. A relay is not a sync: the copy is on the platform, not in the agent vendor's account, so a session can read `yes` in both fields (an Agent Zero Telegram chat chained on a stored provider response). The `little-coder` rows in both fields come from the v0.0.x `.little-coder/config.json` and name no session, so every little-coder session reads `no` in both. Since analyzer 0.15.0. |
-| `origin` | string | Where the session began, from the agent's own record of it: `remote` when one of the session's records is a `system` row whose `text` starts with `session origin: remote` (written by the `vscode` parser, for a Copilot cloud agent task that ran on GitHub's servers and is only listed in the editor, and by the `chatgpt-desktop` parser, for a ChatGPT conversation the app lists from the account; since analyzer 0.20.0 also by the `cursor` parser, for a conversation whose header names an agent location other than `local`, and since analyzer 0.20.1 for a Cursor cloud agent, `session origin: remote cursor cloud agent`, by the `cline` parser, for a Cline Cloud session, and by the `agent-zero` parser, for the chat the A0 CLI connector last used on an Agent Zero instance); `local` when the agent's parser records origin and no record carries that row; `""` when the agent's parser records no origin, so nothing is known. A remote `vscode`, `chatgpt-desktop` or `cursor` session is also `synced` `yes`, since the vendor holds its copy; since analyzer 0.20.1 every other Cursor session's `synced` is `no`. Since analyzer 0.15.0. |
+| `origin` | string | Where the session began, from the agent's own record of it: `remote` when one of the session's records is a `system` row whose `text` starts with `session origin: remote` (written by the `vscode` parser, for a Copilot cloud agent task that ran on GitHub's servers and is only listed in the editor, and by the `chatgpt-desktop` parser, for a ChatGPT conversation the app lists from the account; since analyzer 0.20.0 also by the `cursor` parser, for a conversation whose header names an agent location other than `local`, and since analyzer 0.20.1 for a Cursor cloud agent, `session origin: remote cursor cloud agent`, by the `cline` parser, for a Cline Cloud session, and by the `agent-zero` parser, for the chat the A0 CLI connector last used on an Agent Zero instance; since analyzer 0.21.0 by the `claude-code` parser, for a session started from claude.ai through Remote Control or a cloud session brought local with `claude --teleport`); `local` when the agent's parser records origin and no record carries that row; `""` when the agent's parser records no origin, so nothing is known. A remote `vscode`, `chatgpt-desktop` or `cursor` session is also `synced` `yes`, since the vendor holds its copy; since analyzer 0.20.1 every other Cursor session's `synced` is `no`. Since analyzer 0.15.0. |
 | `recovered` | string | Whether the session was rebuilt from secondary sources (see [Secondary sources](#secondary-sources)): `yes` when every one of its records in `timeline.jsonl` has `recovered` `yes`, so its primary transcript is gone and only secondary sources hold it; `partial` when some do, so the primary was cut or rewound and a secondary source kept turns it lost; `no` when none does and the agent's parser reads at least one secondary source; `""` when the agent's parser reads no secondary source, so nothing is known. Computed after the filters, over the session's event records only (`system` rows left out), so a secondary source's header, record or `parser:` row never makes a complete session `partial`, and a session with no event record reads `no` or `""`. Because deduplication matches on text, `partial` also results when a secondary source records an event in another form than the primary store does (an index that compresses a tool call into one line), so it marks a session to compare against its secondary sources, not proof of a cut; and a Letta session on the server backend, whose local transcript mirrors the server's store of record, reads `yes` or `partial` by design. Since analyzer 0.15.0. |
 
 ## Compatibility

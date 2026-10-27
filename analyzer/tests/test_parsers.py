@@ -4174,10 +4174,6 @@ class ProjectRoutingTests(unittest.TestCase):
         self.assertNotIn("project", by_agent())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ProtobufTests(unittest.TestCase):
     """Test the protobuf encoder and decoder against a small schema."""
 
@@ -24829,3 +24825,7 @@ class CursorTests(ParserBase):
         self.assertEqual(
             [(row.turn_type, row.project_path) for row in rows], [("user", ""), ("assistant", "")]
         )
+
+
+if __name__ == "__main__":
+    unittest.main()

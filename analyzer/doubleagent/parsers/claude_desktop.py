@@ -1,144 +1,33 @@
 """Claude Desktop local agent sessions (Cowork, the Code tab, scheduled tasks).
 
-Closed source. The shapes come from the app bundle 2.31226.1
-(`Contents/Resources/app.asar`, macOS), read without running it, with the
-top-level keys of `scheduled-tasks.json` and `git-worktrees.json` observed
-on an install of the same version; see `research/claude-desktop.md`. Paths
-below are relative to the app-data directory, one of the catalog bases
-`Library/Application Support/Claude[-3p]`, `.config/Claude[-3p]`,
-`AppData/Roaming/Claude[-3p]`, `AppData/Local/Claude[-3p]`,
-`AppData/Local/Claude-Data[/<package family>]` or, for the MSIX build,
-whose MSIX container redirects `AppData/Roaming/Claude` there,
-`AppData/Local/Packages/<Claude_* or AnthropicPBC.Claude_*>/LocalCache/Roaming/Claude`
-(observed on Windows 11, 2026-10-10, and Ubuntu 26.04, 2026-10-11);
-`<acct>` and `<org>` are account and organization UUIDs (or their first
-eight hex digits). Files:
+Reads, under the app-data directory (`BASE`: `Claude[-3p]` under `Library/Application
+Support`, `.config`, `AppData/Roaming` or `AppData/Local`, `AppData/Local/Claude-Data`, or
+the MSIX build's `AppData/Local/Packages/<package>/LocalCache/Roaming/Claude`): the Claude
+Code transcripts under `local-agent-mode-sessions/<acct>/<org>/[agent/]<session dir>/.claude/
+projects/` and `claude-code-sessions/<acct>/<org>/` (including `imported-staging/`), read by
+`ClaudeCodeParser._parse_session`; each session dir's `audit.jsonl` (a secondary source);
+the session records `local_<uuid>.json` (a secondary source); `scheduled-tasks.json`,
+`git-worktrees.json` and `remote-session-spaces.json`. It yields the transcript rows with
+the record's folder as `project_path`, the audit log's user, assistant, tool, model,
+permission, `result` and `init` rows, and system rows for records, grants, scheduled
+tasks, worktrees and remote folder grants.
 
-* `local-agent-mode-sessions/<acct>/<org>/[agent/]<session dir>/.claude/
-  projects/<slug>/<cliSessionId>.jsonl`, the subagent files under
-  `<cliSessionId>/subagents/`, the same under
-  `claude-code-sessions/<acct>/<org>/<session dir>/`, and
-  `claude-code-sessions/<acct>/<org>/imported-staging/<cliSessionId>.jsonl`:
-  Claude Code JSONL, read by `ClaudeCodeParser._parse_session`, so the
-  field names in `claude_code.py` apply. The rows keep the JSONL
-  `sessionId`. `project_path` is taken from the session record's
-  `userSelectedFolders[0]` when the record is found and has one, because
-  the JSONL `cwd` is the guest path `/sessions/<name>` when the CLI runs
-  in the desktop's VM; otherwise it is the JSONL `cwd` as claude-code sets
-  it. The record is `<org>/local_<uuid>.json` or
-  `<org>/agent/local_<uuid>.json`, found from the session dir name
-  `local_<uuid>` or its eight-hex short form; staged imports have no
-  session dir and keep the JSONL `cwd`.
-* `local-agent-mode-sessions/<acct>/<org>/[agent/]<session dir>/audit.jsonl`:
-  one Agent SDK message per line plus `_audit_timestamp` (ISO 8601) and
-  `_audit_hmac`. Read: `type`, `subtype`, `timestamp`, `_audit_timestamp`,
-  `session_id`, `cwd`, `model`, `client_platform`, `isSynthetic`,
-  `message.model`, `message.content` blocks (`text`, `tool_use` with `id`,
-  `name`, `input`; `tool_result` with `tool_use_id`, `content`,
-  `is_error`; `thinking`, `redacted_thinking`), `tool_name`, `tool_input`,
-  `decision`, `granted`, `source`, `scheduled_task_id`, `matched_ops`,
-  `num_turns`, `is_error`. Permission events (`system` subtypes
-  `permission_request`, `permission_response`, `permission_auto_approved`,
-  `permission_auto_denied`) and `result` lines are always `system` rows.
-  The `system` `init` line's `model` is a `system` row `model: <id>`
-  (issues 96 and 97) followed by an `init: cwd=<cwd> model=<model>` row,
-  and each `assistant` line whose `message.model` differs is
-  `model: <old> -> <new>` before its rows; one tracker per session id. A
-  `system` `model_refusal_fallback` line (the subtype is in the bundle,
-  its fields are not recorded) is a `system` row
-  `model_refusal_fallback: <compact JSON of the line less its envelope>`.
-  Desktop prompts (`client_platform` `desktop_app`) are `user` rows,
-  `isSynthetic` notifications and other user text are `context:` system
-  rows, and the `assistant` and `tool_result` blocks are rows as in the
-  transcript. Every line is read on every run, whether or not the session
-  dir holds a transcript. The file is a secondary source (issue 122): its
-  `user`, `assistant`, tool and `model:` rows repeat the transcript's, and
-  `dedup.deduplicate` drops those the transcript also yields, so a session
-  whose transcript is gone keeps its turns from the audit log, and the
-  permission, `result` and `init` rows, which the transcript does not
-  record, are always kept. Each row carries the line's own time (the
-  prompt's `timestamp`, else `_audit_timestamp`, the write time) and the
-  default 2-second window applies: the desktop stamps a prompt as it sends
-  it and logs each SDK message as the query loop yields it, but no real
-  audit log has been compared with its transcript, so the gap is not
-  measured. Known misses, shown twice: a Bash `tool_use` whose transcript
-  record has `wireToolInputs` (the audit line has only `input`), a
-  persisted tool output, and a prompt the CLI received later than the
-  desktop stamped it.
-  To pair with the transcript rows, the session id is the record's
-  `cliSessionId` (the transcript's file name and JSONL `sessionId`), else
-  the line's `session_id`, and `project_path` is the record's
-  `userSelectedFolders[0]`, as for the transcript, else the first `init`
-  line's `cwd` (the CLI's working directory, which the transcript records
-  as its JSONL `cwd`), else the record's `cwd`.
-* `local-agent-mode-sessions/<acct>/<org>/[agent/]local_<uuid>.json` (Cowork)
-  and `claude-code-sessions/<acct>/<org>/local_<uuid>.json` (Code tab):
-  `sessionId`, `cliSessionId`, `sessionType`, `title`, `createdAt`,
-  `model`, `userSelectedFolders`, `originCwd`, `cwd`, `branch` (Code tab),
-  `initialMessage`, `error`, `errorCategory`, `errorAt`. One `system` row
-  at `createdAt`. Both forms are a secondary source (issue 122). A Cowork
-  record's `initialMessage` is always a `user` row, with an empty
-  `timestamp_utc` because the record keeps no time for the prompt
-  (`createdAt` is the session's), so it matches the transcript's or the
-  audit log's copy on text within the session, and survives when both
-  are gone; the record's own `system` rows have no twin and are always
-  kept. A Code-tab record's `initialMessage` is a `user` row at
-  `createdAt` only when the session's transcript is not in the input
-  (`_session_collected`): that transcript is `~/.claude/projects/` under
-  agent `claude-code`, and the rule pairs rows of one agent only, so a
-  row yielded beside it would be shown twice. On a
-  Code-tab record the row's text ends with the persisted Remote Control
-  state, `remote_control=<remoteControlUserEnabled> bridges=<number of
-  bridgeSessionIds> spawned_remotely=<remoteControlSpawn is a non-empty
-  object> steered_remotely=<steeredByRemoteClient>` (absent keys read
-  `false` and `0`; real installs have shown only those), and a
-  `remoteControlLiveAtUpdateQuit` object with a numeric `at` (epoch ms)
-  is a second `system` row at that time, `remote control live at update
-  quit`. The `true` values rest on the bundle and the fixture only. The
-  record row of either kind ends with ` permission_mode=<permissionMode>
-  effort=<effort>` (`-` for an absent key; the Cowork record's bundle key
-  list has no `effort`, so it usually reads `-` there). Then, for issue 93,
-  one `system` row per entry of `alwaysAllowedReasons` and
-  `sessionPermissionUpdates`, `permission grant: <key> <entry> (as of
-  <field>)`, and one per `chromePermissionMode`, `chromeAllowedDomains`,
-  `cuAllowedApps`, `cuGrantFlags` and `cuFlagsGrantedAt` that holds a
-  value (not absent, empty string, `[]` or `{}`), `permission grant:
-  <key>=<value> (as of <field>)`; an entry or value that is not a string is
-  its compact JSON. The record keeps no time per grant, so these rows take
-  `lastActivityAt` (the grant was held by then), else `createdAt`, and
-  `<field>` names which. The entries' inner shape is not determined: real
-  installs have shown both lists empty and `chromePermissionMode` a string.
-  The Cowork grants `approvedToolNames`, `webFetchAllowedUrls`,
-  `egressAllowedDomains`, `userApprovedFileAccessPaths`, `enabledMcpTools`
-  and `fileDeleteApprovedMounts` (issue 97; "arrays and objects" in the
-  bundle, which key is which not determined) follow at the same time: a
-  list is one `permission grant: <key> <entry> (as of <field>)` row per
-  entry, an object one `permission grant: <key>.<member>=<value> (as of
-  <field>)` row per member, and any other value one `permission grant:
-  <key>=<value> (as of <field>)` row.
-* `.../scheduled-tasks.json`: `scheduledTasks[]` with `id`,
-  `cronExpression` or `fireAt`, `enabled`, `createdAt`, `cwd`,
-  `userSelectedFolders`, `permissionMode`, `model`; the row ends with
-  ` permission_mode=<permissionMode> model=<model>` (`-` when absent) and
-  its `model` column is the task's model.
-* `local-agent-mode-sessions/<acct>/<org>/remote-session-spaces.json`:
-  `entries[]` with `sessionId` (the server-side session id) and
-  `folders[]`, the folders granted to a remote Cowork session. One
-  `system` row per folder, `permission setting:
-  entries.<sessionId>.folders=<folder> (from <file>, file mtime)`, at the
-  file's modification time, `project_path` the folder, `session_id`
-  empty. A file that is not a JSON object is one `system` row.
-* `git-worktrees.json`: `worktrees{}` values with `path`, `branch`,
-  `sourceBranch`, `baseRepo`, `leasedBy` (the desktop session id, kept in
-  the text, not as `session_id`), `createdAt`.
+Fields read: the audit line's `type`, `subtype`, `timestamp`, `_audit_timestamp`,
+`session_id`, `cwd`, `model`, `client_platform`, `isSynthetic`, `message.model`,
+`message.content` blocks, `tool_name`, `tool_input`, `decision`, `granted`, `source`,
+`scheduled_task_id`, `matched_ops`, `num_turns`, `is_error`; the record's `sessionId`,
+`cliSessionId`, `sessionType`, `title`, `createdAt`, `lastActivityAt`, `model`,
+`userSelectedFolders`, `originCwd`, `cwd`, `branch`, `initialMessage`, `error`,
+`errorCategory`, `errorAt`, `permissionMode`, `effort`, the Remote Control keys and the
+grant keys `GRANT_LISTS`, `GRANT_KEYS` and `COWORK_GRANTS` name; a task's `id`,
+`cronExpression`, `fireAt`, `enabled`, `createdAt`, `cwd`, `userSelectedFolders`,
+`permissionMode`, `model`; a worktree's `path`, `branch`, `sourceBranch`, `baseRepo`,
+`leasedBy`, `createdAt`; and the spaces file's `entries[].sessionId` and `folders[]`.
+Every `createdAt`, `errorAt` and `fireAt` is epoch milliseconds.
 
-Every `createdAt`, `errorAt` and `fireAt` is epoch milliseconds, which
-`to_utc` takes as milliseconds because the value is above 1e11.
-
-Not parsed: the claude.ai LevelDB stores, the logs, `spaces.json`,
-memory files, `rpm/` and caches, and `claude_desktop_config.json`, whose
-`preferences.remoteChatFolderGrants` holds folder grants but which is a
-secret-glob file (its `mcpServers.*.env` can embed API keys).
+Closed source: the shapes come from the app bundle 2.31226.1 (`app.asar`, macOS), with
+top-level keys observed on installs of that version on macOS, Windows 11 and Ubuntu. See
+`research/claude-desktop.md`.
 """
 
 from __future__ import annotations
@@ -213,8 +102,8 @@ def _value(value) -> str:
     return value if isinstance(value, str) else compact_json(value)
 
 
-# Session-record keys that hold per-session permission grants (the research
-# document's Record schema): lists read one row per entry, then keys read one row each.
+# Session-record keys that hold per-session permission grants: lists read one
+# row per entry, then keys read one row each.
 GRANT_LISTS = ("alwaysAllowedReasons", "sessionPermissionUpdates")
 GRANT_KEYS = (
     "chromePermissionMode",
@@ -223,9 +112,9 @@ GRANT_KEYS = (
     "cuGrantFlags",
     "cuFlagsGrantedAt",
 )
-# Cowork tool, network and folder grants (the research document's Record schema, "arrays and
-# objects"; which key is which type is not determined): a list is one row
-# per entry, an object one row per member, anything else one row.
+# Cowork tool, network and folder grants ("arrays and objects" in the bundle;
+# which key is which type is not determined): a list is one row per entry, an
+# object one row per member, anything else one row.
 COWORK_GRANTS = (
     "approvedToolNames",
     "webFetchAllowedUrls",
@@ -270,9 +159,11 @@ def _org_dir(session_dir: Path) -> Path:
 
 
 def _find_record(session_dir: Path) -> dict | None:
-    """The session record of a session dir named `local_<uuid>` or with the
-    UUID's first eight hex digits, from `<org>/` or `<org>/agent/`; never
-    through a symlink."""
+    """Return the session record of a session dir, or None.
+
+    The dir is named `local_<uuid>` or with the UUID's first eight hex digits, and the
+    record is found in `<org>/` or `<org>/agent/`, never through a symlink.
+    """
     org = _org_dir(session_dir)
     name = session_dir.name
     if not (LONG_RX.match(name) or SHORT_RX.match(name)):
@@ -299,7 +190,7 @@ def _find_record(session_dir: Path) -> dict | None:
 
 
 def _jsonl_files(directory: Path, name: str = "*.jsonl") -> list[Path]:
-    """`d/*/<name>` regular files, through no symlink."""
+    """Return the regular files `directory/*/<name>`, through no symlink."""
     if not _plain_dir(directory):
         return []
     out = []
@@ -329,6 +220,8 @@ def _folder(record: dict | None) -> str:
 
 
 class ClaudeDesktopParser(ClaudeCodeParser):
+    """Parse Claude Desktop's session transcripts, audit logs and session files."""
+
     agent = "claude-desktop"
     name = "claude-desktop"
     has_secondary = True
@@ -338,6 +231,7 @@ class ClaudeDesktopParser(ClaudeCodeParser):
     records_sync = False
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a transcript, audit log, record or desktop state file."""
         rel = artifact.rel
         return any(
             pattern.match(rel)
@@ -353,6 +247,7 @@ class ClaudeDesktopParser(ClaudeCodeParser):
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Claude Desktop file."""
         rel = artifact.rel
         match = TRANSCRIPT_RX.match(rel)
         if match:
@@ -398,12 +293,15 @@ class ClaudeDesktopParser(ClaudeCodeParser):
     # -- audit.jsonl -----------------------------------------------------------
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for an audit log or a session record."""
         return bool(AUDIT_RX.match(artifact.rel) or RECORD_RX.match(artifact.rel))
 
     @staticmethod
     def _init_cwd(artifact: Artifact) -> str:
-        """The `cwd` of the audit log's first `system` `init` line, the CLI's
-        working directory, which its transcript records as the JSONL `cwd`."""
+        """Return the `cwd` of the audit log's first `system` `init` line, or "".
+
+        It is the CLI's working directory, which its transcript records as the JSONL `cwd`.
+        """
         for _, line in iter_jsonl(artifact.disk_path, []):
             if line.get("type") == "system" and line.get("subtype") == "init":
                 cwd = _str(line.get("cwd"))
@@ -642,11 +540,11 @@ class ClaudeDesktopParser(ClaudeCodeParser):
 
     @staticmethod
     def _grants(record: dict, make_row, created: str) -> Iterator[Row]:
-        """One `system` row per `alwaysAllowedReasons` and
-        `sessionPermissionUpdates` entry and per browser or computer-use
-        grant key that holds a value. The record keeps no time per grant, so
-        the rows take `lastActivityAt` (the grant held by then), else
-        `createdAt`, and say which."""
+        """Yield one `permission grant:` row per grant entry or key of a session record.
+
+        The record keeps no time per grant, so the rows take `lastActivityAt` (the grant held
+        by then), else `createdAt`, and say which.
+        """
         last = to_utc(record.get("lastActivityAt"))
         timestamp, field = (last, "lastActivityAt") if last else (created, "createdAt")
         for key in GRANT_LISTS:
@@ -692,10 +590,11 @@ class ClaudeDesktopParser(ClaudeCodeParser):
 
     @staticmethod
     def _session_collected(artifact: Artifact, record: dict) -> bool:
-        """Whether a transcript or audit log for the record's session is in
-        the input: the session dir (full or short name, beside the record or
-        in its org dir), the org's `imported-staging/`, or for the Code tab
-        `~/.claude/projects/*/`."""
+        """Return whether a transcript or audit log of the record's session is in the input.
+
+        It is looked for in the session dir (full or short name, beside the record or in its
+        org dir), the org's `imported-staging/`, and for the Code tab `~/.claude/projects/*/`.
+        """
         record_dir = artifact.disk_path.parent
         org = record_dir.parent if record_dir.name == "agent" else record_dir
         session_id = _str(record.get("sessionId")) or artifact.disk_path.stem
@@ -756,8 +655,8 @@ class ClaudeDesktopParser(ClaudeCodeParser):
         if not isinstance(doc, dict):
             yield self._system(artifact, "parser: unreadable git-worktrees.json", 1)
             return
-        # Observed on a fresh Windows install: `{"schemaVersion": 2}` and no
-        # `worktrees` key until the Code tab creates one.
+        # A fresh install's file is `{"schemaVersion": 2}`, with no `worktrees`
+        # key until the Code tab creates one.
         trees = doc.get("worktrees")
         if not isinstance(trees, dict):
             return
@@ -780,9 +679,11 @@ class ClaudeDesktopParser(ClaudeCodeParser):
     # -- remote-session-spaces.json --------------------------------------------
 
     def _spaces(self, artifact: Artifact) -> Iterator[Row]:
-        """One standing row per folder granted to a remote Cowork session:
-        `entries[].folders[]`, keyed by the entry's `sessionId` (the server's
-        id, kept in the text; `session_id` stays empty)."""
+        """Yield one `permission setting:` row per folder granted to a remote Cowork session.
+
+        The folders are `entries[].folders[]`, keyed by the entry's `sessionId`, the
+        server's id, which is kept in the text; `session_id` stays empty.
+        """
         doc, bad = self._settings_doc(artifact, "remote-session-spaces.json")
         if doc is None:
             if bad is not None:

@@ -1,101 +1,31 @@
-"""Sourcegraph Cody chat history.
+"""Sourcegraph Cody chat history, settings and model preferences.
 
-Validated against source, sourcegraph/cody-public-snapshot at 8e20ac6c (see
-`research/cody.md`), with a synthetic fixture; no real install was
-checked. Every chat of every account lives in one JSON object,
-`AccountKeyedChatHistory`, stored in two places:
+Reads the `AccountKeyedChatHistory` JSON, `{"<endpoint>-<username>": {"chat": {"<chatID>":
+transcript}}}`, from the `sourcegraph.cody-ai` row of an editor's `state.vscdb` (its
+`cody-local-chatHistory-v2` member) or the JetBrains plugin's
+`Cody-nodejs/[Data/]JetBrains-globalState/cody-local-chatHistory-v2` file; the
+`cody-model-preferences` value (the row's member or the JetBrains file); the editor's
+`User/settings.json` (JSONC); and a project's `.idea/cody_history.xml`, the pre-agent
+plugin's history (a secondary source). The catalog attributes the editor files to the
+editor, so `reads_agents` lists `vscode_state.EDITOR_AGENTS`.
 
-* VS Code and its forks: the `ItemTable` row `key = 'sourcegraph.cody-ai'`
-  of `<editor User dir>/globalStorage/state.vscdb`, whose JSON value is the
-  extension's whole global state; the history is its
-  `cody-local-chatHistory-v2` member. The catalog attributes that file to
-  `vscode`, or to the fork (Cursor, Windsurf, PearAI, Kiro, Antigravity)
-  whose `User/` directory it sits in, so this parser lists all of them,
-  `vscode_state.EDITOR_AGENTS`, in `reads_agents`.
-* The JetBrains plugin (Cody agent): the file
-  `Cody-nodejs/[Data/]JetBrains-globalState/cody-local-chatHistory-v2`,
-  whose whole content is the JSON history.
+Fields read: a transcript's `id`, `chatTitle`, `lastInteractionTimestamp` and
+`interactions[]` `humanMessage` and `assistantMessage`; a message's `speaker`, `text`,
+`model`, `contextFiles[].uri`, `error.message`, `content[]` `tool_call` and `tool_result`
+parts and `processes[]` (`type`, `id`, `title`, `description`, `content`, `state`,
+`error.message`); the preferences' `selected` and `defaults`; the settings' `cody.agentic.*`,
+`cody.chat.agenticContext` and each `cody.mcpServers.<server>` `disabled` and
+`disabledTools`, never its `headers`, `env`, `url`, `command` or `args`; and the XML's
+`accountId`, `internalId`, `updatedAt`, `llm/model`, `speaker` and `text` values.
 
-Shape: `{"<endpoint>-<username>": {"chat": {"<chatID>": transcript}}}`.
-Transcript fields: `id`, `chatTitle`, `lastInteractionTimestamp`,
-`interactions[]` of `{humanMessage, assistantMessage}`. Message fields:
-`speaker` (`human`, `assistant`, `system`), `text`, `model`, `intent`,
-`contextFiles[].uri.fsPath` (or `.path`), `error.message`, `content[]`
-parts (`{type: "tool_call", tool_call: {id, name, arguments}}` on the
-assistant, `{type: "tool_result", tool_result: {id, content}}` on the
-human), and `processes[]` (`{type, id, title, description, content,
-state, error.message}`, `type` one of `tool`, `confirmation`, `step`).
+There is no per-message timestamp: every row takes the chat id, which is the creation time
+as `Date.toUTCString()`, else `lastInteractionTimestamp`. A history that does not parse is
+walked chat by chat, and the XML is read incrementally, so the chats before the damage are
+still yielded. A refused confirmation step is `state` `error` with `Command rejected`; an
+approved one stays `pending`, which cannot be told from an unanswered one.
 
-Model and permission rows, all `system`: the assistant message `model`
-gives `model: <id>` at the first assistant message of a chat that names
-one and `model: <old> -> <new>` on every later change, before that
-message's rows. A `processes[]` entry of type `confirmation` (a step
-that prompted the user; Deep Cody's terminal tool adds one per command,
-on the human message) becomes `permission decision: <decision>
-confirmation state=<state> error=<error.message> title=<title>` with its
-`description` and `content` on the following lines, `tool_use_id` the
-entry's `id`. A refusal completes the step with `Error('Command
-rejected')`, so `state` `error` with `error.message` `Command rejected` is
-`rejected`; an approval never completes the step, so `pending` is
-`approved or unanswered`, which the format cannot tell apart. Any other
-state keeps the plain `permission decision: confirmation state=<state>`,
-with `error=` whenever the step carries an `error.message`.
-
-There is no per-message timestamp. The chat id is the chat's creation time
-as `Date.toUTCString()` (`Fri, 03 Oct 2026 10:00:00 GMT`), and every row of
-the chat inherits it; a non-date id (pre-migration UUIDs) falls back to
-`lastInteractionTimestamp`, which is the same creation time. `session_id`
-is the chat id, prefixed with `<account>/` only when the same id occurs
-under two accounts of one store. No project path is recorded with a chat;
-`project_path` stays empty and the user row lists the context files, since
-the parent of one context file is not the project. `processes[]` tool
-steps are emitted only when no `tool_call` part has the same id, so an
-agentic call is not counted twice. `source_line` is 1 for the JetBrains
-file (one JSON value) and 0 for the SQLite row. A history that does not
-parse is walked chat by chat, and every interaction decoded before the
-damage is still yielded, followed by one `system` row. No git branch.
-
-Settings, model preferences and the legacy JetBrains history were added
-from the same commit in the 2026-10-21 source review; every row below is
-source-derived and not observed on any real install:
-
-* The editor's `User/settings.json` (JSONC, read with `parse_jsonc` from
-  the Gemini CLI parser; the catalog attributes it to the editor, which
-  `reads_agents` covers): one `permission setting: <key>=<value> (from
-  <file>, file mtime)` row per leaf of the flat keys
-  `cody.agentic.context.experimentalOptions` (`shell.allow`,
-  `shell.block`), `cody.agentic.context.experimentalShell` and
-  `cody.chat.agenticContext`, and per `disabled` and `disabledTools` of
-  each `cody.mcpServers.<server>`; an MCP server's `headers`, `env`,
-  `url`, `command` and `args` are never read. A settings file that does
-  not decode is reported only when its text names a `cody.` key, since
-  the file belongs to the editor.
-* `cody-model-preferences`, the global-state key in the
-  `sourcegraph.cody-ai` row and the file of that name under
-  `JetBrains-globalState/`: `{<endpoint>: {defaults: {<usage>: <id>},
-  selected: {<usage>: <id>}}}`, one `model setting:
-  <selected|defaults>.<usage>=<id> endpoint=<endpoint> (from <file>,
-  file mtime)` row per entry (`<file>` followed by ` cody-model-preferences`
-  for the database row), the `model` column the id. It records the
-  current choice, not when it was made.
-* `<project>/.idea/cody_history.xml`, the pre-agent plugin's
-  `HistoryService` component, a secondary source (`secondary()`): the
-  IntelliJ serialisation of `HistoryState`, `accountData/list/AccountData`
-  with `accountId@value` and `chats/list/chat`, or the deprecated top-level
-  `chats/list/chat`; each `chat` has `internalId@value`, `updatedAt@value`,
-  `accountId@value` (deprecated), `model@value` (deprecated), an `llm`
-  element whose `model@value` is the chat's model, and
-  `messages/list/message` with `speaker@value` (`HUMAN`, `ASSISTANT`) and
-  `text@value`. The migration into the agent store used `updatedAt` as the
-  chat id and `llm.model` as every message's model, so the rows take
-  `updatedAt` as `session_id` (else `internalId`) and as the time, read as
-  UTC like the same string in the agent store: a chat row `chat:
-  <internalId> | account=<accountId> | messages=<n> (legacy JetBrains
-  history)`, then `model: <id>` before the first assistant message, and
-  the user and assistant rows, with `project_path` the project the file
-  sits in. The file is read with `xml.etree.ElementTree.iterparse`, so the
-  chats before a cut or damaged part are still yielded, followed by one
-  `parser:` row; expat resolves no external entity.
+Validated against source (sourcegraph/cody-public-snapshot at 8e20ac6c) with a synthetic
+fixture; no real install. See `research/cody.md`.
 """
 
 from __future__ import annotations
@@ -150,7 +80,7 @@ _ACCOUNT_KEY = r'"([^"\\]+)"\s*:\s*\{\s*"chat"\s*:\s*\{'
 
 
 def chat_time(chat_id: str, fallback) -> str:
-    """UTC timestamp of a `toUTCString()` chat id, else of `fallback`."""
+    """Return the UTC time of a `toUTCString()` chat id, else of `fallback`."""
     for candidate in (chat_id, fallback):
         if isinstance(candidate, str) and candidate:
             try:
@@ -164,8 +94,10 @@ def chat_time(chat_id: str, fallback) -> str:
 
 
 def recover_history(text: str) -> tuple[dict, str]:
-    """Rebuild what can be read from a damaged history text: each chat whose
-    key is a `toUTCString()` date, with the interactions that decode."""
+    """Return the chats that can be read from a damaged history text, and a message.
+
+    Each chat is one whose key is a `toUTCString()` date, with the interactions that decode.
+    """
     out: dict[str, dict] = {}
     marks = [
         (found.start(), "account", found.group(1)) for found in re.finditer(_ACCOUNT_KEY, text)
@@ -211,7 +143,7 @@ def _fs_path(uri) -> str:
 
 
 def _confirmation_head(process: dict) -> str:
-    """First line of the permission row for a `confirmation` process step.
+    """Return the first line of the permission row of a `confirmation` process step.
 
     A refusal completes the step with `Error('Command rejected')`, so it is
     saved as `state` `error` with that `error.message`; an approval never
@@ -240,8 +172,7 @@ def _confirmation_head(process: dict) -> str:
 
 
 def _leaves(prefix: str, value) -> list[tuple[str, object]]:
-    """(dotted key, value) for each leaf of a settings value; an empty
-    object is a leaf of its own."""
+    """Return (dotted key, value) per leaf of a settings value; an empty object is a leaf."""
     if isinstance(value, dict) and value:
         out: list[tuple[str, object]] = []
         for k, child in value.items():
@@ -251,9 +182,11 @@ def _leaves(prefix: str, value) -> list[tuple[str, object]]:
 
 
 def settings_entries(doc: dict) -> list[tuple[str, object]]:
-    """The permission entries of an editor `settings.json`: every leaf of
-    `PERMISSION_KEYS`, and `disabled` and `disabledTools` of each MCP server
-    (never its headers, env, url or command)."""
+    """Return the permission entries of an editor `settings.json`.
+
+    They are every leaf of `PERMISSION_KEYS`, and `disabled` and `disabledTools` of each
+    MCP server (never its headers, env, url or command).
+    """
     out: list[tuple[str, object]] = []
     for key in PERMISSION_KEYS:
         if key in doc:
@@ -268,9 +201,10 @@ def settings_entries(doc: dict) -> list[tuple[str, object]]:
 
 
 def pref_entries(preferences) -> list[tuple[str, str, str, str]]:
-    """(kind, usage, model id, endpoint) for each entry of a
-    `cody-model-preferences` value, the user's `selected` before the
-    server's `defaults`."""
+    """Return (kind, usage, model id, endpoint) per entry of `cody-model-preferences`.
+
+    The user's `selected` entries come before the server's `defaults`.
+    """
     out: list[tuple[str, str, str, str]] = []
     for endpoint, entry in preferences.items() if isinstance(preferences, dict) else ():
         if not isinstance(entry, dict):
@@ -284,18 +218,21 @@ def pref_entries(preferences) -> list[tuple[str, str, str, str]]:
 
 
 def _value(element, tag: str) -> str:
-    """The `value` attribute of `elem`'s direct child `tag`, or ""."""
+    """Return the `value` attribute of `element`'s direct child `tag`, or ""."""
     child = element.find(tag)
     return (child.get("value") or "") if child is not None else ""
 
 
 class CodyParser(Parser):
+    """Parse Cody's chat history, model preferences, settings and legacy JetBrains history."""
+
     agent = "cody"
     name = "cody"
     reads_agents = EDITOR_AGENTS
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for an editor state database, a JetBrains Cody file or settings."""
         rel = artifact.rel
         return any(
             pattern.search(rel)
@@ -303,9 +240,11 @@ class CodyParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the legacy JetBrains `.idea/cody_history.xml`."""
         return bool(LEGACY_RX.search(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Cody store."""
         if SETTINGS_RX.search(artifact.rel):
             yield from self._settings_rows(artifact)
             return
@@ -346,7 +285,7 @@ class CodyParser(Parser):
             yield self._system(artifact, "parser: " + problem, line)
 
     def _settings_rows(self, artifact: Artifact) -> Iterator[Row]:
-        """`permission setting:` rows from an editor's `User/settings.json`."""
+        """Yield the `permission setting:` rows of an editor's `User/settings.json`."""
         try:
             raw = artifact.disk_path.read_bytes()
         except OSError:
@@ -374,7 +313,7 @@ class CodyParser(Parser):
             yield row
 
     def _prefs_file_rows(self, artifact: Artifact) -> Iterator[Row]:
-        """`model setting:` rows from `JetBrains-globalState/cody-model-preferences`."""
+        """Yield the `model setting:` rows of `JetBrains-globalState/cody-model-preferences`."""
         text = read_text(artifact.disk_path)
         try:
             preferences = json.loads(text) if text is not None else None
@@ -399,8 +338,10 @@ class CodyParser(Parser):
             yield row
 
     def _legacy_rows(self, artifact: Artifact) -> Iterator[Row]:
-        """Rows from a JetBrains project's `.idea/cody_history.xml`, read
-        incrementally so the chats before a damaged part survive it."""
+        """Yield the rows of a JetBrains project's `.idea/cody_history.xml`.
+
+        The file is read incrementally, so the chats before a damaged part survive it.
+        """
         project = artifact.home.original if artifact.home.project else ""
         stack: list[str] = []
         account = ""

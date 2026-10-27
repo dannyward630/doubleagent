@@ -1,74 +1,31 @@
-"""The per-task layout Cline introduced and Roo Code inherited, shared by the
-`cline` and `roo-code` parsers. See `research/cline.md` (cline/cline
-at 39ff2359) and `research/roo-code.md` (RooCodeInc/Roo-Code at
-b867ec91).
+"""Shared reader of the per-task layout Cline introduced and Roo Code inherited.
 
-Files, under a storage root (the editor's `User/globalStorage/<extension id>`
-directory, Cline's `~/.cline/data`, Roo's `~/.vscode-mock/global-storage`):
+Subclassed by the `cline`, `roo-code` and `pearai` parsers; others reuse its JSON readers.
+Reads, under a storage root (the editor's `User/globalStorage/<extension id>`, Cline's
+`~/.cline/data`, Roo's `~/.vscode-mock/global-storage`), `tasks/<taskId>/`:
 
-* `tasks/<taskId>/ui_messages.json`: JSON array of `ClineMessage`
-  `{ts, type: "ask"|"say", ask, say, text, reasoning, images, partial,
-  modelInfo: {modelId, providerId, mode}}`, `ts` in epoch milliseconds.
-  `text` is JSON for `tool` (`ClineSayTool {tool, path, diff, content, regex,
-  filePattern}`, Roo adds `query`, `mode`, `reason`, `batchFiles[].path`),
-  `api_req_started` (`{request, tokensIn, tokensOut, cacheWrites,
-  cacheReads, cost, cancelReason}`), `use_mcp_server` (`{serverName, type,
-  toolName, arguments, uri}`), `followup` (`{question, options}`; Roo
-  `{question, suggest}`), `plan_mode_respond` (`{response, options}`),
-  `browser_action` (`{action, coordinate, text}`) and
-  `browser_action_result` (`{logs, currentUrl, screenshot}`). Roo's
-  `condense_context` carries `contextCondense.summary`. This is the
-  preferred transcript because every record has a timestamp.
-* `tasks/<taskId>/api_conversation_history.json` (Roo's older name
-  `claude_messages.json`): JSON array of Anthropic `MessageParam`
-  `{role, content: str | [{type: text|tool_use|tool_result|thinking|image,
-  ...}]}`. Roo adds `ts`, `isSummary` and top-level `type: "reasoning"`
-  records with `summary`, `text` or `reasoning_content`. It is parsed only
-  when no `ui_messages.json` sits beside it, so a task is not counted twice.
-  Cline's records have no timestamp, so they inherit the session timestamp:
-  the task id when it is a millisecond epoch (Cline's `Date.now()` ids), else
-  the earliest `task_metadata.json` timestamp, else the task index `ts`.
-* `tasks/<taskId>/task_metadata.json`: `files_in_context[{path,
-  record_state, record_source, <agent>_read_date, <agent>_edit_date,
-  user_edit_date}]` (Cline prefixes `cline_`, Roo `roo_`), and in Cline
-  `model_usage[{ts, model_id, model_provider_id, mode}]` and
-  `environment_history[{ts, os_name, os_version, os_arch, host_name,
-  host_version, cline_version}]`. One `system` row per dated event, except
-  that `model_usage` entries yield `model: <model_id> model_provider_id=<p>
-  mode=<m>` at the task's first entry and `model: <old> -> <new> ...` when
-  `model_id` changes, and `permission mode: <mode>` at the first entry and
-  `permission mode: <old> -> <new>` when the entry's `mode`
-  changes; an entry that changes neither yields no row.
-* The task index, `HistoryItem {id, ts, task, tokensIn, tokensOut,
-  cacheWrites, cacheReads, totalCost, size}` plus Cline's
-  `cwdOnTaskInitialization`, `modelId`, `apiProvider` or Roo's `workspace`,
-  `mode`, `status`, `apiConfigName`, `parentTaskId`, `rootTaskId`. Its
-  location differs per agent, so subclasses supply `history_item()`. It
-  gives the project path and, for Cline, the fallback model.
+* `ui_messages.json`, the preferred transcript, every record timestamped: a JSON array of
+  `ClineMessage` `{ts, type, ask, say, text, reasoning, images, partial, modelInfo}`,
+  `text` being JSON for `tool`, `api_req_started`, `use_mcp_server`, `followup`,
+  `plan_mode_respond`, `browser_action` and `browser_action_result`, plus Roo's
+  `contextCondense.summary` and `batchFiles[].path`.
+* `api_conversation_history.json` (Roo's older `claude_messages.json`), read only when no
+  `ui_messages.json` sits beside it: Anthropic `MessageParam` `{role, content}` with
+  `text`, `tool_use`, `tool_result`, `thinking`, `image` and `file` blocks, plus Roo's `ts`,
+  `isSummary` and `type: "reasoning"` records. Records without `ts` take the session
+  start: a millisecond task id, else the earliest `task_metadata.json` time, else the task
+  index `ts`.
+* `task_metadata.json`: `files_in_context[]` (`path`, `record_state`, `record_source`,
+  `*_date`), `model_usage[]` (`ts`, `model_id`, `model_provider_id`, `mode`) and
+  `environment_history[]`, one `system` row per dated event and `model:` and
+  `permission mode:` rows on a change.
+* The task index `HistoryItem` (`id`, `ts`, `task`, token counts, `totalCost`, `size`, the
+  project key and Cline's `modelId`), found by each subclass's `history_item()`.
 
-Rows from `ui_messages.json`: `task`, `user_feedback`, `user_feedback_diff`
-and the first message of a task when it is a `say: "text"` (Roo writes the
-prompt that way) are `user`; `text`, `completion_result`, `followup`,
-`plan_mode_respond`, `act_mode_respond` are `assistant`; `reasoning` is
-`thinking`; `tool`, `command`, `use_mcp_server`, `browser_action*`,
-`new_task`, `use_subagents`, `condense`, `summarize_task` are `tool_use` with
-the message `ts` as `tool_use_id`; `command_output`, `mcp_server_response`,
-`browser_action_result`, `codebase_search_result` and `subtask_result` are
-`tool_result` joined to the most recent `tool_use`; everything else
-(`api_req_started`, `error`, `checkpoint_created`, `condense_context`,
-`resume_task`, ...) is `system`. Records with no text are skipped unless
-they are `system`. `source_line` is the record's 1-based position in the
-JSON array. No git branch is recorded by either agent.
-
-Errors (issue 136): a record that does not decode stops the array walk and
-becomes one `system` row through `error_rows` in `base.py`,
-`parser: unparseable record <N> (<reason>): <raw>`, carrying the file's text
-from that record's first character to the end of the file (less a trailing
-line terminator): the record cut off mid-write, plus whatever the walk could
-not read after it, so nothing is dropped. Its `source_line` is the record's
-position N. A file that cannot be
-read, is not a JSON array, stops after a record without a closing bracket,
-or has data after the array gets a `parser: <message>` row with no text.
+A record that does not decode stops the array walk and becomes one `parser: unparseable
+record <N> (<reason>): <raw>` row holding the text from that record to the end of the file.
+Validated against source (cline/cline at 39ff2359, RooCodeInc/Roo-Code at b867ec91). See
+`research/cline.md` and `research/roo-code.md`.
 """
 
 from __future__ import annotations
@@ -136,14 +93,14 @@ def _skip_ws(text: str, offset: int) -> int:
 def iter_array_at(
     text: str, offset: int, errors: list, end: list | None = None
 ) -> Iterator[tuple[int, object]]:
-    """Yield (1-based position, element) from the JSON array starting at
-    `s[i]`. A truncated or corrupt element stops the walk and is recorded in
-    `errors` as (position, `unparseable record <position> (<reason>)`, the
-    text from the element's
-    first character to the end of `s`, less a trailing line terminator);
-    the elements before it are kept. A structural error (not an array, no
-    closing bracket) is (position, message, ""). When `end` is given, the
-    index after the closing bracket is appended to it."""
+    """Yield (1-based position, element) from the JSON array at `text[offset]`.
+
+    A truncated or corrupt element stops the walk and is recorded in `errors` as
+    (position, `unparseable record <position> (<reason>)`, the text from the element's
+    first character to the end, less a trailing line terminator); the elements before it
+    are kept. A structural error (not an array, no closing bracket) is (position, message,
+    ""). When `end` is given, the index after the closing bracket is appended to it.
+    """
     decoder = json.JSONDecoder()
     offset = _skip_ws(text, offset)
     if offset >= len(text) or text[offset] != "[":
@@ -179,7 +136,7 @@ def iter_array_at(
 
 
 def read_text(path: Path) -> str | None:
-    """File contents, or None for a symlink or an unreadable file."""
+    """Return a file's text without a BOM, or None for a symlink or an unreadable file."""
     file_path = Path(path)
     try:
         if file_path.is_symlink() or not file_path.is_file():
@@ -192,8 +149,10 @@ def read_text(path: Path) -> str | None:
 
 
 def iter_json_array(path: Path, errors: list) -> Iterator[tuple[int, object]]:
-    """Elements of a file holding one JSON array, tolerant of truncation and
-    of data appended after the array, both reported through `errors`."""
+    """Yield the elements of a file holding one JSON array.
+
+    A truncation and data appended after the array are reported through `errors`.
+    """
     text = read_text(path)
     if text is None:
         errors.append((0, "unreadable", ""))
@@ -208,6 +167,7 @@ def iter_json_array(path: Path, errors: list) -> Iterator[tuple[int, object]]:
 
 
 def load_json(path: Path):
+    """Return a file parsed as JSON, or None."""
     text = read_text(path)
     if text is None:
         return None
@@ -218,6 +178,7 @@ def load_json(path: Path):
 
 
 def loads_or_none(text) -> dict | None:
+    """Return `text` parsed as a JSON object, or None."""
     if not isinstance(text, str) or not text.lstrip().startswith("{"):
         return None
     try:
@@ -239,10 +200,13 @@ def _fmt_counts(record: dict, keys) -> str:
 
 
 class TaskContext:
-    """What one task directory knows about itself: id, project, models and a
-    start time for records that carry none."""
+    """Hold what one task directory knows about itself.
+
+    That is its id, project, models and a start time for records that carry none.
+    """
 
     def __init__(self, task_id: str, item: dict | None, metadata: dict | None, project_key: str):
+        """Read the task's project and models from its index item and metadata."""
         self.task_id = task_id
         item = item if isinstance(item, dict) else {}
         metadata = metadata if isinstance(metadata, dict) else {}
@@ -270,6 +234,7 @@ class TaskContext:
         return to_utc(item.get("ts"))
 
     def model_at(self, timestamp) -> str:
+        """Return the model in use at an epoch-millisecond time, else the task's default."""
         if self.model_usage:
             chosen = self.model_usage[0][1]
             if isinstance(timestamp, (int, float)):
@@ -284,13 +249,17 @@ class TaskContext:
 
 
 class LegacyTaskParser(Parser):
-    """Subclasses set ROOT (a regex for the storage root, home-relative) and
-    PROJECT_KEY, and implement history_item()."""
+    """Parse the per-task layout; the base of the Cline-family parsers.
+
+    Subclasses set ROOT (a regex for the storage root, home-relative) and PROJECT_KEY,
+    and implement history_item().
+    """
 
     ROOT = ""
     PROJECT_KEY = ""
 
     def __init__(self) -> None:
+        """Compile the task-file pattern under ROOT and start an empty file cache."""
         self._task_rx = re.compile(
             r"^%s/tasks/([^/]+)/(ui_messages|api_conversation_history|claude_messages|task_metadata)\.json$"
             % self.ROOT,
@@ -298,11 +267,12 @@ class LegacyTaskParser(Parser):
         )
         self._cache: dict[tuple, object] = {}
 
-    # Subclass hook: the HistoryItem for a task, or None.
     def history_item(self, task_dir: Path, root: Path, task_id: str) -> dict | None:
+        """Return the task index entry of a task, or None; subclasses implement it."""
         raise NotImplementedError
 
     def cached_json(self, path: Path):
+        """Return a file parsed as JSON, cached by path, modification time and size."""
         try:
             file_stat = Path(path).lstat()
         except OSError:
@@ -312,17 +282,21 @@ class LegacyTaskParser(Parser):
             self._cache[key] = load_json(path)
         return self._cache[key]
 
-    # Subclass hook: rows for one API history message. The default reads
-    # native content blocks; PearAI's Roo fork overrides it for XML tool calls.
     def api_content_rows(
         self, message: dict, position: int, base_turn: str, include_thinking: bool
     ) -> Iterator[tuple[str, str, str, str]]:
+        """Yield the rows of one API history message from its native content blocks.
+
+        PearAI's Roo fork overrides it for XML tool calls.
+        """
         return content_rows(message.get("content"), base_turn, include_thinking)
 
     def task_match(self, artifact: Artifact):
+        """Return the match of a task file under ROOT, or None."""
         return self._task_rx.match(artifact.rel)
 
     def context(self, artifact: Artifact) -> TaskContext:
+        """Return the `TaskContext` of the task directory holding `artifact`."""
         task_dir = artifact.disk_path.parent
         root = task_dir.parent.parent
         task_id = task_dir.name
@@ -331,6 +305,7 @@ class LegacyTaskParser(Parser):
         return TaskContext(task_id, item, metadata, self.PROJECT_KEY)
 
     def parse_task_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one task file."""
         name = artifact.disk_path.name.lower()
         context = self.context(artifact)
         if name == UI_FILE:
@@ -558,6 +533,7 @@ class LegacyTaskParser(Parser):
     # -- task index entries
 
     def history_row(self, artifact: Artifact, item: dict, position: int, opts: Options) -> Row:
+        """Return the `task:` row of one task index entry."""
         row = self.base_row(artifact)
         row.source_line = position
         row.timestamp_utc = to_utc(item.get("ts"))
@@ -587,7 +563,7 @@ class LegacyTaskParser(Parser):
 
 
 def map_ui(kind: str, message: dict, first: bool) -> tuple[str, str, str] | None:
-    """(turn_type, text, tool_name) for one ClineMessage, or None to skip."""
+    """Return (turn_type, text, tool_name) for one ClineMessage, or None to skip it."""
     text = message.get("text")
     text = text if isinstance(text, str) else ("" if text is None else compact_json(text))
     images = message.get("images")
@@ -662,6 +638,7 @@ def map_ui(kind: str, message: dict, first: bool) -> tuple[str, str, str] | None
 
 
 def tool_use_text(kind: str, text: str) -> tuple[str, str]:
+    """Return (tool name, text) of a `tool_use` ClineMessage."""
     if kind == "tool":
         parsed = loads_or_none(text)
         if parsed is None:
@@ -707,9 +684,10 @@ def tool_use_text(kind: str, text: str) -> tuple[str, str]:
 def content_rows(
     content, base_turn: str, include_thinking: bool
 ) -> Iterator[tuple[str, str, str, str]]:
-    """(turn_type, text, tool_name, tool_use_id) per content block of an
-    Anthropic-style message, shared by the legacy API history and Cline's SDK
-    messages."""
+    """Yield (turn_type, text, tool_name, tool_use_id) per block of an Anthropic message.
+
+    The legacy API history and Cline's SDK messages share it.
+    """
     if isinstance(content, str):
         if content:
             yield base_turn, content, "", ""

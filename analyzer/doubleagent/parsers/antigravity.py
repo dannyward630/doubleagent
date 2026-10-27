@@ -1,217 +1,30 @@
-"""Antigravity CLI (`agy`) and Antigravity desktop app conversations.
+"""Antigravity CLI (`agy`) and desktop app conversations, histories and permissions.
 
-Antigravity stores each conversation as a SQLite database of protobuf blobs.
-There is no public schema, so the message definitions below were taken from
-the protobuf file descriptors embedded in the shipped `agy` binary (Google
-Antigravity CLI, Linux x86-64, October 2026): `third_party/gemini_coder/proto/
-trajectory.proto`, `third_party/jetski/cortex_pb/cortex.proto`,
-`third_party/jetski/codeium_common_pb/codeium_common.proto` and
-`third_party/jetski/jetski_cortex_pb/jetski_cortex.proto`. They were checked
-against a real install. `analyzer/tools/proto_descriptors.py` re-extracts them
-from a binary when a new release changes the format.
+Reads, under each data directory `.gemini/<dir>/` (`antigravity-cli` for the CLI,
+`antigravity` for the desktop app, `antigravity-ide`, `antigravity-backup`): the
+conversation databases `conversations/<id>.db` (SQLite with WAL sidecars, protobuf blobs)
+and `conversation_summaries.db`; the brain mirror `brain/<id>/.system_generated/logs/`
+(`transcript_full.jsonl`, `transcript.jsonl` or their `chunks/`, one copy read per
+conversation; a secondary source); the CLI's `history.jsonl` (a secondary source); and the
+standing permission files `.gemini/config/config.json`, `config/projects/<id>.json`,
+`config/sidecars/<name>/sidecar.json` and `antigravity-cli/settings.json`. It yields
+user, assistant, thinking, tool_use, tool_result and system rows, with model, permission
+grant, permission decision and permission setting rows.
 
-Descriptor drift check (2026-10-13): `exa.cortex_pb.CortexStepType`,
-`CortexStepStatus`, `CortexTrajectorySource`, `gemini_coder.Step` and every
-message in `SCHEMA` were diffed against the descriptors of `agy` 1.2.16
-(macOS arm64) and of the desktop app's `language_server` 2.23.0 (macOS
-arm64). Field numbers, names and types match in both, and `STEP_TYPES` lists
-the same 118 values; nothing drifted from the Linux x86-64 descriptors the
-tables were built from. The diff did find one error in the tables
-themselves: `ActionSpecDeleteFile` keeps its `path` in field 1, and the
-parser had read it with the `ActionSpecCreateFile` layout (field 2); it has
-its own entry since analyzer 0.12.0 (issue 88). The new real data has steps
-with `permissions` (`gemini_coder.Step` field 133, read since analyzer 0.12.0,
-issue 92) and `task_details` (148, not read).
+Fields read: `trajectory_meta` `cascade_id` and `source`; `trajectory_metadata_blob.data`;
+`steps` `idx`, `step_type`, `status`, `metadata`, `step_payload` and `permissions`;
+`gen_metadata.data`; the `conversation_summaries` columns `conversation_id`, `title`,
+`preview`, `step_count`, `last_modified_time`, `workspace_uris`, `status`, `agent_name`,
+`parent_conversation_id`; the brain lines' `type`, `source`, `status`, `created_at`,
+`content`, `thinking`, `tool_calls[]`, `error`, `truncated_fields`; the history's
+`display`, `timestamp`, `workspace`, `conversationId`; and the permission keys
+`standing_entries` names. `SCHEMA` lists every protobuf field read.
 
-The CLI and the desktop app run the same Go backend (the app calls it the
-language server) and write the same stores, each into its own data
-directory under `~/.gemini`:
-
-* `antigravity-cli/`: the CLI's (`trajectory_meta.source` 17, `cli`).
-* `antigravity/`: the desktop app 2.x's (`source` 1, `cascade_client`); the
-  app passes the name to the backend as `--app_data_dir`, and its summaries
-  rows carry it in `app_data_dir`.
-* `antigravity-ide/`: the separately installed Antigravity IDE's, after the
-  app's install wizard migrates pre-2.0 IDE data out of `antigravity/`.
-* `antigravity-backup/`: the backup the app takes during that migration.
-
-Files, relative to the home directory, under each of those directories
-(`<dir>`):
-
-* `.gemini/<dir>/conversations/<conversation id>.db`, with `-wal`
-  and `-shm` sidecars (WAL mode, so the sidecars hold the newest steps):
-  - `trajectory_meta(trajectory_id, cascade_id, trajectory_type, source)`:
-    `cascade_id` is the conversation id; `source` is a
-    `CortexTrajectorySource` (`TRAJECTORY_SOURCES`).
-  - `trajectory_metadata_blob(id, data)`: `exa.cortex_pb.CortexTrajectoryMetadata`
-    with `workspaces[].workspace_folder_absolute_uri` and `branch_name`,
-    `created_at`, `parent_conversation_id`, `project_id`.
-  - `steps(idx, step_type, status, metadata, step_payload, ...)`: one row
-    per step. `step_payload` is a `gemini_coder.Step` whose `metadata`
-    (`exa.cortex_pb.CortexStepMetadata`) carries `created_at`,
-    `completed_at`, `source` and the `tool_call` the step executed
-    (`exa.codeium_common_pb.ChatToolCall`: `id`, `name`, `arguments_json`).
-    The payload oneof names the step kind: `user_input.query`,
-    `planner_response.response` with `thinking` and `tool_calls[]`, and one
-    message per tool (`run_command`, `view_file`, `write_to_file`,
-    `code_action`, `mcp_tool`, `generic`, ...), plus `system_message`
-    (`message`, `event_type`; step type 101) and `error_message`
-    (`error.short_error`, `user_error_message`, `full_error`; step type 17),
-    both seen in the desktop app's real data and yielded as `system` rows.
-  - `gen_metadata(idx, data)`: `exa.cortex_pb.CortexStepGeneratorMetadata`
-    with `step_indices[]` and `chat_model.response_model`, the only place
-    the model name is recorded.
-  - `steps.permissions`: an `exa.cortex_pb.TrajectoryPermissions`, the same
-    message as `gemini_coder.Step` field 133 (read from the payload when the
-    column is empty): `permission_grants[]` (`PermissionGrant`: 1
-    `resource` {1 `action`, 2 `target`}, 2 `allow`, 3 `scope`, 4
-    `user_deny_instruction`, 5 `action`, 6 `target`) and
-    `file_access_permissions[]` (`FileAccessPermission`: 1 `path`, 2
-    `is_directory`, 3 `allow`, 4 `scope`, 5 `from_current_step`); `scope` is
-    an `exa.cortex_pb.PermissionScope` (`PERMISSION_SCOPES`). Proto3 omits a
-    false bool and a zero enum, so a missing `allow` reads `false` and a
-    missing `scope` `unspecified`.
-* `.gemini/<dir>/conversation_summaries.db`, table
-  `conversation_summaries`: one row per conversation with `title`,
-  `preview`, `step_count`, `last_modified_time`, `workspace_uris` (JSON
-  array), `status`, `agent_name`, `parent_conversation_id`, `project_id`.
-  The app's copy also has an FTS5 table `conversations_fts` and
-  `search_schema_version`, which are not read.
-* `.gemini/antigravity-cli/history.jsonl` (CLI only; the app writes none):
-  `{display, timestamp, workspace}` per prompt, `timestamp` in epoch
-  milliseconds; from CLI 1.3.x a line may also carry `conversationId`, the
-  conversation's UUID, which becomes the row's `session_id` (older lines
-  have none and keep it empty). A secondary source: the timeline drops a
-  line whose event a conversation database also records (`dedup.py`).
-* `.gemini/<dir>/brain/<conversation id>/.system_generated/logs/`, the brain
-  mirror (issue 87): one JSON line per step, written by the backend beside
-  the database, in four copies of one transcript: `transcript_full.jsonl`;
-  `transcript.jsonl`, the same lines with long fields shortened and the
-  shortened field names in `truncated_fields`; and each split into chunks
-  of 100 KiB, `chunks/transcript_full/<n>.jsonl` and
-  `chunks/transcript/<n>.jsonl` (`<n>` eight digits from 00000000), cut
-  mid-line at the boundary. One copy is read per conversation, the most
-  complete present: `transcript_full.jsonl`, else its chunks concatenated
-  in order (which makes the cut line whole), else `transcript.jsonl`, else
-  its chunks; the other copies yield nothing. Fields read: `type`
-  (`USER_INPUT`, `PLANNER_RESPONSE`, `GENERIC`, `SYSTEM_MESSAGE`,
-  `ERROR_MESSAGE`), `source` (`USER_EXPLICIT`, `USER_IMPLICIT`, `MODEL`,
-  `SYSTEM`), `status` (`DONE`, `ERROR`, ...), `created_at` (ISO 8601),
-  `content`, `thinking`, `tool_calls[]` (`id`, `name` and the arguments as
-  `arguments_json`, `args` or `arguments`, an object or a JSON string;
-  the element shape is not recorded from a real install, so the parser
-  takes the first of the three it finds), `error` (an object with
-  `short_error`, `user_error_message`, `full_error`, or a string) and
-  `truncated_fields`. The key names are from the real installs
-  (`research/antigravity.md`, Record schema); the value forms of
-  `source`, `status`, `created_at` and `truncated_fields` are from the
-  format description embedded in `agy` 1.3.6 (macOS arm64). Not read:
-  `step_index`, `media`, the token counts, and the brain directory's
-  `steps/<idx>/output.txt`, `steps/<idx>/content.md`,
-  `messages/<uuid>.json` and `tasks/task-<idx>.log`.
-  Rows, rendered as the database reader renders the step of the same
-  kind so the timeline can pair them: `USER_INPUT` a `user` row (`system`
-  when `source` is `USER_IMPLICIT`); `PLANNER_RESPONSE` a `thinking` row
-  (`--include-thinking` only), an `assistant` row when `content` is not
-  empty and one `tool_use` row per `tool_calls[]` entry, its text the
-  argument `tool_args_summary` picks; `GENERIC` a `tool_result` row,
-  `content` as text, with the `tool_name` and `tool_use_id` of the next
-  unused call of the last `PLANNER_RESPONSE` (the line itself names no
-  call; the database runs a planner step's calls as the steps after it,
-  so the n-th `GENERIC` line after it is taken as the n-th call), a
-  `system` row when no call is pending; `SYSTEM_MESSAGE` a `system` row
-  `system_message: <content>`; `ERROR_MESSAGE` a `system` row
-  `error: <error>`; any other type a `tool_result` or `system` row as for
-  `GENERIC`. `GENERIC`, `SYSTEM_MESSAGE`, `ERROR_MESSAGE` and other rows
-  get `[<status>] ` in front when `status` is not `DONE`, as the database
-  rows do. A row whose field is in `truncated_fields` ends with
-  ` [truncated: <field>]`. Every row has the line's `created_at`,
-  `session_id` the `<conversation id>` of the directory (the database's
-  `cascade_id`), `source_line` the line number (in the concatenated chunks
-  for a chunked copy, whose `source_file` is the first chunk), and empty
-  `project_path`, `git_branch` and `model`, which the mirror does not
-  record; no model or permission rows, for the same reason. Each bad line
-  is its own `system` row carrying the line in full, after the others.
-  A secondary source of the conversation database: the timeline drops a
-  row the database also yields. Its time rule: the mirror records only a
-  step's `created_at`, while the database reader stamps `assistant`,
-  `tool_use` and `tool_result` rows with the step's `completed_at`, so the
-  mirror's row comes before the database's by the time the model took to
-  generate the response or the tool took to run. `secondary_tolerance` is
-  therefore 600 seconds; a step that ran longer than ten minutes is shown
-  twice. Known misses, kept as two rows: a `SYSTEM_MESSAGE` whose database
-  step has an `event_type` (the database row reads `<event_type>:
-  <message>`, and the mirror records no event type), a queued prompt
-  (the database row starts `[queued] `), a shortened field of a row
-  without a `tool_use_id` (a shortened tool call or result pairs on its
-  id), and a `GENERIC` line whose `content` differs from the database
-  step's `generic.result.result` with no tool id inferred for it, which
-  no install has compared. A conversation's opening prompt that
-  `history.jsonl` records without `conversationId` is matched once: the
-  history row, matched by workspace, can take the database row first, and
-  the mirror's row then pairs with the history row under the broader
-  scope of `dedup.deduplicate`.
-
-Standing permission files (issue 92), read only for the keys named here;
-every other key in them (`plugins`, `remoteControlHostname`, a project's
-`name`, a sidecar's `args`) is left unread, and `plugin_data/*/token.json`
-and `.gemini/config/mcp_config.json` are never wanted:
-
-* `.gemini/config/config.json` (shared by the CLI and the app):
-  `userSettings.globalPermissionGrants.allow[]` (tool-call patterns, a tool
-  name with its argument in parentheses), `.deny[]` when present (not
-  observed), `userSettings.permissionGrantsV2Migrated`,
-  `userSettings.sandboxEnabledAtV2Migration`, and per automation
-  `sidecars.<name>.enabled` and `sidecars.<name>.resolvedPermissions.accessGrants[]`.
-* `.gemini/config/projects/<id>.json`: `permissionGrants.permissionGrants.allow[]`
-  (and `.deny[]` when present, not observed) and `permissionGrants.v2Migrated`;
-  `project_path` is the first `projectResources.resources[].folderUri`.
-* `.gemini/config/sidecars/<name>/sidecar.json`: `agent_permissions.access_grants[]`.
-* `.gemini/antigravity-cli/settings.json`: `permissions.allow[]` (and
-  `.deny[]` when present, not observed) and `trustedWorkspaces[]`, each
-  trusted workspace a row whose `project_path` is the workspace.
-
-Rows: one `user` row per user_input step (`system` when the source is
-USER_IMPLICIT); for each planner_response step an `assistant` row, one
-`tool_use` row per proposed tool call, and a `thinking` row with
-`--include-thinking`; one `tool_result` row per executed tool step, keyed by
-the planner's call id; `system` rows for the session start, checkpoints,
-system messages, errors and the conversation summary. The session start
-row's text names `source=<trajectory source>` (the number when it is not in
-`TRAJECTORY_SOURCES`) and `data_dir=<the .gemini subdirectory>`, so a CLI
-conversation and a desktop-app one can be told apart. Step timestamps come
-from the step metadata; tool results use `completed_at`.
-
-Permission rows (issue 92), all `system`: after a step's own rows, one
-`permission grant: action=<action> target=<target> allow=<true|false>
-scope=<scope>` row per `permission_grants[]` entry (` deny_instruction=<text>`
-appended when the user gave one) and one `permission grant: path=<path>
-is_directory=<true|false> allow=<true|false> scope=<scope>` row per
-`file_access_permissions[]` entry (` from_current_step=true` appended when
-set), with the step's `tool_name` and `tool_use_id`, the step's index as
-`source_line` and the step's tool-result time. From each standing file, one
-`permission setting: <key>=<value> (from <path relative to the home>, file
-mtime)` row per list entry and per flag, `<key>` the JSON path in the file
-(`trustedWorkspace` for a `trustedWorkspaces[]` entry), timestamped by the
-file's modification time (the manifest's `mtime`, or the file's own when
-there is no manifest), `session_id` empty, `source_line` the entry's
-1-based position among the file's rows.
-
-Model rows (issue 96), `system`: `model: <id>` before the rows of the
-conversation's first step that `gen_metadata` names a model for, and
-`model: <old> -> <new>` before the rows of every later step whose model
-differs, with the step's `created_at`, its index as `source_line` and the
-new id in the `model` column. The id is `chat_model.response_model`, else
-`model_display_name`; the descriptors give no separate switch record, so a
-change is seen only as a different model on a later step.
-
-Per-call rows (issue 97): a `run_command` step with `user_rejected` (field
-14) or an `mcp_tool` step with `user_rejected` (field 7) yields, right
-after its `tool_result` row (which keeps its `[rejected by user]` marker),
-a `system` row `permission decision: user_rejected` with the step's
-`tool_name`, `tool_use_id` and result time. A `run_command` step with
-`ran_in_sandbox` (field 34) gets ` sandbox=true` at the end of its result
-row's text.
+The protobuf messages come from the descriptors embedded in the `agy` binary (Linux
+x86-64), which match those of `agy` 1.2.16 and the desktop app's `language_server` 2.23.0
+(macOS arm64); the brain value forms are from `agy` 1.3.6. The shapes were checked against
+real installs. `analyzer/tools/proto_descriptors.py` re-extracts the descriptors from a new
+release. See `research/antigravity.md`.
 """
 
 from __future__ import annotations
@@ -248,7 +61,7 @@ DATA_DIR = r"^\.gemini/(antigravity(?:-cli|-ide|-backup)?)/"
 CONV_RX = re.compile(DATA_DIR + r"conversations/[^/]+\.db$")
 SUMMARIES_RX = re.compile(DATA_DIR + r"conversation_summaries\.db$")
 HISTORY_REL = BASE + "history.jsonl"
-# The brain mirror (issue 87): per conversation, the step transcript in its
+# The brain mirror: per conversation, the step transcript in its
 # complete form, its shortened twin, or either split into numbered chunks.
 # Group 2 is the conversation id; group 3 the file form, or groups 4 and 5
 # the chunked form and the chunk number.
@@ -262,7 +75,7 @@ SHORT = "transcript"
 # to pair them: the mirror records only `created_at`, the database reader
 # stamps assistant, tool_use and tool_result rows with `completed_at`.
 BRAIN_TOLERANCE_SECONDS = 600.0
-# Standing permission files (issue 92).
+# Standing permission files.
 CONFIG_REL = ".gemini/config/config.json"
 PROJECT_RX = re.compile(r"^\.gemini/config/projects/[^/]+\.json$")
 SIDECAR_RX = re.compile(r"^\.gemini/config/sidecars/[^/]+/sidecar\.json$")
@@ -708,6 +521,7 @@ ARG_KEYS = (
 
 
 def uri_to_path(uri: str) -> str:
+    """Return the local path of a `file:` URI (a Windows drive path without its slash)."""
     if not uri:
         return ""
     if not uri.startswith("file:"):
@@ -719,6 +533,7 @@ def uri_to_path(uri: str) -> str:
 
 
 def tool_args_summary(arguments_json: str) -> str:
+    """Return the argument that names a tool call's action (`ARG_KEYS`), else the JSON."""
     try:
         args = json.loads(arguments_json) if arguments_json else {}
     except ValueError:
@@ -794,11 +609,13 @@ def _chunks(logs: Path, form: str) -> list[Path]:
 
 
 def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
-    """The bytes of the brain transcript that `path` stands for, or None when
-    another copy of the same transcript is the one read. The copies, in order
-    of preference: `transcript_full.jsonl`; its chunks, concatenated (a line
-    cut at a chunk boundary is whole again); the shortened `transcript.jsonl`;
-    its chunks. A chunked form is read through its first chunk present."""
+    """Return the bytes of the brain transcript `path` stands for, or None.
+
+    None means another copy of the same transcript is the one read. The copies, in order
+    of preference: `transcript_full.jsonl`; its chunks, concatenated (a line cut at a
+    chunk boundary is whole again); the shortened `transcript.jsonl`; its chunks. A
+    chunked form is read through its first chunk present.
+    """
     logs = path.parent if form else path.parent.parent.parent
     full = logs / (FULL + ".jsonl")
     if form == FULL:
@@ -818,8 +635,11 @@ def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
 
 
 def _brain_args(tool_call: dict) -> str:
-    """A brain tool call's arguments as a JSON string: `arguments_json` as the
-    database records it, else `args` or `arguments`, an object or a string."""
+    """Return a brain tool call's arguments as a JSON string.
+
+    The arguments are `arguments_json` as the database records it, else `args` or
+    `arguments`, an object or a string.
+    """
     for key in ("arguments_json", "args", "arguments"):
         value = tool_call.get(key)
         if isinstance(value, str) and value:
@@ -830,7 +650,7 @@ def _brain_args(tool_call: dict) -> str:
 
 
 def permission_texts(permissions: dict) -> list[str]:
-    """One `permission grant:` text per entry of a TrajectoryPermissions."""
+    """Return one `permission grant:` text per entry of a TrajectoryPermissions."""
     out = []
     for grant in permissions.get("permission_grants", []):
         resource = grant.get("resource") or {}
@@ -859,8 +679,14 @@ def permission_texts(permissions: dict) -> list[str]:
 
 
 def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
-    """(key, value, project_path) for each permission entry of a standing
-    file, reading only the keys the module docstring names."""
+    """Return (key, value, project_path) for each permission entry of a standing file.
+
+    Only these keys are read: `userSettings.globalPermissionGrants.allow` and `.deny`,
+    `permissionGrantsV2Migrated`, `sandboxEnabledAtV2Migration` and each sidecar's `enabled`
+    and `resolvedPermissions.accessGrants` (config.json); `permissionGrants` and the first
+    `projectResources.resources[].folderUri` (a project); `agent_permissions.access_grants`
+    (a sidecar); `permissions.allow`, `.deny` and `trustedWorkspaces` (settings.json).
+    """
     out: list[tuple[str, object, str]] = []
     if rel == CONFIG_REL:
         user_settings = _dict(doc.get("userSettings"))
@@ -906,7 +732,7 @@ def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
 
 
 def describe_payload(kind: str, payload: dict) -> str:
-    """One line describing a tool step's result or a system event."""
+    """Return one line describing a tool step's result or a system event."""
     if kind == "run_command":
         return _join(
             payload.get("command_line") or payload.get("command") or "",
@@ -1043,11 +869,14 @@ def describe_payload(kind: str, payload: dict) -> str:
 
 
 class AntigravityParser(Parser):
+    """Parse Antigravity conversations, the brain mirror, histories and permission files."""
+
     agent = "antigravity"
     name = "antigravity"
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a conversation, summaries, brain, history or permission file."""
         return (
             artifact.rel == HISTORY_REL
             or bool(BRAIN_RX.match(artifact.rel))
@@ -1065,14 +894,17 @@ class AntigravityParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the CLI history and the brain mirror."""
         return artifact.rel == HISTORY_REL or bool(BRAIN_RX.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return the wider brain window: it stamps steps at creation, not completion."""
         if BRAIN_RX.match(artifact.rel):
             return BRAIN_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Antigravity file."""
         if artifact.rel == HISTORY_REL:
             yield from self._parse_history(artifact, opts)
         elif BRAIN_RX.match(artifact.rel):
@@ -1131,9 +963,11 @@ class AntigravityParser(Parser):
         calls: list[dict],
         opts: Options,
     ) -> Iterator[Row]:
-        """The rows of one brain line, rendered as `_step_rows` renders the
-        database step of the same kind. `calls` holds the tool calls of the
-        last PLANNER_RESPONSE not yet matched to a GENERIC line."""
+        """Yield the rows of one brain line as `_step_rows` renders the same step kind.
+
+        `calls` holds the tool calls of the last PLANNER_RESPONSE not yet matched to a
+        GENERIC line.
+        """
         kind = str(rec.get("type") or "")
         status = str(rec.get("status") or "").lower()
         content = text_of(rec.get("content"))
@@ -1352,7 +1186,7 @@ class AntigravityParser(Parser):
                 change = track_change("model", seen_models, session_id, model)
                 if change:
                     # The model at the conversation's first generated step and
-                    # on every change, before that step's own rows (#96).
+                    # on every change, before that step's own rows.
                     metadata = step.get("metadata") or {}
                     row = self._row(artifact, idx, session_id, project_path, branch)
                     row.timestamp_utc = metadata.get("created_at") or metadata.get(
@@ -1403,8 +1237,11 @@ class AntigravityParser(Parser):
         project_path: str,
         branch: str,
     ) -> Iterator[Row]:
-        """One `system` row per grant in the step's permissions: the
-        `steps.permissions` column, else Step field 133 of the payload."""
+        """Yield one `system` row per grant in a step's permissions.
+
+        The permissions are the `steps.permissions` column, else Step field 133 of the
+        payload.
+        """
         permissions = step.get("permissions") or {}
         if column:
             try:
@@ -1515,7 +1352,7 @@ class AntigravityParser(Parser):
         yield row
         if kind in ("run_command", "mcp_tool") and payload.get("user_rejected"):
             # The user's rejection of the call as its own row, beside the
-            # result that also carries `[rejected by user]` (#97).
+            # result that also carries `[rejected by user]`.
             decision = base(row.timestamp_utc)
             decision.turn_type = "system"
             decision.tool_name = row.tool_name or (payload.get("tool_call") or {}).get("name", "")

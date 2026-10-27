@@ -1,226 +1,32 @@
 """Cline transcripts, legacy task layout and SDK sessions.
 
-Validated against source (cline/cline at 39ff2359, see
-`research/cline.md`) with a synthetic fixture; no real install.
+Reads the legacy task layout under the VS Code extension's
+`<editor>/User/globalStorage/saoudrizwan.claude-dev/` or `~/.cline/data/` through the shared
+mapping in `cline_legacy.py`, with `state/taskHistory.json` (`id`, `ts`, `task`,
+`cwdOnTaskInitialization`, `modelId`, `apiProvider` and the token counts) and the
+extension's `cache/sync-queue.json` (`items.<key>` `taskId`, `key`, `timestamp`,
+`status`, `retryCount`; `data` and `lastError` are never read). Under `~/.cline/data/` it
+reads the SDK sessions: `sessions/<id>/<id>.json` manifests (`session_id`, `source`,
+`pid`, `started_at`, `ended_at`, `exit_code`, `status`, `interactive`, `provider`,
+`model`, `cwd`, `workspace_root`, `prompt`, `metadata.title`,
+`metadata.enterprise.blobUpload`, `metadata.importedFrom`) and `*.messages.json`
+(`messages[]` `role`, `content` blocks, `modelInfo.id` and `.provider`, `ts`;
+`updated_at`); `db/sessions.db` table `sessions` for sessions whose manifest is gone; and
+the secondary sources `db/session-search.db` (`indexed_sessions`, the FTS5 table
+`session_search`), `cache/user_input_history.jsonl` (`prompt`, `ts`) and
+`logs/hooks.jsonl` (`hookName`, `ts`, `taskId`, `sessionContext.rootSessionId`,
+`workspaceRoots`, `userPromptSubmit`, `tool_call`, `tool_result`, `postToolUse`, `turn`
+and the `HOOK_KEYS`). It also reads the standing settings of `globalState.json`
+(`autoApprovalSettings`, `mode`, `cloudTaskTarget`, `cloudSessionStatuses`),
+`settings/global-settings.json`, `settings/cline_mcp_settings.json` (only `autoApprove`
+and `disabled` per server) and `cloud-pending-starts/*.json`.
 
-Legacy task layout, under the VS Code extension's
-`<editor>/User/globalStorage/saoudrizwan.claude-dev/` or `~/.cline/data/`
-(CLI and JetBrains): `tasks/<taskId>/ui_messages.json`,
-`api_conversation_history.json` and `task_metadata.json` are read by the
-shared mapping in `cline_legacy.py`, whose docstring lists the fields. The
-task id is a `Date.now()` millisecond string, which is also the session
-timestamp that API history records (which carry no timestamp of their own)
-inherit when `ui_messages.json` is missing. The API history stays a
-fallback, not a secondary source: it records a turn in other words than
-`ui_messages.json` (the first prompt wrapped in `<task>` tags, tool calls
-as content blocks or XML), so `dedup.deduplicate` could not pair the two
-(the Parser plan of the research document).
+It yields user, assistant, thinking, tool_use, tool_result and system rows, with model,
+permission decision and setting, sync, origin and session index rows. The API history is
+a fallback, not a secondary source: it words a turn differently from `ui_messages.json`.
 
-* `state/taskHistory.json`: JSON array of `HistoryItem {id, ts, task,
-  tokensIn, tokensOut, cacheWrites, cacheReads, totalCost, size,
-  cwdOnTaskInitialization, modelId, apiProvider}`. One `system` row per
-  task, kept because it survives deletion of the task directory; it is also
-  where the task's project path and fallback model come from. Older VS Code
-  builds kept this list in the editor's `state.vscdb`, which is not read.
-
-SDK session layout, `~/.cline/data/sessions/<sessionId>/`:
-
-* `<sessionId>.json` manifest: `session_id, source, pid, started_at,
-  ended_at, exit_code, status, interactive, provider, model, cwd,
-  workspace_root, prompt, metadata.title`. A `system` row for the start,
-  then `model: <model> provider=<provider>` when the manifest names a
-  model, and, when `ended_at` is set, one row for the end.
-* `<sessionId>.messages.json` and subagent `<agentId>[__<teamTaskId>]
-  .messages.json`: `{version, updated_at, agent, sessionId, messages:
-  [{id, role, content, modelInfo: {id, provider}, metrics, ts}]}` with
-  Anthropic-style content blocks (`text`, `tool_use {id, name, input}`,
-  `tool_result {tool_use_id, name, content, is_error}`, `thinking`,
-  `redacted_thinking`, `image`, `file {path}`). One row per block;
-  `ts` is epoch milliseconds; a message without one takes the previous
-  message's time, or for the first message the manifest `started_at` and
-  then the file's `updated_at`. `session_id` is the session directory
-  name, so subagent rows group with their lead session; `project_path` and
-  the fallback model come from the manifest beside it. A message whose
-  `modelInfo.id` differs from the model before it yields `model: <old> ->
-  <new> provider=<modelInfo.provider>` ahead of its rows; the lead
-  transcript starts from the manifest `model`, so its first message yields
-  `model: <id>` only when the manifest names none, and a subagent
-  transcript starts from its own first `modelInfo.id`.
-* `~/.cline/data/db/sessions.db`, table `sessions` (`session_id, source,
-  started_at, ended_at, status, provider, model, cwd, workspace_root,
-  prompt, parent_session_id, is_subagent`): a `system` row, followed by
-  `model: <model> provider=<provider>`, only for a session whose manifest
-  is not on disk, so deleted sessions still show.
-* Sync: the manifest's `metadata` key `enterprise.blobUpload` (one key with
-  a dot in its name; the same object in the `sessions.db` column
-  `metadata_json`), `{version, storage: {adapterType, bucket, region?,
-  endpoint?, accountId?}, userDistinctId?}`, written at session start when
-  an enterprise organisation's remote config turns on prompt uploading;
-  every rewrite of `<sessionId>.messages.json` is then PUT to the object
-  `sessions/<userDistinctId or unknown>/<sessionId>/messages.json` of that
-  S3, R2 or Azure bucket (`sdk/packages/shared/src/remote-config/
-  blob-storage.ts:56-57`, `129-160`, `367-414` at 39ff2359). One `system`
-  row after the session start (or `model:`) row, at the manifest's
-  `started_at`: `session synced: enterprise prompt upload to <adapterType>
-  bucket <bucket> object sessions/<userDistinctId or
-  unknown>/<session_id>/messages.json endpoint=<endpoint or -> region=<region
-  or -> account=<accountId or -> (from <session_id>.json metadata
-  enterprise.blobUpload, started_at)`; from the `sessions.db` row of a
-  session whose manifest is gone, the same text ending `(from sessions.db
-  sessions.metadata_json enterprise.blobUpload, started_at)`. A key that is
-  not an object yields no row. Fixture only: no real install has shown the
-  key. The legacy task layout records no sync.
-* `~/.cline/data/db/session-search.db`, a secondary source (issue 122):
-  the full-text index the SDK hub server keeps of each session's lead
-  transcript, tables `indexed_sessions (session_id, source_revision,
-  indexed_at, document_count, index_version, title)` and the FTS5 (SQLite
-  full-text search) table `session_search (session_id, document_id,
-  ordinal, role, started_at, workspace_root, title, content)`. Per session
-  one document `<sessionId>:metadata`, `ordinal` -1 and `role` `session`,
-  holds the title and the session's `prompt`; then one document per
-  `<sessionId>.messages.json` message with any text, `ordinal` its 0-based
-  position in that file, `role` the message's (`unknown` when it has
-  none), and `content` every string value of the message's `content`
-  (block type names, tool ids and tool input included; `data`, `image`,
-  `images`, `reasoning`, `thinking` and `metadata` values left out) joined
-  with line breaks and capped at 128 KiB. Rows: one `system` row per
-  session, `session search index: title=... workspace_root=... prompt=...
-  document_count=... indexed_at=...`, at the session's `started_at`; then
-  one row per message document in `ordinal` order, `user` or `assistant`
-  by `role` (`system` for any other), with an empty `timestamp_utc`, since
-  the index records no time per message, so `dedup.deduplicate` matches
-  them on text and session alone. `source_line` is `ordinal + 1`, the
-  message's position in the transcript (0 when the ordinal is not a
-  number). `session_id` is the index's, the SDK session id the manifest
-  and messages rows carry; `project_path` is the manifest's `cwd` (else
-  `workspace_root`) when the manifest is on disk, as the messages reader
-  takes it, else the document's `workspace_root`. A message whose
-  `content` is a plain string (a prompt with no attached image or file)
-  pairs with its transcript row; a block array's text keeps the block type
-  names and tool ids, so it never equals a transcript row and is kept. The
-  hub reconciles the index at start and every five minutes while it runs:
-  it drops a session that has left `sessions.db` and re-indexes one whose
-  messages file changed or is gone, so the index outlives a deleted
-  transcript only until the hub next runs. When the SQLite build lacks
-  FTS5, one `system` row says so and only `indexed_sessions` is read, each
-  session row then without a time.
-
-* `~/.cline/data/cache/user_input_history.jsonl`, a secondary source
-  (issue 122): the CLI's prompt history for up-arrow recall, one JSON line
-  `{prompt, ts}` per prompt submitted in the terminal UI, trimmed, oldest
-  first, each prompt kept once (a repeat moves to the end) and the last 20
-  kept. No session id and no project are recorded. The CLI rewrites the
-  whole file on every prompt and stamps every line with that write's
-  `Date.now()`, so only the last line's `ts` (epoch milliseconds) is its
-  own prompt's time. Rows: one `user` row per line, `source_line` the
-  line; the last line has its `ts`, the others an empty `timestamp_utc`,
-  and every line is undated when the file has a bad line, since the last
-  parsed line may then not be the newest. Undated rows match a
-  transcript row of any Cline session on text alone. Each bad line is its
-  own `system` row carrying the line in full (issue 136).
-
-* Sync, second source: the VS Code extension's enterprise prompt upload
-  queue `<editor>/User/globalStorage/saoudrizwan.claude-dev/cache/sync-queue.json`
-  (`apps/vscode/src/shared/services/worker/sync.ts:27-29` at 39ff2359),
-  `{items: {<taskId>/<key>: {id, taskId, key, data, timestamp, status,
-  retryCount, lastError}}}`, `timestamp` epoch ms of the enqueue and
-  `status` `pending`, `synced` or `failed` (`queue.ts:9-31`, `157-170`);
-  `data` is the task file's content and is never read into a row, nor is
-  `lastError`. One `system` row per item, `source_line` its position in
-  `items`, `session_id` the `taskId`, `project_path` the task's
-  `cwdOnTaskInitialization` from the `state/taskHistory.json` beside it
-  when there is one, at the item's `timestamp`: for a `synced` item
-  `session synced: enterprise prompt upload synced key <key> retries
-  <retryCount> (from saoudrizwan.claude-dev/cache/sync-queue.json, item
-  timestamp)`, and for any other status (`pending`, `failed`) the same
-  text without the `session synced: ` prefix, `enterprise prompt upload
-  <status> key ...`, since that file has not reached the bucket; `-` for
-  a value absent or empty. A file that is not a JSON object, or has no
-  `items` object, is one `parser:` row, and so is an item that is not an
-  object. Fixture only: no real install has shown the file.
-
-The items below are source-derived (cline/cline at 41e75efc, research
-document's Parser plan); not observed on any real install.
-
-* Permission decisions, SDK messages: a call the runtime did not run ends
-  in a `tool_result` block with `is_error` true and `content` the JSON
-  string `{"error": <reason>}` (`sdk/packages/agents/src/
-  agent-runtime.ts:2469-2512`, `sdk/packages/core/src/session/
-  persisted-tool-result-content.ts:9-24`). A reason ending
-  ` -- NOT a tool or system failure. Clarify with user before proceeding.`
-  (`TOOL_REJECTION_SUFFIX`, every approval that came back not approved:
-  the user's rejection, a denied edit, a follow-up message, a timeout, a
-  missing approval callback) yields `permission decision: rejected
-  reason=<reason without the suffix>`; the fixed `Tool "<name>" is
-  disabled by policy` and `Tool <name> was blocked by a runtime hook`
-  yield `permission decision: blocked reason=<reason>`. The `system` row
-  follows the `tool_result` row it governs, with its `tool_use_id`,
-  `tool_name`, time and model. A hook's own skip reason matches neither
-  and yields no row; an approved call leaves no mark.
-* Standing permission settings, one `system` row per value or list entry,
-  `permission setting: <key>=<value> (from <rel>, file mtime)` at the
-  file's modification time, `session_id` and `project_path` empty:
-  `~/.cline/data/globalState.json` `autoApprovalSettings` (`enabled`,
-  `maxRequests`, each `favorites` entry, each `actions.<name>`) and
-  `mode`; `~/.cline/data/settings/global-settings.json` `toolAutoApprove`,
-  `planActMode`, each `disabledTools`, `disabledPlugins` and
-  `disabledAgentPlugins` entry, and `tools.<name>.enabled`; each
-  `mcpServers.<name>` of `settings/cline_mcp_settings.json` (under
-  `~/.cline/data` or the extension's globalStorage) as
-  `mcpServers.<name>.autoApprove=<tool>` per entry and
-  `mcpServers.<name>.disabled=<bool>`. No other key of these files is read
-  (globalState.json holds much else; the MCP file can carry `env`,
-  `headers` and OAuth state). A file that is not a JSON object is one
-  `parser:` row.
-* Origin and sync, Cline Cloud: `globalState.json` `cloudSessionStatuses`
-  `{<ses- id>: {status, observedAt}}` yields per session, at `observedAt`
-  (epoch ms) with `session_id` the id, `session origin: remote cline-cloud
-  session <id> status <status> (from .cline/data/globalState.json
-  cloudSessionStatuses, observedAt)` and `session synced: cline-cloud
-  holds session <id>, no local transcript (from ... cloudSessionStatuses,
-  observedAt)`. Each `{sessionId, account, endpoint}` record of
-  `~/.cline/data/cloud-pending-starts/<pid>-<uuid>.json` yields the same
-  pair, the origin row reading `sandbox start pending account=<account>
-  endpoint=<endpoint>` in place of the status, at the file's modification
-  time and ending `(from <rel>, file mtime)`; a file that is not a JSON
-  array is one `parser:` row, a record without a `sessionId` one row per
-  record. `cloudTaskTarget {target, repositoryId, branch}` yields one
-  `cloud task target: target=<target> repository_id=<id> branch=<branch>
-  (from .cline/data/globalState.json, file mtime)` row; the repository id
-  is GitHub's. `records_origin` is set.
-* Imported sessions: `metadata.importedFrom {tool, sourceSessionId,
-  sourcePath, importedAt, sourceProvider, sourceModel}` of the manifest
-  (or the `sessions.db` `metadata_json`) is named on the session start
-  row as `imported_from=`, `imported_session=`, `imported_path=`,
-  `imported_at=`, `imported_provider=` and `imported_model=`, so a copy of
-  another agent's transcript is not read as Cline's own work.
-* `~/.cline/data/logs/hooks.jsonl`, a secondary source: the SDK's hook
-  audit log, one JSON line per event, `{ts (ISO 8601), hookName,
-  clineVersion, timestamp, taskId, sessionContext.rootSessionId,
-  workspaceRoots, userId, agent_id, parent_agent_id, ...}`
-  (`sdk/packages/core/src/hooks/hook-file-hooks.ts:234-254`, `629-756`),
-  appended only and never rotated. `session_id` is `rootSessionId` (else
-  `taskId`, else `sessionId`), the SDK session directory name the
-  messages reader uses; `project_path` the first `workspaceRoots` entry.
-  `prompt_submit` (`userPromptSubmit.prompt`) is a `user` row;
-  `tool_call` (`tool_call {id, name, input}`) a `tool_use` row with the
-  tool's summary as the transcript writes it; `tool_result`
-  (`tool_result {id, name, input, output, error}`, `postToolUse.result`)
-  a `tool_result` row, `[error] <error>` when the call failed; both carry
-  the call id, so `dedup.deduplicate` pairs them with the transcript's
-  rows on it. `agent_end` (`turn.outputText`) is an `assistant` row.
-  Every other line (`agent_start`, `agent_abort`, `agent_error`,
-  `session_shutdown`, appended by the session store as `{ts, hookName,
-  reason, sessionId, pid, source}`) is a `system` row `hook audit:
-  <hookName>` followed by `cline_version=`, `user=`, `agent=`,
-  `parent_agent=`, `reason=`, `pid=` and `source=` when present and
-  `error=<name>: <message>` for `agent_error` (never the stack). The
-  window is an hour (`secondary_tolerance`), since a call line is stamped
-  when the call starts or ends and the transcript message when the turn
-  is persisted. Each bad line is its own `system` row.
-
-Not read: `<sessionId>.compaction.json`, `sessions/sessions.index.json`
-and `teams/teams.db`.
+Validated against source (cline/cline at 39ff2359 and 41e75efc) with a synthetic fixture;
+no real install. See `research/cline.md`.
 """
 
 from __future__ import annotations
@@ -311,6 +117,8 @@ IMPORTED_KEYS = (
 
 
 class ClineParser(LegacyTaskParser):
+    """Parse Cline's legacy tasks, SDK sessions and the stores beside them."""
+
     agent = "cline"
     # `enterprise.blobUpload` in a session's metadata marks an uploaded transcript.
     records_sync = True
@@ -322,6 +130,7 @@ class ClineParser(LegacyTaskParser):
     PROJECT_KEY = "cwdOnTaskInitialization"
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a Cline task, session, database, history, log or settings file."""
         rel = artifact.rel
         return bool(
             self.task_match(artifact)
@@ -341,17 +150,21 @@ class ClineParser(LegacyTaskParser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the search index, the input history and the hook log."""
         return artifact.rel in (SEARCH_DB_REL, INPUT_HISTORY_REL, HOOKS_REL)
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        """An hour for `logs/hooks.jsonl` (`HOOKS_TOLERANCE_SECONDS`): its
-        call lines are stamped when a call starts or ends, the transcript's
-        message when the turn is persisted."""
+        """Return an hour for `logs/hooks.jsonl`, else the default window.
+
+        A hook line is stamped when a call starts or ends, the transcript's message when
+        the turn is persisted (`HOOKS_TOLERANCE_SECONDS`).
+        """
         if artifact.rel == HOOKS_REL:
             return HOOKS_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def history_item(self, task_dir: Path, root: Path, task_id: str) -> dict | None:
+        """Return the task's entry in `state/taskHistory.json`, or None."""
         items = self.cached_json(root / "state" / "taskHistory.json")
         if isinstance(items, list):
             for item in items:
@@ -360,6 +173,7 @@ class ClineParser(LegacyTaskParser):
         return None
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Cline file."""
         rel = artifact.rel
         if self.task_match(artifact):
             yield from self.parse_task_file(artifact, opts)
@@ -391,9 +205,11 @@ class ClineParser(LegacyTaskParser):
     # -- cache/sync-queue.json (VS Code extension)
 
     def _parse_sync_queue(self, artifact: Artifact) -> Iterator[Row]:
-        """One `enterprise prompt upload <status>` row per queued task file,
-        prefixed `session synced: ` only when the item's status is `synced`;
-        `data` and `lastError` are never read into a row."""
+        """Yield one `enterprise prompt upload <status>` row per queued task file.
+
+        The row is prefixed `session synced: ` only when the item's status is `synced`;
+        `data` and `lastError` are never read into a row.
+        """
         doc = load_json(artifact.disk_path)
         items = doc.get("items") if isinstance(doc, dict) else None
         if not isinstance(items, dict):
@@ -462,8 +278,7 @@ class ClineParser(LegacyTaskParser):
         return row
 
     def _model_start(self, start: Row, session: dict) -> Iterator[Row]:
-        """`model: <model> provider=<provider>` after a session start or index
-        row, with its time, session and project."""
+        """Yield `model: <model> provider=<provider>` with a start row's time and session."""
         model = str(session.get("model") or "")
         if not model:
             return
@@ -475,9 +290,11 @@ class ClineParser(LegacyTaskParser):
         )
 
     def _blob_upload(self, start: Row, meta, source: str) -> Iterator[Row]:
-        """The `session synced:` row of an `enterprise.blobUpload` metadata
-        key, with the start row's time, session and project; nothing when
-        `meta` has no such object."""
+        """Yield the `session synced:` row of an `enterprise.blobUpload` metadata key.
+
+        The row has the start row's time, session and project; nothing is yielded when
+        `meta` has no such object.
+        """
         blob = meta.get(BLOB_UPLOAD_KEY) if isinstance(meta, dict) else None
         if not isinstance(blob, dict):
             return
@@ -668,10 +485,12 @@ class ClineParser(LegacyTaskParser):
     # -- logs/hooks.jsonl (secondary)
 
     def _parse_hooks_log(self, artifact: Artifact) -> Iterator[Row]:
-        """One row per hook audit line: `prompt_submit` a `user` row,
-        `tool_call` a `tool_use` row, `tool_result` a `tool_result` row (both
-        with the call id), `agent_end` an `assistant` row with the final
-        reply, and every other line a `hook audit: <hookName> ...` row."""
+        """Yield one row per hook audit line.
+
+        `prompt_submit` is a `user` row, `tool_call` a `tool_use` row, `tool_result` a
+        `tool_result` row (both with the call id), `agent_end` an `assistant` row with the
+        final reply, and every other line a `hook audit: <hookName> ...` row.
+        """
         errors: list = []
         for line_number, record in iter_jsonl(artifact.disk_path, errors):
             session_context = _obj(record.get("sessionContext"))
@@ -719,17 +538,19 @@ class ClineParser(LegacyTaskParser):
         return row
 
     def _json_object(self, artifact: Artifact, what: str) -> tuple[dict | None, list]:
-        """The file as a JSON object, or None with the whole-file error."""
+        """Return the file as a JSON object, or None with the whole-file error."""
         doc = load_json(artifact.disk_path)
         if isinstance(doc, dict):
             return doc, []
         return None, [(0, "%s is not a JSON object" % what, "")]
 
     def _parse_global_state(self, artifact: Artifact) -> Iterator[Row]:
-        """`autoApprovalSettings` and `mode` as `permission setting:` rows,
-        `cloudTaskTarget` as one `cloud task target:` row, and each
-        `cloudSessionStatuses` entry as `session origin:` and `session
-        synced:` rows. No other key is read."""
+        """Yield the standing setting and Cline Cloud rows of `globalState.json`.
+
+        `autoApprovalSettings` and `mode` are `permission setting:` rows, `cloudTaskTarget`
+        one `cloud task target:` row, and each `cloudSessionStatuses` entry a `session
+        origin:` and a `session synced:` row. No other key is read.
+        """
         doc, errors = self._json_object(artifact, "globalState.json")
         if doc is None:
             yield from error_rows(self, artifact, errors)
@@ -778,8 +599,7 @@ class ClineParser(LegacyTaskParser):
     def _cloud_rows(
         self, artifact: Artifact, session_id: str, timestamp: str, detail: str, source: str
     ) -> Iterator[Row]:
-        """The `session origin:` and `session synced:` rows of one Cline
-        Cloud session, whose transcript is on the vendor's servers."""
+        """Yield the `session origin:` and `session synced:` rows of a Cline Cloud session."""
         row = self.base_row(artifact)
         row.turn_type = "system"
         row.timestamp_utc = timestamp
@@ -797,8 +617,11 @@ class ClineParser(LegacyTaskParser):
         )
 
     def _parse_pending_starts(self, artifact: Artifact) -> Iterator[Row]:
-        """One pair of Cline Cloud rows per `{sessionId, account, endpoint}`
-        record, at the file's modification time."""
+        """Yield a pair of Cline Cloud rows per record of a pending-start file.
+
+        Each record is `{sessionId, account, endpoint}`; the rows are at the file's
+        modification time.
+        """
         doc = load_json(artifact.disk_path)
         if not isinstance(doc, list):
             message = "cloud pending-start file is not a JSON array"
@@ -821,8 +644,7 @@ class ClineParser(LegacyTaskParser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_global_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """The CLI and SDK's standing tool settings, one `permission
-        setting:` row per value or list entry."""
+        """Yield a `permission setting:` row per tool setting of `global-settings.json`."""
         doc, errors = self._json_object(artifact, "global-settings.json")
         if doc is None:
             yield from error_rows(self, artifact, errors)
@@ -843,8 +665,10 @@ class ClineParser(LegacyTaskParser):
                 )
 
     def _parse_mcp_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """Each MCP server's `autoApprove` entries and `disabled` flag; the
-        server's command, `env`, `headers` and OAuth state are never read."""
+        """Yield each MCP server's `autoApprove` entries and `disabled` flag as settings.
+
+        The server's command, `env`, `headers` and OAuth state are never read.
+        """
         doc, errors = self._json_object(artifact, "cline_mcp_settings.json")
         if doc is None:
             yield from error_rows(self, artifact, errors)
@@ -936,8 +760,7 @@ class ClineParser(LegacyTaskParser):
     def _search_session(
         self, artifact: Artifact, session_id: str, indexed: dict, docs: list, sessions_dir: Path
     ) -> Iterator[Row]:
-        """The index's rows for one session: the session row, then one row
-        per message document in transcript order."""
+        """Yield the search index's session row, then a row per message document in order."""
         head = next((candidate for candidate in docs if candidate.get("role") == "session"), None)
         docs = sorted(
             (candidate for candidate in docs if candidate.get("role") != "session"),
@@ -980,7 +803,7 @@ class ClineParser(LegacyTaskParser):
 
 
 def _ordinal(value) -> int:
-    """A message document's `ordinal`, -1 when it is not a number."""
+    """Return a message document's `ordinal`, -1 when it is not a number."""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -988,6 +811,7 @@ def _ordinal(value) -> int:
 
 
 def load_json_text(text):
+    """Return `text` parsed as JSON, or None."""
     try:
         return json.loads(text)
     except (TypeError, ValueError):
@@ -995,18 +819,17 @@ def load_json_text(text):
 
 
 def _obj(value) -> dict:
-    """`value` when it is a JSON object, else an empty one."""
+    """Return `value` when it is a JSON object, else an empty one."""
     return value if isinstance(value, dict) else {}
 
 
 def _dash(value) -> str:
-    """A value for row text, `-` when absent or empty."""
+    """Return a value as row text, `-` when absent or empty."""
     return "-" if value in (None, "") else str(value)
 
 
 def _imported(session: dict, meta) -> None:
-    """Copy `metadata.importedFrom` onto the session record under the
-    `imported_*` names the start row prints."""
+    """Copy `metadata.importedFrom` onto the session under the start row's `imported_*` names."""
     source = _obj(_obj(meta).get("importedFrom"))
     for key, name in IMPORTED_KEYS:
         if source.get(key) not in (None, ""):
@@ -1014,8 +837,10 @@ def _imported(session: dict, meta) -> None:
 
 
 def _denial(content) -> str:
-    """The `permission decision:` text of a skipped call's tool_result
-    content (`{"error": <reason>}`, stored as a JSON string), or `""`."""
+    """Return the `permission decision:` text of a skipped call's tool_result, or "".
+
+    The content is `{"error": <reason>}`, stored as a JSON string.
+    """
     if isinstance(content, str):
         try:
             content = json.loads(content)
@@ -1032,8 +857,10 @@ def _denial(content) -> str:
 
 
 def _decisions(content) -> dict:
-    """tool_use_id -> `permission decision:` text for each errored
-    tool_result block of a message whose reason is a rejection or a block."""
+    """Return tool_use_id -> `permission decision:` text for a message's skipped calls.
+
+    A skipped call is an errored tool_result block whose reason is a rejection or a block.
+    """
     out: dict = {}
     for block in content if isinstance(content, list) else []:
         block = _obj(block)
@@ -1045,8 +872,7 @@ def _decisions(content) -> dict:
 
 
 def _hook_event(row: Row, hook: str, entry: dict) -> bool:
-    """Fill `row` as the transcript event a hook audit line repeats, and
-    say whether it is one."""
+    """Fill `row` as the transcript event a hook audit line repeats; return whether it is one."""
     if hook == "prompt_submit":
         prompt = _obj(entry.get("userPromptSubmit")).get("prompt")
         if not isinstance(prompt, str) or not prompt.strip():

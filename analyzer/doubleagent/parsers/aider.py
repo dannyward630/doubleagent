@@ -1,93 +1,27 @@
 """Aider chat, input and LLM history files.
 
-Validated against source, Aider-AI/aider at 5dc9490 (`aider/io.py`,
-`aider/utils.py`, `aider/coders/base_coder.py`) and prompt_toolkit's
-`FileHistory`, with a synthetic fixture; see `research/aider.md`.
+Reads `.aider.chat.history.md` (the primary store) and `.aider.input.history` and
+`.aider.llm.history` (secondary sources), selected by file name wherever they sit: Aider
+writes them into the git root or working directory, so they usually arrive through the
+project catalog with the project as the home. Rows are labelled `aider`, and
+`project_path` is the directory holding the file.
 
-Aider writes into the git root of the repository it runs in (else the
-working directory), so these files usually arrive through the collector's
-project catalog with the project directory as the home, and
-`artifact.rel` is the bare file name. Collectors from 1.12.0 attribute them
-to `aider` when the project catalog names it; earlier ones recorded agent
-`project`, which the analyzer re-attributes from its bundled project
-catalog, and a file the catalog leaves to `project` is offered to every
-parser. Either way this parser takes it and labels the rows `aider`. A
-history file directly in a home is
-attributed to `aider` by the main catalog. Either way `project_path` is the
-directory holding the file. Files:
+Formats read: the chat history's `# aider chat started at <local time>` headers, `#### `
+user lines, `> ` tool and system output lines and assistant markdown, where a `> ` run's
+announcement lines (`Model:`, `Main model:`, `Editor model:`, `Weak model:`) give the model
+rows and its `confirm_ask` lines (`<question> (Y)es/(N)o... [<default>]: <answer>`) the
+permission rows; the input history's prompt_toolkit `FileHistory` entries (`# <local time>`
+then `+<line>` lines); and the LLM history's `TO LLM <time>` and `LLM RESPONSE <time>`
+blocks of role-prefixed lines.
 
-* `.aider.chat.history.md`, appended markdown. `# aider chat started at
-  YYYY-MM-DD HH:MM:SS` opens a session; `#### ` lines are user input (one
-  per input line, `#### <blank>` for empty input, slash commands included);
-  `> ` blockquote lines are tool and system output (applied edits, commits,
-  errors; `>>>>>>> REPLACE` is not one); anything else is assistant
-  markdown, SEARCH/REPLACE blocks included. Consecutive lines of one kind
-  are one row.
-* `.aider.input.history`, prompt_toolkit `FileHistory`: `# YYYY-MM-DD
-  HH:MM:SS.ffffff` then one `+<line>` per input line.
-* `.aider.llm.history`, only with `--llm-history-file`: `TO LLM
-  YYYY-MM-DDTHH:MM:SS` followed by `-------`-separated messages whose lines
-  are prefixed with the upper-case role, and `LLM RESPONSE <ts>` followed by
-  `ASSISTANT <line>` lines.
+Every timestamp is host local time with no zone and is emitted as if it were UTC. The
+session id is `<path of .aider.chat.history.md>#<header timestamp>`; input and LLM rows
+take the last header at or before their own time, and a chat user row takes the time of
+the matching input-history entry. No git branch or tool call id is recorded.
 
-Every timestamp in these files is host local time with no zone, and the
-collection does not record the host's zone, so they are emitted as if they
-were UTC; correct them by the host's offset. The session id is synthesised
-as `<path of .aider.chat.history.md>#<header timestamp>`. Chat history rows
-take the session header's time, or, from a user prompt on, the time of the
-matching `.aider.input.history` entry (same text, between this header and
-the next). Input and LLM history rows are assigned to the last session
-header at or before their own time when the chat history sits beside them.
-No git branch or tool call id is recorded.
-
-The model is named only in the chat history's announcement lines, written
-at startup and again after each `/model`, `/weak-model`, `/editor-model` or
-`/chat-mode` switch (`base_coder.py` `get_announcements`): `Model: <name>
-with <format> edit format[, ...]`, or `Main model: ...` when a separate
-weak model is in use, `Editor model: <name> with <format> edit format` in
-architect mode, and `Weak model: <name>`. A blockquote run that holds a
-main-model line is read for them, and after its `tool_result` row the
-parser yields `model: <name>` at the first announcement of a session and
-`model: <old> -> <new>` on each later one that names another model, with
-` (editor model)` or ` (weak model)` appended for those two roles. A
-`Model:` line means the weak model is the main model: it sets the weak
-model with no row of its own, unless it replaces a separate weak model,
-so a later `Weak model:` line reads `model: <main> -> <weak> (weak
-model)`. The `model` column of such a row is the new model; other rows leave
-it empty. Each `confirm_ask` line (`io.py`), `<question> (Y)es/(N)o[/(A)ll]
-[/(S)kip all][/(D)on't ask again] [<default>]: <answer>`, with the answer's
-first letter in lower case, yields `permission decision: <yes|no|all|skip
-all|don't ask again> (<question>) answer=<letter> default=<default>` after
-the run's `tool_result` row; a `y` or `n` answer adds `; may be automatic
-(--yes-always)`, because under `--yes-always` Aider writes the same line
-without asking (`y`, or `n` for a question that needs an explicit yes,
-such as `Run shell command?`). The subject (the command, path or URL) is
-the blockquote text before the question in the same `tool_result` row. A
-question declined silently after "Don't ask again" leaves no line. Both
-row kinds are source-derived (Aider-AI/aider at 5dc9490) and not observed
-on any real install. Each `TO LLM` request
-becomes one `system` row naming the message count and the last user
-message; the full prompt is at `source_file:source_line`. A non-blank
-input or LLM history line that fits neither format is its own `system`
-row carrying the line in full (`error_rows`, issue 136).
-
-The chat history is the primary store; the input and LLM histories are
-secondary sources (`secondary()`, issue 122), read on every run beside it.
-Aider writes the same prompt to both the input history (prompt_toolkit's
-`FileHistory`, `aider/io.py` `add_to_input_history`) and the chat history
-(`user_input`), so an input-history row and the chat row it timed carry
-the same text, session id, project path and timestamp and pair exactly:
-the input-history row is dropped. One the chat history lacks is kept: an
-entry written after a chat-history write error, which turns chat logging
-off for the rest of the run (`append_chat_history`), a `/run <command>`
-entry Aider adds for a shell command it suggested
-(`base_coder.py` `handle_shell_commands`), or a prompt whose chat history
-was deleted or written elsewhere with `--chat-history-file`. Both files
-record each event's own time, so the default two-second window applies.
-The LLM history rarely pairs: its `system` rows summarise a request no
-chat row repeats, and an `LLM RESPONSE` row is stamped when the response
-arrived, while the chat history's assistant row takes the prompt's time
-and may hold several such responses or be split by blockquote lines.
+Validated against source (Aider-AI/aider at 5dc9490: `aider/io.py`, `aider/utils.py`,
+`aider/coders/base_coder.py`) and prompt_toolkit's `FileHistory`, with a synthetic
+fixture; no real install. See `research/aider.md`.
 """
 
 from __future__ import annotations
@@ -136,8 +70,7 @@ def _norm(text: str) -> str:
 
 
 def sibling(original: str, name: str) -> str:
-    """The path of `name` in the directory holding `original`, keeping the
-    source host's separator."""
+    """Return the path of `name` beside `original`, keeping the source host's separator."""
     i = max(original.rfind("/"), original.rfind("\\"))
     if i < 0:
         return name
@@ -145,14 +78,17 @@ def sibling(original: str, name: str) -> str:
 
 
 def project_dir(original: str) -> str:
+    """Return the directory of a source path, in either separator."""
     i = max(original.rfind("/"), original.rfind("\\"))
     return original[:i] if i > 0 else original[: i + 1]
 
 
 def read_input_history(path: Path, errors: list | None = None) -> list[tuple[int, str, str]]:
-    """(line, local timestamp, text) per prompt_toolkit FileHistory entry.
-    A non-blank line that is neither a timestamp nor a `+` entry line is
-    appended to `errors` as (line, message, the line less its terminator)."""
+    """Return (line, local timestamp, text) per prompt_toolkit FileHistory entry.
+
+    A non-blank line that is neither a timestamp nor a `+` entry line is appended to
+    `errors` as (line, message, the line less its terminator).
+    """
     out: list[list] = []
     for line_number, line in _lines(path):
         match = INPUT_TS_RX.match(line)
@@ -168,7 +104,7 @@ def read_input_history(path: Path, errors: list | None = None) -> list[tuple[int
 
 
 def read_headers(path: Path) -> list[str]:
-    """Session header timestamps of a chat history, in file order."""
+    """Return the session header timestamps of a chat history, in file order."""
     if not path.is_file() or path.is_symlink():
         return []
     return [
@@ -177,18 +113,23 @@ def read_headers(path: Path) -> list[str]:
 
 
 class AiderParser(Parser):
+    """Parse Aider's chat, input and LLM history files."""
+
     agent = "aider"
     name = "aider"
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for one of the three Aider history files."""
         return bool(FILE_RX.match(artifact.rel))
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the input and LLM histories."""
         match = FILE_RX.match(artifact.rel)
         return bool(match) and match.group(1) != CHAT
 
     def base_row(self, artifact: Artifact) -> Row:
+        """Return a row labelled `aider` whose project is the file's directory."""
         row = Row(
             host=artifact.home.host,
             user=artifact.home.user,
@@ -199,6 +140,7 @@ class AiderParser(Parser):
         return row
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Aider history file."""
         match = FILE_RX.match(artifact.rel)
         assert match is not None  # wants() accepted only matching paths
         kind = match.group(1)
@@ -210,8 +152,10 @@ class AiderParser(Parser):
             yield from self._parse_llm(artifact, opts)
 
     def _session_for(self, artifact: Artifact) -> Callable[[str], str]:
-        """Map a local timestamp to the session id of the last chat header at
-        or before it, using the chat history beside this file."""
+        """Return a function mapping a local time to the session of the chat beside it.
+
+        The session is the last chat history header at or before the time.
+        """
         headers = sorted(read_headers(artifact.disk_path.parent / CHAT))
         chat = sibling(artifact.original, CHAT)
 
@@ -317,9 +261,11 @@ class AiderParser(Parser):
         session_id: str,
         models: dict[str, str],
     ) -> Iterator[Row]:
-        """The `model:` and `permission decision:` rows of one blockquote run,
-        after its `tool_result` row. `models` holds the session's main, editor
-        and weak model so far and is updated in place."""
+        """Yield the `model:` and `permission decision:` rows of one blockquote run.
+
+        They follow the run's `tool_result` row. `models` holds the session's main, editor
+        and weak model so far and is updated in place.
+        """
         announced = any(MAIN_MODEL_RX.match(text_line) for text_line in lines)
         for line_number, line in zip(line_numbers, lines, strict=True):
             changes: list[tuple[str, str, str, bool]] = []

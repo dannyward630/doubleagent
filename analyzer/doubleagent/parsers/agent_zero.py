@@ -1,167 +1,30 @@
-"""Agent Zero chats.
+"""Agent Zero chats, scheduler tasks, plugin settings and connector state.
 
-Agent Zero (agent0ai/agent-zero, checked at e3051fb) saves each chat or task
-context as one JSON file under the install directory's `usr/chats`. See
+Reads `<a0>/usr/chats/<ctxid>/chat.json` with its `messages/<n>.txt` tool outputs (and the
+older `<a0>/usr/chats/<ctxid>.json` and `<a0>/tmp/chats/` copies), where `<a0>` is
+`[Desktop/]agent-zero[/<instance>]`, or the same files under `chats/` at the base of a
+collected `/a0/usr` Docker or Podman volume. Beside them it reads `usr/scheduler/tasks.json`
+and the Telegram plugin's `state.json` (both secondary sources), the `_tool_access` and
+`_orchestrator` plugin `config.json` and `.toggle-0`/`.toggle-1` files, and the A0 CLI
+connector's `~/.agent-zero/.env`. It yields the chat log as user, assistant, thinking,
+tool_use, tool_result and system rows, and model, permission, sync, relay, origin and
+scheduled-task rows.
+
+Fields read: `id`, `name`, `created_at`, `type`, `agent_profile`; `data.project`,
+`acp_cwd`, `acp_mode`, `acp_model_id`, `chat_model_override` (provider and name only),
+`workdir_path` and the Telegram, WhatsApp and email keys; `log.logs[]` `no`, `id`, `type`,
+`heading`, `content`, `kvps`, `timestamp`, `agentno`; `agents[].number`, `agents[].history`
+(`Message` `id`, `ai`, `content`, `metadata.responses.provider_model_key`) and
+`agents[].data.responses_state`; `tasks[]` `uuid`, `context_id`, `name`, `type`, `state`,
+`prompt`, `project_name`, `created_at`, `last_run`, `last_result`; the Telegram `chats` map;
+and only `AGENT_ZERO_LAST_CONTEXT_HOST` and `AGENT_ZERO_LAST_CONTEXT_ID` of the `.env`.
+`data.telegram_bot_cfg`, a task's `token` and `system_prompt` are never read.
+
+Validated against source (agent0ai/agent-zero at e3051fb and ff2a5b9, agent0ai/a0-connector
+at 3741c88, agent0ai/a0-launcher at b0333d8) with a synthetic fixture; no real install.
+Drift: log item ids equal history message ids (`helpers/tool.py:56-61`,
+`agent.py:529-534`), which the research document's fixture gives as different ids. See
 `research/agent-zero.md`.
-
-Files, relative to the home directory, where `<a0>` is `agent-zero`,
-`agent-zero/<instance>` (installer and launcher layouts) or the same under
-`Desktop/`:
-
-* `<a0>/usr/chats/<ctxid>/chat.json`, rewritten whole and atomically on each
-  save. Top-level keys: `id`, `name`, `created_at` (ISO 8601 with offset),
-  `type` (`user` or `task`), `agent_profile`, `data.project`, `agents`,
-  `log`.
-  - `log.logs`: the last 1000 UI log items, each `no`, `id`, `type`,
-    `heading`, `content` (cut at 15,000 characters, 250,000 for
-    `response`), `kvps`, `timestamp` (epoch seconds), `agentno`. `user`
-    items carry `kvps.attachments`; `agent` items carry the parsed response
-    in `kvps` (`headline`, `thoughts`, `tool_name`, `tool_args`, and
-    `reasoning`); `tool` items carry the tool arguments plus
-    `kvps._tool_name`, with the result written into `content`.
-  - `agents[].history`: a JSON string of `{bulks, topics, current}` holding
-    `Message` records `{id, ai, content, metadata}` with full text and no
-    timestamp. User messages are `{user_message, attachments?}`, tool
-    results `{tool_name, tool_result, file?}`, assistant messages the raw
-    model output (usually a `{headline, thoughts, tool_name, tool_args}`
-    JSON string) with `metadata.responses.provider_model_key`. Compressed
-    topics and bulks keep only a `summary`.
-* `<a0>/usr/chats/<ctxid>/messages/<n>.txt`: the full text of a tool result
-  of 500 characters or more, named by the history record's `file` key (an
-  absolute path inside the container, matched here by file name). Read when
-  `chat.json` is parsed, never on its own.
-* `<a0>/usr/chats/<ctxid>.json` (v0.8.0) and `<a0>/tmp/chats/...`: older
-  locations of the same document, which Agent Zero moves without
-  conversion.
-
-A Docker or Podman named volume mounted at `/a0/usr` (the README's
-`a0_usr`, Compose's `<project>_a0_usr`, the A0 Launcher's
-`a0-launcher-<slug>-usr`) is collected with the volume's `_data` directory
-as the home, so the same files arrive as `chats/<ctxid>/chat.json`,
-`chats/<ctxid>/messages/<n>.txt` and `chats/<ctxid>.json`, without the
-`<a0>/usr/` prefix; both forms are selected (issue 175). Not observed on
-any real install, source-derived (agent0ai/agent-zero at e3051fb,
-`README.md:92`; agent0ai/a0-launcher at b0333d8,
-`shell/docker_manager/index.js:948-951`).
-
-Log item ids equal history message ids for user messages, tool results
-(`helpers/tool.py:56-61`) and assistant responses (`agent.py:529-534`, the
-`agent` log item that streamed the generation). The research document's
-fixture gives the `agent` item and the assistant message different ids;
-the source shows they are the same.
-
-Rows come from the log, which has the timestamps: `user` → `user` (full text
-from the matching history message); `agent` → `assistant` with the headline
-and thoughts (else the history or log text), the model from the matching
-history message, and `kvps.reasoning` as `thinking` with
-`--include-thinking`; before an `agent` item (or a history-only assistant
-message) whose `metadata.responses.provider_model_key` is new for that
-agent, a `system` row `model: <key>` at the agent's first model and
-`model: <old> -> <new>` on a change, tracked per chat and agent number,
-ending ` agent=<n>` for a subordinate agent; `response` → `assistant`; `tool`, `mcp`, `code_exe`,
-`browser` and `subagent` → `tool_use` (the `code`, `command`, `url`, `query`
-or `path` argument, else the arguments; `tool_use_id` is the log item id)
-then `tool_result` (the `messages/<n>.txt` file, else the history result,
-else the possibly truncated log content); anything else → `system`. When the
-log holds 1000 items it has been trimmed, so a `system` row says so and the
-history messages and summaries that have no log item are emitted first,
-without a timestamp. Rows of subordinate agents are prefixed `[agent N]`.
-`project_path` is `/a0/usr/projects/<data.project>`, the path inside the
-container, and is empty for chats outside a project. No git branch is
-recorded. `source_line` is the log item's `no`. A `chat.json` that does not
-parse yields one `system` row plus whatever complete log items can be
-recovered from it, without the history (and so without model rows).
-
-Source-derived; not observed on any real install (agent0ai/agent-zero at
-ff2a5b9, agent0ai/a0-connector at 3741c88; issue 204):
-
-* Permission decisions, a `system` row after the `warning: ...` row of the
-  `warning` log item that records one: `permission decision: blocked
-  tool=<name> profile=<profile>` (with `tool_name`) when the item's content
-  holds `Tool "<name>" is blocked for agent profile "<profile>".`
-  (helpers/tool_policy.py:197-208); `permission decision: denied
-  automatically (provider MCP approval request)` (`tool_name`
-  `mcp_approval_request`) for the heading `Responses MCP approval
-  required` (agent.py:1325-1346); `permission decision: <clarify, passed
-  or terminated> (infection check)` for the Infection Check headings
-  `Infection check: requesting clarification`, `... clarification passed`
-  and `... TERMINATED` (plugins/_infection_check/helpers/checker.py:180-197,
-  330-345).
-* Chat `data` keys, each a `system` row after the remote-copy rows at the
-  file's modification time, the latest value only: `permission mode:
-  <acp_mode> (acp, as of file mtime)`, `model: requested <acp_model_id>
-  (acp, as of file mtime)` (plugins/_a0_acp/api/session.py:12-20),
-  `model: requested <preset <name> | chat=<provider>/<name> ...> (chat
-  override, as of file mtime)` from `chat_model_override`, never printing
-  the object, which can hold an `api_key`
-  (plugins/_model_config/api/model_override.py:58-92,
-  plugins/_a0_connector/api/v1/model_switcher.py:27-46, 211), and
-  `scratch directory: <workdir_path> (acp container transport, from
-  chat.json data.workdir_path, as of file mtime)` with `project_path` the
-  directory. `data.acp_cwd`, the editor's workspace on its host, is the
-  chat's `project_path` when set (session.py:131-150).
-* `<a0>/usr/scheduler/tasks.json` (or the legacy `tmp/scheduler/`), a
-  secondary source: `{"tasks": [...]}`, each with `uuid`, `context_id`,
-  `name`, `type`, `state`, `prompt`, `project_name`, `created_at`,
-  `last_run`, `last_result` (helpers/task_scheduler.py:163-175,
-  512-519); per task `scheduled task: <name> type=<type> state=<state>` at
-  `created_at`, a `user` row `## Task:\n<prompt>` with no timestamp (the
-  text the scheduler logs as the chat's user message,
-  task_scheduler.py:945-949), and `last_result` as an `assistant` row at
-  `last_run`, or `scheduled task failed: <error>` for a task in state
-  `error`. `last_run` is stamped when the run ends, after the chat's
-  `response` item, so the tolerance is 60 seconds. `token` and
-  `system_prompt` are not read. `tasks.yaml`, written when only it exists,
-  is not read (YAML).
-* `<a0>/usr/plugins/_telegram_integration/state.json`, a secondary source:
-  `{"chats": {"<bot>:<user id>:<chat id>": "<ctxid>"}}`
-  (plugins/_telegram_integration/helpers/handler.py:57-64, 405-410); for
-  an entry whose `chats/<ctxid>/chat.json` (or `chats/<ctxid>.json`) is
-  not in the input, `session deleted: telegram bot <bot> chat <chat id>
-  user <user id> ctxid <ctxid> (from state.json, no chat.json in the
-  input, file mtime)` with `session_id` the ctxid.
-* Standing settings, one `permission setting: <setting> (from <file>, file
-  mtime)` row per entry with an empty `session_id` and, for a project's
-  file, `project_path` the project: `tool_access.<mode|default|
-  mcp_default>=<value>` and one `tool_access.<allowed|blocked>=<tool id>`
-  per list entry of a `_tool_access/config.json`
-  (plugins/_tool_access/README.md:4-9); `orchestrator.<cli>.<key>=<value>`
-  for the approval bypass keys of `_orchestrator/config.json`
-  (plugins/_orchestrator/default_config.yaml:7-37); and
-  `<infection_check|orchestrator>=<enabled|disabled>` for a `.toggle-1` or
-  `.toggle-0` file (helpers/plugins.py:60-61); each followed by `
-  profile=<p>` and ` project=<n>` when the file sits under
-  `usr/agents/<p>/` or `usr/projects/<n>/.a0proj/`.
-* `~/.agent-zero/.env` of the A0 CLI connector, a secret file of which
-  only `AGENT_ZERO_LAST_CONTEXT_HOST` and `AGENT_ZERO_LAST_CONTEXT_ID` are
-  read (a0-connector config.py:13-14, 347-356): `session origin: remote
-  agent-zero instance <host> context <id> (from .agent-zero/.env, file
-  mtime)` with `session_id` the id (`records_origin`). Its other lines are
-  never put in a row, not even as bad lines; the connector's own reader
-  skips a line without `=` too.
-
-Remote copies (issue 153), each a `system` row after the chat-start row
-at the file's modification time (`file_mtime`), `-` for a key absent or
-empty, fixture only (no real install has shown the keys):
-
-* `agents[].data.responses_state` (`response_id`, `previous_response_id`,
-  `provider_model_key`, `response_ids`): when `previous_response_id` is
-  non-empty, a turn was chained on a response the provider stored
-  (`store: true`), so the chat has a copy at the provider: `session
-  synced: provider response <response_id> previous <previous_response_id>
-  model <provider_model_key> (<n> response ids) agent=<number> (from
-  chat.json agents[].data.responses_state, file mtime)`, one per agent
-  (`records_sync`). The `local` mode records the same ids with `store:
-  false` and no previous id, and yields no row.
-* `data` keys of a chat carried by a messaging plugin, which keeps a copy
-  on that service: `session relayed: telegram bot <telegram_bot> chat
-  <telegram_chat_id> user <telegram_user_id> @<telegram_username> (from
-  chat.json data, file mtime)`, `session relayed: whatsapp chat
-  <wa_chat_id> number <wa_sender_number> (...)` and `session relayed:
-  email thread <email_thread_id> from <email_sender> (...)`
-  (`records_relay`, so a chat without one is `relayed` `no`).
-  `data.telegram_bot_cfg` holds the bot token and is never read into a
-  row.
 """
 
 from __future__ import annotations
@@ -186,7 +49,7 @@ from .base import (
 
 # A home install keeps the chats under `<a0>/usr/chats` (or the legacy
 # `<a0>/tmp/chats`); a volume mounted at `/a0/usr` is collected with its
-# `_data` directory as the home, so its chats start at `chats/` (issue 175).
+# `_data` directory as the home, so its chats start at `chats/`.
 CHATS_ROOT = r"(?:(?:Desktop/)?agent-zero/(?:[^/]+/)?(?:usr|tmp)/)?chats"
 CHAT_RX = re.compile(r"^%s/[^/]+/chat\.json$" % CHATS_ROOT)
 LEGACY_RX = re.compile(r"^%s/[^/]+\.json$" % CHATS_ROOT)
@@ -251,8 +114,11 @@ OVERRIDE_SLOTS = ("chat", "utility", "embedding")
 
 
 def walk_history(node, summaries: bool) -> Iterator[tuple[str, dict]]:
-    """Yield ("message", Message) and, with `summaries`, ("summary", text) in
-    chronological order: bulks, then topics, then the current topic."""
+    """Yield the history's messages and, with `summaries`, its summaries in order.
+
+    Each item is ("message", Message) or ("summary", {"summary": text}): bulks, then
+    topics, then the current topic.
+    """
     if isinstance(node, list):
         for child in node:
             yield from walk_history(child, summaries)
@@ -272,7 +138,7 @@ def walk_history(node, summaries: bool) -> Iterator[tuple[str, dict]]:
 
 
 def parse_ai(content) -> dict | None:
-    """The assistant's raw output parsed as the agent's JSON response."""
+    """Return the assistant's raw output parsed as the agent's JSON response, or None."""
     if isinstance(content, dict):
         return content
     if isinstance(content, str):
@@ -287,6 +153,7 @@ def parse_ai(content) -> dict | None:
 
 
 def headline_text(response: dict) -> str:
+    """Return a response's headline and thoughts, one per line."""
     parts = []
     if response.get("headline"):
         parts.append(str(response["headline"]))
@@ -299,6 +166,7 @@ def headline_text(response: dict) -> str:
 
 
 def args_summary(args) -> str:
+    """Return the argument that names a tool call's action, else the arguments as JSON."""
     if isinstance(args, dict):
         visible = {k: value for k, value in args.items() if not str(k).startswith("_")}
         for k in ARG_KEYS:
@@ -309,6 +177,7 @@ def args_summary(args) -> str:
 
 
 def model_of(message: dict | None) -> str:
+    """Return a history message's `provider_model_key`, or ""."""
     if not message:
         return ""
     meta = message.get("metadata")
@@ -323,7 +192,7 @@ def _content_text(value) -> str:
 
 
 def recover_logs(raw: str) -> list[dict]:
-    """Complete log items before the point where a damaged file breaks off."""
+    """Return the complete log items before the point where a damaged file breaks off."""
     match = LOGS_RX.search(raw)
     if not match:
         return []
@@ -342,15 +211,17 @@ def recover_logs(raw: str) -> list[dict]:
 
 
 def _key(record: dict, key: str) -> str:
-    """`d[key]` as row text, `-` when absent or empty."""
+    """Return `record[key]` as row text, `-` when absent or empty."""
     value = record.get(key)
     return "-" if value in (None, "") else str(value)
 
 
 def remote_copy_texts(chat: dict, data: dict) -> list[str]:
-    """The `session synced:` (stored provider responses) and `session
-    relayed:` (Telegram, WhatsApp, email) texts of a chat. Never reads
-    `telegram_bot_cfg`, which holds the bot token."""
+    """Return the `session synced:` and `session relayed:` texts of a chat.
+
+    A synced text names a provider response chain, a relayed text a Telegram, WhatsApp
+    or email chat. `telegram_bot_cfg`, which holds the bot token, is never read.
+    """
     out = []
     for i, agent in enumerate(chat.get("agents") or []):
         agent_data = agent.get("data") if isinstance(agent, dict) else None
@@ -388,18 +259,22 @@ def remote_copy_texts(chat: dict, data: dict) -> list[str]:
 
 
 def _model_name(config: dict) -> str:
-    """`<provider>/<name>` of a model configuration, never its `api_key` or
-    `api_base`; `""` when it names neither."""
+    """Return `<provider>/<name>` of a model configuration, or "" when it names neither.
+
+    The `api_key` and `api_base` are never read.
+    """
     parts = [str(config.get(k) or "").strip() for k in ("provider", "name")]
     return "/".join(part for part in parts if part)
 
 
 def override_text(override) -> str:
-    """The requested model of `data.chat_model_override` as row text: a
-    preset reference by name, a custom configuration by the provider and
-    name of each slot. A custom configuration from the connector can carry
-    an `api_key` (plugins/_a0_connector/api/v1/model_switcher.py:27-46), so
-    the object itself is never printed."""
+    """Return the model `data.chat_model_override` requests, as row text.
+
+    A preset is named by its name, a custom configuration by the provider and name of
+    each slot. A custom configuration from the connector can carry an `api_key`
+    (plugins/_a0_connector/api/v1/model_switcher.py:27-46), so the object itself is
+    never printed.
+    """
     if not isinstance(override, dict) or not override:
         return ""
     if override.get("preset_name"):
@@ -415,9 +290,12 @@ def override_text(override) -> str:
 
 
 def chat_setting_rows(data: dict) -> list[tuple[str, str]]:
-    """(text, project path or "") of the editor-session (ACP) and per-chat
-    model rows of a chat's `data`, each the latest value as of the file's
-    modification time. Only the scratch row names its own project path."""
+    """Return (text, project path or "") for each editor-session and chat-model row.
+
+    The rows come from a chat's `data`, each value the latest as of the file's modification
+    time; ACP is the Agent Client Protocol an editor session uses. Only the scratch
+    directory row names its own project path.
+    """
     out = []
     if data.get("acp_mode"):
         out.append(("permission mode: %s (acp, as of file mtime)" % data["acp_mode"], ""))
@@ -439,8 +317,10 @@ def chat_setting_rows(data: dict) -> list[tuple[str, str]]:
 
 
 def warning_decision(item: dict) -> tuple[str, str]:
-    """(text, tool name) of the `permission decision:` row a `warning` log
-    item records, or ("", "") when it records none."""
+    """Return (text, tool name) of a `warning` log item's `permission decision:` row.
+
+    Returns ("", "") when the item records no decision.
+    """
     heading = str(item.get("heading") or "")
     content = item.get("content")
     match = BLOCKED_RX.search(content) if isinstance(content, str) else None
@@ -461,15 +341,18 @@ def warning_decision(item: dict) -> tuple[str, str]:
 
 
 def project_of(name) -> str:
+    """Return the container path of an Agent Zero project, or "" for none."""
     return "/a0/usr/projects/%s" % name if name else ""
 
 
 def scope_text(match: re.Match) -> str:
-    """` profile=<p> project=<n>` for a scoped plugin file, each when set."""
+    """Return ` profile=<p> project=<n>` for a scoped plugin file, each part when set."""
     return "".join(" %s=%s" % (k, match[k]) for k in ("profile", "project") if match[k])
 
 
 class AgentZeroParser(Parser):
+    """Parse Agent Zero chats and the scheduler, plugin and connector files beside them."""
+
     agent = "agent-zero"
     name = "agent-zero"
     records_sync = True
@@ -478,6 +361,7 @@ class AgentZeroParser(Parser):
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a chat, scheduler, Telegram, plugin or connector file."""
         rel = artifact.rel
         return any(
             pattern.match(rel)
@@ -493,9 +377,11 @@ class AgentZeroParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the scheduler's tasks and the Telegram chat map."""
         return bool(TASKS_RX.match(artifact.rel) or TG_STATE_RX.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return the wider window of the scheduler, whose `last_run` follows the reply."""
         return (
             TASKS_TOLERANCE
             if TASKS_RX.match(artifact.rel)
@@ -503,6 +389,7 @@ class AgentZeroParser(Parser):
         )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Agent Zero file."""
         rel = artifact.rel
         if TASKS_RX.match(rel):
             yield from self._tasks(artifact)
@@ -670,9 +557,11 @@ class AgentZeroParser(Parser):
     def _model_row(
         self, base: Row, agent_number, model: str, models: dict, opts: Options, line=0, timestamp=""
     ):
-        """`model: <id>` at an agent's first model and `model: <old> -> <new>`
-        on a change, tracked per chat and agent number; a subordinate
-        agent's row ends ` agent=<n>`."""
+        """Return the `model:` row of a new or changed model, or None.
+
+        The model is tracked per chat and agent number; a subordinate agent's row ends
+        ` agent=<n>`.
+        """
         text = track_change("model", models, (base.session_id, str(agent_number)), model)
         if not text:
             return None
@@ -861,10 +750,12 @@ class AgentZeroParser(Parser):
         return row
 
     def _tasks(self, artifact: Artifact) -> Iterator[Row]:
-        """`usr/scheduler/tasks.json`, the scheduler's `{"tasks": [...]}`
-        (helpers/task_scheduler.py:163-175, 512-519, 584): per task a
-        `scheduled task:` row at `created_at`, the prompt as the chat logged
-        it with no time of its own, and the last result at `last_run`."""
+        """Yield the rows of `usr/scheduler/tasks.json`.
+
+        Per task (helpers/task_scheduler.py:163-175, 512-519, 584): a `scheduled task:`
+        row at `created_at`, the prompt as the chat logged it with no time of its own, and
+        the last result at `last_run`.
+        """
         doc, why = self._doc(artifact)
         tasks = doc.get("tasks") if isinstance(doc, dict) else None
         if not isinstance(tasks, list):
@@ -922,8 +813,7 @@ class AgentZeroParser(Parser):
             yield row
 
     def _telegram_state(self, artifact: Artifact) -> Iterator[Row]:
-        """The Telegram plugin's chat map; an entry whose chat is absent from
-        the input is a chat deleted since the map was written."""
+        """Yield a `session deleted:` row per Telegram chat whose chat file is absent."""
         doc, why = self._doc(artifact)
         chats = doc.get("chats") if isinstance(doc, dict) else None
         if not isinstance(chats, dict):
@@ -964,9 +854,11 @@ class AgentZeroParser(Parser):
         )
 
     def _policy(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
-        """A `_tool_access` policy (helpers/tool_policy.py:27-37) or the
-        Orchestrator's settings, one `permission setting:` row per key and
-        list entry."""
+        """Yield a `permission setting:` row per key and list entry of a plugin config.
+
+        The file is a `_tool_access` policy (helpers/tool_policy.py:27-37) or the
+        Orchestrator's settings.
+        """
         doc, why = self._doc(artifact)
         if not isinstance(doc, dict):
             yield self._file_row(
@@ -994,16 +886,21 @@ class AgentZeroParser(Parser):
                 yield self._setting(artifact, text, project)
 
     def _toggle(self, artifact: Artifact, match: re.Match) -> Iterator[Row]:
-        """An empty `.toggle-1` (enabled) or `.toggle-0` (disabled) switch of
-        the Infection Check or the Orchestrator (helpers/plugins.py:60-61)."""
+        """Yield the `permission setting:` row of a plugin's `.toggle-1` or `.toggle-0` file.
+
+        The empty file switches the Infection Check or the Orchestrator on (`1`) or off
+        (`0`) (helpers/plugins.py:60-61).
+        """
         state = "enabled" if match["state"] == "1" else "disabled"
         text = "%s=%s%s" % (match["plugin"].lstrip("_"), state, scope_text(match))
         yield self._setting(artifact, text, project_of(match["project"]))
 
     def _connector_env(self, artifact: Artifact) -> Iterator[Row]:
-        """The A0 CLI connector's `~/.agent-zero/.env`, a secret file: only
-        the last chat's host and id are read, as the connector reads them
-        (a0-connector config.py:51-66), and no other line reaches a row."""
+        """Yield the `session origin:` row of the A0 CLI connector's `~/.agent-zero/.env`.
+
+        The file is a secret: only the last chat's host and id are read, as the connector
+        reads them (a0-connector config.py:51-66), and no other line reaches a row.
+        """
         try:
             text = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
         except OSError:

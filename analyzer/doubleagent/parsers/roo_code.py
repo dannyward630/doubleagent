@@ -1,116 +1,31 @@
-"""Roo Code transcripts.
+"""Parse Roo Code tasks, their permission decisions, standing settings and CLI history.
 
-Validated against source (RooCodeInc/Roo-Code at b867ec91, see
-`research/roo-code.md`) with a synthetic fixture; no real install.
+Follows `research/roo-code.md`. Validated against source, RooCodeInc/Roo-Code at
+b867ec91 (Roo Code Cloud keys at v3.53.0, 44f6bba2), with a synthetic fixture;
+no real install.
 
-Roo Code forked Cline and keeps its per-task layout, so the transcript files
-are read by the shared mapping in `cline_legacy.py`, whose docstring lists
-the fields. Roots: the extension's
-`<editor>/User/globalStorage/rooveterinaryinc.roo-cline/` and the CLI's
-`~/.vscode-mock/global-storage/`. A root moved with the
-`roo-cline.customStoragePath` setting is not found.
+Roo Code forked Cline and keeps its per-task layout, so the task files are
+read by the shared mapping of `cline_legacy.py`, whose docstring lists their
+fields. Roots: the extension's `User/globalStorage/rooveterinaryinc.roo-cline/`
+and the CLI's `.vscode-mock/global-storage/`. Files read:
 
-* `tasks/<taskId>/ui_messages.json`, `api_conversation_history.json` (or
-  the pre-rename `claude_messages.json`) and `task_metadata.json`, as in
-  Cline. Roo's differences: the task prompt is the first `say: "text"`
-  record (there is no `say: "task"`), `condense_context` carries
-  `contextCondense {summary, prevContextTokens, newContextTokens, cost}`,
-  API history records carry their own `ts`, and `task_metadata.json` holds
-  only `files_in_context` with `roo_read_date` and `roo_edit_date`. The task
-  id is a UUID, so API history records without `ts` inherit the
-  `HistoryItem.ts`.
-* `tasks/<taskId>/history_item.json`: one `HistoryItem {id, ts, task,
-  tokensIn, tokensOut, totalCost, size, workspace, mode, status,
-  apiConfigName, parentTaskId, rootTaskId}`. One `system` row; `workspace`
-  is the task's project path. When `mode` is set, a second `system` row
-  `permission mode: <mode>` follows it: the mode slug decides the tool
-  groups the task may use.
-* `tasks/_index.json`: `{version, updatedAt, entries: HistoryItem[]}`. A
-  `system` row (and its `permission mode:` row) only for entries whose
-  `history_item.json` is not on disk, so a deleted task still shows
-  without doubling the others.
+- `tasks/<taskId>/` transcript files, as in Cline; `ui_messages.json` asks
+  with `isAnswered: true` and API history results opening with
+  `formatResponse`'s `{"status": ...}` JSON give `permission decision:` rows.
+- `tasks/<taskId>/history_item.json` (`HistoryItem`; `workspace` is the
+  project path, `mode` gives a `permission mode:` row) and `tasks/_index.json`
+  (only entries whose `history_item.json` is gone).
+- Global state (the `EXTENSION_KEYS` row of `state.vscdb` or the CLI's
+  `global-state.json`): `STANDING_KEYS` as `permission setting:` rows, and
+  the Roo Code Cloud settings cache (`user-settings`, `ORG_SYNC_KEYS`) as
+  `sync setting:` rows. Workspace state: `roo.retryQueue[]`, one
+  `cloud upload queued:` row per request, never its headers or body.
+- `.roo/cli-settings.json` (`CLI_SETTING_KEYS`), `settings/mcp_settings.json`
+  and a project's `.roo/mcp.json` (`mcpServers.<name>.alwaysAllow` only).
+- `.roo/cli-history.json` (`entries[]`), a secondary source (a file repeating
+  the tasks' prompts): one `user` row per entry, with no time, task or project.
 
-Per-call permission decisions, source-derived (Roo-Code at b867ec91; not
-observed on any real install), all `system` rows beside the call:
-
-* `ui_messages.json`: a `tool` ask with `isAnswered: true` was approved,
-  by a click or by the auto-approval settings (the record does not tell
-  them apart); `permission decision: approved isAnswered=true (user or
-  auto-approval)` follows the ask's `tool_use` row with its `tool_use_id`
-  (the ask's `ts`). A denied ask keeps no mark there.
-* `api_conversation_history.json`: a `tool_result` whose text opens with
-  `formatResponse`'s JSON `{"status": "denied"|"approved", "message"?,
-  "feedback"?}` gives `permission decision: <status>`, plus
-  ` feedback=<feedback>` when the key is set, with the result's
-  `tool_use_id` and the `tool_use` block's `name`. Without
-  `ui_messages.json` the row follows the `tool_result` row; beside it, the
-  API history yields only these rows (and its own bad-record rows), since
-  the transcript rows come from `ui_messages.json`.
-
-Standing settings, source-derived, one `system` row per scalar or list
-entry, `permission setting: <key>=<value> (from <file>, file mtime)` at the
-file's modification time with an empty `session_id`:
-
-* The extension's global state, the `ItemTable` row
-  `RooVeterinaryInc.roo-cline` (or its lower-case form) of an editor's
-  `User/globalStorage/state.vscdb`, and the CLI's
-  `.vscode-mock/global-storage/global-state.json`, a flat JSON object:
-  `autoApprovalEnabled`, `alwaysAllow*`, `allowedCommands`,
-  `deniedCommands`, `commandTimeoutAllowlist`, `allowedMaxRequests`,
-  `allowedMaxCost`, `mode`, and in the CLI file `roo-cline.allowedCommands`
-  and `roo-cline.deniedCommands`. The text names
-  `<file> ItemTable <key>` for the database.
-* `.roo/cli-settings.json`: `requireApproval`, `dangerouslySkipPermissions`,
-  `mode`.
-* `settings/mcp_settings.json` under either root and a project's
-  `.roo/mcp.json`: `mcpServers.<name>.alwaysAllow`, one row per tool name
-  (`project_path` the project when the base is a collected project).
-  Nothing else in these files is read: they can hold `env` and `headers`.
-
-Roo Code Cloud, the vendor service of releases up to 3.53.0, source-derived
-(Roo-Code v3.53.0 at 44f6bba2): the same global state can hold the
-settings cache the signed-in client kept, `user-settings.settings.
-taskSyncEnabled` (`unset (defaults to true)` when absent) and
-`organization-settings.cloudSettings.{recordTaskMessages,
-enableTaskSharing, allowPublicTaskSharing, taskShareExpirationDays,
-allowMembersViewAllTasks, workspaceTaskVisibility}`, each one `sync
-setting: <key>=<value> (from <file>, Roo Code Cloud settings cache, file
-mtime)` row. Uploads were not recorded per task, so no `session synced:`
-row is written and `records_sync` stays False. A failed upload the client
-queued for retry is in the workspace state, `roo.retryQueue[]` `{id, url,
-options {method, body, headers}, timestamp, retryCount, type, operation,
-lastError}` in an editor's `User/workspaceStorage/<hash>/state.vscdb` row
-or the CLI's `.vscode-mock/workspace-storage/<hash>/workspace-state.json`;
-each entry is `cloud upload queued: <body type, else operation, else -> task=<taskId
-or -> type=<type> retries=<retryCount> url=<url>[ lastError=<lastError>]
-(Roo Code Cloud retry queue, from <file> roo.retryQueue, request
-timestamp)` at its `timestamp`, `session_id` the body's
-`properties.taskId`. The headers hold a bearer token and the body the
-message: neither is written.
-
-A file above that is not a JSON object is one `parser: <name> is not a JSON
-object` row; a state.vscdb problem is one `parser:` row that never echoes
-the value.
-* `.roo/cli-history.json`, the Roo CLI's input history (the `.roo` directory
-  is `getConfigDir()`): `{version: 1, entries: string[]}`, every line
-  submitted in the interactive CLI (a task prompt, a follow-up answer, a
-  slash command such as `/new`), trimmed, oldest first, consecutive
-  duplicates and empty lines skipped, capped at the newest 500. One `user`
-  row per string entry in file order, `source_line` the 1-based entry
-  index; non-string and blank entries are skipped as the CLI's own
-  `loadHistory` skips them. A file cut mid-write yields the entries before
-  the cut and one `system` row for the cut (issue 136): the entry that
-  does not decode, `parser: unparseable record <N> (<reason>): <raw>` with
-  the text from its first character to the end of the file, or `parser: array cut off after record N` when the cut falls
-  between entries; a file with no `entries` array is one `system` row. The file records no time, no task id
-  and no workspace, so the rows have an empty `timestamp_utc`,
-  `session_id` and `project_path`. A secondary source (`dedup.py`): each
-  row matches a task's `user` row (the prompt's `say: "text"` or a
-  `user_feedback`) on text alone, any task, and is kept only when no task
-  has the text, which recovers a prompt whose task directory was deleted.
-
-No model name is recorded anywhere in Roo transcripts (`apiConfigName` is a
-profile name), so `model` is always empty. No git branch is recorded.
+No model name or git branch is recorded (`apiConfigName` is a profile name).
 """
 
 from __future__ import annotations
@@ -193,18 +108,19 @@ RETRY_QUEUE_KEY = "roo.retryQueue"
 
 
 class RooCodeParser(LegacyTaskParser):
+    """Parse Roo Code's task files, editor state, settings and CLI history."""
+
     agent = "roo-code"
     name = "roo-code"
     has_secondary = True
-    # The extension's global state (standing permission settings, the Roo
-    # Code Cloud settings cache) and workspace state (the cloud retry queue)
-    # are rows of the editor's state.vscdb, which the catalog attributes to
-    # the editor.
+    # The extension's global and workspace state are rows of the editor's
+    # state.vscdb, which the catalog attributes to the editor.
     reads_agents = EDITOR_AGENTS
     ROOT = ROOT
     PROJECT_KEY = "workspace"
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a task, index, settings, state or CLI history file."""
         rel = artifact.rel
         return bool(
             self.task_match(artifact)
@@ -218,9 +134,11 @@ class RooCodeParser(LegacyTaskParser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the CLI's input history, which repeats task prompts."""
         return artifact.rel == CLI_HISTORY_REL
 
     def history_item(self, task_dir: Path, root: Path, task_id: str) -> dict | None:
+        """Return the task's `history_item.json`, else its `_index.json` entry, else None."""
         item = load_json(task_dir / ITEM_FILE)
         if isinstance(item, dict):
             return item
@@ -233,6 +151,7 @@ class RooCodeParser(LegacyTaskParser):
         return None
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Roo Code file."""
         rel = artifact.rel
         if self.task_match(artifact):
             yield from self.parse_task_file(artifact, opts)
@@ -273,6 +192,7 @@ class RooCodeParser(LegacyTaskParser):
     # ---- per-call permission decisions ---------------------------------------
 
     def parse_task_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield a task file's shared rows, with the permission decisions beside them."""
         name = artifact.disk_path.name.lower()
         if name == UI_FILE:
             yield from self._ui_with_decisions(artifact, opts)
@@ -282,10 +202,12 @@ class RooCodeParser(LegacyTaskParser):
             yield from super().parse_task_file(artifact, opts)
 
     def _ui_with_decisions(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """The shared `ui_messages.json` rows, with a `permission decision:`
-        row after the `tool_use` row of each `tool` ask marked
-        `isAnswered: true` (approved by a click or automatically). The
-        pre-scan's errors are dropped: the shared reader reports them."""
+        """Yield the shared `ui_messages.json` rows with each approval after its call.
+
+        A `tool` ask marked `isAnswered: true` was approved by a click or
+        automatically. The pre-scan's errors are dropped: the shared reader
+        reports them.
+        """
         answered = {
             index
             for index, msg in iter_json_array(artifact.disk_path, [])
@@ -301,10 +223,13 @@ class RooCodeParser(LegacyTaskParser):
                 yield system_like(row, APPROVED_TEXT)
 
     def _api_with_decisions(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """API history. Beside `ui_messages.json` it yields only the decision
-        rows (and the file's bad-record rows), since the transcript rows come
-        from that file; alone, it yields the shared rows with each decision
-        after its `tool_result` row."""
+        """Yield the API history's permission decisions, with its rows when it is alone.
+
+        Beside `ui_messages.json` only the decision rows and the file's
+        bad-record rows are yielded, since the transcript rows come from that
+        file; alone, the shared rows come with each decision after its
+        `tool_result` row.
+        """
         ctx = self.context(artifact)
         if (artifact.disk_path.parent / UI_FILE).is_file():
             errors: list = []
@@ -331,8 +256,10 @@ class RooCodeParser(LegacyTaskParser):
     def _history_rows(
         self, artifact: Artifact, item: dict, index: int, opts: Options
     ) -> Iterator[Row]:
-        """The shared task row, then `permission mode: <mode>` from the
-        task's `mode` slug, which decides the tool groups the task may use."""
+        """Yield the shared task row, then `permission mode: <mode>` from its `mode`.
+
+        The mode slug decides the tool groups the task may use.
+        """
         row = self.history_row(artifact, item, index, opts)
         yield row
         mode = item.get("mode")
@@ -417,9 +344,11 @@ class RooCodeParser(LegacyTaskParser):
                 yield self._setting_row(artifact, "permission setting", key, item, source)
 
     def _global_state_rows(self, artifact: Artifact, state: dict, source: str) -> Iterator[Row]:
-        """Standing permission settings, then the Roo Code Cloud settings
-        cache (releases up to 3.53.0), which exists only while the extension
-        was signed in and says whether task messages were uploaded."""
+        """Yield the standing permission settings, then the Roo Code Cloud settings cache.
+
+        The cache (releases up to 3.53.0) exists only while the extension was
+        signed in and says whether task messages were uploaded.
+        """
         yield from self._settings_rows(artifact, state, STANDING_KEYS, source)
         cloud_source = "%s, Roo Code Cloud settings cache" % source
         user = state.get("user-settings")
@@ -454,8 +383,10 @@ class RooCodeParser(LegacyTaskParser):
         yield from self._settings_rows(artifact, doc, CLI_SETTING_KEYS, artifact.rel)
 
     def _parse_mcp(self, artifact: Artifact) -> Iterator[Row]:
-        """`mcpServers.<name>.alwaysAllow`, one row per tool name. Nothing
-        else is read: the server entries can hold `env` and `headers`."""
+        """Yield one row per tool name of `mcpServers.<name>.alwaysAllow`.
+
+        Nothing else is read: the server entries can hold `env` and `headers`.
+        """
         doc = self._json_object(artifact)
         if doc is None:
             yield self._bad_file(artifact, "%s is not a JSON object" % artifact.disk_path.name)
@@ -498,10 +429,12 @@ class RooCodeParser(LegacyTaskParser):
     # ---- Roo Code Cloud retry queue -------------------------------------------
 
     def _retry_queue_rows(self, artifact: Artifact, state: dict, source: str) -> Iterator[Row]:
-        """One row per request the Roo Code Cloud client (releases up to
-        3.53.0) queued after a failed upload. The request's headers carry a
-        bearer token and its body the event, so only the event type, the task
-        id, the URL and the retry state are written."""
+        """Yield one row per request the Roo Code Cloud client queued after a failed upload.
+
+        The request's headers carry a bearer token and its body the event, so
+        only the event type, the task id, the URL and the retry state are
+        written.
+        """
         queue = state.get(RETRY_QUEUE_KEY)
         for index, req in enumerate(queue if isinstance(queue, list) else [], 1):
             if not isinstance(req, dict):
@@ -534,13 +467,12 @@ APPROVED_TEXT = "permission decision: approved isAnswered=true (user or auto-app
 
 
 def system_like(like: Row, text: str) -> Row:
-    """A `system` row with `text` and every other field of `like`."""
+    """Return a `system` row with `text` and every other field of `like`."""
     return dataclasses.replace(like, turn_type="system", text=compact(text))
 
 
 def queued_event(req: dict) -> dict:
-    """The JSON event body of a queued request, or {} (a form upload or
-    anything else that is not a JSON object)."""
+    """Return the JSON event body of a queued request, or {} when it is not a JSON object."""
     options = req.get("options")
     body = options.get("body") if isinstance(options, dict) else None
     if not isinstance(body, str):
@@ -553,12 +485,16 @@ def queued_event(req: dict) -> dict:
 
 
 def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, str, str]]:
-    """(record position, record `ts`, tool_use_id, tool name, row text) for
-    each `tool_result` of the API history whose text opens with the JSON
-    `formatResponse` writes for a denial or an approval with feedback:
-    `{"status":"denied","message":...}`, `{"status":"denied","feedback":...}`
-    or `{"status":"approved","feedback":...}`, the last followed by the tool
-    output."""
+    """Yield each permission decision a `tool_result` of the API history records.
+
+    The result's text opens with the JSON `formatResponse` writes for a denial
+    or an approval with feedback: `{"status":"denied","message":...}`,
+    `{"status":"denied","feedback":...}` or `{"status":"approved",
+    "feedback":...}`, the last followed by the tool output.
+
+    Yields:
+        (record position, record `ts`, tool_use_id, tool name, row text).
+    """
     names: dict[str, str] = {}
     dec = json.JSONDecoder()
     for index, msg in iter_json_array(path, errors):

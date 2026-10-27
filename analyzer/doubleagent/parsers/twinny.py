@@ -1,124 +1,32 @@
-"""Twinny chat conversations.
+"""Parse Twinny conversations, standing grants, file changes and its log channel.
 
-Validated against source, twinnydotdev/twinny at 9339bd10 (see
-`research/twinny.md`), with a synthetic fixture; no real install
-was checked. Twinny keeps no transcript file of its own: every conversation
-is inside the `ItemTable` row `key = 'rjmacarthy.twinny'` of the editor's
-`<User dir>/globalStorage/state.vscdb`, whose JSON value is the extension's
-whole global state. The catalog attributes that file to `vscode`, or to the
-fork (Cursor, Windsurf, PearAI, Kiro, Antigravity) whose `User/` directory
-it sits in, so this parser lists all of them, `vscode_state.EDITOR_AGENTS`,
-in `reads_agents`.
+Follows `research/twinny.md`. Validated against source, twinnydotdev/twinny at
+9339bd10 (conversations) and 0337b265 (4.3.15: grants, team policy, file
+changes, messages sent mid-reply, the log channel and the review repository),
+with a synthetic fixture; no real install.
 
-Keys read from the value: `twinny.conversations` (an object keyed by
-conversation id) and `twinny.active-conversation` (a copy of the open
-conversation, used only when its id is missing from the first). Conversation
-fields: `id`, `title`, `updatedAt` (epoch ms, absent in older builds),
-`messages[]`. Message fields: `role` (`user` or `assistant`), `content` (a
-string, reasoning inline as `<think>...</think>` or
-`<thinking>...</thinking>`), `images`, `meta.model`, `meta.withheld`
-(counts of credentials Twinny's secret shield masked), `changes` (`id`,
-`files[]` with `path`, `status`, `added`, `removed`, `undone`, `noUndo`)
-and `toolSteps[]` (`id`, `name`, `summary`, `args`, `command`, `output`,
-`status`, `approval`, `said`).
+Files read:
 
-Model and permission rows, all `system`: `meta.model` gives `model: <id>`
-at the first assistant message of a conversation that names one and
-`model: <old> -> <new>` on every later change, before that message's
-rows. A tool step saved while it waited for the user's Run or Skip
-(`status` `waiting`, with `approval` `command` or `change` naming what
-was asked) or after it was skipped (`status` `skipped`: the user chose
-Skip, or a stop answered the wait with Skip) becomes
-`permission decision: <status>`, with ` approval=<approval>` when the
-step records it, after the step's `tool_result` row. An approved step
-ends `done` or `failed` like one that needed no approval, and a
-`stopped` step may or may not have waited, so neither gets a row.
-`node/trusted-peers.json` is not read: its shape is not recorded.
+- `<User dir>/globalStorage/state.vscdb`, `ItemTable` row `rjmacarthy.twinny`:
+  `twinny.conversations` (keyed by id) and `twinny.active-conversation` (used
+  only when its id is missing from the first); conversation `id`, `title`,
+  `updatedAt`, `messages[]`; message `role`, `content` (reasoning inline as
+  `<think>` or `<thinking>`), `images`, `meta.model`, `meta.withheld`,
+  `changes` and `toolSteps[]` (`id`, `name`, `summary`, `args`, `command`,
+  `output`, `status`, `approval`, `said`); the `STANDING_KEYS` under
+  `GLOBAL_PREFIX` and `twinny.teamPolicy`.
+- `<User dir>/workspaceStorage/<id>/state.vscdb`: the review tab's
+  `reviewOwner` and `reviewRepo`, one `source host repository:` row.
+- `agent-changes/<uuid>.json`, a secondary source (a file repeating the
+  conversation's events): `{id, root, createdAt, files[]}`.
+- `Twinny.log` and its rotated copies, secondary: one `system` row per entry,
+  whose host-local time is read as UTC.
 
-Source-derived; not observed on any real install (twinnydotdev/twinny at
-0337b265, 4.3.15), with an empty `session_id` and the file's modification
-time, each text ending `(from state.vscdb rjmacarthy.twinny, file mtime)`:
-
-- Standing grants, from the global state keys the webview prefixes
-  `twinny-global-context-` (storage.ts:25-35, chat/index.ts:162-192 and
-  466-491): `twinny-global-context-agentMode` (boolean) gives `permission
-  mode: agentMode=<true|false>`; `twinny-global-context-autoRunCommands`
-  (boolean) gives `permission setting: autoRunCommands=<true|false>`;
-  each entry of `twinny-global-context-alwaysRunCommands` and
-  `twinny-global-context-alwaysRunMcpTools` (string lists) gives
-  `permission setting: alwaysRunCommands=<command>` or
-  `permission setting: alwaysRunMcpTools=<server/tool>`.
-- The team policy a developer accepted when connecting to a team gateway,
-  `twinny.teamPolicy` (`url`, `policy`, `providerIds`, `fetchedAt`;
-  providers/policy.ts:20-49, protocol/types.ts:44-100): one
-  `permission setting: twinny.teamPolicy.<dotted key>=<value>` row per
-  leaf, a list giving one row per entry.
-
-Each assistant message's `changes` gives one `file changed: <status>
-<path> +<added> -<removed> reply=<changes.id>` row per file, with
-` undone=true` and ` noUndo=true` when set, after the message's tool
-steps. Source-derived as above.
-
-Secondary sources (`secondary()` True), source-derived as above:
-
-- `<User dir>/workspaceStorage/<id>/rjmacarthy.twinny/agent-changes/
-  <uuid>.json` (or `globalStorage/rjmacarthy.twinny/agent-changes/` with
-  no folder open), one JSON object per agent-mode reply that changed
-  files, `{id, root, createdAt, files[]}` (reply-changes.ts:35-47,
-  211-259): the same `file changed:` row per file, with `project_path`
-  the `root`, the time `createdAt` (epoch ms) and an empty `session_id`,
-  since the record names no conversation; `reply=<id>` is the join to the
-  conversation's `changes.id`. The conversation records no project path
-  and no time per reply, so deduplication cannot pair the two copies and
-  both are shown. `before` (the file's text before the reply) and
-  `afterHash` are never emitted.
-- The Twinny log channel, `<editor logs>/.../rjmacarthy.twinny/Twinny.log`
-  and the copies VS Code rotates it to at 5 MB, `Twinny.log_1` to
-  `Twinny.log_6` (microsoft/vscode at 4d22f4f9,
-  src/vs/platform/log/common/fileLog.ts:14, 41-44, 78-81). VS Code writes
-  each entry as `YYYY-MM-DD HH:MM:SS.mmm [<level>] <message>` in host
-  local time (fileLog.ts:62-101); a block entry (Twinny's `Chat messages`,
-  `Chat reply`, `FIM #<n> raw` and others, logger.ts:77-87 and 140-144)
-  continues on lines indented four spaces. Every entry gives one `system`
-  row `log <level>: <first line> (from <file name>, log line time,
-  host-local)`, followed by its continuation lines with the four-space
-  indent removed, with an empty `session_id` and `source_line` the
-  header's line number. A line that is neither a header nor a
-  continuation (indented or empty) is a bad line. The time has no zone
-  and is emitted as if it were UTC.
-
-Source host, source-derived as above: the `rjmacarthy.twinny` row of
-`<User dir>/workspaceStorage/<id>/state.vscdb` keeps the owner and
-repository the pull request review tab last listed pull requests for, as
-`twinny-workspace-context-reviewOwner` and
-`twinny-workspace-context-reviewRepo` (review.tsx:25-62; the extension
-fetches them from api.github.com, review/service.ts:154-197). Both set
-give `source host repository: https://github.com/<owner>/<repo>
-type=review (from workspaceStorage state.vscdb rjmacarthy.twinny, file
-mtime)`. No account login is recorded; the GitHub token is the
-`twinny.githubToken` editor setting, which this parser never reads.
-
-The same global state value holds `twinny.inference-providers` and the
-`twinny.active-*-provider` objects, each with an `apiKey`, and
-`twinny.chatgpt-plan.profile` (the ChatGPT plan account's email and
-subject): those keys are never read, and nothing from the value is emitted
-except the fields above. `secret://` rows are never read (see
-`vscode_state.py`).
-
-Messages carry no timestamp, so every row of a conversation inherits its
-`updatedAt`, the time of the last save rather than of each turn; order
-within a conversation is the order of `messages[]`. Each `toolSteps[]`
-entry becomes a `tool_use` (`command`, else `args` as JSON, else
-`summary`) and a `tool_result` (`output`, prefixed with the status when it
-is not `done`) sharing the step `id`. Since 4.3.5 a message the user
-sends while a reply runs is saved among that reply's `toolSteps[]` as a
-step with `said: true` (`name` `said`, `id` `said.<id>`, the message in
-`summary`, `status` `done`; tool-steps.ts:101-104 and types.ts:129-133 at
-0337b265, 4.3.15); it is not a tool call and becomes a `user` row, in its
-place among the steps, where the model read it. `<think>` blocks become `thinking`
-rows, opt-in, and are removed from the assistant text. There is no
-project path, git branch or line number in the conversations:
-`source_line` is 0.
+The catalog attributes the state database to the editor whose `User/`
+directory holds it, so `reads_agents` lists every editor agent. Messages
+carry no timestamp: every row of a conversation takes its `updatedAt`, and
+`source_line` is 0. Provider `apiKey`s and the ChatGPT plan profile share the
+value and are never read.
 """
 
 from __future__ import annotations
@@ -168,7 +76,7 @@ LOG_HEADER_RX = re.compile(
 
 
 def split_think(content: str):
-    """(text without reasoning blocks, [reasoning texts])."""
+    """Split the reasoning blocks out of a message: return (text, [reasoning texts])."""
     thoughts: list[str] = []
 
     def keep(match):
@@ -180,8 +88,11 @@ def split_think(content: str):
 
 
 def file_change_text(change_id, entry: dict) -> str:
-    """`file changed: <status> <path> +<added> -<removed> reply=<id>`, with
-    ` undone=true` and ` noUndo=true` when the entry sets them."""
+    """Return the `file changed:` text of one changed file of a reply.
+
+    The text is `file changed: <status> <path> +<added> -<removed> reply=<id>`,
+    with ` undone=true` and ` noUndo=true` when the entry sets them.
+    """
     text = "file changed: %s %s +%s -%s reply=%s" % (
         setting_value(entry.get("status", "")),
         setting_value(entry.get("path", "")),
@@ -196,8 +107,7 @@ def file_change_text(change_id, entry: dict) -> str:
 
 
 def flatten(prefix: str, value) -> Iterator[tuple[str, str]]:
-    """(dotted key, value text) per leaf of `value`; a list gives one pair
-    per entry under its own key."""
+    """Yield (dotted key, value text) per leaf of `value`, one pair per list entry."""
     if isinstance(value, dict):
         for member, item in value.items():
             yield from flatten("%s.%s" % (prefix, member), item)
@@ -212,12 +122,15 @@ def flatten(prefix: str, value) -> Iterator[tuple[str, str]]:
 
 
 class TwinnyParser(Parser):
+    """Parse Twinny's editor state, agent-changes records and log channel."""
+
     agent = "twinny"
     name = "twinny"
     reads_agents = EDITOR_AGENTS
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a state database, agent-changes record or Twinny log."""
         rel = artifact.rel
         return bool(
             STATE_DB_RX.search(rel)
@@ -227,9 +140,11 @@ class TwinnyParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for an agent-changes record or a log file."""
         return bool(CHANGES_RX.search(artifact.rel) or LOG_RX.search(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Twinny file."""
         rel = artifact.rel
         if CHANGES_RX.search(rel):
             yield from self._parse_changes(artifact)

@@ -44,6 +44,7 @@ from .base import (
     Options,
     Parser,
     compact_json,
+    error_rows,
     file_mtime,
     setting_value,
     text_of,
@@ -93,12 +94,15 @@ def chat_time(chat_id: str, fallback) -> str:
     return ""
 
 
-def recover_history(text: str) -> tuple[dict, str]:
-    """Return the chats that can be read from a damaged history text, and a message.
+def recover_history(text: str) -> tuple[dict, str, list]:
+    """Return the chats that can be read from a damaged history text, a message and the errors.
 
     Each chat is one whose key is a `toUTCString()` date, with the interactions that decode.
+    Each error is `iter_array_at`'s (position, message, raw) for an interaction that does not
+    decode, followed by the session id `CodyParser` gives its chat.
     """
     out: dict[str, dict] = {}
+    found_errors: list[tuple[str, str, tuple]] = []
     marks = [
         (found.start(), "account", found.group(1)) for found in re.finditer(_ACCOUNT_KEY, text)
     ]
@@ -120,6 +124,7 @@ def recover_history(text: str) -> tuple[dict, str]:
                 for _, value in iter_array_at(text, match.end(), errors)
                 if isinstance(value, dict)
             ]
+            found_errors.extend((account, name, entry) for entry in errors)
         title = re.compile(r'"chatTitle"\s*:\s*("(?:[^"\\]|\\.)*")').search(text, pos, end)
         chat = {"id": name, "interactions": interactions}
         if title:
@@ -129,7 +134,15 @@ def recover_history(text: str) -> tuple[dict, str]:
                 pass
         out.setdefault(account, {"chat": {}})["chat"][name] = chat
         chats += 1
-    return out, "chat history did not parse; recovered %d chat(s)" % chats
+    counts: dict[str, int] = {}
+    for account_data in out.values():
+        for chat_id in account_data["chat"]:
+            counts[chat_id] = counts.get(chat_id, 0) + 1
+    recovered_errors = [
+        (*entry, "%s/%s" % (account, name) if counts[name] > 1 else name)
+        for account, name, entry in found_errors
+    ]
+    return out, "chat history did not parse; recovered %d chat(s)" % chats, recovered_errors
 
 
 def _fs_path(uri) -> str:
@@ -261,6 +274,7 @@ class CodyParser(Parser):
             yield from self._legacy_rows(artifact)
             return
         problems: list[str] = []
+        recovered_errors: list = []
         state = None
         if JETBRAINS_PATTERN.search(artifact.rel):
             line = 1
@@ -268,7 +282,7 @@ class CodyParser(Parser):
             if text is None:
                 yield self._system(artifact, "parser: unreadable history file", line)
                 return
-            history = self._decode(text, problems)
+            history = self._decode(text, problems, recovered_errors)
         else:
             line = 0
             state, problems = read_item(artifact.disk_path, ITEM_KEY)
@@ -277,13 +291,15 @@ class CodyParser(Parser):
                     yield self._system(artifact, "parser: " + problem, line)
                 return
             if isinstance(state, str):  # value did not parse; read_item noted it
-                history = recover_history(state)[0]
+                history, _, recovered_errors = recover_history(state)
             else:
                 history = state.get(HISTORY_KEY) if isinstance(state, dict) else None
                 if isinstance(history, str):
-                    history = self._decode(history, problems)
+                    history = self._decode(history, problems, recovered_errors)
         if isinstance(history, dict):
             yield from self._history_rows(artifact, history, line, opts)
+        for entry in recovered_errors:
+            yield from error_rows(self, artifact, [entry[:3]], entry[3])
         if isinstance(state, dict):
             source = "%s %s" % (artifact.rel, PREFS_KEY)
             yield from self._prefs_rows(artifact, state.get(PREFS_KEY), source, line)
@@ -425,12 +441,13 @@ class CodyParser(Parser):
                 yield make_row("system", "message speaker=%s: %s" % (speaker or "-", text))
 
     @staticmethod
-    def _decode(text: str, problems: list[str]):
+    def _decode(text: str, problems: list[str], recovered_errors: list):
         try:
             return json.loads(text)
         except ValueError as error:
-            history, problem = recover_history(text)
+            history, problem, errors = recover_history(text)
             problems.append("%s (%s)" % (problem, error))
+            recovered_errors.extend(errors)
             return history
 
     def _system(self, artifact: Artifact, text: str, line: int) -> Row:

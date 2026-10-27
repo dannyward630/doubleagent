@@ -177,6 +177,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   whose own record is missing keeps its own time instead of taking a later
   line's record, and a `paste-cache` file that is there but cannot be read
   gives a `parser:` row naming it ([#256]).
+- The `cody` parser reports each chat interaction it cannot decode in a
+  damaged chat history as its own `parser: unparseable record <N>
+  (<reason>): <record>` row with the chat's session id, beside the rows
+  of the chats it recovered; the record was dropped silently before
+  ([#280]).
 
 ## [0.20.1] - 2026-10-21
 
@@ -2075,6 +2080,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [0.2.0]: https://github.com/seanthegeek/doubleagent/compare/analyzer-v0.1.0...analyzer-v0.2.0
 [0.1.0]: https://github.com/seanthegeek/doubleagent/releases/tag/analyzer-v0.1.0
 
+[#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256
 [#253]: https://github.com/seanthegeek/doubleagent/issues/253

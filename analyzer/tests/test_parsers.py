@@ -18662,6 +18662,32 @@ class CodyTests(ParserBase):
         self.assertNotIn("All three pass.", texts)
         self.assertEqual(rows[-1].turn_type, "system")
 
+    def test_interaction_cut_mid_object_is_one_unparseable_record_row(self):
+        first = {
+            "humanMessage": {"speaker": "human", "text": "first question"},
+            "assistantMessage": {"speaker": "assistant", "text": "first answer"},
+        }
+        text = (
+            '{"%s": {"chat": {"%s": {"id": "%s", "chatTitle": "Damaged", "interactions": [%s, '
+            '{"humanMessage": {"speaker": "human", "text": "cut her'
+            % (CODY_ACCOUNT, CODY_CHAT, CODY_CHAT, json.dumps(first))
+        )
+        (self.home / CODY_JB_REL).write_text(text, encoding="utf-8")
+        rows = self.rows_for(CodyParser(), CODY_JB_REL)
+        texts = [row.text for row in rows]
+        self.assertIn("first question", texts)
+        self.assertIn("first answer", texts)
+        bad = [row for row in rows if row.text.startswith("parser: unparseable record")]
+        self.assertEqual(len(bad), 1)
+        self.assertTrue(bad[0].text.startswith("parser: unparseable record 2 ("))
+        self.assertTrue(
+            bad[0].text.endswith(': {"humanMessage": {"speaker": "human", "text": "cut her')
+        )
+        self.assertEqual(bad[0].session_id, CODY_CHAT)
+        self.assertEqual(bad[0].turn_type, "system")
+        self.assertEqual(bad[0].timestamp_utc, "")
+        self.assertIn("parser: chat history did not parse; recovered 1 chat(s)", rows[-1].text)
+
     def deep_rows(self):
         from fixtures import CODY_DEEP_REL, build_cody_deep
 

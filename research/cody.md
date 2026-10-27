@@ -687,11 +687,13 @@ that a delete does not reach ([What survives a delete](#what-survives-a-delete))
 
 #### Bad-line rows
 
-Each input is one JSON value; the parser recovers a damaged history chat by chat, with one
-`parser:` row for what it cannot read. The legacy XML is read incrementally, so the chats before
-a cut or damaged part are yielded, followed by one `parser: cody_history.xml did not parse; read
-<n> chat(s) (<error>)` row with the project as `project_path`. A model preferences file that is
-not a JSON object is one `parser: cody-model-preferences is not a JSON object` row.
+Each input is one JSON value; the parser recovers a damaged history chat by chat, with one `parser:`
+row for what it cannot read and one `parser: unparseable record <N> (<reason>): <record>` row,
+carrying the chat's session id, for the first interaction of a chat that does not decode. The legacy
+XML is read incrementally, so the chats before a cut or damaged part are yielded, followed by one
+`parser: cody_history.xml did not parse; read <n> chat(s) (<error>)` row with the project as
+`project_path`. A model preferences file that is not a JSON object is one `parser:
+cody-model-preferences is not a JSON object` row.
 
 #### Fixtures
 

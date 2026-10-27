@@ -1,167 +1,30 @@
-"""Continue (IDE extensions and the `cn` CLI) sessions.
+"""Parse the sessions, events and logs of Continue, its IDE extensions and the `cn` CLI.
 
-The module is not called `continue.py` because `continue` is a Python
-keyword. Validated against source, continuedev/continue at 5522c6f
-(`core/index.d.ts`, `core/util/history.ts`, `core/data/log.ts`,
-`packages/config-yaml/src/schemas/data/`), with a synthetic fixture; see
-`research/continue.md`. Files, relative to the home directory:
+The module is not called `continue.py` because `continue` is a Python keyword. Reads, under
+`.continue/`: `sessions/<sessionId>.json` and the `sessions/sessions.json` index (rows only for
+what the index lost), `dev_data/[<schema>/]` `chatInteraction`, `toolUsage`, `editInteraction`,
+`editOutcome` and `chatFeedback` (secondary) `.jsonl`, `input_history.json` (secondary),
+`permissions.yaml` and `logs/cn*.log`.
 
-* `.continue/sessions/<sessionId>.json`: one pretty-printed JSON session,
-  keys `sessionId`, `title`, `workspaceDirectory`, `history[]`, `mode`,
-  `chatModelTitle`, `usage` (`promptTokens`, `completionTokens`,
-  `totalCost`). Each `history[]` item has `message` (`role` user, assistant,
-  thinking, system or tool; `content` a string or a list of
-  `{type:"text",text}` / `{type:"imageUrl",imageUrl:{url}}` parts;
-  assistant `toolCalls[]` with `id` and `function.name`/`function.arguments`;
-  tool `toolCallId`), `toolCallStates[]` (`toolCallId`, `toolCall`,
-  `status`, `output[].content`), `promptLogs[].modelTitle` and `reasoning`
-  (`text`, `startAt` in epoch milliseconds).
-* `.continue/sessions/sessions.json`: the index, an array of
-  `{sessionId, title, dateCreated, workspaceDirectory, messageCount}` with
-  `dateCreated` a millisecond epoch as a string. It is read for the
-  timestamp and yields rows only for what it loses (issue 170): a file
-  that cannot be read is one `parser: unreadable session index: <reason>`
-  row, a file that is not a JSON array one `parser: not a JSON array`
-  row, an element that does not decode (the file cut mid-write) a
-  `parser: unparseable record <N> (<reason>): <the text from that
-  element to the end of the file>` row, an array with no closing bracket
-  `parser: array cut off after record <N>`, and an element that is not
-  an object with a `sessionId` (or the pre-1.0 `session_id` the
-  extension filters out) `parser: unparseable record <N> (not an object
-  with a sessionId): <the element as JSON>`; data after the array is
-  `parser: unparseable data after the JSON array`. The entries before a cut
-  still give their sessions a time; a session the index lost has an
-  empty `timestamp_utc`, and the row says why.
-* `.continue/dev_data/<schema>/chatInteraction.jsonl` (and the unversioned
-  legacy `dev_data/chatInteraction.jsonl`): `timestamp` ISO 8601,
-  `sessionId`, `prompt`, `completion`, `modelTitle`, `modelName`.
-* `.continue/dev_data/<schema>/toolUsage.jsonl`: `timestamp`,
-  `toolCallId`, `functionName`, `functionParams`, `toolCallArgs`,
-  `accepted`, `succeeded`, `output[].content`.
+Fields the parser depends on:
 
-Session files carry no per-message timestamp: every row of a session
-inherits the session's `dateCreated` from `sessions.json` (empty when the
-index is missing or lacks the session), except thinking rows from
-`reasoning.startAt`. Order within a session is the order of `history[]`,
-and `source_line` is the 1-based position in `history[]` (0 for the session
-row). The `dev_data` events do carry real timestamps; chatInteraction rows
-are joined to the session's `workspaceDirectory` through `sessions.json`,
-and toolUsage rows join the session's tool calls on `tool_use_id` but carry
-no session id of their own. `logs/prompt.log` has no date or session id and
-is not parsed. A truncated session file yields the turns decoded before the
-cut plus one `system` row.
+- session file: `sessionId`, `title`, `workspaceDirectory`, `mode`, `chatModelTitle`, `usage`,
+  `history[]` items' `message` (`role`, `content`, `toolCalls[].id`, `function.name`,
+  `function.arguments`, `toolCallId`), `toolCallStates[]` (`toolCallId`, `toolCall`, `status`,
+  `output`), `promptLogs[].modelTitle` and `reasoning` (`text`, `startAt` epoch ms);
+- index: `sessionId`, `title`, `dateCreated` (epoch ms as a string), `workspaceDirectory`;
+- `dev_data` lines: `timestamp`, `sessionId`, `prompt`, `completion`, `modelTitle`,
+  `modelName`, `feedback`, `filepath`, `accepted`, `succeeded`, `previousCodeLines`,
+  `newCodeLines`, `toolCallId`, `functionName`, `functionParams`, `toolCallArgs`, `output`;
+- `input_history.json`: `text`, `timestamp` (epoch ms); `permissions.yaml`: the `allow`, `ask`
+  and `exclude` lists only; `cn.log`: the `[metadata] POST` and result lines, the storage-sync
+  skip and `Added policy rule to permissions.yaml:` lines.
 
-Model rows: `model: <chatModelTitle>` follows the session row (same time,
-`source_line` 0), and an item whose `promptLogs[].modelTitle` differs from
-the model before it yields `model: <old> -> <new>` ahead of the item's
-rows, with the item's `source_line`. The format has no switch record, so a
-change is only seen as a different `modelTitle` between items, and
-`chatModelTitle` is a single value per session file. `dev_data` events
-fill the `model` column only.
-
-Session-level rows after the `model:` row, at the session time with
-`source_line` 0: `permission mode: <mode>` from the session's `mode`
-(`chat`, `agent` or `plan`, the extension's mode at the last save; CLI
-sessions have none), and `scratch directory: <workspaceDirectory> (cn
-review worktree)` when the directory's last component is
-`cn-review-<digits>-<digits>`, the temporary git worktree `cn review`
-runs its agents in (`extensions/cli/src/commands/review/worktree.ts:15-20`),
-so inventory.json lists it under `scratch_directories`.
-
-Per-call decisions: each `toolUsage.jsonl` record that has `accepted`
-yields `permission decision: accepted=<accepted>` after its `tool_result`
-row (which keeps its own `accepted=` text), with the record's time,
-`tool_use_id` and `tool_name`. A `toolCallStates[]` entry whose `status`
-is `canceled` yields `permission decision: canceled reason=user` when its
-output is the CLI's `Permission denied by user`, `permission decision:
-canceled reason=policy` for `Command blocked by security policy`
-(`extensions/cli/src/stream/streamChatResponse.helpers.ts:519-527`) and
-`permission decision: canceled` otherwise; an `errored` entry whose
-`output[]` has an item named `Security Policy Violation`, the extension's
-disabled-tool refusal (`gui/src/redux/thunks/evaluateToolPolicies.ts:93-117`),
-yields `permission decision: errored reason=policy`. Each has the call's
-`tool_use_id` and `tool_name`, follows the state's `tool_result` row when
-there is one, and has the session time.
-
-Source-derived, not observed on any real install (continuedev/continue
-at 5522c6f; the fields below are the ones the parser reads):
-
-* `.continue/permissions.yaml` (the `cn` CLI's standing tool grants):
-  top-level `allow`, `ask` and `exclude` lists of `Tool` or
-  `Tool(<pattern>)` strings (`permissionsYamlLoader.ts:15-19`). Each rule
-  is `permission setting: <list>=<rule> (from .continue/permissions.yaml,
-  file mtime)` at the file's modification time, `source_line` its line.
-  The reader takes only that flat shape (a key that is empty, `[]` or
-  followed by `- <rule>` lines, plain or quoted, with comments); any other
-  construct is one `parser: unsupported YAML at line <N> (only allow, ask
-  and exclude lists of strings are read)` row and no rule, since a reader
-  of that shape cannot tell what the rest grants.
-* `.continue/input_history.json` (secondary): the TUI's prompt history,
-  a JSON array of `{text, timestamp}` with `timestamp` in epoch
-  milliseconds (`extensions/cli/src/util/inputHistory.ts:6-12`). Each
-  entry is a `user` row at its time with no session or project, and
-  `source_line` its position; an element that does not decode, or is not
-  an object with a string `text`, is a `parser: unparseable record <N>
-  ...` row and the elements before it are kept.
-* `.continue/dev_data/<schema>/chatFeedback.jsonl` (secondary: it repeats
-  the `chatInteraction` line of the rated reply, `prompt` and
-  `completion` from the same prompt log, `gui/src/components/FeedbackButtons.tsx:20-36`):
-  `user` and `assistant` rows like a `chatInteraction` line, then `chat
-  feedback: feedback=<true|false|-> model=<modelTitle|->` with the line's
-  `sessionId` and time.
-* `.continue/dev_data/<schema>/editInteraction.jsonl` (`filepath`,
-  `prompt`, `completion`, `modelTitle`): `edit interaction:
-  file=<filepath>`, then the prompt as `user` and the completion (the
-  file after the edit) as `assistant`, at the line's time.
-* `.continue/dev_data/<schema>/editOutcome.jsonl` (`accepted`,
-  `filepath`, `previousCodeLines`, `newCodeLines`, `modelTitle`): one
-  `permission decision: edit accepted=<accepted> file=<filepath> lines
-  <previousCodeLines> -> <newCodeLines>` row at the line's time; its
-  prompt, completion and code are not put in rows.
-* `logs/cn.log`: the `Added policy rule to permissions.yaml: <rule>` line
-  of a "don't ask again" answer (`policyWriter.ts:67`) is `permission
-  decision: allow always rule=<rule> (from logs/cn.log, log line time,
-  host-local)`.
-
-`secondary_tolerance` is `ANY_TIME_SECONDS` for the two secondary
-sources: a history entry is stamped when the prompt was submitted and a
-rating when it was clicked, while a session's rows carry its creation
-time and a `chatInteraction` line the reply's, so the pair is found on
-text and scope at any distance in time.
-
-Agent metadata posts: `.continue/logs/cn.log` and the files winston (the
-`cn` CLI's logging library) rotates it to at 10 MB, `cn1.log`, `cn2.log`
-and so on, five kept (`extensions/cli/src/util/logger.ts:102-115`; the
-names from winston 3.17.0's `File` transport, `_getFile`). Each line is
-`YYYY-MM-DD HH:mm:ss.SSS [<8 hex>] [<level>]: <message>`, then the call's
-extra fields as one JSON object (`logger.ts:74-95`); the eight hex digits
-are a random id per process, not a session id. Beside the `Added policy
-rule` line below, only two kinds of line are events, both written when
-the hidden `cn serve --id <agentId>` mode talks to Continue's agent API
-(`extensions/cli/src/util/metadata.ts:125-181`,
-`extensions/cli/src/services/StorageSyncService.ts:85-90`); every other
-line is the CLI's diagnostics, not an event, and no line of the file can
-be a bad line:
-
-* `[metadata] POST <url> {"agentId":"<id>","metadataKeys":[...]}` yields
-  `agent metadata posted: agent <agentId> keys <metadataKeys joined by ,>
-  <status> (from logs/<file>, log line time, host-local)`, where
-  `<status>` is `Success`, `Unexpected response`, `Auth required`,
-  `Failed` or `Error` from the first later `[metadata]` result line of the
-  same process for the same URL, and `-` when there is none. The
-  `[metadata] Request body` line between them carries the posted fields
-  (the last reply's text among them) and is never put in a row.
-* A line containing `Storage sync requested but no Continue API key`
-  yields `storage upload requested, skipped (from logs/<file>, log line
-  time, host-local)`: `cn serve` asked for snapshot uploads and the CLI
-  skipped them.
-
-Both are `system` rows with an empty `session_id`, since the log names no
-session, and `source_line` the line number. The log time is host-local
-with no zone, and the collection does not record the host's zone, so it
-is emitted as if it were UTC, as the aider parser does; correct it by the
-host's offset. Neither row is a session sync, so `records_sync` stays
-False. Fixture only: no real install has shown either line.
+Session files carry no per-message timestamp: every row of a session inherits the index's
+`dateCreated` (empty when the index lacks the session), except thinking rows at
+`reasoning.startAt`; `source_line` is the position in `history[]`. A `cn.log` time is host-local
+with no zone and is emitted as if it were UTC. Validated against continuedev/continue source at
+5522c6f with a synthetic fixture; see `research/continue.md`.
 """
 
 from __future__ import annotations
@@ -236,36 +99,39 @@ HEADER_KEYS = ("sessionId", "title", "workspaceDirectory", "mode", "chatModelTit
 
 
 def read_index(path) -> tuple[dict[str, dict], list]:
-    """sessionId -> entry for the `sessions.json` index at `path`, and the
-    errors for `error_rows`: an unreadable file, a file that is not a JSON
-    array, an element that does not decode (with the text from it to the
-    end of the file, the entries before it kept) and an element that is
-    not an object with a `sessionId`. Entries keyed `session_id` are a
-    pre-1.0 format the extension itself filters out, so they are skipped
-    without a row. An absent file or a symlink is an empty index with no
-    error, since the collector does not materialise symlinks. Shared with
-    the PearAI parser, whose fork keeps the same index."""
+    """Return sessionId -> entry for the `sessions.json` index at `path`, and its errors.
+
+    The errors, for `error_rows`, are an unreadable file, a file that is not a JSON array, an
+    element that does not decode (with the text from it to the end of the file) and an element
+    that is not an object with a `sessionId`. Entries keyed `session_id`, a pre-1.0 format the
+    extension filters out, are skipped without one. An absent file or a symlink is an empty index
+    with no error. Shared with the PearAI parser, whose fork keeps the same index.
+    """
     out: dict[str, dict] = {}
     errors: list = []
     try:
         if not path.is_file() or path.is_symlink():
             return out, errors
-        with open(path, "rb") as fh:
-            text = fh.read().decode("utf-8", errors="replace")
-    except OSError as e:
-        errors.append((0, "unreadable session index: %s" % error_reason(e), ""))
+        with open(path, "rb") as handle:
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError as error:
+        errors.append((0, "unreadable session index: %s" % error_reason(error), ""))
         return out, errors
     if text.startswith("\ufeff"):
         text = text[1:]
     end: list = []
     count = 0
-    for n, e in iter_array_at(text, 0, errors, end):
-        count = n
-        if isinstance(e, dict) and e.get("sessionId"):
-            out[str(e["sessionId"])] = e
-        elif not (isinstance(e, dict) and e.get("session_id")):
+    for index, element in iter_array_at(text, 0, errors, end):
+        count = index
+        if isinstance(element, dict) and element.get("sessionId"):
+            out[str(element["sessionId"])] = element
+        elif not (isinstance(element, dict) and element.get("session_id")):
             errors.append(
-                (n, "unparseable record %d (not an object with a sessionId)" % n, compact_json(e))
+                (
+                    index,
+                    "unparseable record %d (not an object with a sessionId)" % index,
+                    compact_json(element),
+                )
             )
     if end and text[end[0] :].strip(" \t\r\n"):
         errors.append((count + 1, "unparseable data after the JSON array", ""))
@@ -273,23 +139,24 @@ def read_index(path) -> tuple[dict[str, dict], list]:
 
 
 def yaml_scalar(text: str) -> str | None:
-    """A YAML sequence item as a string: double-quoted (decoded as JSON,
-    whose escapes a double-quoted YAML scalar shares), single-quoted (`''`
-    is one quote) or plain (a ` #` comment removed). None for anything
-    else: a nested sequence or mapping, a flow collection, an alias, a
-    block scalar, or a quoted scalar that does not close on its line."""
+    """Return a YAML sequence item as a string, or None for anything but a scalar on its line.
+
+    A double-quoted item is decoded as JSON, whose escapes it shares; in a single-quoted one `''`
+    is one quote; a plain one loses its ` #` comment. A nested sequence or mapping, a flow
+    collection, an alias, a block scalar or an unclosed quote is None.
+    """
     if text.startswith('"'):
-        m = re.match(r'^("(?:[^"\\]|\\.)*")[ \t]*(?:#.*)?$', text)
-        if not m:
+        match = re.match(r'^("(?:[^"\\]|\\.)*")[ \t]*(?:#.*)?$', text)
+        if not match:
             return None
         try:
-            value = json.loads(m.group(1))
+            value = json.loads(match.group(1))
         except ValueError:
             return None
         return value if isinstance(value, str) else None
     if text.startswith("'"):
-        m = re.match(r"^'((?:[^']|'')*)'[ \t]*(?:#.*)?$", text)
-        return m.group(1).replace("''", "'") if m else None
+        match = re.match(r"^'((?:[^']|'')*)'[ \t]*(?:#.*)?$", text)
+        return match.group(1).replace("''", "'") if match else None
     if not text or text[0] in "[]{}&*!|>%@`-?:,#":
         return None
     value = re.sub(r"[ \t]+#.*$", "", text)
@@ -297,16 +164,16 @@ def yaml_scalar(text: str) -> str | None:
 
 
 def read_permissions(text: str) -> tuple[list[tuple[int, str, str]], str]:
-    """The `(line number, list, rule)` entries of a `permissions.yaml`, in
-    file order, and `""`; or `[]` and the reason the file is not the flat
-    shape the CLI writes (top-level `allow`, `ask` and `exclude` keys, each
-    empty or followed by `- <rule>` lines, with comments and blank lines),
-    since a reader of that shape alone cannot tell what any other YAML
-    construct grants."""
+    """Return the (line number, list, rule) rules of a `permissions.yaml`, and a problem.
+
+    The problem is "", or, with no rules, why the file is not the flat shape the CLI writes
+    (top-level `allow`, `ask` and `exclude` keys, each empty or followed by `- <rule>` lines),
+    since a reader of that shape alone cannot tell what any other YAML construct grants.
+    """
     entries: list[tuple[int, str, str]] = []
     current = ""
-    for n, line in enumerate(text.splitlines(), 1):
-        if n == 1 and line.startswith("﻿"):
+    for line_number, line in enumerate(text.splitlines(), 1):
+        if line_number == 1 and line.startswith("﻿"):
             line = line[1:]
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or stripped == "---":
@@ -318,8 +185,8 @@ def read_permissions(text: str) -> tuple[list[tuple[int, str, str]], str]:
         item = YAML_ITEM_RX.match(line)
         value = yaml_scalar(item.group(1)) if item and current else None
         if value is None:
-            return [], "unsupported YAML at line %d" % n
-        entries.append((n, current, value))
+            return [], "unsupported YAML at line %d" % line_number
+        entries.append((line_number, current, value))
     return entries, ""
 
 
@@ -328,9 +195,9 @@ def message_text(content) -> str:
     if isinstance(content, list):
         content = [
             {"type": "text", "text": "[image]"}
-            if isinstance(p, dict) and p.get("type") == "imageUrl"
-            else p
-            for p in content
+            if isinstance(part, dict) and part.get("type") == "imageUrl"
+            else part
+            for part in content
         ]
     return text_of(content)
 
@@ -342,72 +209,75 @@ def output_text(output) -> str:
     parts = []
     for item in output:
         if isinstance(item, dict):
-            c = item.get("content")
+            content = item.get("content")
             parts.append(
-                c
-                if isinstance(c, str)
-                else compact_json(c)
-                if c is not None
+                content
+                if isinstance(content, str)
+                else compact_json(content)
+                if content is not None
                 else str(item.get("name") or "")
             )
         else:
             parts.append(str(item))
-    return "\n".join(p for p in parts if p)
+    return "\n".join(part for part in parts if part)
 
 
 def state_decision(status: str, output, text: str) -> str:
-    """The decision a `ToolCallState` records, as `permission decision:`
-    row text after the prefix, or `""`: `canceled`, with `reason=user` or
-    `reason=policy` when the output is one of the CLI's denial texts, and
-    `errored reason=policy` for the extension's `Security Policy Violation`
-    output."""
+    """Return the decision a `ToolCallState` records, as `permission decision:` text, or "".
+
+    A `canceled` state gets `reason=user` or `reason=policy` when its output is one of the CLI's
+    denial texts; an `errored` one with the extension's `Security Policy Violation` output is
+    `errored reason=policy`.
+    """
     if status == "canceled":
         reason = DENIAL_REASONS.get(text.strip())
         return "canceled reason=%s" % reason if reason else "canceled"
     violation = isinstance(output, list) and any(
-        isinstance(o, dict) and o.get("name") == POLICY_VIOLATION for o in output
+        isinstance(item, dict) and item.get("name") == POLICY_VIOLATION for item in output
     )
     return "errored reason=policy" if status == "errored" and violation else ""
 
 
 def load_session(text: str) -> tuple[dict, str]:
-    """Parse a session file. On failure, recover the header keys and every
-    `history[]` item that decodes before the damage, and say what went wrong."""
+    """Parse a session file into its object and a problem message, "" when it parsed.
+
+    On failure, recover the header keys and every `history[]` item that decodes before the damage.
+    """
     try:
-        obj = json.loads(text)
-        if isinstance(obj, dict):
-            return obj, ""
+        document = json.loads(text)
+        if isinstance(document, dict):
+            return document, ""
         return {}, "session file is not a JSON object"
-    except ValueError as e:
-        first_error = str(e)
-    dec = json.JSONDecoder()
+    except ValueError as error:
+        first_error = str(error)
+    decoder = json.JSONDecoder()
     start = text.find("{")
     if start >= 0:
         try:
-            obj, end = dec.raw_decode(text, start)
-            if isinstance(obj, dict):
-                return obj, "trailing data after the session object at offset %d" % end
+            document, end = decoder.raw_decode(text, start)
+            if isinstance(document, dict):
+                return document, "trailing data after the session object at offset %d" % end
         except ValueError:
             pass
     out: dict = {}
     for key in HEADER_KEYS:
-        m = re.search(r'"%s"\s*:\s*("(?:[^"\\]|\\.)*")' % key, text)
-        if m:
+        match = re.search(r'"%s"\s*:\s*("(?:[^"\\]|\\.)*")' % key, text)
+        if match:
             try:
-                out[key] = json.loads(m.group(1))
+                out[key] = json.loads(match.group(1))
             except ValueError:
                 pass
     history: list[dict] = []
-    m = re.search(r'"history"\s*:\s*\[', text)
-    if m:
-        pos = m.end()
+    match = re.search(r'"history"\s*:\s*\[', text)
+    if match:
+        position = match.end()
         while True:
-            while pos < len(text) and text[pos] in " \t\r\n,":
-                pos += 1
-            if pos >= len(text) or text[pos] == "]":
+            while position < len(text) and text[position] in " \t\r\n,":
+                position += 1
+            if position >= len(text) or text[position] == "]":
                 break
             try:
-                item, pos = dec.raw_decode(text, pos)
+                item, position = decoder.raw_decode(text, position)
             except ValueError:
                 break
             if isinstance(item, dict):
@@ -420,16 +290,19 @@ def load_session(text: str) -> tuple[dict, str]:
 
 
 class ContinueParser(Parser):
+    """Parse Continue's session files, `dev_data` events, CLI state files and CLI logs."""
     agent = "continue"
     name = "continue"
 
     def __init__(self) -> None:
+        """Start with an empty cache of session indexes."""
         self._index_cache: dict[str, tuple[dict[str, dict], list]] = {}
 
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
         # sessions.json too, for the rows that say what the index lost
+        """Return whether the artifact is one of the files this parser reads."""
         return bool(
             SESSION_RX.match(artifact.rel)
             or DEV_DATA_RX.match(artifact.rel)
@@ -438,21 +311,25 @@ class ContinueParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
-        """The CLI's prompt history and the `chatFeedback` events, which
-        repeat a prompt of a session and a `chatInteraction` line."""
+        """Return whether the artifact is the CLI's prompt history or a `chatFeedback` file.
+
+        Both repeat a prompt of a session or a `chatInteraction` line.
+        """
         if artifact.rel == INPUT_HISTORY_REL:
             return True
-        m = DEV_DATA_RX.match(artifact.rel)
-        return bool(m and m.group(1) == "chatFeedback")
+        match = DEV_DATA_RX.match(artifact.rel)
+        return bool(match and match.group(1) == "chatFeedback")
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        """`ANY_TIME_SECONDS`: a history entry is stamped when the prompt
-        was submitted, while the session's rows carry its creation time;
-        a rating is stamped when it was clicked, any time after the reply's
-        `chatInteraction` line."""
+        """Return `ANY_TIME_SECONDS`: a secondary row's time says nothing of its twin's.
+
+        A history entry is stamped when the prompt was submitted while the session's rows carry its
+        creation time; a rating is stamped when it was clicked, any time after the reply.
+        """
         return ANY_TIME_SECONDS
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one artifact, by the file it is."""
         if CN_LOG_RX.match(artifact.rel):
             yield from self._parse_cn_log(artifact)
             return
@@ -462,14 +339,14 @@ class ContinueParser(Parser):
         if artifact.rel == PERMISSIONS_REL:
             yield from self._parse_permissions(artifact)
             return
-        m = DEV_DATA_RX.match(artifact.rel)
-        if m and m.group(1) in ("chatInteraction", "chatFeedback"):
-            yield from self._parse_chat_interaction(artifact, opts, m.group(1))
-        elif m and m.group(1) == "editInteraction":
+        match = DEV_DATA_RX.match(artifact.rel)
+        if match and match.group(1) in ("chatInteraction", "chatFeedback"):
+            yield from self._parse_chat_interaction(artifact, opts, match.group(1))
+        elif match and match.group(1) == "editInteraction":
             yield from self._parse_edit_interaction(artifact, opts)
-        elif m and m.group(1) == "editOutcome":
+        elif match and match.group(1) == "editOutcome":
             yield from self._parse_edit_outcome(artifact)
-        elif m:
+        elif match:
             yield from self._parse_tool_usage(artifact, opts)
         elif artifact.disk_path.name == INDEX_NAME:
             yield from error_rows(self, artifact, self.index_errors(artifact.disk_path))
@@ -479,22 +356,22 @@ class ContinueParser(Parser):
     # ---- sessions.json --------------------------------------------------------
 
     def _read_index(self, path) -> tuple[dict[str, dict], list]:
-        """`read_index` of `path`, cached per file for the session files
-        that share it."""
+        """Return `read_index` of `path`, cached per file for the session files that share it."""
         key = str(path)
         if key not in self._index_cache:
             self._index_cache[key] = read_index(path)
         return self._index_cache[key]
 
     def _index(self, sessions_dir) -> dict[str, dict]:
-        """sessionId -> sessions.json entry for the index beside the session
-        files; empty when it is absent or unreadable. What it lost is
-        reported once, by `index_errors` on the index's own artifact."""
+        """Return sessionId -> `sessions.json` entry for the index beside the session files.
+
+        The result is empty when the index is absent or unreadable; what it lost is
+        reported once, by `index_errors` on the index's own artifact.
+        """
         return self._read_index(sessions_dir / INDEX_NAME)[0]
 
     def index_errors(self, path) -> list:
-        """The errors `read_index` found in the index at `path`, a fresh
-        list each call."""
+        """Return the errors `read_index` found in the index at `path`, a fresh list each call."""
         return list(self._read_index(path)[1])
 
     # ---- session files --------------------------------------------------------
@@ -502,31 +379,31 @@ class ContinueParser(Parser):
     def _parse_session(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         try:
             raw = artifact.disk_path.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:
+        except OSError as error:
             row = self.base_row(artifact)
             row.turn_type = "system"
-            row.text = "parser: unreadable session file: %s" % error_reason(e)
+            row.text = "parser: unreadable session file: %s" % error_reason(error)
             yield row
             return
-        sess, problem = load_session(raw)
-        session_id = sess.get("sessionId")
+        session, problem = load_session(raw)
+        session_id = session.get("sessionId")
         if not session_id:
-            m = SESSION_RX.match(artifact.rel)
-            assert m is not None  # wants() accepted only matching paths
-            session_id = m.group(1)
+            match = SESSION_RX.match(artifact.rel)
+            assert match is not None  # wants() accepted only matching paths
+            session_id = match.group(1)
         session_id = str(session_id)
         entry = self._index(artifact.disk_path.parent).get(session_id, {})
-        ts = to_utc(entry.get("dateCreated"))
-        project = str(sess.get("workspaceDirectory") or entry.get("workspaceDirectory") or "")
-        session_model = str(sess.get("chatModelTitle") or "")
-        history = sess.get("history")
+        timestamp = to_utc(entry.get("dateCreated"))
+        project = str(session.get("workspaceDirectory") or entry.get("workspaceDirectory") or "")
+        session_model = str(session.get("chatModelTitle") or "")
+        history = session.get("history")
         if not isinstance(history, list):
             history = []
 
-        def base(n: int, model: str = "") -> Row:
+        def base(position: int, model: str = "") -> Row:
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = ts
+            row.source_line = position
+            row.timestamp_utc = timestamp
             row.session_id = session_id
             row.project_path = project
             row.model = model
@@ -534,17 +411,17 @@ class ContinueParser(Parser):
 
         row = base(0, session_model)
         row.turn_type = "system"
-        usage = sess.get("usage")
+        usage = session.get("usage")
         if not isinstance(usage, dict):
             usage = {}
-        bits = ["session start: %s" % (sess.get("title") or entry.get("title") or "")]
-        if sess.get("mode"):
-            bits.append("mode=%s" % sess["mode"])
+        bits = ["session start: %s" % (session.get("title") or entry.get("title") or "")]
+        if session.get("mode"):
+            bits.append("mode=%s" % session["mode"])
         bits.append("items=%d" % len(history))
-        for k in ("promptTokens", "completionTokens", "totalCost"):
-            if usage.get(k) is not None:
-                bits.append("%s=%s" % (k, usage[k]))
-        if not ts:
+        for field in ("promptTokens", "completionTokens", "totalCost"):
+            if usage.get(field) is not None:
+                bits.append("%s=%s" % (field, usage[field]))
+        if not timestamp:
             bits.append("dateCreated unknown")
         row.text = compact(" ".join(bits))
         yield row
@@ -555,7 +432,7 @@ class ContinueParser(Parser):
             row.turn_type = "system"
             row.text = change
             yield row
-        mode = sess.get("mode")
+        mode = session.get("mode")
         if isinstance(mode, str) and mode:
             # the extension's mode at the last save; `plan` limits the tools
             row = base(0, session_model)
@@ -572,24 +449,28 @@ class ContinueParser(Parser):
         # never got one (canceled, errored) keeps its output in toolCallStates.
         answered = set()
         for item in history:
-            msg = item.get("message") if isinstance(item, dict) else None
-            if isinstance(msg, dict) and msg.get("role") == "tool" and msg.get("toolCallId"):
-                answered.add(str(msg["toolCallId"]))
+            message = item.get("message") if isinstance(item, dict) else None
+            if (
+                isinstance(message, dict)
+                and message.get("role") == "tool"
+                and message.get("toolCallId")
+            ):
+                answered.add(str(message["toolCallId"]))
         names: dict[str, str] = {}
 
         for i, item in enumerate(history, 1):
             if not isinstance(item, dict):
                 continue
-            msg = item.get("message")
-            if not isinstance(msg, dict):
+            message = item.get("message")
+            if not isinstance(message, dict):
                 continue
-            role = msg.get("role")
+            role = message.get("role")
             model = session_model
             logs = item.get("promptLogs")
             if isinstance(logs, list):
-                for pl in logs:
-                    if isinstance(pl, dict) and pl.get("modelTitle"):
-                        model = str(pl["modelTitle"])
+                for prompt_log in logs:
+                    if isinstance(prompt_log, dict) and prompt_log.get("modelTitle"):
+                        model = str(prompt_log["modelTitle"])
                         change = track_change("model", models, session_id, model)
                         if change:
                             row = base(i, model)
@@ -600,9 +481,9 @@ class ContinueParser(Parser):
             if opts.include_thinking and isinstance(reasoning, dict) and reasoning.get("text"):
                 row = base(i, model)
                 row.turn_type = "thinking"
-                row.timestamp_utc = to_utc(reasoning.get("startAt")) or ts
+                row.timestamp_utc = to_utc(reasoning.get("startAt")) or timestamp
                 yield self._fill(row, reasoning.get("text"), opts)
-            text = message_text(msg.get("content"))
+            text = message_text(message.get("content"))
             if role == "user":
                 if text:
                     row = base(i)
@@ -613,46 +494,50 @@ class ContinueParser(Parser):
                     row = base(i, model)
                     row.turn_type = "assistant"
                     yield self._fill(row, text, opts)
-                calls = msg.get("toolCalls")
+                calls = message.get("toolCalls")
                 states = item.get("toolCallStates")
                 states = (
-                    [s for s in states if isinstance(s, dict)] if isinstance(states, list) else []
+                    [item_state for item_state in states if isinstance(item_state, dict)]
+                    if isinstance(states, list)
+                    else []
                 )
                 if not isinstance(calls, list) or not calls:
                     calls = [
-                        s.get("toolCall") for s in states if isinstance(s.get("toolCall"), dict)
+                        item_state.get("toolCall")
+                        for item_state in states
+                        if isinstance(item_state.get("toolCall"), dict)
                     ]
                 for call in calls:
                     if not isinstance(call, dict):
                         continue
-                    fn = call.get("function")
-                    if not isinstance(fn, dict):
-                        fn = {}
+                    function = call.get("function")
+                    if not isinstance(function, dict):
+                        function = {}
                     call_id = str(call.get("id") or "")
-                    name = str(fn.get("name") or "")
+                    name = str(function.get("name") or "")
                     names[call_id] = name
-                    args = fn.get("arguments")
+                    arguments = function.get("arguments")
                     row = base(i, model)
                     row.turn_type = "tool_use"
                     row.tool_name = name
                     row.tool_use_id = call_id
                     yield self._fill(
                         row,
-                        args
-                        if isinstance(args, str)
-                        else compact_json(args)
-                        if args is not None
+                        arguments
+                        if isinstance(arguments, str)
+                        else compact_json(arguments)
+                        if arguments is not None
                         else "",
                         opts,
                     )
-                for st in states:
-                    call_id = str(st.get("toolCallId") or "")
+                for state in states:
+                    call_id = str(state.get("toolCallId") or "")
                     if not call_id:
                         continue
-                    out = output_text(st.get("output"))
-                    status = str(st.get("status") or "")
+                    output = output_text(state.get("output"))
+                    status = str(state.get("status") or "")
                     if call_id not in answered and (
-                        out or status not in ("", "done", "generated", "generating", "calling")
+                        output or status not in ("", "done", "generated", "generating", "calling")
                     ):
                         row = base(i, model)
                         row.turn_type = "tool_result"
@@ -660,10 +545,10 @@ class ContinueParser(Parser):
                         row.tool_name = names.get(call_id, "")
                         yield self._fill(
                             row,
-                            "[%s] %s" % (status, out) if status and status != "done" else out,
+                            "[%s] %s" % (status, output) if status and status != "done" else output,
                             opts,
                         )
-                    decision = state_decision(status, st.get("output"), out)
+                    decision = state_decision(status, state.get("output"), output)
                     if decision:
                         row = base(i, model)
                         row.turn_type = "system"
@@ -677,7 +562,7 @@ class ContinueParser(Parser):
                     row.turn_type = "thinking"
                     yield self._fill(row, text, opts)
             elif role == "tool":
-                call_id = str(msg.get("toolCallId") or "")
+                call_id = str(message.get("toolCallId") or "")
                 row = base(i)
                 row.turn_type = "tool_result"
                 row.tool_use_id = call_id
@@ -700,35 +585,41 @@ class ContinueParser(Parser):
 
     def _dev_index(self, artifact: Artifact) -> dict[str, dict]:
         # .continue/dev_data/<schema>/x.jsonl or .continue/dev_data/x.jsonl
-        d = artifact.disk_path.parent
-        base = d.parent if d.parent.name == ".continue" else d.parent.parent
+        directory = artifact.disk_path.parent
+        base = directory.parent if directory.parent.name == ".continue" else directory.parent.parent
         return self._index(base / "sessions")
 
     def _parse_chat_interaction(
         self, artifact: Artifact, opts: Options, event: str = "chatInteraction"
     ) -> Iterator[Row]:
-        """`user` and `assistant` rows of a `chatInteraction` or
-        `chatFeedback` line; a `chatFeedback` line (secondary: it repeats
-        the `chatInteraction` line of the rated reply) adds `chat feedback:
-        feedback=<true|false|-> model=<modelTitle|->`."""
+        """Yield the `user` and `assistant` rows of a `chatInteraction` or `chatFeedback` line.
+
+        A `chatFeedback` line adds `chat feedback: feedback=<true|false|-> model=<modelTitle|->`.
+        """
         errors: list = []
         index = self._dev_index(artifact)
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            sid = str(rec.get("sessionId") or "")
-            entry = index.get(sid, {})
-            model = str(rec.get("modelTitle") or rec.get("modelName") or "")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            session_id = str(record.get("sessionId") or "")
+            entry = index.get(session_id, {})
+            model = str(record.get("modelTitle") or record.get("modelName") or "")
 
-            def row_for(turn: str, rec=rec, n=n, sid=sid, entry=entry) -> Row:
+            def row_for(
+                turn: str,
+                record=record,
+                line_number=line_number,
+                session_id=session_id,
+                entry=entry,
+            ) -> Row:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = to_utc(rec.get("timestamp"))
-                row.session_id = sid
+                row.source_line = line_number
+                row.timestamp_utc = to_utc(record.get("timestamp"))
+                row.session_id = session_id
                 row.project_path = str(entry.get("workspaceDirectory") or "")
                 row.turn_type = turn
                 return row
 
             for turn, key in (("user", "prompt"), ("assistant", "completion")):
-                text = rec.get(key)
+                text = record.get(key)
                 if not text:
                     continue
                 row = row_for(turn)
@@ -738,7 +629,7 @@ class ContinueParser(Parser):
             if event == "chatFeedback":
                 row = row_for("system")
                 row.model = model
-                feedback = rec.get("feedback")
+                feedback = record.get("feedback")
                 row.text = "chat feedback: feedback=%s model=%s" % (
                     "-" if feedback is None else setting_value(feedback),
                     model or "-",
@@ -747,44 +638,45 @@ class ContinueParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_edit_interaction(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """An edit request of the VS Code edit flow: `edit interaction:
-        file=<filepath>`, then the prompt as `user` and the edited file as
-        `assistant`, at the line's time."""
+        """Yield an edit request: an `edit interaction:` row, the prompt and the edited file."""
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            model = str(rec.get("modelTitle") or rec.get("modelName") or "")
-            filepath = rec.get("filepath")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            model = str(record.get("modelTitle") or record.get("modelName") or "")
+            filepath = record.get("filepath")
             parts = [("system", "edit interaction: file=%s" % (filepath or "-"))]
-            parts += [(t, rec.get(k)) for t, k in (("user", "prompt"), ("assistant", "completion"))]
+            parts += [
+                (turn_type, record.get(key))
+                for turn_type, key in (("user", "prompt"), ("assistant", "completion"))
+            ]
             for turn, text in parts:
                 if not text:
                     continue
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = to_utc(rec.get("timestamp"))
+                row.source_line = line_number
+                row.timestamp_utc = to_utc(record.get("timestamp"))
                 row.turn_type = turn
                 row.model = "" if turn == "user" else model
                 yield self._fill(row, text if isinstance(text, str) else compact_json(text), opts)
         yield from error_rows(self, artifact, errors)
 
     def _parse_edit_outcome(self, artifact: Artifact) -> Iterator[Row]:
-        """The user's accept or reject of an edit: `permission decision: edit
-        accepted=<accepted> file=<filepath> lines <previousCodeLines> ->
-        <newCodeLines>`, `-` for a missing value, at the line's time. The
-        prompt, completion and code are not put in rows: the edit flow's
-        `editInteraction` line and the session already hold the request."""
-        errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        """Yield the user's accept or reject of an edit as a `permission decision: edit` row.
 
-            def val(key: str, rec=rec) -> str:
-                v = rec.get(key)
-                return "-" if v is None or v == "" else setting_value(v)
+        The prompt, completion and code are not put in rows: the `editInteraction` line and the
+        session already hold the request.
+        """
+        errors: list = []
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+
+            def val(key: str, record=record) -> str:
+                value = record.get(key)
+                return "-" if value is None or value == "" else setting_value(value)
 
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("timestamp"))
             row.turn_type = "system"
-            row.model = str(rec.get("modelTitle") or rec.get("modelName") or "")
+            row.model = str(record.get("modelTitle") or record.get("modelName") or "")
             row.text = "permission decision: edit accepted=%s file=%s lines %s -> %s" % (
                 val("accepted"),
                 val("filepath"),
@@ -797,34 +689,36 @@ class ContinueParser(Parser):
     # ---- CLI state files -----------------------------------------------------
 
     def _parse_input_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """One `user` row per `{text, timestamp}` entry of the CLI's prompt
-        history, at the entry's time, with no session or project (the file
-        names none); `source_line` is the entry's 1-based position."""
+        """Yield one `user` row per `{text, timestamp}` entry of the CLI's prompt history.
+
+        The rows carry no session or project, since the file names none;
+        `source_line` is the entry's 1-based position.
+        """
         errors: list = []
         try:
             text = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            errors.append((0, "unreadable (%s)" % error_reason(e), ""))
+        except OSError as error:
+            errors.append((0, "unreadable (%s)" % error_reason(error), ""))
             yield from error_rows(self, artifact, errors)
             return
         if text.startswith("﻿"):
             text = text[1:]
         end: list = []
         count = 0
-        for n, entry in iter_array_at(text, 0, errors, end):
-            count = n
+        for position, entry in iter_array_at(text, 0, errors, end):
+            count = position
             prompt = entry.get("text") if isinstance(entry, dict) else None
             if not isinstance(entry, dict) or not isinstance(prompt, str):
                 errors.append(
                     (
-                        n,
-                        "unparseable record %d (not an object with a text)" % n,
+                        position,
+                        "unparseable record %d (not an object with a text)" % position,
                         compact_json(entry),
                     )
                 )
                 continue
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = position
             row.timestamp_utc = to_utc(entry.get("timestamp"))
             row.turn_type = "user"
             yield self._fill(row, prompt, opts)
@@ -833,25 +727,27 @@ class ContinueParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_permissions(self, artifact: Artifact) -> Iterator[Row]:
-        """One `permission setting: <list>=<rule> (from
-        .continue/permissions.yaml, file mtime)` row per rule, at the file's
-        modification time, or one `parser:` row for a file outside the
-        shape `read_permissions` reads."""
+        """Yield one `permission setting:` row per rule of `permissions.yaml`, at the file's mtime.
+
+        A file outside the shape `read_permissions` reads is one `parser:` row.
+        """
         try:
             text = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-        except OSError as e:
-            yield from error_rows(self, artifact, [(0, "unreadable (%s)" % error_reason(e), "")])
+        except OSError as error:
+            yield from error_rows(
+                self, artifact, [(0, "unreadable (%s)" % error_reason(error), "")]
+            )
             return
         entries, problem = read_permissions(text)
         if problem:
             message = "%s (only allow, ask and exclude lists of strings are read)" % problem
             yield from error_rows(self, artifact, [(0, message, "")])
             return
-        ts = file_mtime(artifact)
-        for n, key, rule in entries:
+        timestamp = file_mtime(artifact)
+        for line_number, key, rule in entries:
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = ts
+            row.source_line = line_number
+            row.timestamp_utc = timestamp
             row.turn_type = "system"
             row.text = compact(
                 "permission setting: %s=%s (from %s, file mtime)" % (key, rule, artifact.rel)
@@ -860,27 +756,31 @@ class ContinueParser(Parser):
 
     def _parse_tool_usage(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
-            ts = to_utc(rec.get("timestamp"))
-            call_id = str(rec.get("toolCallId") or "")
-            name = str(rec.get("functionName") or "")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            timestamp = to_utc(record.get("timestamp"))
+            call_id = str(record.get("toolCallId") or "")
+            name = str(record.get("functionName") or "")
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = ts
+            row.source_line = line_number
+            row.timestamp_utc = timestamp
             row.turn_type = "tool_use"
             row.tool_name = name
             row.tool_use_id = call_id
-            args = rec.get("toolCallArgs")
-            if not args and rec.get("functionParams") is not None:
-                args = compact_json(rec.get("functionParams"))
+            arguments = record.get("toolCallArgs")
+            if not arguments and record.get("functionParams") is not None:
+                arguments = compact_json(record.get("functionParams"))
             yield self._fill(
                 row,
-                args if isinstance(args, str) else compact_json(args) if args is not None else "",
+                arguments
+                if isinstance(arguments, str)
+                else compact_json(arguments)
+                if arguments is not None
+                else "",
                 opts,
             )
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = ts
+            row.source_line = line_number
+            row.timestamp_utc = timestamp
             row.turn_type = "tool_result"
             row.tool_name = name
             row.tool_use_id = call_id
@@ -888,28 +788,27 @@ class ContinueParser(Parser):
                 row,
                 "accepted=%s succeeded=%s %s"
                 % (
-                    compact_json(rec.get("accepted")),
-                    compact_json(rec.get("succeeded")),
-                    output_text(rec.get("output")),
+                    compact_json(record.get("accepted")),
+                    compact_json(record.get("succeeded")),
+                    output_text(record.get("output")),
                 ),
                 opts,
             )
-            if "accepted" in rec:
+            if "accepted" in record:
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.timestamp_utc = ts
+                row.source_line = line_number
+                row.timestamp_utc = timestamp
                 row.turn_type = "system"
                 row.tool_name = name
                 row.tool_use_id = call_id
-                row.text = "permission decision: accepted=%s" % setting_value(rec["accepted"])
+                row.text = "permission decision: accepted=%s" % setting_value(record["accepted"])
                 yield row
         yield from error_rows(self, artifact, errors)
 
     # ---- logs/cn.log ---------------------------------------------------------
 
     def _parse_cn_log(self, artifact: Artifact) -> Iterator[Row]:
-        """`agent metadata posted:` and `storage upload requested, skipped`
-        rows of a `cn` CLI log, in line order."""
+        """Yield the `agent metadata posted:` and `storage upload requested` rows of a `cn` log."""
         source = "logs/" + artifact.disk_path.name
         # Each post as [process id, url, fields JSON, status, row]; a post
         # waits in `pending` for the result line of its process and URL.
@@ -917,15 +816,19 @@ class ContinueParser(Parser):
         pending: list[list] = []
         rows: list[Row] = []
         try:
-            with open(artifact.disk_path, "rb") as fh:
-                for n, raw in enumerate(fh, 1):
-                    m = LOG_LINE_RX.match(line_text(raw))
-                    if not m:
+            with open(artifact.disk_path, "rb") as handle:
+                for line_number, raw in enumerate(handle, 1):
+                    match = LOG_LINE_RX.match(line_text(raw))
+                    if not match:
                         continue
-                    when, pid, message = m.groups()
+                    when, process_id, message = match.groups()
                     if STORAGE_SKIPPED in message:
                         text = "storage upload requested, skipped (from %s, log line time, %s)"
-                        rows.append(self._log_row(artifact, n, when, text % (source, "host-local")))
+                        rows.append(
+                            self._log_row(
+                                artifact, line_number, when, text % (source, "host-local")
+                            )
+                        )
                         continue
                     added = POLICY_ADDED_RX.match(message)
                     if added:
@@ -934,37 +837,39 @@ class ContinueParser(Parser):
                             source,
                             "log line time, host-local",
                         )
-                        rows.append(self._log_row(artifact, n, when, text))
+                        rows.append(self._log_row(artifact, line_number, when, text))
                         continue
                     post = METADATA_POST_RX.match(message)
                     if post:
-                        row = self._log_row(artifact, n, when, "")
-                        posts.append([pid, post.group(1), post.group(2), "-", row])
+                        row = self._log_row(artifact, line_number, when, "")
+                        posts.append([process_id, post.group(1), post.group(2), "-", row])
                         pending.append(posts[-1])
                         rows.append(row)
                         continue
                     result = METADATA_RESULT_RX.match(message)
                     if result:
-                        self._settle(pending, pid, result.group(2), result.group(1))
-        except OSError as e:
-            yield from error_rows(self, artifact, [(0, "unreadable (%s)" % error_reason(e), "")])
+                        self._settle(pending, process_id, result.group(2), result.group(1))
+        except OSError as error:
+            yield from error_rows(
+                self, artifact, [(0, "unreadable (%s)" % error_reason(error), "")]
+            )
             return
-        for _pid, url, fields, status, row in posts:
+        for _process_id, url, fields, status, row in posts:
             row.text = self._post_text(url, fields, status, source)
         yield from rows
 
     @staticmethod
-    def _settle(pending: list[list], pid: str, url: str, status: str) -> None:
+    def _settle(pending: list[list], process_id: str, url: str, status: str) -> None:
         """Give the oldest pending post of process `pid` to `url` its status."""
         for entry in pending:
-            if entry[0] == pid and entry[1] == url:
+            if entry[0] == process_id and entry[1] == url:
                 entry[3] = status
                 pending.remove(entry)
                 return
 
-    def _log_row(self, artifact: Artifact, n: int, when: str, text: str) -> Row:
+    def _log_row(self, artifact: Artifact, line_number: int, when: str, text: str) -> Row:
         row = self.base_row(artifact)
-        row.source_line = n
+        row.source_line = line_number
         row.timestamp_utc = to_utc(when)
         row.turn_type = "system"
         row.text = text
@@ -979,10 +884,10 @@ class ContinueParser(Parser):
         doc = doc if isinstance(doc, dict) else {}
         agent = doc.get("agentId")
         if not isinstance(agent, str) or not agent:
-            m = AGENT_URL_RX.search(url)
-            agent = m.group(1) if m else "-"
+            match = AGENT_URL_RX.search(url)
+            agent = match.group(1) if match else "-"
         keys = doc.get("metadataKeys")
-        keys = ",".join(str(k) for k in keys) if isinstance(keys, list) and keys else "-"
+        keys = ",".join(str(key) for key in keys) if isinstance(keys, list) and keys else "-"
         return "agent metadata posted: agent %s keys %s %s (from %s, log line time, host-local)" % (
             agent,
             keys,

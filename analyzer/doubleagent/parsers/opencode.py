@@ -320,7 +320,7 @@ class OpenCodeParser(Parser):
         state_dir = re.escape(self.state_dir)
         self.history_pattern = re.compile(r"^%s/prompt-history\.jsonl$" % state_dir)
         self.stash_pattern = re.compile(r"^%s/prompt-stash\.jsonl$" % state_dir)
-        self.pinned_rx = re.compile(
+        self.pinned_pattern = re.compile(
             r"^%s/session\.json$" % state_dir if self.pinned_sessions else r"(?!)"
         )
         prefixes = "|".join(re.escape(prefix) for prefix in self.database_prefixes)
@@ -347,14 +347,14 @@ class OpenCodeParser(Parser):
                 self.old_message_pattern,
                 self.history_pattern,
                 self.stash_pattern,
-                self.pinned_rx,
+                self.pinned_pattern,
             )
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the prompt history, the pinned sessions or `opencode-next.db`."""
         rel = artifact.rel
-        if self.history_pattern.match(rel) or self.pinned_rx.match(rel):
+        if self.history_pattern.match(rel) or self.pinned_pattern.match(rel):
             return True
         return (
             bool(self.database_pattern.match(rel))
@@ -368,7 +368,7 @@ class OpenCodeParser(Parser):
             yield from self._parse_history(artifact)
         elif self.stash_pattern.match(rel):
             yield from self._parse_stash(artifact)
-        elif self.pinned_rx.match(rel):
+        elif self.pinned_pattern.match(rel):
             yield from self._parse_pinned(artifact)
         elif self.database_pattern.match(rel):
             yield from self._parse_database(artifact, opts)

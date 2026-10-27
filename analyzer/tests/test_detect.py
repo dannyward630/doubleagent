@@ -1,3 +1,5 @@
+"""Tests of input detection: loose trees, disk images, collections and archives."""
+
 import json
 import os
 import shutil
@@ -10,10 +12,10 @@ from pathlib import Path
 from doubleagent import catalog, cli, model
 from doubleagent.inputs import open_input
 from fixtures import (
-    PROJ_GIT_CONFIG,
-    PROJ_GIT_HEAD,
-    PROJ_GIT_REMOTES,
-    PROJ_REMOTE,
+    PROJECT_GIT_CONFIG,
+    PROJECT_GIT_HEAD,
+    PROJECT_GIT_REMOTES,
+    PROJECT_REMOTE,
     build_home,
     build_image,
 )
@@ -23,6 +25,8 @@ COLLECTOR = REPO / "collectors" / "collect-agent-artifacts.sh"
 
 
 class LooseDetectTests(unittest.TestCase):
+    """Detection in a loose tree or disk image, without a manifest."""
+
     def setUp(self):
         self.cat = catalog.load()
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
@@ -32,8 +36,8 @@ class LooseDetectTests(unittest.TestCase):
 
     def agents_by_user(self, col):
         out = {}
-        for a in col.artifacts:
-            out.setdefault(a.home.user, set()).add(a.agent)
+        for artifact in col.artifacts:
+            out.setdefault(artifact.home.user, set()).add(artifact.agent)
         return out
 
     def test_image_layout_finds_every_home(self):
@@ -78,23 +82,28 @@ class LooseDetectTests(unittest.TestCase):
         }
         self.assertLessEqual(expected_alice, by_user["alice"])
         self.assertEqual(by_user["carol"], {"codex-cli"})
-        homes = {h.user: h for h in col.homes}
+        homes = {home.user: home for home in col.homes}
         self.assertEqual(homes["alice"].original, "/home/alice")
         self.assertEqual(homes["carol"].original, "/Users/carol")
-        self.assertTrue(all(h.inferred for h in col.homes))
+        self.assertTrue(all(home.inferred for home in col.homes))
 
     def test_nested_entry_wins_over_enclosing_entry(self):
         home = build_home(self.tmp / "home" / "alice")
         for root in (self.tmp / "home", home / ".gemini"):
             col = open_input(root, self.cat)
-            by_rel = {a.rel: a.agent for a in col.artifacts}
+            by_rel = {artifact.rel: artifact.agent for artifact in col.artifacts}
             self.assertEqual(by_rel[".gemini/antigravity-cli/history.jsonl"], "antigravity", root)
             self.assertEqual(by_rel[".gemini/settings.json"], "gemini-cli", root)
             self.assertEqual(
-                sum(1 for a in col.artifacts if a.rel == ".gemini/antigravity-cli/history.jsonl"), 1
+                sum(
+                    1
+                    for artifact in col.artifacts
+                    if artifact.rel == ".gemini/antigravity-cli/history.jsonl"
+                ),
+                1,
             )
         col = open_input(self.tmp / "home", self.cat)
-        by_rel = {a.rel: a.agent for a in col.artifacts}
+        by_rel = {artifact.rel: artifact.agent for artifact in col.artifacts}
         self.assertEqual(
             by_rel[".config/Code/User/globalStorage/saoudrizwan.claude-dev/state/taskHistory.json"],
             "cline",
@@ -121,17 +130,19 @@ class LooseDetectTests(unittest.TestCase):
             ".copilot/session-store.db": "copilot-cli",
         }
         for rel in files:
-            p = home / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("x", encoding="utf-8")
+            path = home / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x", encoding="utf-8")
         for root in (self.tmp / "home", home / ".copilot"):
             col = open_input(root, self.cat)
-            by_rel = {a.rel: a.agent for a in col.artifacts}
+            by_rel = {artifact.rel: artifact.agent for artifact in col.artifacts}
             for rel, agent in files.items():
                 if root == home / ".copilot" and not rel.startswith(".copilot/"):
                     continue
                 self.assertEqual(by_rel.get(rel), agent, (root, rel))
-            self.assertEqual(sum(1 for a in col.artifacts if a.rel == ".copilot/data.db"), 1)
+            self.assertEqual(
+                sum(1 for artifact in col.artifacts if artifact.rel == ".copilot/data.db"), 1
+            )
 
     def test_copilot_desktop_manifest_agent_kept(self):
         # With a manifest the collector's attribution stands: a 1.13.0
@@ -163,12 +174,12 @@ class LooseDetectTests(unittest.TestCase):
 
         def detect(store_agent):
             rows[0]["agent"] = store_agent
-            with open(col_dir / "manifest.jsonl", "w", encoding="utf-8") as fh:
-                for r in rows:
-                    fh.write(json.dumps(r) + "\n")
+            with open(col_dir / "manifest.jsonl", "w", encoding="utf-8") as handle:
+                for row in rows:
+                    handle.write(json.dumps(row) + "\n")
             col = open_input(col_dir, self.cat)
             self.assertEqual(col.kind, "collected")
-            return {a.rel: a.agent for a in col.artifacts}
+            return {artifact.rel: artifact.agent for artifact in col.artifacts}
 
         for store_agent in ("copilot-desktop", "copilot-cli"):
             by_rel = detect(store_agent)
@@ -176,13 +187,13 @@ class LooseDetectTests(unittest.TestCase):
             self.assertEqual(by_rel[".copilot/session-state/s1/events.jsonl"], "copilot-cli")
 
     def test_framework_agents_detected(self):
-        # Collector 1.10.0 (#64): CrewAI's run database sits in a data
+        # CrewAI's run database sits in a data
         # directory named after the project folder (a mid-path `*` entry),
         # its Windows directory is the class [Cc]rew[Aa][Ii], CAMEL shares
         # ~/.camel with Apache Camel JBang, and the legacy Open Interpreter
         # directories have spaces in their names. The two Windows spellings
         # sit in separate homes, because a case-insensitive filesystem
-        # (macOS, Windows) would fold them into one directory (#75).
+        # (macOS, Windows) would fold them into one directory.
         home = self.tmp / "home" / "alice"
         files = {
             ".local/share/myproj/latest_kickoff_task_outputs.db": "crewai",
@@ -200,25 +211,30 @@ class LooseDetectTests(unittest.TestCase):
             ".config/difyctl/config.yml": "dify",
         }
         for rel in [*files, ".camel/4242-status.json", ".local/share/myproj/notes.txt"]:
-            p = home / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("x")
+            path = home / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x")
         lower = self.tmp / "home" / "bob" / "AppData/Local/crewai/credentials/tokens.enc"
         lower.parent.mkdir(parents=True)
         lower.write_text("x")
         col = open_input(self.tmp / "home", self.cat)
-        by_rel = {a.rel: a.agent for a in col.artifacts}
+        by_rel = {artifact.rel: artifact.agent for artifact in col.artifacts}
         for rel, agent in files.items():
             self.assertEqual(by_rel.get(rel), agent, rel)
         self.assertEqual(by_rel.get("AppData/Local/crewai/credentials/tokens.enc"), "crewai")
         self.assertNotIn(".camel/4242-status.json", by_rel)
         self.assertNotIn(".local/share/myproj/notes.txt", by_rel)
         self.assertEqual(
-            sum(1 for a in col.artifacts if a.rel == ".local/share/opencode/flow_states.db"), 1
+            sum(
+                1
+                for artifact in col.artifacts
+                if artifact.rel == ".local/share/opencode/flow_states.db"
+            ),
+            1,
         )
 
     def test_claude_code_cli_cache_detected(self):
-        # Collector 1.11.0 (#81): the CLI's MCP server logs in its env-paths
+        # The CLI's MCP server logs in its env-paths
         # cache directory; the Windows entry names the children of Cache/.
         home = self.tmp / "home" / "alice"
         line = {"cwd": "", "debug": "MCP server: connected", "sessionId": "s", "timestamp": "t"}
@@ -229,27 +245,27 @@ class LooseDetectTests(unittest.TestCase):
             "2026-10-12T02-23-51-709Z.jsonl",
         ]
         for rel in files:
-            p = home / rel
-            p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(json.dumps(line) + "\n")
+            path = home / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(line) + "\n")
         col = open_input(self.tmp / "home", self.cat)
-        by_rel = {a.rel: a.agent for a in col.artifacts}
+        by_rel = {artifact.rel: artifact.agent for artifact in col.artifacts}
         for rel in files:
             self.assertEqual(by_rel.get(rel), "claude-code", rel)
 
     def test_project_dirs_inside_home_are_not_homes(self):
         root = build_image(self.tmp / "image")
         col = open_input(root, self.cat)
-        self.assertFalse(any("dev/proj" in (h.original or "") for h in col.homes))
+        self.assertFalse(any("dev/proj" in (home.original or "") for home in col.homes))
         # The .claude inside the project belongs to nobody at home level.
-        self.assertFalse(any("dev/proj/.claude" in a.original for a in col.artifacts))
+        self.assertFalse(any("dev/proj/.claude" in artifact.original for artifact in col.artifacts))
 
     def test_shared_only_directory_is_not_a_home(self):
-        d = self.tmp / "repo"
-        d.mkdir()
-        (d / "AGENTS.md").write_text("x", encoding="utf-8")
-        (d / ".env").write_text("A=1", encoding="utf-8")
-        col = open_input(d, self.cat)
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        (repo / "AGENTS.md").write_text("x", encoding="utf-8")
+        (repo / ".env").write_text("A=1", encoding="utf-8")
+        col = open_input(repo, self.cat)
         self.assertEqual(col.homes, [])
         self.assertEqual(col.artifacts, [])
 
@@ -260,22 +276,24 @@ class LooseDetectTests(unittest.TestCase):
         # The root itself gives no clue who owns it; --user fills this in.
         self.assertEqual(col.homes[0].user, "")
         self.assertEqual(col.homes[0].original, "")
-        rels = {a.rel for a in col.artifacts if a.agent == "claude-code"}
+        rels = {artifact.rel for artifact in col.artifacts if artifact.agent == "claude-code"}
         self.assertIn(".claude/history.jsonl", rels)
         self.assertIn(".claude/settings.json", rels)
         # A config home moved with CLAUDE_CONFIG_DIR; not claude-code-router.
         self.assertIn(".claude-work/history.jsonl", rels)
-        self.assertFalse(any(a.rel.startswith(".claude-code-router/") for a in col.artifacts))
+        self.assertFalse(
+            any(artifact.rel.startswith(".claude-code-router/") for artifact in col.artifacts)
+        )
 
     def test_agent_directory_as_root(self):
         home = build_home(self.tmp / "home" / "alice")
         col = open_input(home / ".claude", self.cat)
         self.assertEqual(len(col.homes), 1)
         self.assertEqual(col.homes[0].user, "alice")
-        self.assertEqual({a.agent for a in col.artifacts}, {"claude-code"})
-        self.assertTrue(any("claude-code directory" in n for n in col.notes))
+        self.assertEqual({artifact.agent for artifact in col.artifacts}, {"claude-code"})
+        self.assertTrue(any("claude-code directory" in note for note in col.notes))
         # .claude/backups-style nested matches must not create extra homes
-        self.assertTrue(all(a.rel.startswith(".claude/") for a in col.artifacts))
+        self.assertTrue(all(artifact.rel.startswith(".claude/") for artifact in col.artifacts))
 
     def test_symlinked_directories_are_not_followed(self):
         home = build_home(self.tmp / "home" / "alice")
@@ -287,33 +305,33 @@ class LooseDetectTests(unittest.TestCase):
         except OSError:
             self.skipTest("symlinks not permitted")
         col = open_input(self.tmp / "home", self.cat)
-        self.assertFalse(any("linked" in a.rel for a in col.artifacts))
+        self.assertFalse(any("linked" in artifact.rel for artifact in col.artifacts))
 
     def test_fs_without_manifest(self):
         root = self.tmp / "extracted"
         build_image(root / "fs")
         col = open_input(root, self.cat)
-        self.assertTrue(any("fs/ found without manifest" in n for n in col.notes))
-        self.assertEqual({h.user for h in col.homes}, {"alice", "bob", "carol"})
+        self.assertTrue(any("fs/ found without manifest" in note for note in col.notes))
+        self.assertEqual({home.user for home in col.homes}, {"alice", "bob", "carol"})
 
     def test_cli_detect_json_and_user_override(self):
         home = build_home(self.tmp / "x")
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = cli.main(
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = cli.main(
                 ["detect", str(home / ".codex"), "--json", "--user", "mallory", "--host", "h1"]
             )
-        self.assertEqual(rc, 0)
-        out = json.loads(buf.getvalue())
+        self.assertEqual(exit_code, 0)
+        out = json.loads(buffer.getvalue())
         self.assertEqual(out["kind"], "loose")
         self.assertEqual(out["host"], "h1")
         self.assertEqual(out["homes"][0]["user"], "mallory")
         self.assertEqual(out["homes"][0]["agents"][0]["agent"], "codex-cli")
         self.assertTrue(out["homes"][0]["agents"][0]["parser"])
-        # Loose input marks no home as a project (issue 104).
+        # Loose input marks no home as a project.
         self.assertEqual(out["projects"], [])
 
     def test_missing_input(self):
@@ -321,7 +339,7 @@ class LooseDetectTests(unittest.TestCase):
 
 
 class GitDetectTests(unittest.TestCase):
-    """`remotes` and `head` of each project in `detect --json` (issue 253)."""
+    """`remotes` and `head` of each project in `detect --json`."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-gitdetect-test-"))
@@ -330,12 +348,14 @@ class GitDetectTests(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def collection(self) -> Path:
-        """An extracted collection with two collected projects: /srv/proj
-        with its repository files, /srv/plain with only AGENTS.md."""
+        """An extracted collection with two collected projects.
+
+        /srv/proj with its repository files, /srv/plain with only AGENTS.md.
+        """
         root = self.tmp / "col"
         files = [
-            ("/srv/proj", ".git/config", PROJ_GIT_CONFIG),
-            ("/srv/proj", ".git/HEAD", PROJ_GIT_HEAD),
+            ("/srv/proj", ".git/config", PROJECT_GIT_CONFIG),
+            ("/srv/proj", ".git/HEAD", PROJECT_GIT_HEAD),
             ("/srv/plain", "AGENTS.md", "# x\n"),
             ("/home/alice", ".codex/history.jsonl", ""),
         ]
@@ -359,7 +379,7 @@ class GitDetectTests(unittest.TestCase):
                 }
             )
         (root / "manifest.jsonl").write_text(
-            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+            "".join(json.dumps(record) + "\n" for record in rows), encoding="utf-8"
         )
         summary = {"hostname": "h1", "projects": ["/srv/plain", "/srv/proj"]}
         (root / "collection.json").write_text(json.dumps(summary), encoding="utf-8")
@@ -369,23 +389,27 @@ class GitDetectTests(unittest.TestCase):
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = cli.main(["detect", str(self.collection()), "--json"])
-        self.assertEqual(rc, 0, buf.getvalue())
-        projects = {p["path"]: p for p in json.loads(buf.getvalue())["projects"]}
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = cli.main(["detect", str(self.collection()), "--json"])
+        self.assertEqual(exit_code, 0, buffer.getvalue())
+        projects = {
+            project["path"]: project for project in json.loads(buffer.getvalue())["projects"]
+        }
         self.assertEqual(sorted(projects), ["/srv/plain", "/srv/proj"])
-        for p in projects.values():
-            self.assertEqual(list(p)[-2:], ["remotes", "head"])
-        self.assertEqual(projects["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        for project in projects.values():
+            self.assertEqual(list(project)[-2:], ["remotes", "head"])
+        self.assertEqual(projects["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
         self.assertEqual(projects["/srv/proj"]["head"], "main")
         self.assertEqual(projects["/srv/plain"]["remotes"], [])
         self.assertEqual(projects["/srv/plain"]["head"], "")
 
 
 class ArchiveTests(unittest.TestCase):
-    """Round trip through the sh collector when a POSIX shell is available:
-    collector archive in, attributed artifacts and timeline out."""
+    """Round trip through the sh collector when a POSIX shell is available.
+
+    Collector archive in, attributed artifacts and timeline out.
+    """
 
     def setUp(self):
         self.cat = catalog.load()
@@ -400,12 +424,12 @@ class ArchiveTests(unittest.TestCase):
         root = build_image(self.tmp / "image")
         out = self.tmp / "out"
         out.mkdir()
-        r = subprocess.run(
+        result = subprocess.run(
             ["sh", str(COLLECTOR), "-r", str(root), "-o", str(out), "-q"],
             capture_output=True,
             text=True,
         )
-        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         archives = list(out.glob("*.tar.gz"))
         self.assertEqual(len(archives), 1, list(out.iterdir()))
         return archives[0], out
@@ -416,13 +440,17 @@ class ArchiveTests(unittest.TestCase):
         try:
             self.assertEqual(col.kind, "archive")
             self.assertTrue(col.host)
-            self.assertTrue(any("sha256 verified" in n for n in col.notes), col.notes)
-            users = {a.home.user for a in col.artifacts if a.agent in ("claude-code", "codex-cli")}
+            self.assertTrue(any("sha256 verified" in note for note in col.notes), col.notes)
+            users = {
+                artifact.home.user
+                for artifact in col.artifacts
+                if artifact.agent in ("claude-code", "codex-cli")
+            }
             self.assertEqual(users, {"alice", "bob", "carol"})
-            self.assertFalse(any(h.inferred for h in col.homes))
+            self.assertFalse(any(home.inferred for home in col.homes))
             # every attributed file exists on disk after extraction
-            for a in col.artifacts:
-                self.assertTrue(a.disk_path.is_file(), a.disk_path)
+            for artifact in col.artifacts:
+                self.assertTrue(artifact.disk_path.is_file(), artifact.disk_path)
         finally:
             col.cleanup()
         self.assertFalse(Path(col.root).exists())
@@ -431,20 +459,20 @@ class ArchiveTests(unittest.TestCase):
         archive, _out = self._collect()
         extracted = self.tmp / "extracted"
         extracted.mkdir()
-        with tarfile.open(archive) as tf:
+        with tarfile.open(archive) as archive_file:
             if hasattr(tarfile, "data_filter"):
-                tf.extractall(extracted, filter="data")
+                archive_file.extractall(extracted, filter="data")
             else:
-                tf.extractall(extracted)
+                archive_file.extractall(extracted)
         col = open_input(extracted, self.cat)
         self.assertEqual(col.kind, "collected")
         import contextlib
         import io
 
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = cli.main(["timeline", str(extracted), "-o", str(self.tmp / "tl")])
-        self.assertEqual(rc, 0, buf.getvalue())
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            exit_code = cli.main(["timeline", str(extracted), "-o", str(self.tmp / "tl")])
+        self.assertEqual(exit_code, 0, buffer.getvalue())
         lines = (self.tmp / "tl" / "timeline.jsonl").read_text(encoding="utf-8").split("\n")
         self.assertEqual(lines[-1], "")
         rows = [json.loads(line) for line in lines[:-1]]
@@ -454,18 +482,18 @@ class ArchiveTests(unittest.TestCase):
         sessions = (self.tmp / "tl" / "sessions.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual(list(json.loads(sessions[0])), model.SESSION_COLUMNS)
         self.assertTrue((self.tmp / "tl" / "inventory.json").exists())
-        # detect.json was folded into inventory.json in 0.12.0 (issue 104).
+        # No detect.json: inventory.json holds what it held.
         self.assertFalse((self.tmp / "tl" / "detect.json").exists())
         # host comes from collection.json, users from the manifest
-        self.assertLessEqual({r["user"] for r in rows}, {"alice", "bob", "carol"})
+        self.assertLessEqual({row["user"] for row in rows}, {"alice", "bob", "carol"})
         # The collector gathers /srv/proj's repository files, and the
-        # agents' own records of its remote join them (issue 253).
+        # agents' own records of its remote join them.
         inv = json.loads((self.tmp / "tl" / "inventory.json").read_text(encoding="utf-8"))
-        proj = inv["projects"]["/srv/proj"]
-        self.assertEqual(proj["status"], "collected")
+        project = inv["projects"]["/srv/proj"]
+        self.assertEqual(project["status"], "collected")
         self.assertEqual(
-            (proj["remotes"], proj["head"], proj["recorded_remotes"]),
-            (PROJ_GIT_REMOTES, "main", [PROJ_REMOTE]),
+            (project["remotes"], project["head"], project["recorded_remotes"]),
+            (PROJECT_GIT_REMOTES, "main", [PROJECT_REMOTE]),
         )
 
 

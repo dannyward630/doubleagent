@@ -1,52 +1,29 @@
 #!/usr/bin/env python3
 """Check that every research document follows the structure AGENTS.md fixes.
 
-Every agent's document under `research/` (not `research/README.md` and not
-`research/frameworks.md`) has one H1 equal to the agent's catalog name, one
-unheaded intro paragraph, then the outline of the "Research document
-structure" subsection of AGENTS.md: `## Source and evidence` with
-`### Observed` and `### Source reviews`; `## Collection` holding
-`### Per-user storage` (with `#### Scratch directories`),
-`### Credentials`, `### Exclusions`, `### Project-local files` and
-`### Where the project path is recorded`; `## Parsing` holding
-`### Transcript stores` (with `#### What survives a delete`),
-`### Record schema`, `### Joins and timestamps`, `### Other
-stores`, `### Format versions`, `### Secrets` and `### Parser
-plan` (with the eight fixed `####` row subsections, in order, before any
-other), or for an agent with nothing to parse one paragraph and no `###`;
-then `## Confidence`. This checks, for each such file:
+Every agent's document under `research/` (not README.md or frameworks.md) follows the outline
+of "Research document structure" in AGENTS.md. For each, this checks that:
 
-- the H1 is `# <agent>` where `<agent>` is the file's stem;
-- the H2 headings are exactly `Source and evidence`, `Collection`,
-  `Parsing`, `Confidence`, in order;
-- the `###` headings under Collection and Parsing are exactly the numbered
-  sections above, in order (Parsing may instead hold prose and no `###`);
-- the fixed `###` and `####` subsections sit under the right heading;
-- no bold label stands in for a heading: a paragraph may not open with
-  `**Label**`, `**Label.**` or `**Label:**` followed by prose (a list item
-  or table row may);
-- no line assumes the two documents each agent had before the merge of
-  October 2026 ("the collector document", "the analyzer review", "the two
-  X documents", "collector concern");
-- no confidence paragraph or bullet (`Confidence.`, `**Confidence:**`)
-  stands outside `## Confidence`;
-- no prose line is longer than `--width` characters (default 100) unless
-  it carries a URL or is a single code span (delimited by a backtick run
-  of any length, and optionally followed by closing parentheses and `.`,
-  `,`, `;` or `:`), since neither can be wrapped.
+- the H1 is `# <agent>`, the file's stem, and an unheaded intro paragraph follows it;
+- the H2 headings are `SECTIONS`, in order, and the `###` headings under Collection and
+  Parsing are `COLLECTION_H3` and `PARSING_H3` (Parsing may hold prose and no `###`);
+- the subsections of `FIXED` sit under their heading, in order, and the eight of Parser
+  plan come before any other;
+- no paragraph opens with a bold label (`**Label**`, `**Label.**`, `**Label:**`) in place of
+  a heading;
+- no line assumes the two documents each agent had before they were merged ("the collector
+  document", "the analyzer review", "the two X documents", "collector concern");
+- no confidence paragraph or bullet stands outside `## Confidence`;
+- no prose line is longer than `--width` characters (default 100) unless it holds a URL or is
+  a single code span.
 
-With `--before DIR`, where DIR holds the `collectors/` and `analyzer/`
-trees of the two documents each agent had before the merge, it also
-reports every citation URL, code span, fenced-block line, number and bold
-label that the old documents hold and the new one lacks, as `path: lost
-<kind>: <text>`. A merge that collapses a repeated statement loses nothing;
-one that drops a file name, a key, a size or a citation shows up here. A
-code span wrapped across lines or moved into a fence still counts as kept.
+With `--before DIR`, where DIR holds the `collectors/` and `analyzer/` copies of the documents
+from before the merge, it also prints each citation URL, code span, fenced line, number and
+bold label an old copy holds and the new document lacks, as `path: lost <kind>: <text>`.
 
 Usage: tools/check_research_structure.py [--before DIR] [--width N] [FILE...]
 
-Every failure is printed as `path[:line]: message`; the exit status is 1
-when any check failed.
+Every failure is printed as `path[:line]: message`; the exit status is 1 when any check failed.
 """
 
 from __future__ import annotations
@@ -61,7 +38,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESEARCH = ROOT / "research"
 SKIP = {"README.md", "frameworks.md"}
 
-H2 = ("Source and evidence", "Collection", "Parsing", "Confidence")
+SECTIONS = ("Source and evidence", "Collection", "Parsing", "Confidence")
 COLLECTION_H3 = (
     "Per-user storage",
     "Credentials",
@@ -125,20 +102,22 @@ def load_link_check():
 
 
 def research_files() -> list[pathlib.Path]:
-    return [f for f in sorted(RESEARCH.glob("*.md")) if f.name not in SKIP]
+    """Return the agents' research documents, sorted."""
+    return [path for path in sorted(RESEARCH.glob("*.md")) if path.name not in SKIP]
 
 
 def is_agent_document(path: pathlib.Path) -> bool:
+    """Return whether `path` is an agent's document directly under `research/`."""
     return path.resolve().parent == RESEARCH.resolve() and path.name not in SKIP
 
 
 def headings(text: str) -> list[tuple[int, int, str]]:
     """(line number, level, text) of every ATX heading outside fences."""
     found = []
-    for n, line in enumerate(text.split("\n"), 1):
-        m = ATX.match(line)
-        if m:
-            found.append((n, len(m.group(1)), m.group(2).strip()))
+    for number, line in enumerate(text.split("\n"), 1):
+        match = ATX.match(line)
+        if match:
+            found.append((number, len(match.group(1)), match.group(2).strip()))
     return found
 
 
@@ -155,12 +134,13 @@ def parents(heads: list[tuple[int, int, str]]) -> dict[str, list[str]]:
     return owner
 
 
-def check_outline(rel, owner: dict[str, list[str]], h2: list[str]) -> list[str]:
+def check_outline(rel, owner: dict[str, list[str]], sections: list[str]) -> list[str]:
+    """Return the problems of the H2 headings `sections` and the `###` headings under them."""
     problems = []
-    if h2 != list(H2):
+    if sections != list(SECTIONS):
         problems.append(
             "%s: H2 headings must be, in order: %s; found: %s"
-            % (rel, " | ".join(H2), " | ".join(h2) or "none")
+            % (rel, " | ".join(SECTIONS), " | ".join(sections) or "none")
         )
     if owner.get("Collection", []) != list(COLLECTION_H3):
         problems.append(
@@ -179,18 +159,19 @@ def check_outline(rel, owner: dict[str, list[str]], h2: list[str]) -> list[str]:
 
 
 def check_fixed(rel, owner: dict[str, list[str]], present: set[str]) -> list[str]:
+    """Return the problems of the fixed subsections under the `present` headings."""
     problems = []
     for section, fixed in FIXED.items():
         if section not in present:
             continue
         have = owner.get(section, [])
-        missing = [t for t in fixed if t not in have]
+        missing = [title for title in fixed if title not in have]
         if missing:
             problems.append(
                 "%s: `%s` lacks the fixed subsection(s): %s" % (rel, section, ", ".join(missing))
             )
             continue
-        if [t for t in have if t in fixed] != list(fixed):
+        if [title for title in have if title in fixed] != list(fixed):
             problems.append(
                 "%s: `%s` fixed subsections out of order; want %s"
                 % (rel, section, ", ".join(fixed))
@@ -203,44 +184,49 @@ def check_fixed(rel, owner: dict[str, list[str]], present: set[str]) -> list[str
 
 
 def check_structure(path: pathlib.Path, text: str, width: int, link_check) -> list[str]:
+    """Return every structure problem of the research document `path` holding `text`."""
     if not is_agent_document(path):
         return []
     rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
     problems: list[str] = []
     stripped = link_check.strip_fences(text)
     heads = headings(stripped)
-    h1 = [h for h in heads if h[1] == 1]
-    if len(h1) != 1 or h1[0][2] != path.stem:
-        problems.append("%s:%d: H1 must be `# %s`" % (rel, h1[0][0] if h1 else 1, path.stem))
+    top_heads = [head for head in heads if head[1] == 1]
+    if len(top_heads) != 1 or top_heads[0][2] != path.stem:
+        problems.append(
+            "%s:%d: H1 must be `# %s`" % (rel, top_heads[0][0] if top_heads else 1, path.stem)
+        )
     owner = parents(heads)
-    problems += check_outline(rel, owner, [h[2] for h in heads if h[1] == 2])
-    problems += check_fixed(rel, owner, {h[2] for h in heads})
+    problems += check_outline(rel, owner, [head[2] for head in heads if head[1] == 2])
+    problems += check_fixed(rel, owner, {head[2] for head in heads})
     lines = stripped.split("\n")
-    prev_blank = True
+    previous_blank = True
     section = ""
-    for n, line in enumerate(lines, 1):
+    for number, line in enumerate(lines, 1):
         if line.startswith("## "):
             section = line[3:].strip()
         in_prose = line.strip() and not line.lstrip().startswith(("|", "-", "*", ">", "#", "["))
-        if prev_blank and in_prose and BOLD_LEAD.match(line):
-            problems.append("%s:%d: bold label used as a heading; make it a heading" % (rel, n))
+        if previous_blank and in_prose and BOLD_LEAD.match(line):
+            problems.append(
+                "%s:%d: bold label used as a heading; make it a heading" % (rel, number)
+            )
         split = SPLIT_PHRASE.search(line)
         if split:
             problems.append(
                 '%s:%d: "%s" assumes two documents; the document speaks as one'
-                % (rel, n, split.group(0))
+                % (rel, number, split.group(0))
             )
-        if section != H2[3] and CONFIDENCE_LEAD.match(line):
+        if section != SECTIONS[3] and CONFIDENCE_LEAD.match(line):
             problems.append(
-                "%s:%d: confidence statement outside `## Confidence`; move it there" % (rel, n)
+                "%s:%d: confidence statement outside `## Confidence`; move it there" % (rel, number)
             )
         long = in_prose and not line.lstrip()[:2].rstrip(".").isdigit() and len(line) > width
         if long and not URL.search(line) and not ONLY_CODE_SPAN.match(line):
-            problems.append("%s:%d: prose line longer than %d characters" % (rel, n, width))
-        prev_blank = not line.strip()
-    first_h2 = next((h[0] for h in heads if h[1] == 2), None)
-    if first_h2 is not None and h1:
-        intro = [x for x in lines[h1[0][0] : first_h2 - 1] if x.strip()]
+            problems.append("%s:%d: prose line longer than %d characters" % (rel, number, width))
+        previous_blank = not line.strip()
+    first_h2 = next((head[0] for head in heads if head[1] == 2), None)
+    if first_h2 is not None and top_heads:
+        intro = [line for line in lines[top_heads[0][0] : first_h2 - 1] if line.strip()]
         if not intro:
             problems.append(
                 "%s: no intro paragraph between the H1 and `## Source and evidence`" % rel
@@ -253,7 +239,8 @@ def tokens(text: str, link_check) -> dict[str, set[str]]:
 
     A code span is compared with its whitespace collapsed, so one wrapped
     across lines matches; a span also counts as kept when its text is a
-    fenced line."""
+    fenced line.
+    """
     fenced: set[str] = set()
     in_fence = False
     for line in text.split("\n"):
@@ -265,25 +252,26 @@ def tokens(text: str, link_check) -> dict[str, set[str]]:
     prose = link_check.strip_fences(text)
     spans = {" ".join(body.split()) for _, body in CODE_SPAN.findall(prose)}
     return {
-        "url": {u.rstrip(".,;:") for u in URL.findall(prose)},
+        "url": {url.rstrip(".,;:") for url in URL.findall(prose)},
         "code span": spans | fenced,
         "fenced line": fenced,
-        "number": {m.group(0).strip() for m in NUMBER.finditer(prose)},
-        "bold label": {b.strip().rstrip(".:") for b in BOLD.findall(prose)},
+        "number": {match.group(0).strip() for match in NUMBER.finditer(prose)},
+        "bold label": {bold.strip().rstrip(".:") for bold in BOLD.findall(prose)},
     }
 
 
 def check_invariants(path: pathlib.Path, text: str, before: pathlib.Path, link_check) -> list[str]:
+    """Return a `lost` line per fact the copies under `before` hold and `text` lacks."""
     if not is_agent_document(path):
         return []
     rel = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
     candidates = (before / "collectors" / path.name, before / "analyzer" / path.name)
-    olds = [p for p in candidates if p.is_file()]
+    olds = [candidate for candidate in candidates if candidate.is_file()]
     if not olds:
         return ["%s: no pre-merge copy under %s" % (rel, before)]
     old: dict[str, set[str]] = {}
-    for p in olds:
-        for kind, items in tokens(p.read_text(encoding="utf-8"), link_check).items():
+    for old_copy in olds:
+        for kind, items in tokens(old_copy.read_text(encoding="utf-8"), link_check).items():
             old.setdefault(kind, set()).update(items)
     new = tokens(text, link_check)
     problems = []
@@ -294,23 +282,24 @@ def check_invariants(path: pathlib.Path, text: str, before: pathlib.Path, link_c
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
-    ap.add_argument(
+    """Check the files given, or every research document, and return the exit status."""
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
+    parser.add_argument(
         "--before", type=pathlib.Path, help="pre-merge copies, <DIR>/{collectors,analyzer}/"
     )
-    ap.add_argument("--width", type=int, default=100, help="longest prose line allowed")
-    ap.add_argument("files", nargs="*", type=lambda s: pathlib.Path(s).resolve())
-    args = ap.parse_args()
+    parser.add_argument("--width", type=int, default=100, help="longest prose line allowed")
+    parser.add_argument("files", nargs="*", type=lambda argument: pathlib.Path(argument).resolve())
+    args = parser.parse_args()
     link_check = load_link_check()
     files = args.files or research_files()
     problems: list[str] = []
-    for f in files:
-        text = f.read_text(encoding="utf-8")
-        problems += check_structure(f, text, args.width, link_check)
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        problems += check_structure(path, text, args.width, link_check)
         if args.before:
-            problems += check_invariants(f, text, args.before.resolve(), link_check)
-    for p in problems:
-        print(p)
+            problems += check_invariants(path, text, args.before.resolve(), link_check)
+    for problem in problems:
+        print(problem)
     print("%d files checked, %d problems" % (len(files), len(problems)))
     return 1 if problems else 0
 

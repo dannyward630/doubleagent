@@ -1,3 +1,5 @@
+"""Tests of the time and text filters of `timeline`."""
+
 import contextlib
 import io
 import json
@@ -18,6 +20,8 @@ NOW = datetime(2026, 3, 31, 14, 5, 9, 123000, tzinfo=timezone.utc)
 
 
 class ParseBoundTests(unittest.TestCase):
+    """`parse_bound` reads the `--since` and `--until` forms and rejects the rest."""
+
     def both(self, text):
         return parse_bound(text, now=NOW), parse_bound(text, end=True, now=NOW)
 
@@ -77,18 +81,18 @@ class ParseBoundTests(unittest.TestCase):
 
     def test_rejected(self):
         for text in ("", "3x", "last friday", "10/01/2026", "2026-13-01", "2026-10-01T25:00"):
-            with self.assertRaises(BoundError, msg=text) as cm:
+            with self.assertRaises(BoundError, msg=text) as caught:
                 parse_bound(text, now=NOW)
-            self.assertIn("accepted:", str(cm.exception))
+            self.assertIn("accepted:", str(caught.exception))
         with self.assertRaisesRegex(BoundError, "month must be in 1..12"):
             parse_bound("2026-13-01")
         with self.assertRaisesRegex(BoundError, "out of range"):
             parse_bound("99999y", now=NOW)
 
 
-def _row(ts, text="", turn_type="user", session="s1", tool_use_id=""):
+def _row(timestamp, text="", turn_type="user", session="s1", tool_use_id=""):
     return Row(
-        timestamp_utc=ts,
+        timestamp_utc=timestamp,
         agent="claude-code",
         session_id=session,
         turn_type=turn_type,
@@ -98,6 +102,8 @@ def _row(ts, text="", turn_type="user", session="s1", tool_use_id=""):
 
 
 class RowFilterTests(unittest.TestCase):
+    """`RowFilter` keeps the rows in the window and the matches with their tool partners."""
+
     ROWS: ClassVar[list[Row]] = [
         _row("2026-10-01T08:59:59.999Z", "before"),
         _row("2026-10-01T09:00:00.000Z", "first"),
@@ -110,35 +116,37 @@ class RowFilterTests(unittest.TestCase):
     ]
 
     def test_window_is_inclusive(self):
-        f = RowFilter("2026-10-01T09:00:00.000Z", "2026-10-01T10:00:00.000Z")
-        got = [r.text for r in f.apply(self.ROWS)]
+        row_filter = RowFilter("2026-10-01T09:00:00.000Z", "2026-10-01T10:00:00.000Z")
+        got = [row.text for row in row_filter.apply(self.ROWS)]
         self.assertEqual(got, ["first", "curl http://x", "200 OK", "ls", "last"])
-        self.assertEqual((f.dropped_window, f.dropped_undated), (2, 1))
+        self.assertEqual((row_filter.dropped_window, row_filter.dropped_undated), (2, 1))
 
     def test_keep_undated(self):
-        f = RowFilter("2026-10-01T09:00:00.000Z", keep_undated=True)
-        self.assertIn("undated CURL", [r.text for r in f.apply(self.ROWS)])
-        self.assertEqual(f.dropped_undated, 0)
+        row_filter = RowFilter("2026-10-01T09:00:00.000Z", keep_undated=True)
+        self.assertIn("undated CURL", [row.text for row in row_filter.apply(self.ROWS)])
+        self.assertEqual(row_filter.dropped_undated, 0)
 
     def test_match_keeps_tool_partner_in_same_session(self):
-        f = RowFilter(patterns=[re.compile("curl")])
-        got = [(r.session_id, r.text) for r in f.apply(self.ROWS)]
+        row_filter = RowFilter(patterns=[re.compile("curl")])
+        got = [(row.session_id, row.text) for row in row_filter.apply(self.ROWS)]
         # The result of t1 in s1 comes along; the t1 of session s2 does not.
         self.assertEqual(got, [("s1", "curl http://x"), ("s1", "200 OK")])
-        self.assertEqual(f.dropped_match, len(self.ROWS) - 2)
+        self.assertEqual(row_filter.dropped_match, len(self.ROWS) - 2)
 
     def test_match_ignore_case_and_or(self):
-        f = RowFilter(patterns=[re.compile("CURL", re.IGNORECASE), re.compile("^last$")])
-        got = [r.text for r in f.apply(self.ROWS)]
+        row_filter = RowFilter(patterns=[re.compile("CURL", re.IGNORECASE), re.compile("^last$")])
+        got = [row.text for row in row_filter.apply(self.ROWS)]
         self.assertEqual(got, ["curl http://x", "200 OK", "last", "undated CURL"])
 
     def test_inactive_filter_keeps_everything(self):
-        f = RowFilter()
-        self.assertFalse(f.active)
-        self.assertEqual(f.apply(self.ROWS), self.ROWS)
+        row_filter = RowFilter()
+        self.assertFalse(row_filter.active)
+        self.assertEqual(row_filter.apply(self.ROWS), self.ROWS)
 
 
 class TimelineFilterCliTests(unittest.TestCase):
+    """The filter options of `timeline` on the shared fixture home."""
+
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
@@ -150,49 +158,49 @@ class TimelineFilterCliTests(unittest.TestCase):
 
     def run_timeline(self, name, *extra):
         out = self.tmp / name
-        buf, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(err):
-            rc = cli.main(["timeline", str(self.tmp / "home"), "-o", str(out), *extra])
+        buffer, error = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(error):
+            exit_code = cli.main(["timeline", str(self.tmp / "home"), "-o", str(out), *extra])
         rows, sessions = [], []
         if (out / "timeline.jsonl").exists():
-            with open(out / "timeline.jsonl", encoding="utf-8") as fh:
-                rows = [json.loads(line) for line in fh]
-            with open(out / "sessions.jsonl", encoding="utf-8") as fh:
-                sessions = [json.loads(line) for line in fh]
-        return rc, rows, sessions, buf.getvalue(), err.getvalue()
+            with open(out / "timeline.jsonl", encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle]
+            with open(out / "sessions.jsonl", encoding="utf-8") as handle:
+                sessions = [json.loads(line) for line in handle]
+        return exit_code, rows, sessions, buffer.getvalue(), error.getvalue()
 
     def test_day_window(self):
-        rc, rows, sessions, out, _ = self.run_timeline(
+        exit_code, rows, sessions, out, _ = self.run_timeline(
             "day", "--since", "2026-10-01", "--until", "2026-10-01"
         )
-        self.assertEqual(rc, 0, out)
+        self.assertEqual(exit_code, 0, out)
         self.assertTrue(rows)
-        self.assertTrue(all(r["timestamp_utc"].startswith("2026-10-01T") for r in rows))
+        self.assertTrue(all(row["timestamp_utc"].startswith("2026-10-01T") for row in rows))
         self.assertIn("window:    2026-10-01T00:00:00.000Z to 2026-10-01T23:59:59.999Z", out)
         self.assertRegex(out, r"filtered:  \d+ outside the window, \d+ without a timestamp")
         # Sessions are summarised from the kept rows only.
-        for s in sessions:
-            self.assertTrue(s["first_timestamp_utc"].startswith("2026-10-01T"), s)
+        for session in sessions:
+            self.assertTrue(session["first_timestamp_utc"].startswith("2026-10-01T"), session)
 
     def test_keep_undated(self):
         _, rows, _, _, _ = self.run_timeline("undated", "--since", "2000", "--keep-undated")
         _, all_rows, _, _, _ = self.run_timeline("all")
         self.assertEqual(len(rows), len(all_rows))
-        self.assertTrue(any(not r["timestamp_utc"] for r in rows))
+        self.assertTrue(any(not row["timestamp_utc"] for row in rows))
 
     def test_match(self):
-        rc, rows, _, out, _ = self.run_timeline("match", "--match", "RM -RF", "-i")
-        self.assertEqual(rc, 0, out)
+        exit_code, rows, _, out, _ = self.run_timeline("match", "--match", "RM -RF", "-i")
+        self.assertEqual(exit_code, 0, out)
         self.assertTrue(rows)
-        hits = [r for r in rows if re.search("rm -rf", r["text"], re.IGNORECASE)]
+        hits = [row for row in rows if re.search("rm -rf", row["text"], re.IGNORECASE)]
         self.assertTrue(hits)
-        partners = [r for r in rows if r not in hits]
-        self.assertTrue(all(r["tool_use_id"] for r in partners), partners)
+        partners = [row for row in rows if row not in hits]
+        self.assertTrue(all(row["tool_use_id"] for row in partners), partners)
         self.assertIn("match:     RM -RF (ignore case)", out)
 
     def test_empty_window_exits_1(self):
-        rc, rows, _, _, _ = self.run_timeline("none", "--since", "1990", "--until", "1990")
-        self.assertEqual((rc, rows), (1, []))
+        exit_code, rows, _, _, _ = self.run_timeline("none", "--since", "1990", "--until", "1990")
+        self.assertEqual((exit_code, rows), (1, []))
 
     def test_bad_values_exit_2_before_reading_input(self):
         for extra in (
@@ -201,9 +209,9 @@ class TimelineFilterCliTests(unittest.TestCase):
             ["--since", "2026-10-02", "--until", "2026-10-01"],
             ["--match", "("],
         ):
-            rc, _, _, _, err = self.run_timeline("bad", *extra)
-            self.assertEqual(rc, 2, extra)
-            self.assertTrue(err.startswith("error: "), err)
+            exit_code, _, _, _, error = self.run_timeline("bad", *extra)
+            self.assertEqual(exit_code, 2, extra)
+            self.assertTrue(error.startswith("error: "), error)
             self.assertFalse((self.tmp / "bad").exists(), extra)
 
 

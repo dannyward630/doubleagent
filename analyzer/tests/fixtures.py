@@ -1,6 +1,8 @@
 """Synthetic agent state in the shapes the parsers were validated against.
-Content is invented; field names and nesting match real Claude Code and Codex
-CLI files as of October 2026 (see the parser module docstrings)."""
+
+Content is invented; field names and nesting follow the record shapes each
+parser's module docstring cites.
+"""
 
 from __future__ import annotations
 
@@ -23,9 +25,9 @@ CLAUDE_WORK_SESSION = "11111111-2222-4333-8444-666666666666"
 # process in the registry fixture is bound to (no transcript).
 CLAUDE_295_SESSION = "11111111-2222-4333-8444-777777777777"
 CLAUDE_BRIDGE_SESSION = "11111111-2222-4333-8444-888888888888"
-# A 2.1.296 session with permission mode and model changes (issue 93).
+# A 2.1.296 session with permission mode and model changes.
 CLAUDE_296_SESSION = "11111111-2222-4333-8444-999999999999"
-# A 2.1.309 session of the Windows round (issue 256), the session-daemon
+# A 2.1.309 session in the key set of a Windows install, the session-daemon
 # worker it was handed to, its scratchpad, its Remote Control bridge and its
 # persisted tool output.
 CLAUDE_309_SESSION = "11111111-2222-4333-8444-aaaaaaaaaaaa"
@@ -35,11 +37,11 @@ CLAUDE_309_BRIDGE = "cse_0a1b2c3d4e5f6a7b"
 CLAUDE_309_BRIDGE_URL = "https://claude.ai/code/session_0a1b2c3d4e5f6a7b"
 CLAUDE_309_TOOL_RESULT = "k3j9x2m1q.txt"
 CLAUDE_309_PERSISTED = "first line of the listing\nsecond line of the listing"
-# A 2.1.310 session of the Linux round (issue 256) and a VS Code extension
+# A 2.1.310 session in the key set of a Linux install and a VS Code extension
 # session of the same build; neither is written by build_home.
 CLAUDE_310_SESSION = "11111111-2222-4333-8444-dddddddddddd"
 CLAUDE_310_VSCODE_SESSION = "11111111-2222-4333-8444-eeeeeeeeeeee"
-# Sessions of the macOS round of 2.1.310 (issue 256): a terminal session, a
+# 2.1.310 sessions in the key set of a macOS install: a terminal session, a
 # Remote Control spawn and a teleported cloud session; none is written by
 # build_home.
 CLAUDE_MAC_SESSION = "11111111-2222-4333-8444-ffffffffffff"
@@ -54,20 +56,20 @@ CLAUDE_MAC_LOCAL_SCRATCH = "/private/tmp/claude-501/-srv-proj/%s/scratchpad" % (
 )
 CLAUDE_MAC_PASTE_HASH = "0f1e2d3c4b5a6978"
 CLAUDE_MAC_LONG_PASTE = "alpha\nbeta\ngamma\ndelta\nepsilon"
-# Modification time given to the settings fixtures: 2026-10-01T09:00:00Z.
+# Modification time given to the settings fixtures: 1 October 09:00:00 UTC.
 CLAUDE_SETTINGS_MTIME = 1790845200
 CLAUDE_REGISTRY_KEY = "4242." + "ab" * 32 + ".key"
 CODEX_SESSION = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
-# The `/srv/proj` repository's remotes (issue 253): `origin`, which the
+# The `/srv/proj` repository's remotes: `origin`, which the
 # Codex rollout, the Codex state database, the Zed thread blob and the
 # OpenClaw projects table record, with a push URL that embeds a token, and
 # `upstream`. `origin` has a second `url`, a mirror every push also goes
 # to. HEAD names the branch `main`.
-PROJ_REMOTE = "git@github.com:alice/proj.git"
-PROJ_MIRROR = "https://mirror.example.com/alice/proj.git"
-PROJ_PUSH_URL = "https://alice:FIXTURE-TOKEN@github.com/alice/proj.git"
-PROJ_UPSTREAM = "https://github.com/upstream/proj.git"
-PROJ_GIT_CONFIG = (
+PROJECT_REMOTE = "git@github.com:alice/proj.git"
+PROJECT_MIRROR = "https://mirror.example.com/alice/proj.git"
+PROJECT_PUSH_URL = "https://alice:FIXTURE-TOKEN@github.com/alice/proj.git"
+PROJECT_UPSTREAM = "https://github.com/upstream/proj.git"
+PROJECT_GIT_CONFIG = (
     "[core]\n"
     "\trepositoryformatversion = 0\n"
     "\tbare = false\n"
@@ -82,17 +84,17 @@ PROJ_GIT_CONFIG = (
     '[branch "main"]\n'
     "\tremote = origin\n"
     "\tmerge = refs/heads/main\n"
-) % (PROJ_REMOTE, PROJ_MIRROR, PROJ_PUSH_URL, PROJ_UPSTREAM)
-PROJ_GIT_HEAD = "ref: refs/heads/main\n"
-PROJ_GIT_REMOTES = [
-    {"name": "origin", "urls": [PROJ_REMOTE, PROJ_MIRROR], "pushurls": [PROJ_PUSH_URL]},
-    {"name": "upstream", "urls": [PROJ_UPSTREAM], "pushurls": []},
+) % (PROJECT_REMOTE, PROJECT_MIRROR, PROJECT_PUSH_URL, PROJECT_UPSTREAM)
+PROJECT_GIT_HEAD = "ref: refs/heads/main\n"
+PROJECT_GIT_REMOTES = [
+    {"name": "origin", "urls": [PROJECT_REMOTE, PROJECT_MIRROR], "pushurls": [PROJECT_PUSH_URL]},
+    {"name": "upstream", "urls": [PROJECT_UPSTREAM], "pushurls": []},
 ]
 CODEX_SUBAGENT = "aaaaaaaa-bbbb-4ccc-8ddd-000000000002"
 CODEX_FORK = "aaaaaaaa-bbbb-4ccc-8ddd-000000000003"
 CODEX_LEGACY = "aaaaaaaa-bbbb-4ccc-8ddd-000000000004"
 CODEX_REVERT_ROLLOUT = "aaaaaaaa-bbbb-4ccc-8ddd-000000000005"
-# Synthetic ChatGPT ids of the shapes Codex Desktop writes in session_meta (#118):
+# Synthetic ChatGPT ids of the shapes Codex Desktop writes in session_meta:
 # a 36-character uuid account id and a 29-character user id.
 CODEX_ACCOUNT = "11111111-2222-4333-8444-555555555555"
 CODEX_USER = "user-AbCdEfGhIjKlMnOpQrStUvWx"
@@ -100,9 +102,9 @@ CODEX_USER = "user-AbCdEfGhIjKlMnOpQrStUvWx"
 
 def _jsonl(path: Path, records) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as fh:
-        for r in records:
-            fh.write(json.dumps(r, ensure_ascii=False) + "\n")
+    with open(path, "w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 CLAUDE_TOOL_RESULT = "b1c2d3e4f.txt"
@@ -122,12 +124,12 @@ def _claude_common(cwd, branch, **extra):
     )
 
 
-def _claude_assistant(common, uuid, t, blocks, model="claude-fable-5-1", **extra):
+def _claude_assistant(common, uuid, second, blocks, model="claude-fable-5-1", **extra):
     return dict(
         common,
         type="assistant",
         uuid=uuid,
-        timestamp="2026-10-01T10:00:%s.000Z" % t,
+        timestamp="2026-10-01T10:00:%s.000Z" % second,
         requestId="req_" + uuid,
         message={
             "model": model,
@@ -140,23 +142,23 @@ def _claude_assistant(common, uuid, t, blocks, model="claude-fable-5-1", **extra
     )
 
 
-def _claude_user(common, uuid, t, content, **extra):
+def _claude_user(common, uuid, second, content, **extra):
     return dict(
         common,
         type="user",
         uuid=uuid,
-        timestamp="2026-10-01T10:00:%s.000Z" % t,
+        timestamp="2026-10-01T10:00:%s.000Z" % second,
         message={"role": "user", "content": content},
         **extra,
     )
 
 
-def _claude_attachment(common, uuid, t, attachment):
+def _claude_attachment(common, uuid, second, attachment):
     return dict(
         common,
         type="attachment",
         uuid=uuid,
-        timestamp="2026-10-01T10:00:%s.000Z" % t,
+        timestamp="2026-10-01T10:00:%s.000Z" % second,
         attachment=attachment,
     )
 
@@ -175,12 +177,12 @@ def _claude_stub(name):
 
 def claude_session_records(cwd="/srv/proj", branch="main"):
     """Line numbers are what ClaudeCodeTests.test_rows asserts."""
-    c = _claude_common(cwd, branch)
-    sid = CLAUDE_SESSION
+    common = _claude_common(cwd, branch)
+    session_id = CLAUDE_SESSION
     return [
-        dict(type="mode", mode="normal", sessionId=sid),  # 1
+        dict(type="mode", mode="normal", sessionId=session_id),  # 1
         _claude_user(
-            c,
+            common,
             "u1",
             "00",
             "delete the logs in /var/log please",
@@ -189,13 +191,16 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             promptSource="typed",
         ),  # 2
         _claude_assistant(
-            c, "a1", "01", [{"type": "thinking", "thinking": "private reasoning", "signature": "x"}]
+            common,
+            "a1",
+            "01",
+            [{"type": "thinking", "thinking": "private reasoning", "signature": "x"}],
         ),  # 3
         _claude_assistant(
-            c, "a1b", "01", [{"type": "thinking", "thinking": "", "signature": "c2ln"}]
+            common, "a1b", "01", [{"type": "thinking", "thinking": "", "signature": "c2ln"}]
         ),  # 4: empty thinking, skipped
         _claude_assistant(
-            c,
+            common,
             "a2",
             "02",
             [
@@ -216,7 +221,7 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             wireIngestContext={"toolu_01": {"cwd": "/srv/proj"}},
         ),  # 5
         _claude_user(
-            c,
+            common,
             "u2",
             "03",
             [
@@ -234,11 +239,11 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             type="queue-operation",
             operation="enqueue",
             timestamp="2026-10-01T10:00:03.500Z",
-            sessionId=sid,
+            sessionId=session_id,
             content="also check /tmp",
         ),  # 7: delivered by the attachment on line 8
         _claude_attachment(
-            c,
+            common,
             "t1",
             "04",
             {
@@ -253,7 +258,7 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             },
         ),  # 8
         _claude_attachment(
-            c,
+            common,
             "t2",
             "04",
             {
@@ -263,7 +268,7 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             },
         ),  # 9
         _claude_attachment(
-            c,
+            common,
             "t3",
             "04",
             {
@@ -275,13 +280,13 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             },
         ),  # 10
         _claude_attachment(
-            c, "t4", "04", {"type": "total_tokens_reminder", "text": "tokens used"}
+            common, "t4", "04", {"type": "total_tokens_reminder", "text": "tokens used"}
         ),  # 11: skipped
         _claude_assistant(
-            c, "a3", "04", [{"type": "text", "text": "Done. Three log files were removed."}]
+            common, "a3", "04", [{"type": "text", "text": "Done. Three log files were removed."}]
         ),  # 12
         dict(
-            c,
+            common,
             type="system",
             uuid="s1",
             parentUuid="a3",
@@ -292,17 +297,17 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             isMeta=False,
         ),  # 13
         _claude_user(
-            c,
+            common,
             "u3",
             "06",
             "<command-name>/model</command-name>\n<command-message>model</command-message>\n"
             "<command-args></command-args>",
         ),  # 14
         _claude_user(
-            c, "u4", "06", "<local-command-stdout>Set model to Fable</local-command-stdout>"
+            common, "u4", "06", "<local-command-stdout>Set model to Fable</local-command-stdout>"
         ),  # 15
         _claude_user(
-            c,
+            common,
             "u5",
             "07",
             "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n"
@@ -311,7 +316,7 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             promptSource="system",
         ),  # 16
         _claude_assistant(
-            c,
+            common,
             "a4",
             "08",
             [
@@ -324,13 +329,13 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             ],
         ),  # 17
         _claude_user(
-            c,
+            common,
             "u6",
             "09",
             _claude_result("toolu_02", [{"type": "tool_reference", "tool_name": "WebFetch"}]),
         ),  # 18
         _claude_assistant(
-            c,
+            common,
             "a5",
             "10",
             [
@@ -343,10 +348,10 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             ],
         ),  # 19
         _claude_user(
-            c, "u7", "11", _claude_result("toolu_03", _claude_stub(CLAUDE_TOOL_RESULT))
+            common, "u7", "11", _claude_result("toolu_03", _claude_stub(CLAUDE_TOOL_RESULT))
         ),  # 20: the stub's file exists
         _claude_assistant(
-            c,
+            common,
             "a6",
             "12",
             [
@@ -359,10 +364,10 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             ],
         ),  # 21
         _claude_user(
-            c, "u8", "13", _claude_result("toolu_04", _claude_stub("f0e1d2c3b.txt"))
+            common, "u8", "13", _claude_result("toolu_04", _claude_stub("f0e1d2c3b.txt"))
         ),  # 22: the stub's file is missing
         _claude_assistant(
-            c,
+            common,
             "a7",
             "14",
             [{"type": "text", "text": "API Error: rate limited"}],
@@ -372,7 +377,7 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             error="rate_limit",
         ),  # 23
         dict(
-            c,
+            common,
             type="system",
             uuid="s2",
             timestamp="2026-10-01T10:00:15.000Z",
@@ -384,25 +389,27 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
             isMeta=False,
         ),  # 24
         _claude_user(
-            c,
+            common,
             "u9",
             "16",
             [{"type": "text", "text": "[Request interrupted by user]"}],
             interruptedMessageId="msg_a7",
         ),  # 25
         _claude_user(
-            c,
+            common,
             "u10",
             "17",
             "This session is being continued from a previous conversation. Summary: logs removed.",
             isCompactSummary=True,
         ),  # 26
-        dict(type="ai-title", aiTitle="Remove old logs", sessionId=sid),  # 27
-        dict(type="ai-title", aiTitle="Remove old logs", sessionId=sid),  # 28: repeat, skipped
-        dict(type="custom-title", customTitle="log cleanup", sessionId=sid),  # 29
+        dict(type="ai-title", aiTitle="Remove old logs", sessionId=session_id),  # 27
+        dict(
+            type="ai-title", aiTitle="Remove old logs", sessionId=session_id
+        ),  # 28: repeat, skipped
+        dict(type="custom-title", customTitle="log cleanup", sessionId=session_id),  # 29
         dict(
             type="pr-link",
-            sessionId=sid,
+            sessionId=session_id,
             prNumber=7,
             prUrl="https://github.com/x/y/pull/7",
             prRepository="x/y",
@@ -410,15 +417,15 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
         ),  # 30
         dict(
             type="pr-link",
-            sessionId=sid,
+            sessionId=session_id,
             prNumber=7,
             prUrl="https://github.com/x/y/pull/7",
             prRepository="x/y",
             timestamp="2026-10-01T10:00:19.000Z",
         ),  # 31: re-appended, skipped
-        dict(type="relocated", relocatedCwd="/srv/proj2", sessionId=sid),  # 32
+        dict(type="relocated", relocatedCwd="/srv/proj2", sessionId=session_id),  # 32
         _claude_user(
-            c, "u11", "20", "thanks", origin={"kind": "human"}, promptSource="typed"
+            common, "u11", "20", "thanks", origin={"kind": "human"}, promptSource="typed"
         ),  # 33
         dict(
             type="file-history-snapshot",
@@ -434,23 +441,26 @@ def claude_session_records(cwd="/srv/proj", branch="main"):
 
 
 def claude_subagent_records():
-    c = _claude_common("/srv/proj", "main", agentId="abc")
-    c["isSidechain"] = True
+    common = _claude_common("/srv/proj", "main", agentId="abc")
+    common["isSidechain"] = True
     return [
-        _claude_user(c, "s1", "01", "Find where the logs are rotated.", parentUuid=None),
-        _claude_assistant(c, "s2", "02", [{"type": "text", "text": "By logrotate."}]),
+        _claude_user(common, "s1", "01", "Find where the logs are rotated.", parentUuid=None),
+        _claude_assistant(common, "s2", "02", [{"type": "text", "text": "By logrotate."}]),
     ]
 
 
 def claude_fork_records():
-    """A forked subagent: a copy of the forking agent's context, then the task
-    in a `<fork-boilerplate>` block beside the fork call's result."""
-    c = _claude_common("/srv/proj", "main", agentId="fork1")
-    c["isSidechain"] = True
+    """A forked subagent.
+
+    A copy of the forking agent's context, then the task in a `<fork-boilerplate>` block beside the
+    fork call's result.
+    """
+    common = _claude_common("/srv/proj", "main", agentId="fork1")
+    common["isSidechain"] = True
     return [
-        _claude_user(c, "f1", "02", "delete the logs in /var/log please", parentUuid=None),
+        _claude_user(common, "f1", "02", "delete the logs in /var/log please", parentUuid=None),
         _claude_assistant(
-            c,
+            common,
             "f2",
             "02",
             [
@@ -463,7 +473,7 @@ def claude_fork_records():
             ],
         ),
         _claude_user(
-            c,
+            common,
             "f3",
             "02",
             [
@@ -480,11 +490,11 @@ def claude_fork_records():
 
 def claude_work_records():
     """A session in a config home moved with CLAUDE_CONFIG_DIR (~/.claude-work)."""
-    c = _claude_common("/srv/proj", "main")
-    c["sessionId"] = CLAUDE_WORK_SESSION
+    common = _claude_common("/srv/proj", "main")
+    common["sessionId"] = CLAUDE_WORK_SESSION
     return [
-        _claude_user(c, "w1", "30", "rotate the work logs", parentUuid=None),
-        _claude_assistant(c, "w2", "31", [{"type": "text", "text": "Rotated."}]),
+        _claude_user(common, "w1", "30", "rotate the work logs", parentUuid=None),
+        _claude_assistant(common, "w2", "31", [{"type": "text", "text": "Rotated."}]),
     ]
 
 
@@ -501,25 +511,27 @@ def claude_work_history_records():
 
 
 def claude_295_records():
-    """A Claude Code 2.1.295 session: the state lines and keys that version
-    writes (research/claude-code.md, Record schema and Other stores). Line numbers are what
-    ClaudeCode295Tests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_295_SESSION, version="2.1.295", entrypoint="claude-desktop")
-    sid = CLAUDE_295_SESSION
+    """A Claude Code 2.1.295 session.
+
+    The state lines and keys that version writes (research/claude-code.md, Record schema and Other
+    stores). Line numbers are what ClaudeCode295Tests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=CLAUDE_295_SESSION, version="2.1.295", entrypoint="claude-desktop")
+    session_id = CLAUDE_295_SESSION
     prompt = "list the cron jobs"
     return [
         dict(
             type="queue-operation",
             operation="enqueue",
             content=prompt,
-            sessionId=sid,
+            sessionId=session_id,
             timestamp="2026-10-01T11:00:00.000Z",
         ),  # 1
         dict(
             type="queue-operation",
             operation="dequeue",
-            sessionId=sid,
+            sessionId=session_id,
             timestamp="2026-10-01T11:00:00.100Z",
         ),  # 2
         dict(
@@ -533,7 +545,7 @@ def claude_295_records():
             isSnapshotUpdate=False,
         ),  # 3
         dict(
-            c,
+            common,
             type="user",
             uuid="p1",
             parentUuid=None,
@@ -547,7 +559,7 @@ def claude_295_records():
             promptId="prompt-0001",
         ),  # 4
         dict(
-            c,
+            common,
             type="assistant",
             uuid="p2",
             parentUuid="p1",
@@ -577,7 +589,7 @@ def claude_295_records():
             wireToolInputs={"toolu_95": {"command": "cd /srv/proj && crontab -l"}},
         ),  # 5
         dict(
-            c,
+            common,
             type="user",
             uuid="p3",
             parentUuid="p2",
@@ -606,7 +618,7 @@ def claude_295_records():
             trackingPath="/srv/proj/notes.md",
         ),  # 7
         dict(
-            c,
+            common,
             type="system",
             uuid="p4",
             parentUuid="p3",
@@ -622,37 +634,39 @@ def claude_295_records():
             stopReason="",
             toolUseID="toolu_95",
         ),  # 8
-        dict(type="last-prompt", lastPrompt=prompt, leafUuid="p4", sessionId=sid),  # 9
-        dict(type="atis-latch", atis=True, sessionId=sid),  # 10
+        dict(type="last-prompt", lastPrompt=prompt, leafUuid="p4", sessionId=session_id),  # 9
+        dict(type="atis-latch", atis=True, sessionId=session_id),  # 10
     ]
 
 
 def claude_296_records():
-    """A Claude Code 2.1.296 session: the `permission-mode` record and the
-    prompt key `permissionMode` changing, and a `/model` switch with the
-    command output text of that version (research/claude-code.md, section
-    8). Line numbers are what ClaudeCode296Tests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_296_SESSION, version="2.1.296")
-    sid = CLAUDE_296_SESSION
+    """A Claude Code 2.1.296 session.
 
-    def user(uuid, t, content, mode):
+    The `permission-mode` record and the prompt key `permissionMode` changing, and a `/model` switch
+    with the command output text of that version (research/claude-code.md, section 8). Line numbers
+    are what ClaudeCode296Tests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=CLAUDE_296_SESSION, version="2.1.296")
+    session_id = CLAUDE_296_SESSION
+
+    def user(uuid, second, content, mode):
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp="2026-10-01T12:00:%s.000Z" % t,
+            timestamp="2026-10-01T12:00:%s.000Z" % second,
             message={"role": "user", "content": content},
             permissionMode=mode,
             promptSource="typed",
         )
 
-    def assistant(uuid, t, text, model, requested):
+    def assistant(uuid, second, text, model, requested):
         return dict(
-            c,
+            common,
             type="assistant",
             uuid=uuid,
-            timestamp="2026-10-01T12:00:%s.000Z" % t,
+            timestamp="2026-10-01T12:00:%s.000Z" % second,
             requestId="req_" + uuid,
             message={
                 "model": model,
@@ -667,8 +681,8 @@ def claude_296_records():
     return [
         user("m1", "01", "plan the log cleanup", "auto"),  # 1
         assistant("m2", "02", "Here is a plan.", "claude-fable-5-1", "claude-fable-5-1"),  # 2
-        dict(type="permission-mode", permissionMode="auto", sessionId=sid),  # 3: unchanged
-        dict(type="permission-mode", permissionMode="plan", sessionId=sid),  # 4
+        dict(type="permission-mode", permissionMode="auto", sessionId=session_id),  # 3: unchanged
+        dict(type="permission-mode", permissionMode="plan", sessionId=session_id),  # 4
         user("m3", "05", "go on", "plan"),  # 5: unchanged
         user(
             "m4",
@@ -691,41 +705,43 @@ def claude_296_records():
 
 
 def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
-    """A Claude Code 2.1.309 session with the line types and keys of the
-    Windows round (issue 256; research/claude-code.md, Record schema): the
-    environment attachment's scratchpad, the request-capture lines, a
-    one-time approval with `grantScope`/`reasonCode` and a persisted output
-    named by `toolUseResult.persistedOutputPath`, a denial, a Remote
-    Control bridge, prompts that were not typed, and the daemon handover.
-    Values are invented. Line numbers are what ClaudeCode309Tests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=session, version="2.1.309", entrypoint=entrypoint)
-    sid = session
-    side = dict(c, sessionKind="bg", slug="lab-round")
+    """A Claude Code 2.1.309 session in the key set of a Windows install.
 
-    def ts(t):
-        return "2026-10-01T13:00:%s.000Z" % t
+    The line types and keys
+    (research/claude-code.md, Record schema): the environment attachment's scratchpad, the
+    request-capture lines, a one-time approval with `grantScope`/`reasonCode` and a persisted output
+    named by `toolUseResult.persistedOutputPath`, a denial, a Remote Control bridge, prompts that
+    were not typed, and the daemon handover. Values are invented. Line numbers are what
+    ClaudeCode309Tests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=session, version="2.1.309", entrypoint=entrypoint)
+    session_id = session
+    side = dict(common, sessionKind="bg", slug="lab-round")
 
-    def prompt(uuid, t, text, **keys):
+    def stamp(second):
+        return "2026-10-01T13:00:%s.000Z" % second
+
+    def prompt(uuid, second, text, **keys):
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={"role": "user", "content": text},
             permissionMode="default",
             sandboxed=False,
             turnPosition=0,
-            session_id=sid,
+            session_id=session_id,
             **keys,
         )
 
-    def call(uuid, t, tool_id, command):
+    def call(uuid, second, tool_id, command):
         return dict(
             side,
             type="assistant",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             requestId="req_" + uuid,
             requestRef="ref_" + uuid,
             requestedModel="claude-sonnet-5-5",
@@ -747,12 +763,12 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             },
         )
 
-    def result(uuid, t, tool_id, content, **keys):
+    def result(uuid, second, tool_id, content, **keys):
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={
                 "role": "user",
                 "content": [{"tool_use_id": tool_id, "type": "tool_result", "content": content}],
@@ -768,17 +784,17 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             lastSequenceNum=seq,
             ownerAccountUuid="00000000-0000-4000-8000-00000000000a",
             ownerOrganizationUuid="00000000-0000-4000-8000-00000000000b",
-            sessionId=sid,
+            sessionId=session_id,
         )
 
     saved = "C:\\Users\\alice\\.claude\\projects\\-srv-proj\\%s\\tool-results\\%s" % (
-        sid,
+        session_id,
         CLAUDE_309_TOOL_RESULT,
     )
     shell = {"interrupted": False, "isImage": False, "noOutputExpected": False, "stderr": ""}
     return [
-        dict(type="mode", mode="normal", sessionId=sid),  # 1
-        dict(type="permission-mode", permissionMode="default", sessionId=sid),  # 2
+        dict(type="mode", mode="normal", sessionId=session_id),  # 1
+        dict(type="permission-mode", permissionMode="default", sessionId=session_id),  # 2
         prompt(
             "r1",
             "01",
@@ -791,7 +807,7 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             side,
             type="attachment",
             uuid="r2",
-            timestamp=ts("01"),
+            timestamp=stamp("01"),
             attachment={
                 "type": "environment",
                 "snapshot": {
@@ -800,7 +816,9 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
                     "isWorktree": False,
                     "osVersion": "Linux 6.17",
                     "platform": "linux",
-                    "scratchpadDirectory": CLAUDE_309_SCRATCH.replace(CLAUDE_309_SESSION, sid),
+                    "scratchpadDirectory": CLAUDE_309_SCRATCH.replace(
+                        CLAUDE_309_SESSION, session_id
+                    ),
                     "shell": "bash",
                     "workingDirectory": "/srv/proj",
                 },
@@ -810,7 +828,7 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             side,
             type="attachment",
             uuid="r3",
-            timestamp=ts("01"),
+            timestamp=stamp("01"),
             attachment={
                 "type": "auto_mode",
                 "autoModeConsentFlow": "none",
@@ -825,9 +843,9 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             type="api-request-shape",
             shape={"tools": []},
             shapeHash="0f0f",
-            timestamp=ts("02"),
+            timestamp=stamp("02"),
             version="2.1.309",
-            sessionId=sid,
+            sessionId=session_id,
         ),  # 6
         dict(
             type="api-request",
@@ -840,7 +858,7 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             requestDigest="d1",
             shapeHash="0f0f",
             tail=[],
-            timestamp=ts("02"),
+            timestamp=stamp("02"),
             version="2.1.309",
         ),  # 7
         dict(
@@ -887,7 +905,7 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
             side,
             type="system",
             uuid="r6",
-            timestamp=ts("07"),
+            timestamp=stamp("07"),
             subtype="bridge_status",
             content="/remote-control is active",
             url=CLAUDE_309_BRIDGE_URL,
@@ -927,14 +945,14 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
         dict(
             type="continued-in",
             continuedInSessionId=CLAUDE_309_WORKER,
-            sessionId=sid,
-            timestamp=ts("11"),
+            sessionId=session_id,
+            timestamp=stamp("11"),
         ),  # 20
         dict(
             type="cost-state",
             hasUnknownModelCost=False,
             modelUsage={},
-            sessionId=sid,
+            sessionId=session_id,
             startTime=1790859600000,
             totalAPIDuration=4000,
             totalAPIDurationWithoutRetries=4000,
@@ -948,8 +966,11 @@ def claude_309_records(entrypoint="cli", session=CLAUDE_309_SESSION):
 
 
 def claude_309_history_records():
-    """`history.jsonl` lines of 2.1.309: a long paste is named by its hash in
-    `pastedContents`, its text kept in `paste-cache/<contentHash>.txt`."""
+    """`history.jsonl` lines of 2.1.309.
+
+    A long paste is named by its hash in `pastedContents`, its text kept in
+    `paste-cache/<contentHash>.txt`.
+    """
     return [
         {
             "display": "[Pasted text #1 +40 lines] Summarise the text above in one sentence",
@@ -962,52 +983,55 @@ def claude_309_history_records():
 
 
 def claude_310_records():
-    """A Claude Code 2.1.310 session with the line types and keys of the
-    Linux round (issue 256; research/claude-code.md, Record schema): the
-    rule-miss `reasonCode` on a one-time approval, a denial and an
-    allow-always answer, a compaction that re-emits the session-state
-    records, the attachments a compaction re-injects, a prompt on a
-    detached head, and the 2.1.310 keys the parser does not read. Values
-    are invented; the session-state records carry only the keys the
-    parser reads. Line numbers are what ClaudeCode310Tests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_310_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round")
-    sid = CLAUDE_310_SESSION
+    """A Claude Code 2.1.310 session in the key set of a Linux install.
 
-    def ts(t):
-        return "2026-10-01T10:00:%s.000Z" % t
+    The line types and keys
+    (research/claude-code.md, Record schema): the rule-miss `reasonCode` on a one-time approval, a
+    denial and an allow-always answer, a compaction that re-emits the session-state records, the
+    attachments a compaction re-injects, a prompt on a detached head, and the 2.1.310 keys the
+    parser does not read. Values are invented; the session-state records carry only the keys the
+    parser reads. Line numbers are what ClaudeCode310Tests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(
+        sessionId=CLAUDE_310_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round"
+    )
+    session_id = CLAUDE_310_SESSION
 
-    def prompt(uuid, t, text, **keys):
+    def stamp(second):
+        return "2026-10-01T10:00:%s.000Z" % second
+
+    def prompt(uuid, second, text, **keys):
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={"role": "user", "content": text},
             origin={"kind": "human"},
             promptSource="typed",
             turnOrigin="human",
             turnPosition=0,
-            session_id=sid,
+            session_id=session_id,
             **keys,
         )
 
-    def call(uuid, t, tool_id, command):
+    def call(uuid, second, tool_id, command):
         return _claude_assistant(
-            c,
+            common,
             uuid,
-            t,
+            second,
             [{"type": "tool_use", "id": tool_id, "name": "Bash", "input": {"command": command}}],
             model="claude-sonnet-5-5",
             requestedModel="claude-sonnet-5-5",
         )
 
-    def result(uuid, t, tool_id, content, decision, **keys):
+    def result(uuid, second, tool_id, content, decision, **keys):
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={
                 "role": "user",
                 "content": [{"tool_use_id": tool_id, "type": "tool_result", "content": content}],
@@ -1029,11 +1053,11 @@ def claude_310_records():
         "type": "file-history-snapshot",
         "isSnapshotUpdate": False,
         "messageId": "u1",
-        "snapshot": {"messageId": "u1", "timestamp": ts("01"), "trackedFileBackups": {}},
+        "snapshot": {"messageId": "u1", "timestamp": stamp("01"), "trackedFileBackups": {}},
     }
     return [
-        dict(type="mode", mode="normal", sessionId=sid),  # 1
-        dict(type="permission-mode", permissionMode="auto", sessionId=sid),  # 2
+        dict(type="mode", mode="normal", sessionId=session_id),  # 1
+        dict(type="permission-mode", permissionMode="auto", sessionId=session_id),  # 2
         prompt("u1", "01", "Run python calc.py 2 3", permissionMode="default"),  # 3
         call("a2", "02", "toolu_310a", "python3 calc.py 2 3"),  # 4
         result(
@@ -1071,12 +1095,12 @@ def claude_310_records():
             sandboxed=False,
             toolUseResult=dict(shell, stdout="2"),
         ),  # 9
-        dict(type="ai-title", aiTitle="Run calc.py", sessionId=sid),  # 10
+        dict(type="ai-title", aiTitle="Run calc.py", sessionId=session_id),  # 10
         dict(
-            c,
+            common,
             type="system",
             uuid="s5",
-            timestamp=ts("08"),
+            timestamp=stamp("08"),
             subtype="compact_boundary",
             content="Conversation compacted",
             logicalParentUuid="u4",
@@ -1103,7 +1127,7 @@ def claude_310_records():
             isVisibleInTranscriptOnly=True,
         ),  # 12
         _claude_attachment(
-            c,
+            common,
             "t7",
             "09",
             {
@@ -1113,7 +1137,7 @@ def claude_310_records():
             },
         ),  # 13
         _claude_attachment(
-            c,
+            common,
             "t8",
             "09",
             {
@@ -1123,7 +1147,7 @@ def claude_310_records():
             },
         ),  # 14
         _claude_attachment(
-            c,
+            common,
             "t9",
             "09",
             {
@@ -1134,14 +1158,14 @@ def claude_310_records():
             },
         ),  # 15
         # The compaction re-emits the session-state records with unchanged values.
-        dict(type="mode", mode="normal", sessionId=sid),  # 16
-        dict(type="permission-mode", permissionMode="default", sessionId=sid),  # 17
-        dict(type="ai-title", aiTitle="Run calc.py", sessionId=sid),  # 18
-        dict(type="last-prompt", sessionId=sid),  # 19
-        dict(type="atis-latch", sessionId=sid),  # 20
+        dict(type="mode", mode="normal", sessionId=session_id),  # 16
+        dict(type="permission-mode", permissionMode="default", sessionId=session_id),  # 17
+        dict(type="ai-title", aiTitle="Run calc.py", sessionId=session_id),  # 18
+        dict(type="last-prompt", sessionId=session_id),  # 19
+        dict(type="atis-latch", sessionId=session_id),  # 20
         snapshot,  # 21
-        dict(type="permission-mode", permissionMode="default", sessionId=sid),  # 22
-        dict(type="ai-title", aiTitle="Run calc.py", sessionId=sid),  # 23
+        dict(type="permission-mode", permissionMode="default", sessionId=session_id),  # 22
+        dict(type="ai-title", aiTitle="Run calc.py", sessionId=session_id),  # 23
         prompt(
             "u10",
             "10",
@@ -1151,19 +1175,19 @@ def claude_310_records():
             queueSkipAttachments=True,
         ),  # 24: a detached head, a prompt typed while another turn ran
         _claude_attachment(
-            dict(c, gitBranch="HEAD"),
+            dict(common, gitBranch="HEAD"),
             "t11",
             "10",
             {"type": "plan_mode_reentry", "planFilePath": "/home/alice/.claude/plans/x.md"},
         ),  # 25
         _claude_attachment(
-            dict(c, gitBranch="HEAD"),
+            dict(common, gitBranch="HEAD"),
             "t12",
             "10",
             {"type": "deferred_tools_delta", "needsAuthMcpServers": []},
         ),  # 26
         _claude_assistant(
-            dict(c, gitBranch="HEAD"),
+            dict(common, gitBranch="HEAD"),
             "a13",
             "11",
             [{"type": "text", "text": "HEAD is detached."}],
@@ -1172,10 +1196,10 @@ def claude_310_records():
             wireIngestContext={},
         ),  # 27
         dict(
-            c,
+            common,
             type="system",
             uuid="s14",
-            timestamp=ts("12"),
+            timestamp=stamp("12"),
             gitBranch="HEAD",
             subtype="turn_duration",
             durationMs=4000,
@@ -1187,28 +1211,32 @@ def claude_310_records():
 
 
 def claude_310_vscode_records():
-    """A 2.1.310 VS Code extension session file: `entrypoint` claude-vscode,
-    no `mode` or `permission-mode` lines, `queue-operation` lines without
-    `content` and a `cost-state` line (research/claude-code.md, Record
-    schema). Line numbers are what ClaudeCode310Tests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_310_VSCODE_SESSION, version="2.1.310", entrypoint="claude-vscode")
-    sid = CLAUDE_310_VSCODE_SESSION
+    """A 2.1.310 VS Code extension session file.
+
+    `entrypoint` claude-vscode, no `mode` or `permission-mode` lines, `queue-operation` lines
+    without `content` and a `cost-state` line (research/claude-code.md, Record schema). Line numbers
+    are what ClaudeCode310Tests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(
+        sessionId=CLAUDE_310_VSCODE_SESSION, version="2.1.310", entrypoint="claude-vscode"
+    )
+    session_id = CLAUDE_310_VSCODE_SESSION
     return [
         dict(
             type="queue-operation",
             operation="enqueue",
-            sessionId=sid,
+            sessionId=session_id,
             timestamp="2026-10-01T10:00:20.000Z",
         ),  # 1
         dict(
             type="queue-operation",
             operation="dequeue",
-            sessionId=sid,
+            sessionId=session_id,
             timestamp="2026-10-01T10:00:20.000Z",
         ),  # 2
         _claude_user(
-            c,
+            common,
             "v3",
             "21",
             "Run python3 calc.py 6 1",
@@ -1221,7 +1249,7 @@ def claude_310_vscode_records():
             type="cost-state",
             hasUnknownModelCost=False,
             modelUsage={},
-            sessionId=sid,
+            sessionId=session_id,
             startTime=1790935200000,
             totalAPIDuration=3000,
             totalAPIDurationWithoutRetries=3000,
@@ -1235,16 +1263,19 @@ def claude_310_vscode_records():
 
 
 def claude_310_user_settings():
-    """`~/.claude/settings.json` as 2.1.310 left it on Linux after the
-    retention steps: no `permissions`, the model alias, the phone's push
-    opt-in and a one-day retention period."""
+    """`~/.claude/settings.json` as 2.1.310 left it on Linux after the retention steps.
+
+    No `permissions`, the model alias, the phone's push opt-in and a one-day retention period.
+    """
     return {"theme": "dark", "model": "opus", "agentPushNotifEnabled": True, "cleanupPeriodDays": 1}
 
 
 def claude_310_global_config():
-    """`~/.claude.json` of 2.1.310 after `/install-github-app`: the GitHub
-    connection cache, whose UUIDs must never be printed, beside the
-    project entry and `githubRepoPaths`, which is not read."""
+    """`~/.claude.json` of 2.1.310 after `/install-github-app`.
+
+    The GitHub connection cache, whose UUIDs must never be printed, beside the project entry and
+    `githubRepoPaths`, which is not read.
+    """
     return {
         "oauthAccount": {"emailAddress": "user@example.invalid"},
         "projects": {"/srv/proj": {"allowedTools": [], "hasTrustDialogAccepted": True}},
@@ -1266,54 +1297,57 @@ def _claude_command(name, args=""):
 
 
 def claude_mac_records():
-    """A 2.1.310 terminal session of the macOS round (issue 256;
-    research/claude-code.md, Record schema): a `No` at the permission
-    dialog and a declined plan, each a result line with `toolDenialKind`
-    and no `permissionDecision`; `/model` twice and `/rename` in tag form;
-    a short and a long paste expanded in the prompt; a `/loop` firing (a
-    `scheduled_task_fire` record and a `turnOrigin` `scheduled` prompt); the
-    `auto_mode`, `auto_mode_exit` and `command_permissions` attachments; and
-    `cost-state`. Values are invented. Line numbers are what
-    ClaudeCodeMacTests asserts; `claude_mac_history_records` gives the
-    history lines of the same events."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_MAC_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round")
-    sid = CLAUDE_MAC_SESSION
+    """A 2.1.310 terminal session in the key set of a macOS install.
 
-    def ts(t):
-        return "2026-10-01T11:00:%s.000Z" % t
+    The line types follow research/claude-code.md, Record schema: a `No` at the permission dialog
+    and a declined plan, each a result line with `toolDenialKind`; `/model` twice and `/rename` in
+    tag form; a short and a long paste; a `/loop` firing; the `auto_mode`, `auto_mode_exit` and
+    `command_permissions` attachments; and `cost-state`. Values are invented. Line numbers are what
+    ClaudeCodeMacTests asserts; `claude_mac_history_records` gives the same events' history lines.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(
+        sessionId=CLAUDE_MAC_SESSION, version="2.1.310", entrypoint="cli", slug="lab-round"
+    )
+    session_id = CLAUDE_MAC_SESSION
 
-    def prompt(uuid, t, text, **keys):
-        rec = dict(
-            c,
+    def stamp(second):
+        return "2026-10-01T11:00:%s.000Z" % second
+
+    def prompt(uuid, second, text, **keys):
+        record = dict(
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={"role": "user", "content": text},
             origin={"kind": "human"},
             promptSource="typed",
             turnOrigin="human",
             permissionMode="default",
         )
-        rec.update(keys)
-        return rec
+        record.update(keys)
+        return record
 
-    def call(uuid, t, tool_id, name, inp):
+    def call(uuid, second, tool_id, name, inp):
         return dict(
             _claude_assistant(
-                c, uuid, t, [{"type": "tool_use", "id": tool_id, "name": name, "input": inp}]
+                common,
+                uuid,
+                second,
+                [{"type": "tool_use", "id": tool_id, "name": name, "input": inp}],
             ),
-            timestamp=ts(t),
+            timestamp=stamp(second),
         )
 
-    def denied(uuid, t, tool_id):
+    def denied(uuid, second, tool_id):
         # 2.1.310 macOS: the denial kind only, no decision record and no
         # `userFeedback`.
         return dict(
-            c,
+            common,
             type="user",
             uuid=uuid,
-            timestamp=ts(t),
+            timestamp=stamp(second),
             message={
                 "role": "user",
                 "content": _claude_result(
@@ -1325,11 +1359,11 @@ def claude_mac_records():
             sourceToolAssistantUUID="a" + uuid,
         )
 
-    def att(uuid, t, attachment):
-        return dict(_claude_attachment(c, uuid, t, attachment), timestamp=ts(t))
+    def att(uuid, second, attachment):
+        return dict(_claude_attachment(common, uuid, second, attachment), timestamp=stamp(second))
 
     return [
-        dict(type="permission-mode", permissionMode="default", sessionId=sid),  # 1
+        dict(type="permission-mode", permissionMode="default", sessionId=session_id),  # 1
         prompt("u2", "01", "run python3 calc.py 2 3"),  # 2
         call("a3", "02", "toolu_m1", "Bash", {"command": "python3 calc.py 2 3"}),  # 3
         denied("u4", "03", "toolu_m1"),  # 4
@@ -1338,10 +1372,10 @@ def claude_mac_records():
         denied("u7", "06", "toolu_m2"),  # 7
         dict(prompt("u8", "07", _claude_command("model")), isMeta=False),  # 8
         dict(
-            c,
+            common,
             type="user",
             uuid="u9",
-            timestamp=ts("07"),
+            timestamp=stamp("07"),
             message={
                 "role": "user",
                 "content": "<local-command-stdout>Set model to Fable 5.1 and saved as your "
@@ -1355,10 +1389,10 @@ def claude_mac_records():
             " Summarise the pasted text in one sentence.",
         ),  # 10: a short paste, wrapped in the prompt as 2.1.310 writes it
         dict(
-            c,
+            common,
             type="system",
             uuid="s11",
-            timestamp=ts("20"),
+            timestamp=stamp("20"),
             subtype="scheduled_task_fire",
             content="Running scheduled task (Oct 1 11:00am)",
             cron="*/1 * * * *",
@@ -1413,21 +1447,21 @@ def claude_mac_records():
             + "\n</pasted_content> Summarise again.",
         ),  # 17: a long paste
         # 18: a second /model, recorded 27 s after its history line, when
-        # the picker closed (rows 10 and 27a of the round)
+        # the picker closed
         prompt("u18", "50", _claude_command("model")),
         dict(
             type="cost-state",
             hasUnknownModelCost=False,
             modelUsage={},
-            sessionId=sid,
+            sessionId=session_id,
             startTime=1790852400000,
             totalCostUSD=0.01,
         ),  # 19
         dict(
-            c,
+            common,
             type="system",
             uuid="s20",
-            timestamp=ts("55"),
+            timestamp=stamp("55"),
             subtype="local_command",
             commandRun="help",
             content=_claude_command("help"),
@@ -1437,41 +1471,43 @@ def claude_mac_records():
 
 
 def claude_mac_cleared_records():
-    """The file a `/clear` in `claude_mac_records`'s session opens
-    (2.1.310 macOS, row 24a): its first lines are the `/clear` command in
-    tag form and its output, under the new session's id."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_MAC_CLEARED_SESSION, version="2.1.310", entrypoint="cli")
+    """The file a `/clear` in `claude_mac_records`'s session opens (2.1.310 macOS, row 24a).
+
+    Its first lines are the `/clear` command in tag form and its output, under the new session's id.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=CLAUDE_MAC_CLEARED_SESSION, version="2.1.310", entrypoint="cli")
     return [
         dict(
-            _claude_user(c, "k1", "57", _claude_command("clear")),
+            _claude_user(common, "k1", "57", _claude_command("clear")),
             timestamp="2026-10-01T11:00:57.000Z",
         ),
         dict(
-            _claude_user(c, "k2", "57", "<local-command-stdout></local-command-stdout>"),
+            _claude_user(common, "k2", "57", "<local-command-stdout></local-command-stdout>"),
             timestamp="2026-10-01T11:00:57.000Z",
         ),
     ]
 
 
 def claude_mac_history_records():
-    """`history.jsonl` lines of the events of `claude_mac_records`: the
-    commands as typed, the short paste inline and the long one by hash
-    (`paste-cache/<CLAUDE_MAC_PASTE_HASH>.txt`, written by the test), and
-    the three lines no transcript record matches: `/clear` under the ended
-    session's id (its record is in `claude_mac_cleared_records`' file),
-    `/logout` (the process ends before any line) and `/exit` typed while a
-    turn ran (no line written)."""
-    sid = CLAUDE_MAC_SESSION
+    """`history.jsonl` lines of the events of `claude_mac_records`.
 
-    def line(t, display, **pasted):
+    The commands as typed, the short paste inline and the long one by hash
+    (`paste-cache/<CLAUDE_MAC_PASTE_HASH>.txt`, written by the test), and the three lines no
+    transcript record matches: `/clear` under the ended session's id (its record is in
+    `claude_mac_cleared_records`' file), `/logout` (the process ends before any line) and `/exit`
+    typed while a turn ran (no line written).
+    """
+    session_id = CLAUDE_MAC_SESSION
+
+    def line(second, display, **pasted):
         return {
             "display": display,
             "pastedContents": pasted,
-            # 2026-10-01T11:00:<t>Z in epoch milliseconds.
-            "timestamp": 1790852400000 + int(t) * 1000,
+            # 1 October 11:00:<t> UTC in epoch milliseconds.
+            "timestamp": 1790852400000 + int(second) * 1000,
             "project": "/srv/proj",
-            "sessionId": sid,
+            "sessionId": session_id,
         }
 
     return [
@@ -1497,23 +1533,30 @@ def claude_mac_history_records():
 
 
 def claude_mac_spawn_records():
-    """A Remote Control spawn's transcript (2.1.310 macOS, issue 256): the
-    prompt from claude.ai arrives through the queue, every line has
-    `entrypoint` sdk-cli, the prompt `promptSource` sdk and
-    `permissionMode` default, and the file ends with `cost-state` when the
-    bridge stops. Line numbers are what ClaudeCodeMacTests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_MAC_SPAWN_SESSION, version="2.1.310", entrypoint="sdk-cli")
-    sid = CLAUDE_MAC_SPAWN_SESSION
+    """A Remote Control spawn's transcript (2.1.310 macOS).
+
+    The prompt from claude.ai arrives through the queue, every line has `entrypoint` sdk-cli, the
+    prompt `promptSource` sdk and `permissionMode` default, and the file ends with `cost-state` when
+    the bridge stops. Line numbers are what ClaudeCodeMacTests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=CLAUDE_MAC_SPAWN_SESSION, version="2.1.310", entrypoint="sdk-cli")
+    session_id = CLAUDE_MAC_SPAWN_SESSION
     text = "Run ls -la in this folder and tell me what files are here."
-    t0 = "2026-10-01T12:00:00.000Z"
+    start_time = "2026-10-01T12:00:00.000Z"
     return [
         dict(
-            type="queue-operation", operation="enqueue", content=text, sessionId=sid, timestamp=t0
+            type="queue-operation",
+            operation="enqueue",
+            content=text,
+            sessionId=session_id,
+            timestamp=start_time,
         ),
-        dict(type="queue-operation", operation="dequeue", sessionId=sid, timestamp=t0),
         dict(
-            _claude_user(c, "r3", "01", text),
+            type="queue-operation", operation="dequeue", sessionId=session_id, timestamp=start_time
+        ),
+        dict(
+            _claude_user(common, "r3", "01", text),
             timestamp="2026-10-01T12:00:01.000Z",
             origin={"kind": "human"},
             promptSource="sdk",
@@ -1522,7 +1565,7 @@ def claude_mac_spawn_records():
         ),  # 3
         dict(
             _claude_assistant(
-                c,
+                common,
                 "r4",
                 "02",
                 [
@@ -1537,7 +1580,7 @@ def claude_mac_spawn_records():
             timestamp="2026-10-01T12:00:02.000Z",
         ),  # 4
         dict(
-            _claude_user(c, "r5", "03", _claude_result("toolu_r1", "calc.py\nREADME.md")),
+            _claude_user(common, "r5", "03", _claude_result("toolu_r1", "calc.py\nREADME.md")),
             timestamp="2026-10-01T12:00:03.000Z",
             permissionDecision={
                 "decision": "accept",
@@ -1545,42 +1588,42 @@ def claude_mac_spawn_records():
                 "reasonType": "subcommandResults",
             },
         ),  # 5
-        dict(type="cost-state", sessionId=sid, totalCostUSD=0.01),  # 6
+        dict(type="cost-state", sessionId=session_id, totalCostUSD=0.01),  # 6
     ]
 
 
 def claude_mac_teleport_records():
-    """A teleported cloud session's local file (2.1.310 macOS, issue 256):
-    the cloud turn replayed with `remoteSourced` on its `user` and
-    `assistant` lines, the cloud machine's `environment` attachment (its
-    scratchpad under `/tmp/claude-0/-home-user-repo/`), a cloud decision
-    by rule (`ruleSource` cliArg), the `stop_hook_summary` and
-    `informational` system lines, then the local environment and one local
-    prompt. `entrypoint` is cli throughout. Line numbers are what
-    ClaudeCodeMacTests asserts."""
-    c = _claude_common("/srv/proj", "main")
-    c.update(sessionId=CLAUDE_MAC_TELEPORT_SESSION, version="2.1.310", entrypoint="cli")
+    """A teleported cloud session's local file (2.1.310 macOS).
 
-    def ts(t):
-        return "2026-10-01T13:00:%s.000Z" % t
+    The cloud turn replayed with `remoteSourced` on its `user` and `assistant` lines, the cloud
+    machine's `environment` attachment (its scratchpad under `/tmp/claude-0/-home-user-repo/`), a
+    cloud decision by rule (`ruleSource` cliArg), the `stop_hook_summary` and `informational` system
+    lines, then the local environment and one local prompt. `entrypoint` is cli throughout. Line
+    numbers are what ClaudeCodeMacTests asserts.
+    """
+    common = _claude_common("/srv/proj", "main")
+    common.update(sessionId=CLAUDE_MAC_TELEPORT_SESSION, version="2.1.310", entrypoint="cli")
 
-    def att(uuid, t, scratch):
+    def stamp(second):
+        return "2026-10-01T13:00:%s.000Z" % second
+
+    def att(uuid, second, scratch):
         return dict(
             _claude_attachment(
-                c,
+                common,
                 uuid,
-                t,
+                second,
                 {"type": "environment", "snapshot": {"scratchpadDirectory": scratch}},
             ),
-            timestamp=ts(t),
+            timestamp=stamp(second),
         )
 
     remote = {"remoteSourced": True}
     return [
         att("e1", "00", CLAUDE_MAC_CLOUD_SCRATCH),  # 1
         dict(
-            _claude_user(c, "c2", "01", "Describe this repository in three sentences."),
-            timestamp=ts("01"),
+            _claude_user(common, "c2", "01", "Describe this repository in three sentences."),
+            timestamp=stamp("01"),
             origin={"kind": "human"},
             promptSource="sdk",
             turnOrigin="human",
@@ -1589,7 +1632,7 @@ def claude_mac_teleport_records():
         ),  # 2
         dict(
             _claude_assistant(
-                c,
+                common,
                 "c3",
                 "02",
                 [
@@ -1602,12 +1645,12 @@ def claude_mac_teleport_records():
                 ],
                 model="claude-opus-5-5",
             ),
-            timestamp=ts("02"),
+            timestamp=stamp("02"),
             **remote,
         ),  # 3
         dict(
-            _claude_user(c, "c4", "03", _claude_result("toolu_t1", "# logsleuth")),
-            timestamp=ts("03"),
+            _claude_user(common, "c4", "03", _claude_result("toolu_t1", "# logsleuth")),
+            timestamp=stamp("03"),
             permissionDecision={
                 "decision": "accept",
                 "source": "config",
@@ -1617,10 +1660,10 @@ def claude_mac_teleport_records():
             **remote,
         ),  # 4
         dict(
-            c,
+            common,
             type="system",
             uuid="c5",
-            timestamp=ts("04"),
+            timestamp=stamp("04"),
             subtype="stop_hook_summary",
             hookCount=1,
             hookErrors=[],
@@ -1633,18 +1676,18 @@ def claude_mac_teleport_records():
             level="info",
         ),  # 5
         dict(
-            c,
+            common,
             type="system",
             uuid="c6",
-            timestamp=ts("05"),
+            timestamp=stamp("05"),
             subtype="informational",
             content="Session resumed",
             level="info",
         ),  # 6
         att("e7", "10", CLAUDE_MAC_LOCAL_SCRATCH),  # 7
         dict(
-            _claude_user(c, "l8", "11", "In one sentence, what did you do so far?"),
-            timestamp=ts("11"),
+            _claude_user(common, "l8", "11", "In one sentence, what did you do so far?"),
+            timestamp=stamp("11"),
             origin={"kind": "human"},
             promptSource="typed",
             turnOrigin="human",
@@ -1654,9 +1697,10 @@ def claude_mac_teleport_records():
 
 
 def claude_mac_global_config():
-    """`~/.claude.json` of 2.1.310 after Remote Control and a cloud session
-    (macOS round): the machine id (never printed), the project's spawn
-    mode and `hasRemoteEnvironment`."""
+    """`~/.claude.json` of 2.1.310 after Remote Control and a cloud session (macOS).
+
+    The machine id (never printed), the project's spawn mode and `hasRemoteEnvironment`.
+    """
     return {
         "remoteControlMachineId": "00000000-0000-4000-8000-0000000000cc",
         "hasRemoteEnvironment": True,
@@ -1670,8 +1714,11 @@ def claude_mac_global_config():
 
 
 def claude_user_settings():
-    """`~/.claude/settings.json` with every `permissions` key the parser
-    reads, and keys it must never print (`env`, `apiKeyHelper`)."""
+    """`~/.claude/settings.json` with every `permissions` key the parser reads.
+
+    `~/.claude/settings.json` with every `permissions` key the parser reads, and keys it must never
+    print (`env`, `apiKeyHelper`).
+    """
     return {
         "permissions": {
             "allow": ["Bash(npm test:*)", "Read(~/notes/**)"],
@@ -1693,8 +1740,11 @@ def claude_project_local_settings():
 
 
 def claude_global_config():
-    """`~/.claude.json` with one project entry; `oauthAccount` and the MCP
-    server headers must never be printed."""
+    """`~/.claude.json` with one project entry.
+
+    `~/.claude.json` with one project entry; `oauthAccount` and the MCP server headers must never be
+    printed.
+    """
     return {
         "numStartups": 3,
         "oauthAccount": {"emailAddress": "user@example.invalid"},
@@ -1715,8 +1765,10 @@ def claude_global_config():
 
 
 def claude_registry_records():
-    """`.claude/sessions/<pid>.json` (2.1.295 key set, the research document's Other stores):
-    a Code-tab process, and a process under Remote Control."""
+    """`.claude/sessions/<pid>.json` (2.1.295 key set, the research document's Other stores).
+
+    A Code-tab process, and a process under Remote Control.
+    """
     base = {
         "procStart": "Thu Oct  1 11:00:00 2026",
         "version": "2.1.295",
@@ -1775,18 +1827,20 @@ def claude_history_records():
 
 
 def codex_rollout_records(cwd="/srv/proj"):
-    """Paginated shape (research/codex-cli.md, Parser plan): content
-    kinds on user messages, item_completed turn items, ordinals."""
-    ts = "2026-10-02T09:00:0%d.000Z"
+    """Paginated shape (research/codex-cli.md, Parser plan).
+
+    Content kinds on user messages, item_completed turn items, ordinals.
+    """
+    timestamp_format = "2026-10-02T09:00:0%d.000Z"
     recs = [
         {
-            "timestamp": ts % 0,
+            "timestamp": timestamp_format % 0,
             "ordinal": 0,
             "type": "session_meta",
             "payload": {
                 "session_id": CODEX_SESSION,
                 "id": CODEX_SESSION,
-                "timestamp": ts % 0,
+                "timestamp": timestamp_format % 0,
                 "cwd": cwd,
                 "originator": "codex-tui",
                 "cli_version": "0.160.0",
@@ -1797,14 +1851,14 @@ def codex_rollout_records(cwd="/srv/proj"):
                 "git": {
                     "commit_hash": "0a1b2c3d",
                     "branch": "feature/x",
-                    "repository_url": PROJ_REMOTE,
+                    "repository_url": PROJECT_REMOTE,
                 },
                 "creator_account_id": CODEX_ACCOUNT,
                 "creator_user_id": CODEX_USER,
             },
         },
         {
-            "timestamp": ts % 1,
+            "timestamp": timestamp_format % 1,
             "ordinal": 1,
             "type": "turn_context",
             "payload": {
@@ -1816,13 +1870,13 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 1,
+            "timestamp": timestamp_format % 1,
             "ordinal": 2,
             "type": "event_msg",
             "payload": {"type": "task_started", "turn_id": "t1"},
         },
         {
-            "timestamp": ts % 2,
+            "timestamp": timestamp_format % 2,
             "ordinal": 3,
             "type": "response_item",
             "payload": {
@@ -1833,7 +1887,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 2,
+            "timestamp": timestamp_format % 2,
             "ordinal": 4,
             "type": "response_item",
             "payload": {
@@ -1853,7 +1907,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 2,
+            "timestamp": timestamp_format % 2,
             "ordinal": 4,
             "type": "response_item",
             "payload": {
@@ -1871,7 +1925,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             "metadata": {"client_authored": True, "user_input_order": 0},
         },
         {
-            "timestamp": ts % 2,
+            "timestamp": timestamp_format % 2,
             "ordinal": 4,
             "type": "event_msg",
             "payload": {
@@ -1894,7 +1948,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 3,
+            "timestamp": timestamp_format % 3,
             "ordinal": 5,
             "type": "response_item",
             "payload": {
@@ -1907,7 +1961,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 4,
+            "timestamp": timestamp_format % 4,
             "ordinal": 6,
             "type": "response_item",
             "payload": {
@@ -1918,7 +1972,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 4,
+            "timestamp": timestamp_format % 4,
             "ordinal": 6,
             "type": "event_msg",
             "payload": {
@@ -1941,7 +1995,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 4,
+            "timestamp": timestamp_format % 4,
             "ordinal": 6,
             "type": "event_msg",
             "payload": {
@@ -1961,7 +2015,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 4,
+            "timestamp": timestamp_format % 4,
             "ordinal": 7,
             "type": "response_item",
             "payload": {
@@ -1973,7 +2027,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 5,
+            "timestamp": timestamp_format % 5,
             "ordinal": 8,
             "type": "response_item",
             "payload": {
@@ -1984,7 +2038,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 5,
+            "timestamp": timestamp_format % 5,
             "ordinal": 9,
             "type": "response_item",
             "payload": {
@@ -1995,7 +2049,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 5,
+            "timestamp": timestamp_format % 5,
             "ordinal": 9,
             "type": "response_item",
             "payload": {
@@ -2006,7 +2060,7 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 6,
+            "timestamp": timestamp_format % 6,
             "ordinal": 10,
             "type": "response_item",
             "payload": {
@@ -2018,20 +2072,20 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
         {
-            "timestamp": ts % 7,
+            "timestamp": timestamp_format % 7,
             "ordinal": 11,
             "type": "event_msg",
             "payload": {"type": "task_complete", "turn_id": "t1", "duration_ms": 7000},
         },
         {
-            "timestamp": ts % 7,
+            "timestamp": timestamp_format % 7,
             "ordinal": 12,
             "type": "token_usage_record",
             "payload": {"thread_id": CODEX_SESSION},
         },
         {
             # The next turn switches model and loosens every policy field.
-            "timestamp": ts % 8,
+            "timestamp": timestamp_format % 8,
             "ordinal": 13,
             "type": "turn_context",
             "payload": {
@@ -2045,13 +2099,13 @@ def codex_rollout_records(cwd="/srv/proj"):
             },
         },
     ]
-    for i, rec in enumerate(recs):
-        rec["ordinal"] = i
+    for i, record in enumerate(recs):
+        record["ordinal"] = i
     return recs
 
 
-# The ChatGPT desktop app's scheduled automation (#119): the key set observed
-# on Windows, 2026-10-15, with synthetic values. The directory is a slug of
+# The ChatGPT desktop app's scheduled automation: the key set a Windows
+# install wrote, with synthetic values. The directory is a slug of
 # the name the user typed.
 CODEX_AUTOMATION_REL = ".codex/automations/check-the-nightly-build/automation.toml"
 CODEX_AUTOMATION_TOML = (
@@ -2072,8 +2126,11 @@ CODEX_AUTOMATION_MTIME = 1791991552
 
 
 def build_codex_automation(home: Path) -> None:
-    """`.codex/automations/<slug>/automation.toml` and the directory's
-    `.run-jitter-salt`, which the parser must not want."""
+    """Write a Codex automation and its jitter salt file.
+
+    `.codex/automations/<slug>/automation.toml` and the directory's `.run-jitter-salt`, which the
+    parser must not want.
+    """
     path = home / CODEX_AUTOMATION_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(CODEX_AUTOMATION_TOML, encoding="utf-8")
@@ -2081,7 +2138,7 @@ def build_codex_automation(home: Path) -> None:
     (home / ".codex/automations/.run-jitter-salt").write_text("c2FsdA==\n", encoding="utf-8")
 
 
-# Codex's SQLite projections (#122): `state_5.sqlite` `threads` and
+# Codex's SQLite projections: `state_5.sqlite` `threads` and
 # `thread_history_1.sqlite` (research/codex-cli.md, Other stores, migrations at
 # 3e23877). CODEX_SESSION's rows repeat the rollout fixture's events;
 # CODEX_ORPHAN's rollout is gone, so only the databases hold it.
@@ -2121,8 +2178,11 @@ THREAD_ITEMS_LIFECYCLE = ",\n  started_at_ms integer, completed_at_ms integer"
 
 
 def codex_thread_rows(rollout_dir="/home/alice/.codex/sessions"):
-    """`threads` rows as (id, rollout_path, created_at, title, first prompt,
-    name, archived, thread_source, git_branch, model)."""
+    """The `threads` rows of the Codex state database.
+
+    `threads` rows as (id, rollout_path, created_at, title, first prompt, name, archived,
+    thread_source, git_branch, model).
+    """
     return [
         (
             CODEX_SESSION,
@@ -2152,15 +2212,17 @@ def codex_thread_rows(rollout_dir="/home/alice/.codex/sessions"):
 
 
 def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> None:
-    """A `state_5.sqlite` with one `threads` row per entry of `threads`;
-    `origins` maps a thread id to its `git_origin_url` (by default the
-    fixture session's is `PROJ_REMOTE`)."""
-    origins = {CODEX_SESSION: PROJ_REMOTE} if origins is None else origins
+    """Write a `state_5.sqlite` with one `threads` row per entry of `threads`.
+
+    A `state_5.sqlite` with one `threads` row per entry of `threads`; `origins` maps a thread id to
+    its `git_origin_url` (by default the fixture session's is `PROJECT_REMOTE`).
+    """
+    origins = {CODEX_SESSION: PROJECT_REMOTE} if origins is None else origins
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(CODEX_STATE_SCHEMA)
-    for tid, rollout, created, title, first, name, archived, source, branch, model in threads:
-        con.execute(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CODEX_STATE_SCHEMA)
+    for thread_id, rollout, created, title, first, name, archived, source, branch, model in threads:
+        connection.execute(
             "insert into threads (id, rollout_path, created_at, updated_at, source,"
             " model_provider, cwd, title, sandbox_policy, approval_mode, archived,"
             " git_branch, first_user_message, created_at_ms, updated_at_ms, model,"
@@ -2168,7 +2230,7 @@ def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> Non
             " values (?, ?, ?, ?, 'cli', 'openai', ?, ?, '{}', 'on-request', ?, ?, ?, ?, ?,"
             " ?, ?, ?, ?, ?)",
             (
-                tid,
+                thread_id,
                 rollout,
                 created,
                 created + 10,
@@ -2183,18 +2245,20 @@ def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> Non
                 source,
                 first,
                 name,
-                origins.get(tid),
+                origins.get(thread_id),
             ),
         )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 def codex_thread_history():
-    """(turns, items) of the projection. A turn is (thread, turn, ordinal,
-    end ordinal, status, started_at s, completed_at s, duration_ms); an item
-    (thread, turn, ordinal, created ms, started ms, completed ms, item). The
-    CODEX_SESSION items repeat the rollout fixture's events at its times."""
+    """(turns, items) of the projection.
+
+    A turn is (thread, turn, ordinal, end ordinal, status, started_at s, completed_at s,
+    duration_ms); an item (thread, turn, ordinal, created ms, started ms, completed ms, item). The
+    CODEX_SESSION items repeat the rollout fixture's events at its times.
+    """
     turns = [
         (CODEX_SESSION, "t1", 2, 16, "completed", 1790931601, 1790931607, 7000),
         (CODEX_ORPHAN, "t1", 1, 9, "completed", 1790841601, 1790841610, 9000),
@@ -2256,14 +2320,17 @@ def codex_thread_history():
 
 
 def write_thread_history(path: Path, turns, items, lifecycle: bool = True) -> None:
-    """A `thread_history_1.sqlite`; without `lifecycle`, in the schema before
-    migration 0007 (no `started_at_ms`, `completed_at_ms`)."""
+    """Write a `thread_history_1.sqlite`.
+
+    A `thread_history_1.sqlite`; without `lifecycle`, in the schema before migration 0007 (no
+    `started_at_ms`, `completed_at_ms`).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(THREAD_TURNS_SCHEMA)
-    con.executescript(THREAD_ITEMS_SCHEMA % (THREAD_ITEMS_LIFECYCLE if lifecycle else ""))
+    connection = sqlite3.connect(str(path))
+    connection.executescript(THREAD_TURNS_SCHEMA)
+    connection.executescript(THREAD_ITEMS_SCHEMA % (THREAD_ITEMS_LIFECYCLE if lifecycle else ""))
     for thread, turn, ordinal, end, status, started, completed, duration in turns:
-        con.execute(
+        connection.execute(
             "insert into thread_turns (thread_id, turn_id, rollout_ordinal, status,"
             " started_at, completed_at, duration_ms, rollout_end_ordinal)"
             " values (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -2276,20 +2343,19 @@ def write_thread_history(path: Path, turns, items, lifecycle: bool = True) -> No
             cols += ", started_at_ms, completed_at_ms"
             vals += [started, completed]
         marks = ", ".join("?" * len(vals))
-        con.execute("insert into thread_items (%s) values (%s)" % (cols, marks), vals)
-    con.commit()
-    con.close()
+        connection.execute("insert into thread_items (%s) values (%s)" % (cols, marks), vals)
+    connection.commit()
+    connection.close()
 
 
 def build_codex_stores(home: Path) -> None:
-    """`.codex/state_5.sqlite`, `.codex/thread_history_1.sqlite` and
-    `.codex/logs_2.sqlite` (#153)."""
+    """`.codex/state_5.sqlite`, `.codex/thread_history_1.sqlite` and `.codex/logs_2.sqlite`."""
     write_codex_state(home / ".codex/state_5.sqlite", codex_thread_rows())
     write_thread_history(home / ".codex/thread_history_1.sqlite", *codex_thread_history())
     write_codex_logs(home / ".codex/logs_2.sqlite", codex_log_rows(CODEX_SESSION))
 
 
-# `logs_2.sqlite` `logs` (codex state/logs_migrations/0002 at 3e23877), #153.
+# `logs_2.sqlite` `logs` (codex state/logs_migrations/0002 at 3e23877).
 CODEX_LOGS_SCHEMA = """
 CREATE TABLE logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER NOT NULL, ts_nanos INTEGER NOT NULL,
@@ -2298,19 +2364,21 @@ CREATE TABLE logs (
     estimated_bytes INTEGER NOT NULL DEFAULT 0
 );
 """
-CODEX_FEEDBACK_TS = 1791367200  # 2026-10-07T10:00:00Z
+CODEX_FEEDBACK_TIMESTAMP = 1791367200  # 7 October 10:00:00 UTC
 CODEX_NO_THREAD = "no-active-thread-0199b0c0-0000-7000-8000-00000000000f"
 
 
 def codex_log_rows(thread_id: str):
-    """(ts, ts_nanos, level, target, feedback_log_body, thread_id) rows: a
-    diagnostics line, an attachment failure under `codex_feedback` (not an
-    upload), a sent report for `thread_id` with its fields in tracing's
-    order and one with no thread open, its fields reordered."""
+    """(ts, ts_nanos, level, target, feedback_log_body, thread_id) rows.
+
+    A diagnostics line, an attachment failure under `codex_feedback` (not an upload), a sent report
+    for `thread_id` with its fields in tracing's order and one with no thread open, its fields
+    reordered.
+    """
     return [
-        (CODEX_FEEDBACK_TS - 5, 0, "INFO", "codex_core::codex", "turn started", thread_id),
+        (CODEX_FEEDBACK_TIMESTAMP - 5, 0, "INFO", "codex_core::codex", "turn started", thread_id),
         (
-            CODEX_FEEDBACK_TS - 1,
+            CODEX_FEEDBACK_TIMESTAMP - 1,
             0,
             "ERROR",
             "codex_feedback",
@@ -2318,7 +2386,7 @@ def codex_log_rows(thread_id: str):
             thread_id,
         ),
         (
-            CODEX_FEEDBACK_TS,
+            CODEX_FEEDBACK_TIMESTAMP,
             250_000_000,
             "INFO",
             "codex_feedback",
@@ -2327,7 +2395,7 @@ def codex_log_rows(thread_id: str):
             thread_id,
         ),
         (
-            CODEX_FEEDBACK_TS + 60,
+            CODEX_FEEDBACK_TIMESTAMP + 60,
             0,
             "INFO",
             "codex_feedback",
@@ -2340,20 +2408,20 @@ def codex_log_rows(thread_id: str):
 
 def write_codex_logs(path: Path, rows) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(CODEX_LOGS_SCHEMA)
-    con.executemany(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CODEX_LOGS_SCHEMA)
+    connection.executemany(
         "INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body, thread_id)"
         " VALUES (?,?,?,?,?,?)",
         rows,
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
-# The ChatGPT desktop app's Codex threads (#160): key names, enum values and
+# The ChatGPT desktop app's Codex threads: key names, enum values and
 # formats seen with Codex Desktop 0.163.0-alpha.10.2 inside ChatGPT
-# 26.1013.40934 on macOS, 2026-10-18; every id and value is invented.
+# 26.1013.40934 on macOS; every id and value is invented.
 # CODEX_DESKTOP is a user thread, CODEX_GUARDIAN the guardian review thread
 # the app spawned for one of its calls, CODEX_DELETED a thread deleted with
 # the app's own command, whose rollout is gone and whose traces survive in
@@ -2365,7 +2433,7 @@ CODEX_DECLINED_ITEM = "exec-0d0d0d0d-1111-4222-8333-0000000000e1"
 CODEX_REVIEWED_ITEM = "exec-0d0d0d0d-1111-4222-8333-0000000000e2"
 CODEX_DESKTOP_ROLLOUT = ".codex/sessions/2026/10/18/rollout-2026-10-18T17-20-00-%s.jsonl"
 CODEX_GLOBAL_STATE_REL = ".codex/.codex-global-state.json"
-CODEX_GLOBAL_STATE_MTIME = 1792370000  # 2026-10-19T00:33:20Z
+CODEX_GLOBAL_STATE_MTIME = 1792370000  # 19 October 00:33:20 UTC
 CODEX_VERDICT = {
     "risk_level": "low",
     "user_authorization": "high",
@@ -2374,15 +2442,17 @@ CODEX_VERDICT = {
 }
 
 
-def _desk(ts: str, rtype: str, payload: dict) -> dict:
-    return {"timestamp": "2026-10-18T21:%s.000Z" % ts, "type": rtype, "payload": payload}
+def _desk(clock: str, rtype: str, payload: dict) -> dict:
+    return {"timestamp": "2026-10-18T21:%s.000Z" % clock, "type": rtype, "payload": payload}
 
 
-def _desk_settings(ts: str, **settings) -> dict:
-    return _desk(ts, "event_msg", {"type": "thread_settings_applied", "thread_settings": settings})
+def _desk_settings(clock: str, **settings) -> dict:
+    return _desk(
+        clock, "event_msg", {"type": "thread_settings_applied", "thread_settings": settings}
+    )
 
 
-def _desk_started(ts: str, turn: str, trigger: str) -> dict:
+def _desk_started(clock: str, turn: str, trigger: str) -> dict:
     attribution = {
         "turn_id": turn,
         "turn_trigger": trigger,
@@ -2391,7 +2461,9 @@ def _desk_started(ts: str, turn: str, trigger: str) -> dict:
         "root_turn_id": turn,
     }
     return _desk(
-        ts, "event_msg", {"type": "task_started", "turn_id": turn, "turn_attribution": attribution}
+        clock,
+        "event_msg",
+        {"type": "task_started", "turn_id": turn, "turn_attribution": attribution},
     )
 
 
@@ -2400,12 +2472,13 @@ MANAGED = {"type": "managed", "file_system": {"type": "restricted"}, "network": 
 
 
 def codex_desktop_records(cwd="/srv/proj"):
-    """A Codex Desktop thread: a settings event before the first turn, a
-    composer turn whose shell call the user declined, a model switch and the
-    switch to "Approve for me" (`approvals_reviewer` `auto_review`) with no
-    turn, a resume's reduced settings event that changes nothing, a turn
-    sent from a paired phone whose file write a guardian review allowed,
-    and the switch to full access after it."""
+    """A Codex Desktop thread.
+
+    A settings event before the first turn, a composer turn whose shell call the user declined, a
+    model switch and the switch to "Approve for me" (`approvals_reviewer` `auto_review`) with no
+    turn, a resume's reduced settings event that changes nothing, a turn sent from a paired phone
+    whose file write a guardian review allowed, and the switch to full access after it.
+    """
     return [
         _desk(
             "20:00",
@@ -2552,8 +2625,10 @@ def codex_desktop_records(cwd="/srv/proj"):
 
 
 def codex_guardian_records(cwd="/srv/proj"):
-    """The guardian review thread of CODEX_DESKTOP's file write: its verdict
-    is the JSON text of the final agent message."""
+    """The guardian review thread of CODEX_DESKTOP's file write.
+
+    Its verdict is the JSON text of the final agent message.
+    """
     verdict = json.dumps(CODEX_VERDICT)
     return [
         _desk(
@@ -2608,10 +2683,12 @@ def codex_guardian_records(cwd="/srv/proj"):
 
 
 def codex_desktop_log_rows():
-    """`logs_2.sqlite` rows (ts, ts_nanos, level, target, body, thread_id)
-    of the desktop app: the core's record of the user's decline and the app
-    server's response that repeats it, a response with no core record
-    beside it, and a model-manager line inside the guardian review span."""
+    """`logs_2.sqlite` rows (ts, ts_nanos, level, target, body, thread_id) of the desktop app.
+
+    The core's record of the user's decline and the app server's response that repeats it, a
+    response with no core record beside it, and a model-manager line inside the guardian review
+    span.
+    """
     return [
         (
             1792358405,
@@ -2654,12 +2731,13 @@ def codex_desktop_log_rows():
 
 
 def codex_global_state(cwd="/srv/proj"):
-    """`.codex-global-state.json`: the persisted atoms hold the prompt
-    history (a `global` list and one per thread, CODEX_DELETED's too), a
-    description and an activity time for CODEX_DELETED and its deletion
-    marker, CODEX_DESKTOP's standing permissions and the host's agent mode;
-    the top level the deleted thread's output directory and the remote
-    control flags."""
+    """`.codex-global-state.json`.
+
+    The persisted atoms hold the prompt history (a `global` list and one per thread, CODEX_DELETED's
+    too), a description and an activity time for CODEX_DELETED and its deletion marker,
+    CODEX_DESKTOP's standing permissions and the host's agent mode; the top level the deleted
+    thread's output directory and the remote control flags.
+    """
 
     def prompt(text):
         para = {"type": "paragraph", "content": [{"type": "text", "text": text}]}
@@ -2709,22 +2787,24 @@ def codex_global_state(cwd="/srv/proj"):
 
 
 def build_codex_desktop(home: Path) -> None:
-    """The desktop app's thread and guardian rollouts, its approval and
-    guardian log rows added to `.codex/logs_2.sqlite` (which
-    `build_codex_stores` writes first) and `.codex-global-state.json`."""
-    for sid, records in (
+    """Write the ChatGPT desktop app's Codex threads, log rows and global state.
+
+    The desktop app's thread and guardian rollouts, its approval and guardian log rows added to
+    `.codex/logs_2.sqlite` (which `build_codex_stores` writes first) and `.codex-global-state.json`.
+    """
+    for session_id, records in (
         (CODEX_DESKTOP, codex_desktop_records()),
         (CODEX_GUARDIAN, codex_guardian_records()),
     ):
-        _jsonl(home / (CODEX_DESKTOP_ROLLOUT % sid), records)
-    con = sqlite3.connect(str(home / ".codex/logs_2.sqlite"))
-    con.executemany(
+        _jsonl(home / (CODEX_DESKTOP_ROLLOUT % session_id), records)
+    connection = sqlite3.connect(str(home / ".codex/logs_2.sqlite"))
+    connection.executemany(
         "INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body, thread_id)"
         " VALUES (?,?,?,?,?,?)",
         codex_desktop_log_rows(),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     path = home / CODEX_GLOBAL_STATE_REL
     path.write_text(json.dumps(codex_global_state()), encoding="utf-8")
     os.utime(path, (CODEX_GLOBAL_STATE_MTIME, CODEX_GLOBAL_STATE_MTIME))
@@ -2741,9 +2821,9 @@ create table remote_control_enrollments (websocket_url text not null,
 
 
 def write_codex_enrollment(path: Path, enabled: int = 1) -> None:
-    con = sqlite3.connect(str(path))
-    con.executescript(CODEX_ENROLLMENT_SCHEMA)
-    con.execute(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CODEX_ENROLLMENT_SCHEMA)
+    connection.execute(
         "insert into remote_control_enrollments values (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "wss://chatgpt.com/backend-api/wham/remote/control/server",
@@ -2756,15 +2836,15 @@ def write_codex_enrollment(path: Path, enabled: int = 1) -> None:
             enabled,
         ),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 # Codex standing grants, failed guardian reviews, memories, goals and
-# database backups (#200), in the shapes of codex source at 4e7b9e2
+# database backups, in the shapes of codex source at 4e7b9e2
 # (research/codex-cli.md, Standing grants and approval records and Other
 # past-use stores); not seen on a real install, every value invented.
-CODEX_STANDING_MTIME = 1792400000  # 2026-10-19T08:53:20Z
+CODEX_STANDING_MTIME = 1792400000  # 19 October 08:53:20 UTC
 CODEX_CONFIG_TOML = (
     """model = "gpt-5.5-codex"
 approval_policy = "on-request"
@@ -2845,11 +2925,13 @@ def codex_memory_summary(thread_id: str) -> str:
 
 
 def build_codex_standing(home: Path) -> None:
-    """`.codex/config.toml` (replacing the noise file `build_home` writes),
-    `.codex/rules/default.rules`, a rollout summary under
-    `.codex/memories/` beside `raw_memories.md` and `MEMORY.md` (not
-    wanted), a `db-backups/` copy of `state_5.sqlite` with its log database
-    beside it (not wanted), all at CODEX_STANDING_MTIME."""
+    """Write the Codex standing grants, memories and database backups.
+
+    `.codex/config.toml` (replacing the noise file `build_home` writes),
+    `.codex/rules/default.rules`, a rollout summary under `.codex/memories/` beside
+    `raw_memories.md` and `MEMORY.md` (not wanted), a `db-backups/` copy of `state_5.sqlite` with
+    its log database beside it (not wanted), all at CODEX_STANDING_MTIME.
+    """
     files = {
         ".codex/config.toml": CODEX_CONFIG_TOML,
         ".codex/rules/default.rules": CODEX_RULES,
@@ -2883,16 +2965,18 @@ CODEX_DENY_VERDICT = {
 }
 
 
-def uuid7(ms: int, tail: int) -> str:
+def uuid7(milliseconds: int, tail: int) -> str:
     """A UUIDv7 string whose first 48 bits are the epoch milliseconds `ms`."""
-    hexes = "%012x7000%016x" % (ms, 0x8000000000000000 | tail)
+    hexes = "%012x7000%016x" % (milliseconds, 0x8000000000000000 | tail)
     return "%s-%s-%s-%s-%s" % (hexes[:8], hexes[8:12], hexes[12:16], hexes[16:20], hexes[20:])
 
 
 def codex_guardian_feedback():
-    """(id, thread_id, record bytes) rows: a denied review whose decision is
-    the reviewer's JSON verdict, a review that timed out with no decision,
-    and a record cut off mid-write."""
+    """(id, thread_id, record bytes) rows.
+
+    A denied review whose decision is the reviewer's JSON verdict, a review that timed out with no
+    decision, and a record cut off mid-write.
+    """
     denied = {
         "reviewed_thread_id": CODEX_DESKTOP,
         "reviewed_turn_id": "t3",
@@ -2917,13 +3001,13 @@ def codex_guardian_feedback():
 
 
 def write_codex_guardian_feedback(path: Path) -> None:
-    con = sqlite3.connect(str(path))
-    con.executescript(CODEX_GUARDIAN_FEEDBACK_SCHEMA)
-    con.executemany(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CODEX_GUARDIAN_FEEDBACK_SCHEMA)
+    connection.executemany(
         "insert into guardian_review_feedback values (?, ?, ?)", codex_guardian_feedback()
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 CODEX_PATCH_ITEM = "patch-0d0d0d0d-1111-4222-8333-0000000000e3"
@@ -2951,14 +3035,22 @@ def codex_history_records():
     ]
 
 
-def _codex_line(ts: str, rtype: str, payload: dict, **extra) -> dict:
-    return {"timestamp": "2026-10-02T10:%s.000Z" % ts, "type": rtype, "payload": payload, **extra}
+def _codex_line(timestamp: str, rtype: str, payload: dict, **extra) -> dict:
+    return {
+        "timestamp": "2026-10-02T10:%s.000Z" % timestamp,
+        "type": rtype,
+        "payload": payload,
+        **extra,
+    }
 
 
 def codex_subagent_records(cwd="/srv/proj"):
-    """A spawned subagent's rollout: `parent_thread_id`, the root `session_id`,
-    a message copied from the parent (`inherited_user_message`), the task as
-    an `agent_message` response item, and a later message to the parent."""
+    """A spawned subagent's rollout.
+
+    `parent_thread_id`, the root `session_id`, a message copied from the parent
+    (`inherited_user_message`), the task as an `agent_message` response item, and a later message to
+    the parent.
+    """
     return [
         _codex_line(
             "00:00",
@@ -3046,8 +3138,11 @@ def codex_subagent_records(cwd="/srv/proj"):
 
 
 def codex_fork_records(cwd="/srv/proj"):
-    """A copied fork: the child's own `session_meta`, then the parent's
-    records re-appended, including the parent's `session_meta`."""
+    """A copied fork.
+
+    The child's own `session_meta`, then the parent's records re-appended, including the parent's
+    `session_meta`.
+    """
     return [
         _codex_line(
             "10:00",
@@ -3092,11 +3187,12 @@ def codex_fork_records(cwd="/srv/proj"):
 
 
 def codex_legacy_records(cwd="/srv/proj"):
-    """Legacy-mode records and the types the parser used to skip: a user
-    message without content kinds, `compacted`, a legacy
-    `inter_agent_communication` line, image generation, tool search,
-    realtime items, aborted and rolled-back turns, turn items with no
-    response_item, and an empty reasoning summary."""
+    """Legacy-mode records and the types the parser used to skip.
+
+    A user message without content kinds, `compacted`, a legacy `inter_agent_communication` line,
+    image generation, tool search, realtime items, aborted and rolled-back turns, turn items with no
+    response_item, and an empty reasoning summary.
+    """
     return [
         _codex_line(
             "20:00",
@@ -3310,8 +3406,8 @@ def build_home(home: Path, with_noise: bool = True) -> Path:
     )
     registry = home / ".claude/sessions"
     registry.mkdir(parents=True)
-    for name, rec in claude_registry_records().items():
-        (registry / name).write_text(json.dumps(rec), encoding="utf-8")
+    for name, record in claude_registry_records().items():
+        (registry / name).write_text(json.dumps(record), encoding="utf-8")
     (registry / CLAUDE_REGISTRY_KEY).write_text("not a real key", encoding="utf-8")
     _jsonl(
         home / ".claude/projects/-srv-proj" / (CLAUDE_296_SESSION + ".jsonl"), claude_296_records()
@@ -3362,11 +3458,13 @@ def build_home(home: Path, with_noise: bool = True) -> Path:
     build_zed(home)
     build_vscode(home)
     (home / ".gemini/settings.json").write_text("{}", encoding="utf-8")
-    gs = home / ".config/Code/User/globalStorage"
-    gs.mkdir(parents=True, exist_ok=True)
-    (gs / "state.vscdb").write_text("sqlite", encoding="utf-8")
-    (gs / "saoudrizwan.claude-dev/state").mkdir(parents=True, exist_ok=True)
-    (gs / "saoudrizwan.claude-dev/state/taskHistory.json").write_text("[]", encoding="utf-8")
+    global_storage = home / ".config/Code/User/globalStorage"
+    global_storage.mkdir(parents=True, exist_ok=True)
+    (global_storage / "state.vscdb").write_text("sqlite", encoding="utf-8")
+    (global_storage / "saoudrizwan.claude-dev/state").mkdir(parents=True, exist_ok=True)
+    (global_storage / "saoudrizwan.claude-dev/state/taskHistory.json").write_text(
+        "[]", encoding="utf-8"
+    )
     build_roo_cli_history(home)
     build_qwen(home)
     build_qwen_channels(home)
@@ -3416,28 +3514,33 @@ def build_home(home: Path, with_noise: bool = True) -> Path:
     if with_noise:
         (home / "Documents").mkdir(parents=True, exist_ok=True)
         (home / "Documents/notes.txt").write_text("not an agent file\n", encoding="utf-8")
-        proj = home / "dev/proj"
-        proj.mkdir(parents=True, exist_ok=True)
-        (proj / "AGENTS.md").write_text("# project instructions\n", encoding="utf-8")
-        (proj / ".claude").mkdir(exist_ok=True)
-        (proj / ".claude/settings.local.json").write_text("{}", encoding="utf-8")
+        project = home / "dev/proj"
+        project.mkdir(parents=True, exist_ok=True)
+        (project / "AGENTS.md").write_text("# project instructions\n", encoding="utf-8")
+        (project / ".claude").mkdir(exist_ok=True)
+        (project / ".claude/settings.local.json").write_text("{}", encoding="utf-8")
     return home
 
 
-def build_git_repo(proj: Path) -> None:
-    """The repository files of a project: `.git/config` (`PROJ_GIT_CONFIG`)
-    and `.git/HEAD` (`PROJ_GIT_HEAD`), which `gitmeta` reads, and an
-    object, which no catalog line collects."""
-    repo = proj / ".git"
+def build_git_repo(project: Path) -> None:
+    """The repository files of a project.
+
+    `.git/config` (`PROJECT_GIT_CONFIG`) and `.git/HEAD` (`PROJECT_GIT_HEAD`), which `gitmeta` reads, and
+    an object, which no catalog line collects.
+    """
+    repo = project / ".git"
     (repo / "objects/ab").mkdir(parents=True, exist_ok=True)
-    (repo / "config").write_text(PROJ_GIT_CONFIG, encoding="utf-8")
-    (repo / "HEAD").write_text(PROJ_GIT_HEAD, encoding="utf-8")
+    (repo / "config").write_text(PROJECT_GIT_CONFIG, encoding="utf-8")
+    (repo / "HEAD").write_text(PROJECT_GIT_HEAD, encoding="utf-8")
     (repo / "objects/ab/cdef").write_bytes(b"x")
 
 
 def build_image(root: Path) -> Path:
-    """A fake disk image: two Linux users and a Windows profile tree, and
-    the `/srv/proj` repository the agents' state names."""
+    """A fake disk image.
+
+    Two Linux users and a Windows profile tree, and the `/srv/proj` repository the agents' state
+    names.
+    """
     build_git_repo(root / "srv/proj")
     build_home(root / "home/alice")
     build_home(root / "home/bob", with_noise=False)
@@ -3454,33 +3557,35 @@ BAD_LINE = '{"type": "user", "truncated": tr'
 
 
 def write_bad_line(path: Path) -> None:
-    """Append `BAD_LINE` to `path`, with no line terminator before or after
-    it: after a file that ends in a newline it is a last line cut off
-    mid-write, after one that does not it joins the last line. The row
-    `error_rows` yields for it is `bad_line_text()`."""
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(BAD_LINE)
+    """Append `BAD_LINE` to `path`, with no line terminator before or after it.
+
+    After a file that ends in a newline it is a last line cut off mid-write, after one that does not
+    it joins the last line. The row `error_rows` yields for it is `bad_line_text()`.
+    """
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(BAD_LINE)
 
 
 def bad_line_text(line: str = BAD_LINE) -> str:
-    """The `text` of the `system` row `error_rows` yields for the JSONL line
-    `line` (issue 136): `parser: unparseable line (<reason>): <line>`, with
-    the reason the running Python's json module gives, since its wording
-    differs between versions."""
+    """The `text` of the `system` row `error_rows` yields for the JSONL line `line`.
+
+    `parser: unparseable line (<reason>): <line>`, with the reason the running Python's json module
+    gives, since its wording differs between versions.
+    """
     try:
         json.loads(line)
-    except ValueError as e:
-        return "parser: unparseable line (%s): %s" % (e, line)
+    except ValueError as error:
+        return "parser: unparseable line (%s): %s" % (error, line)
     raise AssertionError("line parses: %r" % line)
 
 
 AGY_CONVERSATION = "799062d5-0000-4000-8000-000000000099"
-AGY_T0 = 1790848800  # 2026-10-01T10:00:00Z
+AGY_T0 = 1790848800  # 1 October 10:00:00 UTC
 AGY_APP_CONVERSATION = "a1b2c3d4-0000-4000-8000-0000000000a2"
 AGY_ORPHAN = "0d1e2f3a-0000-4000-8000-0000000000b3"  # brain mirror only
 AGY_APP_PROJECT = "5e1d7c2a-0000-4000-8000-0000000000a1"
-AGY_APP_T0 = AGY_T0 + 3600  # 2026-10-01T11:00:00Z
-AGY_CONFIG_MTIME = AGY_T0 + 7200  # 2026-10-01T12:00:00Z, the standing files' mtime
+AGY_APP_T0 = AGY_T0 + 3600  # 1 October 11:00:00 UTC
+AGY_CONFIG_MTIME = AGY_T0 + 7200  # 1 October 12:00:00 UTC, the standing files' mtime
 AGY_SIDECAR = "weekly-check"
 
 
@@ -3493,18 +3598,20 @@ def _step(
     source: int = 2,
     status: int = 3,
 ) -> dict:
-    md = {"created_at": created, "source": source}
+    metadata = {"created_at": created, "source": source}
     if completed is not None:
-        md["completed_at"] = completed
-        md["finished_generating_at"] = completed
+        metadata["completed_at"] = completed
+        metadata["finished_generating_at"] = completed
     if tool_call:
-        md["tool_call"] = tool_call
-    return {"metadata": md, kind: payload, "status": status}
+        metadata["tool_call"] = tool_call
+    return {"metadata": metadata, kind: payload, "status": status}
 
 
 def antigravity_steps() -> list[tuple[int, int, dict]]:
-    """(step_type, status, Step dict) in the shapes seen on a real install:
-    user_input, planner_response with tool calls, generic and typed tool steps."""
+    """(step_type, status, Step dict) in the shapes seen on a real install.
+
+    User_input, planner_response with tool calls, generic and typed tool steps.
+    """
     tc1 = {
         "id": "call_1",
         "name": "view_file",
@@ -3537,9 +3644,9 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
         "name": "run_command",
         "arguments_json": json.dumps({"CommandLine": "ls", "Cwd": "/home/u/proj"}),
     }
-    t = AGY_T0
+    start = AGY_T0
     return [
-        (14, 3, dict(_step("user_input", {"query": "clean the logs"}, t, source=4), type=14)),
+        (14, 3, dict(_step("user_input", {"query": "clean the logs"}, start, source=4), type=14)),
         (
             15,
             3,
@@ -3551,8 +3658,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                         "thinking": "look before leaping",
                         "tool_calls": [tc1],
                     },
-                    t + 1,
-                    t + 3,
+                    start + 1,
+                    start + 3,
                 ),
                 type=15,
             ),
@@ -3567,8 +3674,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                         "args": [{"key": "AbsolutePath", "value": "/home/u/proj/README.md"}],
                         "result": {"result": "File Path: README.md\n# proj"},
                     },
-                    t + 3,
-                    t + 4,
+                    start + 3,
+                    start + 4,
                     tool_call=tc1,
                 ),
                 type=132,
@@ -3578,7 +3685,9 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc2]}, t + 4, t + 6),
+                _step(
+                    "planner_response", {"response": "", "tool_calls": [tc2]}, start + 4, start + 6
+                ),
                 type=15,
             ),
         ),
@@ -3594,8 +3703,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                         "exit_code": 0,
                         "combined_output": {"full": "removed 3 files"},
                     },
-                    t + 6,
-                    t + 7,
+                    start + 6,
+                    start + 7,
                     tool_call=tc2,
                 ),
                 type=28,
@@ -3605,7 +3714,9 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc3]}, t + 7, t + 8),
+                _step(
+                    "planner_response", {"response": "", "tool_calls": [tc3]}, start + 7, start + 8
+                ),
                 type=15,
             ),
         ),
@@ -3616,8 +3727,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                 _step(
                     "write_to_file",
                     {"target_file_uri": "file:///home/u/proj/notes.md", "file_created": True},
-                    t + 8,
-                    t + 9,
+                    start + 8,
+                    start + 9,
                     tool_call=tc3,
                     status=7,
                 ),
@@ -3627,7 +3738,9 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
         (
             14,
             3,
-            dict(_step("user_input", {"query": "<injected reminder>"}, t + 9, source=3), type=14),
+            dict(
+                _step("user_input", {"query": "<injected reminder>"}, start + 9, source=3), type=14
+            ),
         ),
         (
             15,
@@ -3636,20 +3749,29 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                 _step(
                     "planner_response",
                     {"response": "Done. Three log files were removed."},
-                    t + 10,
-                    t + 12,
+                    start + 10,
+                    start + 12,
                 ),
                 type=15,
             ),
         ),
-        (23, 3, dict(_step("checkpoint", {"conversation_title": "Clean logs"}, t + 13), type=23)),
-        # A later planner step on another model (#96), a run_command and an
-        # mcp_tool call the user rejected, and a sandboxed run_command (#97).
+        (
+            23,
+            3,
+            dict(_step("checkpoint", {"conversation_title": "Clean logs"}, start + 13), type=23),
+        ),
+        # A later planner step on another model, a run_command and an
+        # mcp_tool call the user rejected, and a sandboxed run_command.
         (
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc4]}, t + 14, t + 15),
+                _step(
+                    "planner_response",
+                    {"response": "", "tool_calls": [tc4]},
+                    start + 14,
+                    start + 15,
+                ),
                 type=15,
             ),
         ),
@@ -3660,8 +3782,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                 _step(
                     "run_command",
                     {"command_line": "make test", "user_rejected": True},
-                    t + 15,
-                    t + 16,
+                    start + 15,
+                    start + 16,
                     tool_call=tc4,
                 ),
                 type=21,
@@ -3671,7 +3793,12 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc5]}, t + 17, t + 18),
+                _step(
+                    "planner_response",
+                    {"response": "", "tool_calls": [tc5]},
+                    start + 17,
+                    start + 18,
+                ),
                 type=15,
             ),
         ),
@@ -3682,8 +3809,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                 _step(
                     "mcp_tool",
                     {"server_name": "github", "tool_call": tc5, "user_rejected": True},
-                    t + 18,
-                    t + 19,
+                    start + 18,
+                    start + 19,
                     tool_call=tc5,
                 ),
                 type=38,
@@ -3693,7 +3820,12 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc6]}, t + 20, t + 21),
+                _step(
+                    "planner_response",
+                    {"response": "", "tool_calls": [tc6]},
+                    start + 20,
+                    start + 21,
+                ),
                 type=15,
             ),
         ),
@@ -3709,8 +3841,8 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
                         "combined_output": {"full": "README.md"},
                         "ran_in_sandbox": True,
                     },
-                    t + 21,
-                    t + 22,
+                    start + 21,
+                    start + 22,
                     tool_call=tc6,
                 ),
                 type=21,
@@ -3720,10 +3852,12 @@ def antigravity_steps() -> list[tuple[int, int, dict]]:
 
 
 def antigravity_app_steps() -> list[tuple[int, int, dict]]:
-    """Steps of a desktop-app conversation: the kinds the macOS real install
-    of app 2.23.0 showed (user_input, planner_response, generic) plus a
-    system_message (101) and an error_message (17) step, both seen there."""
-    tc = {
+    """Steps of a desktop-app conversation.
+
+    The kinds the macOS real install of app 2.23.0 showed (user_input, planner_response, generic)
+    plus a system_message (101) and an error_message (17) step, both seen there.
+    """
+    tool_call = {
         "id": "call_7",
         "name": "run_command",
         "arguments_json": json.dumps({"CommandLine": "brew outdated", "Cwd": "/home/u/proj"}),
@@ -3733,13 +3867,13 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
         "name": "delete_file",
         "arguments_json": json.dumps({"TargetFile": "/home/u/proj/old.log"}),
     }
-    t = AGY_APP_T0
+    start = AGY_APP_T0
     return [
         (
             14,
             3,
             dict(
-                _step("user_input", {"query": "which packages are outdated?"}, t, source=4),
+                _step("user_input", {"query": "which packages are outdated?"}, start, source=4),
                 type=14,
             ),
         ),
@@ -3752,10 +3886,10 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
                     {
                         "response": "I will ask Homebrew.",
                         "thinking": "brew knows",
-                        "tool_calls": [tc],
+                        "tool_calls": [tool_call],
                     },
-                    t + 1,
-                    t + 2,
+                    start + 1,
+                    start + 2,
                 ),
                 type=15,
             ),
@@ -3770,12 +3904,12 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
                         "args": [{"key": "CommandLine", "value": "brew outdated"}],
                         "result": {"result": "node (24.1.0) < 24.2.0"},
                     },
-                    t + 2,
-                    t + 3,
-                    tool_call=tc,
+                    start + 2,
+                    start + 3,
+                    tool_call=tool_call,
                 ),
                 type=132,
-                # steps.permissions (#92): one grant and one file access entry.
+                # steps.permissions: one grant and one file access entry.
                 permissions={
                     "permission_grants": [
                         {
@@ -3796,7 +3930,9 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
             101,
             3,
             dict(
-                _step("system_message", {"message": "background task finished"}, t + 4, source=5),
+                _step(
+                    "system_message", {"message": "background task finished"}, start + 4, source=5
+                ),
                 type=101,
             ),
         ),
@@ -3807,7 +3943,7 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
                 _step(
                     "error_message",
                     {"error": {"short_error": "model overloaded", "full_error": "HTTP 529"}},
-                    t + 5,
+                    start + 5,
                     source=5,
                 ),
                 type=17,
@@ -3818,18 +3954,26 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
             3,
             dict(
                 _step(
-                    "planner_response", {"response": "One package is outdated: node."}, t + 6, t + 7
+                    "planner_response",
+                    {"response": "One package is outdated: node."},
+                    start + 6,
+                    start + 7,
                 ),
                 type=15,
             ),
         ),
         # A code_action that deletes a file: ActionSpecDeleteFile keeps its
-        # path in field 1 (#88).
+        # path in field 1.
         (
             15,
             3,
             dict(
-                _step("planner_response", {"response": "", "tool_calls": [tc_del]}, t + 8, t + 9),
+                _step(
+                    "planner_response",
+                    {"response": "", "tool_calls": [tc_del]},
+                    start + 8,
+                    start + 9,
+                ),
                 type=15,
             ),
         ),
@@ -3845,8 +3989,8 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
                         },
                         "description": "remove the stale log",
                     },
-                    t + 9,
-                    t + 10,
+                    start + 9,
+                    start + 10,
                     tool_call=tc_del,
                 ),
                 type=5,
@@ -3856,16 +4000,18 @@ def antigravity_app_steps() -> list[tuple[int, int, dict]]:
 
 
 def build_antigravity_app(base: Path) -> None:
-    """The desktop app's data directory, ~/.gemini/antigravity: the same
-    stores as the CLI's with source 1 and app_data_dir `antigravity`, no
-    history.jsonl, noise the parser must not want (the gdocs plugin's
-    OAuth token), and the brain mirror's shortened transcript.jsonl alone."""
+    """The desktop app's data directory, ~/.gemini/antigravity.
+
+    The same stores as the CLI's with source 1 and app_data_dir `antigravity`, no history.jsonl,
+    noise the parser must not want (the gdocs plugin's OAuth token), and the brain mirror's
+    shortened transcript.jsonl alone.
+    """
     build_antigravity(
         base,
         conversation=AGY_APP_CONVERSATION,
         source=1,
         steps=antigravity_app_steps(),
-        t0=AGY_APP_T0,
+        start=AGY_APP_T0,
         project_id=AGY_APP_PROJECT,
         title="Outdated packages",
         app_data_dir="antigravity",
@@ -3877,7 +4023,7 @@ def build_antigravity_app(base: Path) -> None:
     token.write_text(
         json.dumps({"client_id": "x", "token": {"access_token": "y"}}), encoding="utf-8"
     )
-    # The brain mirror's shortened twin alone (#87, #122): read because no
+    # The brain mirror's shortened twin alone: read because no
     # transcript_full.jsonl or chunk sits beside it.
     _jsonl(
         base / "brain" / AGY_APP_CONVERSATION / ".system_generated/logs/transcript.jsonl",
@@ -3885,25 +4031,27 @@ def build_antigravity_app(base: Path) -> None:
     )
 
 
-def _brain_line(idx: int, kind: str, at: str, content: str = "", **extra) -> dict:
+def _brain_line(index: int, kind: str, timestamp: str, content: str = "", **extra) -> dict:
     """One brain transcript line in the key set the real installs showed."""
     source = {"USER_INPUT": "USER_EXPLICIT", "PLANNER_RESPONSE": "MODEL"}.get(kind, "SYSTEM")
     return {
-        "step_index": idx,
+        "step_index": index,
         "source": source,
         "type": kind,
         "status": "DONE",
-        "created_at": at,
+        "created_at": timestamp,
         "content": content,
         **extra,
     }
 
 
 def antigravity_brain_records() -> list[dict]:
-    """The CLI conversation's brain transcript_full.jsonl (#87): the lines of
-    database steps 0-3, 7 and 8, each at the step's created_at, so every row
-    pairs with the database's (the assistant, tool_use and tool_result rows
-    there carry completed_at, one to two seconds later)."""
+    """The CLI conversation's brain transcript_full.jsonl.
+
+    The lines of database steps 0-3, 7 and 8, each at the step's created_at, so every row pairs with
+    the database's (the assistant, tool_use and tool_result rows there carry completed_at, one to
+    two seconds later).
+    """
     return [
         _brain_line(0, "USER_INPUT", "2026-10-01T10:00:00Z", "clean the logs"),
         _brain_line(
@@ -3947,8 +4095,10 @@ def antigravity_brain_records() -> list[dict]:
 
 
 def antigravity_app_brain_records() -> list[dict]:
-    """The desktop-app conversation's shortened transcript.jsonl: the lines of
-    database steps 0-4, the tool output shortened (`truncated_fields`)."""
+    """The desktop-app conversation's shortened transcript.jsonl.
+
+    The lines of database steps 0-4, the tool output shortened (`truncated_fields`).
+    """
     return [
         _brain_line(0, "USER_INPUT", "2026-10-01T11:00:00Z", "which packages are outdated?"),
         _brain_line(
@@ -4011,23 +4161,24 @@ def antigravity_orphan_brain_records() -> list[dict]:
 
 
 def build_antigravity_brain(gemini: Path) -> None:
-    """The CLI's brain mirror (#87, #122). For the fixture conversation:
-    transcript_full.jsonl (the copy read), a shortened transcript.jsonl and a
-    transcript_full chunk with different text (copies not read), and a
-    tool output file the parser must not want. For AGY_ORPHAN, whose
-    conversation database is gone: two transcript_full chunks, the second
-    line cut across the boundary, and a shortened transcript.jsonl that is
-    not read."""
+    """The CLI's brain mirror.
+
+    For the fixture conversation: transcript_full.jsonl (the copy read), a shortened
+    transcript.jsonl and a transcript_full chunk with different text (copies not read), and a tool
+    output file the parser must not want. For AGY_ORPHAN, whose conversation database is gone: two
+    transcript_full chunks, the second line cut across the boundary, and a shortened
+    transcript.jsonl that is not read.
+    """
     logs = gemini / "antigravity-cli/brain" / AGY_CONVERSATION / ".system_generated/logs"
     _jsonl(logs / "transcript_full.jsonl", antigravity_brain_records())
-    short = [dict(r, content="(not read)") for r in antigravity_brain_records()]
+    short = [dict(record, content="(not read)") for record in antigravity_brain_records()]
     _jsonl(logs / "transcript.jsonl", short)
     _jsonl(logs / "chunks/transcript_full/00000000.jsonl", short)
     out = logs.parent / "steps/2/output.txt"
     out.parent.mkdir(parents=True)
     out.write_text("File Path: README.md\n# proj\n", encoding="utf-8")
     orphan = gemini / "antigravity-cli/brain" / AGY_ORPHAN / ".system_generated/logs"
-    blob = "".join(json.dumps(r) + "\n" for r in antigravity_orphan_brain_records())
+    blob = "".join(json.dumps(record) + "\n" for record in antigravity_orphan_brain_records())
     cut = blob.index("\n") + 40  # inside the second line
     chunks = orphan / "chunks/transcript_full"
     chunks.mkdir(parents=True)
@@ -4035,7 +4186,7 @@ def build_antigravity_brain(gemini: Path) -> None:
     (chunks / "00000001.jsonl").write_text(blob[cut:], encoding="utf-8")
     _jsonl(
         orphan / "transcript.jsonl",
-        [dict(r, content="(not read)") for r in antigravity_orphan_brain_records()],
+        [dict(record, content="(not read)") for record in antigravity_orphan_brain_records()],
     )
 
 
@@ -4044,24 +4195,26 @@ def build_antigravity(
     conversation: str = AGY_CONVERSATION,
     source: int = 17,
     steps: list[tuple[int, int, dict]] | None = None,
-    t0: int = AGY_T0,
+    start: int = AGY_T0,
     project_id: str = "default-cli-project",
     title: str = "",
     app_data_dir: str = "antigravity-cli",
     models: dict[str, list[int]] | None = None,
     cli: bool = True,
 ) -> None:
-    """One Antigravity data directory: a conversation database, the
-    summaries database and, for the CLI (`cli`), history.jsonl and the
-    OAuth token file."""
+    """One Antigravity data directory.
+
+    A conversation database, the summaries database and, for the CLI (`cli`), history.jsonl and the
+    OAuth token file.
+    """
     steps = antigravity_steps() if steps is None else steps
     if models is None:
         models = {"gemini-3.8-flash": [1, 3, 5, 8], "gemini-3.8-pro": [10, 12, 14]}
     conv = base / "conversations"
     conv.mkdir(parents=True, exist_ok=True)
-    db = conv / (conversation + ".db")
-    con = sqlite3.connect(str(db))
-    con.executescript("""
+    database = conv / (conversation + ".db")
+    connection = sqlite3.connect(str(database))
+    connection.executescript("""
     CREATE TABLE trajectory_meta (trajectory_id text, cascade_id text, trajectory_type integer, source integer, PRIMARY KEY (trajectory_id));
     CREATE TABLE steps (idx integer, step_type integer NOT NULL DEFAULT 0, status integer NOT NULL DEFAULT 0,
       has_subtrajectory numeric NOT NULL DEFAULT false, metadata blob, error_details blob, permissions blob, task_details blob,
@@ -4069,41 +4222,45 @@ def build_antigravity(
     CREATE TABLE gen_metadata (idx integer, data blob, size integer NOT NULL DEFAULT 0, PRIMARY KEY (idx));
     CREATE TABLE trajectory_metadata_blob (id text DEFAULT "main", data blob, PRIMARY KEY (id));
     """)
-    con.execute("INSERT INTO trajectory_meta VALUES (?,?,?,?)", ("traj-1", conversation, 4, source))
+    connection.execute(
+        "INSERT INTO trajectory_meta VALUES (?,?,?,?)", ("traj-1", conversation, 4, source)
+    )
     meta = encode(
         {
             "workspaces": [
                 {"workspace_folder_absolute_uri": "file:///home/u/proj", "branch_name": "main"}
             ],
-            "created_at": t0 - 1,
+            "created_at": start - 1,
             "workspace_uris": ["file:///home/u/proj"],
             "project_id": project_id,
         },
         "CortexTrajectoryMetadata",
         AGY,
     )
-    con.execute("INSERT INTO trajectory_metadata_blob VALUES ('main', ?)", (meta,))
-    for idx, (step_type, status, step) in enumerate(steps):
+    connection.execute("INSERT INTO trajectory_metadata_blob VALUES ('main', ?)", (meta,))
+    for step_index, (step_type, status, step) in enumerate(steps):
         # A step's `permissions` go in the steps.permissions column, as on
         # the real installs; the payload is encoded without them.
         perms = step.get("permissions")
-        payload = encode({k: v for k, v in step.items() if k != "permissions"}, "Step", AGY)
-        md = encode(step["metadata"], "CortexStepMetadata", AGY)
+        payload = encode({k: value for k, value in step.items() if k != "permissions"}, "Step", AGY)
+        metadata = encode(step["metadata"], "CortexStepMetadata", AGY)
         col = encode(perms, "TrajectoryPermissions", AGY) if perms else None
-        con.execute(
+        connection.execute(
             "INSERT INTO steps (idx, step_type, status, metadata, step_payload, permissions)"
             " VALUES (?,?,?,?,?,?)",
-            (idx, step_type, status, md, payload, col),
+            (step_index, step_type, status, metadata, payload, col),
         )
-    for n, (model, indices) in enumerate(models.items()):
+    for generator_index, (model, indices) in enumerate(models.items()):
         gen = encode(
             {"chat_model": {"response_model": model}, "step_indices": indices},
             "CortexStepGeneratorMetadata",
             AGY,
         )
-        con.execute("INSERT INTO gen_metadata VALUES (?, ?, ?)", (n, gen, len(gen)))
-    con.commit()
-    con.close()
+        connection.execute(
+            "INSERT INTO gen_metadata VALUES (?, ?, ?)", (generator_index, gen, len(gen))
+        )
+    connection.commit()
+    connection.close()
     summ = sqlite3.connect(str(base / "conversation_summaries.db"))
     summ.executescript("""
     CREATE TABLE conversation_summaries (conversation_id text, title text NOT NULL DEFAULT "", preview text NOT NULL DEFAULT "",
@@ -4122,11 +4279,11 @@ def build_antigravity(
             title,
             "clean the logs" if cli else "",
             len(steps),
-            "%s.002530482+00:00" % _utc_text(t0 + 13),
+            "%s.002530482+00:00" % _utc_text(start + 13),
             json.dumps(["file:///home/u/proj"]),
             "CASCADE_RUN_STATUS_IDLE",
             project_id,
-            "%s.000000000+00:00" % _utc_text(t0),
+            "%s.000000000+00:00" % _utc_text(start),
             app_data_dir,
         ),
     )
@@ -4137,12 +4294,12 @@ def build_antigravity(
     _jsonl(
         base / "history.jsonl",
         [
-            {"display": "clean the logs", "timestamp": t0 * 1000, "workspace": "/home/u/proj"},
-            # CLI 1.3.x adds conversationId on some lines (#89).
+            {"display": "clean the logs", "timestamp": start * 1000, "workspace": "/home/u/proj"},
+            # CLI 1.3.x adds conversationId on some lines.
             {
                 "conversationId": conversation,
                 "display": "now the tests",
-                "timestamp": (t0 + 20) * 1000,
+                "timestamp": (start + 20) * 1000,
                 "workspace": "/home/u/proj",
             },
         ],
@@ -4151,11 +4308,13 @@ def build_antigravity(
 
 
 def build_antigravity_config(gemini: Path) -> None:
-    """The standing permission files Antigravity keeps (#92), in the key
-    shapes of the macOS and Ubuntu real installs: `.gemini/config/config.json`,
-    a project file, a sidecar, the CLI's `settings.json`; plus files the
-    parser must not want (`mcp_config.json`, a plugin manifest). Every file's
-    mtime is AGY_CONFIG_MTIME."""
+    """Write the standing permission files Antigravity keeps.
+
+    The standing permission files Antigravity keeps, in the key shapes of the macOS and Ubuntu real
+    installs: `.gemini/config/config.json`, a project file, a sidecar, the CLI's `settings.json`;
+    plus files the parser must not want (`mcp_config.json`, a plugin manifest). Every file's mtime
+    is AGY_CONFIG_MTIME.
+    """
     files = {
         "config/config.json": {
             "plugins": {
@@ -4207,9 +4366,9 @@ def build_antigravity_config(gemini: Path) -> None:
         },
     }
     for rel, doc in files.items():
-        f = gemini / rel
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(doc), encoding="utf-8")
+        path = gemini / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(doc), encoding="utf-8")
     (gemini / "config/mcp_config.json").write_text("", encoding="utf-8")
     for rel in [*files, "config/mcp_config.json"]:
         os.utime(gemini / rel, (AGY_CONFIG_MTIME, AGY_CONFIG_MTIME))
@@ -4224,8 +4383,8 @@ def _utc_text(epoch: int) -> str:
 
 QWEN_SESSION = "e5f6a7b8-4444-4000-8000-000000000011"
 QWEN_ARCHIVED = "0a0b0c0d-4444-4000-8000-000000000022"
-QWEN_TMP = "3f0a9c" + "0" * 58  # sha256(cwd) directory name
-QWEN_TRUST_MTIME = 1790856000  # 2026-10-01T12:00:00Z, trustedFolders.json's mtime
+QWEN_TEMPORARY = "3f0a9c" + "0" * 58  # sha256(cwd) directory name
+QWEN_TRUST_MTIME = 1790856000  # 1 October 12:00:00 UTC, trustedFolders.json's mtime
 
 
 def qwen_session_records(cwd="/srv/proj", branch="main"):
@@ -4437,15 +4596,17 @@ def build_qwen(home: Path) -> None:
     _jsonl(chats / (QWEN_SESSION + ".jsonl"), qwen_session_records())
     _jsonl(
         chats / "archive" / (QWEN_ARCHIVED + ".jsonl"),
-        [dict(r, sessionId=QWEN_ARCHIVED) for r in qwen_session_records()[1:2]],
+        [dict(record, sessionId=QWEN_ARCHIVED) for record in qwen_session_records()[1:2]],
     )
     _jsonl(chats / (QWEN_SESSION + ".ledger.jsonl"), [{"promptId": "p1", "text": "run the tests"}])
     (chats / (QWEN_SESSION + ".runtime.json")).write_text(
         '{"session_id": "x", "started_at": 1790848800}', encoding="utf-8"
     )
-    tmp = home / ".qwen/tmp" / QWEN_TMP
-    tmp.mkdir(parents=True, exist_ok=True)
-    (tmp / "logs.json").write_text(json.dumps(qwen_logs_entries(), indent=2), encoding="utf-8")
+    temporary = home / ".qwen/tmp" / QWEN_TEMPORARY
+    temporary.mkdir(parents=True, exist_ok=True)
+    (temporary / "logs.json").write_text(
+        json.dumps(qwen_logs_entries(), indent=2), encoding="utf-8"
+    )
     (home / ".qwen/settings.json").write_text("{}", encoding="utf-8")
     (home / ".qwen/oauth_creds.json").write_text('{"access_token": "secret"}', encoding="utf-8")
     # JSONC, as Qwen Code reads it: keys are folders, values TrustLevel strings.
@@ -4457,13 +4618,13 @@ def build_qwen(home: Path) -> None:
     os.utime(trust, (QWEN_TRUST_MTIME, QWEN_TRUST_MTIME))
 
 
-# Channel routes (#153), the `PersistedEntry` shape of
+# Channel routes, the `PersistedEntry` shape of
 # packages/channels/base/src/SessionRouter.ts:25-36 at 2c591ecc:
 # QWEN_SESSION was driven from a Telegram chat; QWEN_DAEMON_SESSION by the
 # daemon from a GitHub thread, with no `startedAt`.
 QWEN_DAEMON_SESSION = "e5f6a7b8-4444-4000-8000-000000000033"
 QWEN_DAEMON_HASH = "9c1d" + "0" * 12
-QWEN_ROUTES_MTIME = 1791367200  # 2026-10-07T10:00:00Z
+QWEN_ROUTES_MTIME = 1791367200  # 7 October 10:00:00 UTC
 
 
 def build_qwen_channels(home: Path) -> None:
@@ -4503,7 +4664,7 @@ def build_qwen_channels(home: Path) -> None:
     (channels / "1791367200000-4242-ab12.tmp").write_text("{", encoding="utf-8")
 
 
-# Injected `type: "user"` records (#172), shapes from QwenLM/qwen-code at
+# Injected `type: "user"` records, shapes from QwenLM/qwen-code at
 # 5dcf7c7cb162e825d95d531081f67ee60da3c0e1 (0.25.3): createNotificationRecord
 # (cron, notification; provenance "system") and recordExternalAgentRecordStrict
 # (agent_mention, agent_message; provenance "external_agent", or "real_user"
@@ -4603,7 +4764,7 @@ def build_qwen_injected(home: Path) -> None:
     _jsonl(home / QWEN_INJECTED_REL, qwen_injected_records())
 
 
-# Permission, approval-mode and usage records (#187), shapes from
+# Permission, approval-mode and usage records, shapes from
 # QwenLM/qwen-code at 5dcf7c7cb162e825d95d531081f67ee60da3c0e1 (0.25.3):
 # ChatRecord.executionContext (chatRecordingService.ts:475-479),
 # SessionApprovalModeRecordPayload (749-754), the `ui_telemetry` record of
@@ -4621,12 +4782,12 @@ QWEN_USAGE_REL = ".qwen/usage_record.jsonl"
 # the `qwen-code.tool_call` that logToolCall records at 5dcf7c7.
 QWEN_BARE_SESSION = "e5f6a7b8-4444-4000-8000-000000000066"
 QWEN_BARE_REL = ".qwen/projects/-srv-proj/chats/%s.jsonl" % QWEN_BARE_SESSION
-QWEN_SETTINGS_MTIME = 1790863200  # 2026-10-01T14:00:00Z
+QWEN_SETTINGS_MTIME = 1790863200  # 1 October 14:00:00 UTC
 
 
 def qwen_permission_records():
     common = dict(sessionId=QWEN_PERM_SESSION, cwd="/srv/proj", version="0.25.3", gitBranch="main")
-    ctx = {"modelId": "qwen3-coder-plus", "authType": "qwen-oauth", "approvalMode": "default"}
+    context = {"modelId": "qwen3-coder-plus", "authType": "qwen-oauth", "approvalMode": "default"}
     return [
         dict(
             common,
@@ -4635,7 +4796,7 @@ def qwen_permission_records():
             timestamp="2026-10-03T09:00:00.000Z",
             type="user",
             provenance="real_user",
-            executionContext=ctx,
+            executionContext=context,
             message={"role": "user", "parts": [{"text": "clean the build"}]},
         ),
         dict(
@@ -4694,7 +4855,7 @@ def qwen_permission_records():
             timestamp="2026-10-03T09:02:00.000Z",
             type="user",
             provenance="real_user",
-            executionContext=dict(ctx, modelId="qwen3-max", approvalMode="yolo"),
+            executionContext=dict(context, modelId="qwen3-max", approvalMode="yolo"),
             message={"role": "user", "parts": [{"text": "now ship it"}]},
         ),
     ]
@@ -4815,10 +4976,10 @@ def _kiro_user(content, timestamp=None, cwd="/srv/proj"):
     }
 
 
-def _kiro_meta(n, start_ms, end_ms, kind="NotToolUse", tools=(), tags=()):
+def _kiro_meta(number, start_ms, end_ms, kind="NotToolUse", tools=(), tags=()):
     return {
-        "request_id": "req-%03d" % n,
-        "message_id": "msg-%03d" % n,
+        "request_id": "req-%03d" % number,
+        "message_id": "msg-%03d" % number,
         "request_start_timestamp_ms": start_ms,
         "stream_end_timestamp_ms": end_ms,
         "time_to_first_chunk": None,
@@ -4826,17 +4987,19 @@ def _kiro_meta(n, start_ms, end_ms, kind="NotToolUse", tools=(), tags=()):
         "user_prompt_length": 0,
         "response_size": 0,
         "chat_conversation_type": kind,
-        "tool_use_ids_and_names": [list(t) for t in tools],
+        "tool_use_ids_and_names": [list(tool) for tool in tools],
         "model_id": "claude-sonnet-4",
         "message_meta_tags": list(tags),
     }
 
 
 def kiro_conversation_records():
-    """The ConversationState from research/kiro.md, Parser plan, with
-    the project moved to /srv/proj. The research sample's user timestamp was
-    six hours off its own request metadata; it is corrected here so the
-    turns are in order."""
+    """The ConversationState of research/kiro.md, Parser plan.
+
+    The ConversationState from research/kiro.md, Parser plan, with the project moved to /srv/proj.
+    The research sample's user timestamp was six hours off its own request metadata; it is corrected
+    here so the turns are in order.
+    """
     return {
         "conversation_id": KIRO_SESSION,
         "next_message": None,
@@ -4904,10 +5067,11 @@ def kiro_conversation_records():
 
 
 def kiro_export_records():
-    """A /save export exercising the less common variants: an MCP tool whose
-    name differs from orig_name, a Json result, a cancelled tool use, a
-    Compact tag, latest_summary, a pending next_message and the legacy
-    `model` field instead of model_info."""
+    """A /save export exercising the less common variants.
+
+    An MCP tool whose name differs from orig_name, a Json result, a cancelled tool use, a Compact
+    tag, latest_summary, a pending next_message and the legacy `model` field instead of model_info.
+    """
     return {
         "conversation_id": KIRO_EXPORT_SESSION,
         "next_message": _kiro_user(
@@ -5006,13 +5170,13 @@ KIRO_RULE_TEXT = (
 )
 
 
-def _kiro_tool_entry(n, prompt_content, ts, tool_id, command, start_ms):
+def _kiro_tool_entry(number, prompt_content, timestamp, tool_id, command, start_ms):
     """A history entry whose assistant message asks for one execute_bash call."""
     return {
-        "user": _kiro_user(prompt_content, ts),
+        "user": _kiro_user(prompt_content, timestamp),
         "assistant": {
             "ToolUse": {
-                "message_id": "msg-%03d" % n,
+                "message_id": "msg-%03d" % number,
                 "content": "",
                 "tool_uses": [
                     {
@@ -5025,7 +5189,7 @@ def _kiro_tool_entry(n, prompt_content, ts, tool_id, command, start_ms):
                 ],
             }
         },
-        "request_metadata": _kiro_meta(n, start_ms, start_ms + 500, "ToolUse"),
+        "request_metadata": _kiro_meta(number, start_ms, start_ms + 500, "ToolUse"),
     }
 
 
@@ -5045,11 +5209,12 @@ def _kiro_cancelled(prompt, tool_id):
 
 
 def kiro_denial_records():
-    """A /save export for the 2026-10-21 rows (issue 212), from the Amazon Q
-    source at 15cc8f3: a bare `n` denial, a deny-rule rejection as a
-    CancelledToolUses prompt and as a plain Prompt, an interrupt, a
-    checkpoint whose snapshot keeps a turn a restore discarded, and a tangent
-    held-aside main history."""
+    """A /save export for the denial and checkpoint rows, from the Amazon Q source at 15cc8f3.
+
+    A bare `n` denial, a deny-rule rejection as a CancelledToolUses prompt and as a plain Prompt, an
+    interrupt, a checkpoint whose snapshot keeps a turn a restore discarded, and a tangent
+    held-aside main history.
+    """
     first = _kiro_tool_entry(
         20,
         {"Prompt": {"prompt": "clean the build"}},
@@ -5148,10 +5313,12 @@ def kiro_denial_records():
 
 
 def kiro_delegate_records():
-    """The delegate tool's `.amazonq/.subagents/<agent>.json` records, which
-    the CLI writes in the working directory, so a test places them in a
-    project: one finished task of the default agent and one still running
-    with the `Unknown` cwd default (issue 212)."""
+    """The delegate tool's `.amazonq/.subagents/<agent>.json` records.
+
+    The delegate tool's `.amazonq/.subagents/<agent>.json` records, which the CLI writes in the
+    working directory, so a test places them in a project: one finished task of the default agent
+    and one still running with the `Unknown` cwd default.
+    """
     return {
         "q_cli_default.json": {
             "agent": "q_cli_default",
@@ -5185,7 +5352,7 @@ def kiro_delegate_records():
 # The chat prompt's rustyline history: the #V2 header, a prompt the
 # conversation also holds, a slash command, an entry with an escaped line
 # feed and one with an escaped backslash, then a line that is not UTF-8 and
-# one after it (issue 212).
+# one after it.
 KIRO_PROMPT_HISTORY = (
     b"#V2\nlist the files here\n/clear\nfix the\\nbuild\npath C:\\\\tmp\n"
     b"\xff\xfe not utf-8\nafter the cut\n"
@@ -5195,8 +5362,8 @@ KIRO_PROMPT_HISTORY = (
 def build_kiro(home: Path) -> None:
     base = home / ".local/share/amazon-q"
     base.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(base / "data.sqlite3"))
-    con.executescript("""
+    connection = sqlite3.connect(str(base / "data.sqlite3"))
+    connection.executescript("""
     CREATE TABLE migrations (id INTEGER PRIMARY KEY, version INTEGER NOT NULL, migration_time INTEGER NOT NULL);
     CREATE TABLE history (id INTEGER PRIMARY KEY, command TEXT, shell TEXT, pid INTEGER, session_id TEXT, cwd TEXT,
       start_time INTEGER, hostname TEXT, exit_code INTEGER, end_time INTEGER, duration INTEGER);
@@ -5204,12 +5371,14 @@ def build_kiro(home: Path) -> None:
     CREATE TABLE auth_kv (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE conversations (key TEXT PRIMARY KEY, value TEXT);
     """)
-    con.execute(
+    connection.execute(
         "INSERT INTO conversations (key, value) VALUES (?, ?)",
         ("/srv/proj", json.dumps(kiro_conversation_records())),
     )
-    con.execute("INSERT INTO conversations (key, value) VALUES (?, ?)", ("/srv/broken", "not json"))
-    con.execute(
+    connection.execute(
+        "INSERT INTO conversations (key, value) VALUES (?, ?)", ("/srv/broken", "not json")
+    )
+    connection.execute(
         "INSERT INTO history (command, shell, pid, session_id, cwd, start_time, hostname, exit_code, end_time, "
         "duration) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
@@ -5225,11 +5394,11 @@ def build_kiro(home: Path) -> None:
             1000,
         ),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO auth_kv VALUES ('codewhisperer:odic:token', '{\"access_token\":\"REDACT-ME\"}')"
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     exports = home / ".aws/amazonq/exports"
     exports.mkdir(parents=True, exist_ok=True)
     text = json.dumps(kiro_export_records(), indent=2)
@@ -5292,9 +5461,11 @@ GEMINI_REL = ".gemini/tmp/proj/chats/session-2026-10-01T09-00-a1b2c3d4.jsonl"
 
 
 def gemini_session_records():
-    """Session JSONL in the chatRecordingTypes.ts shapes: a re-appended
-    message, $set, $rewindTo, $patch and a $set.sessionId from a resume."""
-    ts = "2026-10-01T09:00:%s.000Z"
+    """Session JSONL in the chatRecordingTypes.ts shapes.
+
+    A re-appended message, $set, $rewindTo, $patch and a $set.sessionId from a resume.
+    """
+    timestamp_format = "2026-10-01T09:00:%s.000Z"
     ls_call = {
         "id": "list_directory-1759309207000",
         "name": "list_directory",
@@ -5317,9 +5488,9 @@ def gemini_session_records():
             }
         ],
     )
-    g1 = {
+    gemini_reply = {
         "id": "msg-g1",
-        "timestamp": ts % "07",
+        "timestamp": timestamp_format % "07",
         "type": "gemini",
         "content": "Listing now.",
         "thoughts": [
@@ -5333,7 +5504,7 @@ def gemini_session_records():
         "model": "gemini-2.5-pro",
         "toolCalls": [ls_call],
     }
-    rf = {
+    read_file_call = {
         "id": "read_file-1759309222000",
         "name": "read_file",
         "args": {"absolute_path": "/srv/proj/src/util.ts"},
@@ -5354,28 +5525,28 @@ def gemini_session_records():
         {
             "sessionId": GEMINI_SESSION,
             "projectHash": GEMINI_HASH,
-            "startTime": ts % "00",
-            "lastUpdated": ts % "00",
+            "startTime": timestamp_format % "00",
+            "lastUpdated": timestamp_format % "00",
             "kind": "main",
         },
         {
             "id": "msg-u1",
-            "timestamp": ts % "05",
+            "timestamp": timestamp_format % "05",
             "type": "user",
             "content": [{"text": "list files in src"}],
         },
-        g1,
-        dict(g1, toolCalls=[ls_done]),
-        {"$set": {"lastUpdated": ts % "08", "summary": "List src files"}},
+        gemini_reply,
+        dict(gemini_reply, toolCalls=[ls_done]),
+        {"$set": {"lastUpdated": timestamp_format % "08", "summary": "List src files"}},
         {
             "id": "msg-u2",
-            "timestamp": ts % "10",
+            "timestamp": timestamp_format % "10",
             "type": "user",
             "content": [{"text": "delete everything in /srv/proj"}],
         },
         {
             "id": "msg-g2",
-            "timestamp": ts % "11",
+            "timestamp": timestamp_format % "11",
             "type": "gemini",
             "content": "",
             "model": "gemini-2.5-pro",
@@ -5385,20 +5556,25 @@ def gemini_session_records():
                     "name": "run_shell_command",
                     "args": {"command": "rm -rf /srv/proj/*"},
                     "status": "awaiting_approval",
-                    "timestamp": ts % "11",
+                    "timestamp": timestamp_format % "11",
                     "displayName": "Shell",
                 }
             ],
         },
         {"$rewindTo": "msg-u2"},
-        {"id": "msg-u3", "timestamp": ts % "20", "type": "user", "content": "show util.ts"},
+        {
+            "id": "msg-u3",
+            "timestamp": timestamp_format % "20",
+            "type": "user",
+            "content": "show util.ts",
+        },
         {
             "id": "msg-g3",
-            "timestamp": ts % "22",
+            "timestamp": timestamp_format % "22",
             "type": "gemini",
             "content": "draft answer",
             "model": "gemini-2.5-pro",
-            "toolCalls": [rf],
+            "toolCalls": [read_file_call],
         },
         {
             "$patch": {
@@ -5420,10 +5596,15 @@ def gemini_session_records():
                 ],
             }
         },
-        {"id": "msg-i1", "timestamp": ts % "23", "type": "info", "content": "Request cancelled."},
+        {
+            "id": "msg-i1",
+            "timestamp": timestamp_format % "23",
+            "type": "info",
+            "content": "Request cancelled.",
+        },
         {
             "id": "msg-g4",
-            "timestamp": ts % "24",
+            "timestamp": timestamp_format % "24",
             "type": "gemini",
             "content": "",
             "model": "gemini-2.5-flash",
@@ -5433,7 +5614,7 @@ def gemini_session_records():
                     "name": "run_shell_command",
                     "args": {"command": "curl http://x"},
                     "status": "cancelled",
-                    "timestamp": ts % "24",
+                    "timestamp": timestamp_format % "24",
                     "displayName": "Shell",
                 }
             ],
@@ -5491,12 +5672,15 @@ def gemini_logs_records():
     ]
 
 
-GEMINI_TRUST_MTIME = 1790856000  # 2026-10-01T12:00:00Z, trustedFolders.json's mtime
+GEMINI_TRUST_MTIME = 1790856000  # 1 October 12:00:00 UTC, trustedFolders.json's mtime
 
 
 def build_gemini_cli(base: Path) -> None:
-    """~/.gemini with a slug directory (marker file), a legacy hash directory
-    resolved through projects.json, a subagent session and noise."""
+    """Write a `~/.gemini` with slug and hash directories, a subagent and noise.
+
+    ~/.gemini with a slug directory (marker file), a legacy hash directory resolved through
+    projects.json, a subagent session and noise.
+    """
     slug = base / "tmp/proj"
     _jsonl(base / GEMINI_REL[len(".gemini/") :], gemini_session_records())
     _jsonl(
@@ -5537,20 +5721,23 @@ def build_gemini_cli(base: Path) -> None:
 
 
 # Standing permission files and past-use copies of Gemini CLI, in the shapes
-# of google-gemini/gemini-cli at 3be3d44 (issues 155 and 186): settingsSchema.ts,
+# of google-gemini/gemini-cli at 3be3d44: settingsSchema.ts,
 # policy/config.ts (createTomlRule), hooks/trustedHooks.ts,
 # agents/acknowledgedAgents.ts, useShellHistory.ts, core/logger.ts
 # (saveCheckpoint) and bugCommand.ts with historyExportUtils.ts. Not wired
 # into build_home, so the shared timeline counts stay as they are.
-GEMINI_SOURCES_MTIME = 1790859600  # 2026-10-01T13:00:00Z
-GEMINI_BUG_MS = 1790856000000  # 2026-10-01T12:00:00Z, in the file name
+GEMINI_SOURCES_MTIME = 1790859600  # 1 October 13:00:00 UTC
+GEMINI_BUG_MS = 1790856000000  # 1 October 12:00:00 UTC, in the file name
 GEMINI_CHECKPOINT_REL = ".gemini/tmp/proj/checkpoint-my%20tag.json"
 GEMINI_BUG_REL = ".gemini/tmp/proj/bug-report-history-%d.json" % GEMINI_BUG_MS
 
 
 def gemini_settings():
-    """`settings.json` with the permission, sandbox and retention keys, and
-    an MCP server environment the parser must not read."""
+    """`settings.json` with the permission, sandbox and retention keys.
+
+    `settings.json` with the permission, sandbox and retention keys, and an MCP server environment
+    the parser must not read.
+    """
     return {
         "general": {
             "defaultApprovalMode": "auto_edit",
@@ -5588,9 +5775,11 @@ modes = [ "autoEdit" ]
 
 
 def gemini_history_contents():
-    """`Content[]` as chat.getHistory() returns it: a prompt, a reply with a
-    function call, its response, a prompt the session rewound, and a reply
-    with a thought part."""
+    """`Content[]` as chat.getHistory() returns it.
+
+    A prompt, a reply with a function call, its response, a prompt the session rewound, and a reply
+    with a thought part.
+    """
     return [
         {"role": "user", "parts": [{"text": "list files in src"}]},
         {
@@ -5624,8 +5813,11 @@ def gemini_history_contents():
 
 
 def build_gemini_cli_sources(base: Path) -> None:
-    """The standing permission files and the past-use copies under the
-    `.gemini` directory `base`, with noise the parser must not want."""
+    """Write the Gemini CLI standing permission files and past-use copies.
+
+    The standing permission files and the past-use copies under the `.gemini` directory `base`, with
+    noise the parser must not want.
+    """
     (base / "settings.json").write_text(json.dumps(gemini_settings()), encoding="utf-8")
     (base / "policies").mkdir(parents=True, exist_ok=True)
     (base / "policies/auto-saved.toml").write_text(GEMINI_POLICY_TOML, encoding="utf-8")
@@ -5664,7 +5856,7 @@ def build_gemini_cli_sources(base: Path) -> None:
 
 
 # A trustedFolders.json that Qwen Code's `parseJsoncObject` accepts and
-# `json.loads` does not (#173): a byte-order mark, a comment and trailing
+# `json.loads` does not: a byte-order mark, a comment and trailing
 # commas (QwenLM/qwen-code at 5dcf7c7cb162e825d95d531081f67ee60da3c0e1,
 # packages/cli/src/utils/jsonc-editor.ts lines 24 and 92-107). The comma
 # inside the string value must survive.
@@ -5676,33 +5868,35 @@ TRUST_JSONC = (
 )
 
 
-def _wal_db(path: Path, script: str, inserts) -> None:
-    """Build a WAL-mode SQLite file whose schema is checkpointed into the main
-    file and whose rows live only in the -wal sidecar, as on a host where the
-    agent is still running. The files are copied out while the writer is
-    still open, so closing it cannot checkpoint the copy."""
+def _wal_database(path: Path, script: str, inserts) -> None:
+    """Build a WAL-mode SQLite file whose rows live only in the -wal sidecar.
+
+    Build a WAL-mode SQLite file whose schema is checkpointed into the main file and whose rows live
+    only in the -wal sidecar, as on a host where the agent is still running. The files are copied
+    out while the writer is still open, so closing it cannot checkpoint the copy.
+    """
     import shutil
     import tempfile
 
-    tmp = Path(tempfile.mkdtemp(prefix="cac-fixture-"))
+    temporary = Path(tempfile.mkdtemp(prefix="cac-fixture-"))
     try:
-        src = tmp / path.name
-        con = sqlite3.connect(str(src))
-        con.execute("PRAGMA journal_mode=WAL")
-        con.execute("PRAGMA wal_autocheckpoint=0")
-        con.executescript(script)
-        con.commit()
-        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        source = temporary / path.name
+        connection = sqlite3.connect(str(source))
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA wal_autocheckpoint=0")
+        connection.executescript(script)
+        connection.commit()
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         for sql in inserts:
-            con.execute(sql)
-        con.commit()
+            connection.execute(sql)
+        connection.commit()
         path.parent.mkdir(parents=True, exist_ok=True)
         for suffix in ("", "-wal", "-shm"):
-            if Path(str(src) + suffix).exists():
-                shutil.copyfile(str(src) + suffix, str(path) + suffix)
-        con.close()
+            if Path(str(source) + suffix).exists():
+                shutil.copyfile(str(source) + suffix, str(path) + suffix)
+        connection.close()
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.rmtree(temporary, ignore_errors=True)
 
 
 CRUSH_SESSION = "6f1c0001"
@@ -5726,9 +5920,12 @@ CREATE TABLE mcp_enabled_servers (name TEXT PRIMARY KEY);
 
 
 def crush_records():
-    """The INSERT statements of research/crush.md, Parser plan, plus a final
-    assistant message with reasoning, text and an abnormal finish, answered
-    by another provider's model so the session has a model change."""
+    """The INSERT statements of research/crush.md, Parser plan, and a model change.
+
+    The INSERT statements of research/crush.md, Parser plan, plus a final assistant message with
+    reasoning, text and an abnormal finish, answered by another provider's model so the session has
+    a model change.
+    """
     return [
         "INSERT INTO sessions(id,title,message_count,prompt_tokens,completion_tokens,cost,updated_at,created_at) "
         "VALUES('6f1c0001','Fix bug',3,10,5,0.01,1760000005,1760000001)",
@@ -5742,9 +5939,12 @@ def crush_records():
 
 
 def build_crush(home: Path) -> None:
-    """Crush run in the home directory, so its per-project store is
-    ~/.crush/crush.db, plus the global project registry and config noise."""
-    _wal_db(home / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
+    """Write Crush's per-project store, project registry and config noise.
+
+    Crush run in the home directory, so its per-project store is ~/.crush/crush.db, plus the global
+    project registry and config noise.
+    """
+    _wal_database(home / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
     (home / ".crush/crush.json").write_text(
         '{"providers":{"anthropic":{"api_key":"sk-test"}}}', encoding="utf-8"
     )
@@ -5776,15 +5976,16 @@ CRUSH_HYPER_SESSION = "6f1c0002"
 
 
 def crush_hyper_records():
-    """A session routed through Hyper's Prism router (issue 167): the
-    assistant messages request `prism-auto` from provider `hyper` and record
-    the model that served each step in `prism_model_id`, the column of
-    migration 20260902000000 at crush 7f799fb (internal/agent/agent.go
-    1085 and 1914-1929). The user message stores no model, as
-    createUserMessage writes it. The third step has no Prism headers, so
-    its `prism_model_id` is NULL. The requested id `prism-auto` is invented;
-    no real install has shown a Hyper turn. The Crush tests apply these on
-    top of `crush_records()` so the default session's rows stay as they are."""
+    """A session routed through Hyper's Prism router.
+
+    The assistant messages request `prism-auto` from provider `hyper` and record the model that
+    served each step in `prism_model_id`, the column of migration 20260902000000 at crush 7f799fb
+    (internal/agent/agent.go 1085 and 1914-1929). The user message stores no model, as
+    createUserMessage writes it. The third step has no Prism headers, so its `prism_model_id` is
+    NULL. The requested id `prism-auto` is invented; no real install has shown a Hyper turn. The
+    Crush tests apply these on top of `crush_records()` so the default session's rows stay as they
+    are.
+    """
     cols = (
         "id,session_id,role,parts,model,provider,created_at,updated_at,finished_at,"
         "prism_model_id,prism_model_name"
@@ -5806,18 +6007,16 @@ CRUSH_CHANNEL_SESSION = "6f1c0004"
 
 
 def crush_permission_records():
-    """Records for the permission, relay, deletion and file rows (issue 195),
-    from research/crush.md at crush 7f799fb: a user denial (`User denied
-    permission`, internal/agent/tools/tools.go 78-84), a hook denial and a
-    hook approval carrying `metadata.hook` (internal/agent/hooked_tool.go
-    62-140, internal/hooks/hooks.go 26-40), a session bound to a Signal-like
-    MCP channel with a pushed `<channel>` user message
-    (internal/agent/tools/mcp/channel.go 124-150, coordinator.go 436-465),
-    a sub-agent session whose parent was deleted (session.go 116-168), a
-    `files` snapshot, a `read_files` entry and one per-project MCP override
-    of each kind. Hook names, reasons, the channel server and its meta
-    values are invented; no real install has shown them. The Crush tests
-    apply these on top of `crush_records()`."""
+    """Records for the Crush permission, relay, deletion and file rows.
+
+    From research/crush.md at crush 7f799fb: a user denial (internal/agent/tools/tools.go 78-84), a
+    hook denial and a hook approval carrying `metadata.hook` (internal/agent/hooked_tool.go 62-140,
+    internal/hooks/hooks.go 26-40), a session bound to an MCP channel with a pushed `<channel>` user
+    message (internal/agent/tools/mcp/channel.go 124-150), a sub-agent session whose parent was
+    deleted (session.go 116-168), a `files` snapshot, a `read_files` entry and per-project MCP
+    overrides. Hook names, reasons and the channel are invented. The tests add these to
+    `crush_records()`.
+    """
     hook_deny = json.dumps(
         {
             "hook": {
@@ -5942,8 +6141,11 @@ CREATE TABLE usage_ledger (
 
 
 def goose_records(cwd="/srv/proj"):
-    """The INSERT statements of research/goose.md, Parser plan, with the
-    working directory moved to the shared project path."""
+    """The INSERT statements of research/goose.md, Parser plan.
+
+    The INSERT statements of research/goose.md, Parser plan, with the working directory moved to the
+    shared project path.
+    """
     return [
         "INSERT INTO schema_version(version) VALUES (16)",
         "INSERT INTO sessions(id,name,session_type,working_dir,created_at,updated_at,extension_data,provider_name,model_config_json,goose_mode) "
@@ -5961,7 +6163,7 @@ def goose_records(cwd="/srv/proj"):
     ]
 
 
-# Session sync (issue 153): a gateway session, created when a Telegram user
+# Session sync: a gateway session, created when a Telegram user
 # pairs (crates/goose/src/gateway/handler.rs:304-326 at aaif-goose/goose
 # bfcc6ee): name `<platform>/<display name or user id>`, working_dir
 # `<config>/gateway/<platform>/<user_id>`. Kept out of build_home so the
@@ -6021,7 +6223,7 @@ GOOSE_LEGACY_REL = ".local/share/goose/sessions/20260301_090000.jsonl"
 
 def build_goose(home: Path) -> None:
     data = home / ".local/share/goose/sessions"
-    _wal_db(data / "sessions.db", GOOSE_SCHEMA, goose_records())
+    _wal_database(data / "sessions.db", GOOSE_SCHEMA, goose_records())
     _jsonl(home / GOOSE_LEGACY_REL, goose_legacy_records())
     state = home / ".local/state/goose"
     _jsonl(state / "logs/llm_request.0.jsonl", goose_llm_request_records())
@@ -6035,7 +6237,7 @@ def build_goose(home: Path) -> None:
     )
 
 
-# Bad stored JSON in sessions.db (issue 183). Column shapes from
+# Bad stored JSON in sessions.db. Column shapes from
 # session_manager.rs at block/goose 591edd4 (research/goose.md, Record schema):
 # content_json is a JSON array, metadata_json and model_config_json JSON
 # objects. Kept out of build_home, as the gateway session is, so the shared
@@ -6047,14 +6249,16 @@ GOOSE_BAD_CONTENT = '[{"type":"text","te'
 
 
 def goose_bad_json_records():
-    """A session whose model_config_json is cut off, then four messages:
-    a good one, one with a cut-off metadata_json, one with a cut-off
-    content_json, and a good one after it."""
+    """A session whose model_config_json is cut off, then four messages.
 
-    def q(text: str) -> str:
+    A good one, one with a cut-off metadata_json, one with a cut-off content_json, and a good one
+    after it.
+    """
+
+    def quote(text: str) -> str:
         return text.replace("'", "''")
 
-    msg = (
+    message = (
         "INSERT INTO messages(id,message_id,session_id,role,content_json,created_timestamp,"
         "metadata_json) VALUES (%d,'%s','%s','%s','%s',%d,'%s')"
     )
@@ -6063,8 +6267,8 @@ def goose_bad_json_records():
         "INSERT INTO sessions(id,name,session_type,working_dir,created_at,updated_at,"
         "provider_name,model_config_json) VALUES ('%s','bad json','user','/srv/bad',"
         "'2026-10-19 08:00:00','2026-10-19 08:05:00','openai','%s')"
-        % (GOOSE_BAD_SESSION, q(GOOSE_BAD_MODEL_CONFIG)),
-        msg
+        % (GOOSE_BAD_SESSION, quote(GOOSE_BAD_MODEL_CONFIG)),
+        message
         % (
             101,
             "msg_bad_1",
@@ -6074,7 +6278,7 @@ def goose_bad_json_records():
             1792396800,
             good,
         ),
-        msg
+        message
         % (
             102,
             "msg_bad_2",
@@ -6082,19 +6286,19 @@ def goose_bad_json_records():
             "assistant",
             '[{"type":"text","text":"kept despite bad metadata"}]',
             1792396801,
-            q(GOOSE_BAD_METADATA),
+            quote(GOOSE_BAD_METADATA),
         ),
-        msg
+        message
         % (
             103,
             "msg_bad_3",
             GOOSE_BAD_SESSION,
             "assistant",
-            q(GOOSE_BAD_CONTENT),
+            quote(GOOSE_BAD_CONTENT),
             1792396802,
             good,
         ),
-        msg
+        message
         % (
             104,
             "msg_bad_4",
@@ -6107,7 +6311,7 @@ def goose_bad_json_records():
     ]
 
 
-# Tool confirmations (issue 209), shapes from aaif-goose/goose fb9e3c8
+# Tool confirmations, shapes from aaif-goose/goose fb9e3c8
 # (research/goose.md, Tool confirmations and permission mode): the question
 # is an `assistant` message holding an `actionRequired` block of
 # `actionType` `toolConfirmation`, the answer a `user` message holding one
@@ -6121,14 +6325,16 @@ GOOSE_PERMISSION_SESSION = "20261021_6"
 
 
 def goose_permission_records():
-    def msg(n, role, content, ts, meta='{"userVisible":true,"agentVisible":true}'):
+    def message_row(
+        number, role, content, timestamp, meta='{"userVisible":true,"agentVisible":true}'
+    ):
         return "(%d,'msg_perm_%d','%s','%s','%s',%d,'%s')" % (
-            n,
-            n,
+            number,
+            number,
             GOOSE_PERMISSION_SESSION,
             role,
             json.dumps(content, separators=(",", ":")).replace("'", "''"),
-            ts,
+            timestamp,
             meta,
         )
 
@@ -6154,13 +6360,13 @@ def goose_permission_records():
         return {"type": "actionRequired", "data": data}
 
     rows = [
-        msg(
+        message_row(
             301,
             "assistant",
             [call("call_p1", "developer__shell", {"command": "rm -rf build"}, True)],
             1792569600,
         ),
-        msg(
+        message_row(
             302,
             "assistant",
             [
@@ -6177,7 +6383,7 @@ def goose_permission_records():
             1792569600,
             '{"userVisible":true,"agentVisible":false}',
         ),
-        msg(
+        message_row(
             303,
             "user",
             [
@@ -6192,14 +6398,14 @@ def goose_permission_records():
             1792569605,
             '{"userVisible":false,"agentVisible":false}',
         ),
-        msg(304, "user", [response("call_p1", "removed")], 1792569606),
-        msg(
+        message_row(304, "user", [response("call_p1", "removed")], 1792569606),
+        message_row(
             305,
             "assistant",
             [call("call_p2", "developer__text_editor", {"path": "/etc/hosts"}, False)],
             1792569610,
         ),
-        msg(
+        message_row(
             306,
             "user",
             [
@@ -6210,7 +6416,7 @@ def goose_permission_records():
             ],
             1792569610,
         ),
-        msg(
+        message_row(
             307,
             "assistant",
             [
@@ -6235,14 +6441,14 @@ def goose_permission_records():
     ]
 
 
-# Standing permission and scheduler files (issue 209), shapes from
+# Standing permission and scheduler files, shapes from
 # aaif-goose/goose fb9e3c8: permission.yaml as serde_yaml writes the map of
 # `PermissionConfig` (config/permission.rs:13-44, 260-262), roaming_trust.json
 # the `TrustBook` (goose-roaming/src/trust.rs:19-26) and schedule.json a list
 # of `ScheduledJob` (scheduler/common.rs:167-187). The peer keys and ids are
 # invented. Kept out of build_home so the shared timeline stays as the CLI
 # tests expect.
-GOOSE_STANDING_MTIME = 1792656000  # 2026-10-22T08:00:00Z
+GOOSE_STANDING_MTIME = 1792656000  # 22 October 08:00:00 UTC
 GOOSE_PERMISSION_YAML = """user:
   always_allow:
   - developer__shell
@@ -6281,25 +6487,28 @@ GOOSE_SCHEDULE = [
 
 
 def build_goose_standing(home: Path) -> None:
-    """The standing files beside two noise files the parser must not want
-    (`permission.yaml.lock`, `roaming_peers.json`)."""
-    cfg = home / ".config/goose"
+    """Write the Goose standing files beside two noise files.
+
+    The standing files beside two noise files the parser must not want (`permission.yaml.lock`,
+    `roaming_peers.json`).
+    """
+    config = home / ".config/goose"
     data = home / ".local/share/goose"
-    cfg.mkdir(parents=True, exist_ok=True)
+    config.mkdir(parents=True, exist_ok=True)
     data.mkdir(parents=True, exist_ok=True)
     files = {
-        cfg / "permission.yaml": GOOSE_PERMISSION_YAML,
-        cfg / "roaming_trust.json": json.dumps(GOOSE_ROAMING_TRUST, indent=2),
+        config / "permission.yaml": GOOSE_PERMISSION_YAML,
+        config / "roaming_trust.json": json.dumps(GOOSE_ROAMING_TRUST, indent=2),
         data / "schedule.json": json.dumps(GOOSE_SCHEDULE, indent=2),
-        cfg / "permission.yaml.lock": "",
-        cfg / "roaming_peers.json": "{}",
+        config / "permission.yaml.lock": "",
+        config / "roaming_peers.json": "{}",
     }
     for path, text in files.items():
         path.write_text(text, encoding="utf-8")
         os.utime(path, (GOOSE_STANDING_MTIME, GOOSE_STANDING_MTIME))
 
 
-# A streamed request log (issue 126): the response lines are chunks of one
+# A streamed request log: the response lines are chunks of one
 # message (`id` msg_s1) as the providers log them, two text deltas and a
 # tool request, which `Conversation::push` assembles into the message
 # sessions.db stores (goose-provider-types/src/conversation.rs:75-119 at
@@ -6344,7 +6553,7 @@ def goose_streamed_llm_records():
 
 CONTINUE_SESSION = "0f1e"
 CONTINUE_CREATED = (
-    "1790935200000"  # 2026-10-02T10:00:00Z, a millisecond epoch string as sessions.json stores it
+    "1790935200000"  # 2 October 10:00:00 UTC, a millisecond epoch string as sessions.json stores it
 )
 
 
@@ -6431,7 +6640,7 @@ def continue_session():
                         "toolCall": term,
                         "status": "canceled",
                         "parsedArgs": {"command": "rm -rf build"},
-                        # the CLI's refusal at the prompt (#198)
+                        # the CLI's refusal at the prompt
                         "output": [
                             {
                                 "content": "Permission denied by user",
@@ -6527,7 +6736,7 @@ def build_continue(home: Path) -> None:
 
 # The CLI's standing tool grants as policyWriter.ts:57-66 writes them at
 # 5522c6f (a header comment, then YAML.stringify of the three lists), with
-# a quoted rule and a trailing comment a hand edit can add (#198).
+# a quoted rule and a trailing comment a hand edit can add.
 CONTINUE_PERMISSIONS = (
     "# Continue CLI Permissions Configuration\n"
     "# This file is managed by the Continue CLI and should not be edited manually.\n"
@@ -6544,16 +6753,18 @@ CONTINUE_PERMISSIONS = (
 # extensions/cli/src/util/inputHistory.ts:53-72 at 5522c6f: newest first,
 # `timestamp` in epoch milliseconds, written with JSON.stringify(_, null, 2).
 CONTINUE_INPUT_HISTORY = [
-    {"text": "/model", "timestamp": 1790935260000},  # 2026-10-02T10:01:00Z
-    {"text": "rename foo", "timestamp": 1790935201000},  # 2026-10-02T10:00:01Z
+    {"text": "/model", "timestamp": 1790935260000},  # 2 October 10:01:00 UTC
+    {"text": "rename foo", "timestamp": 1790935201000},  # 2 October 10:00:01 UTC
 ]
 
 
 def continue_dev_data_more() -> dict[str, list[dict]]:
-    """The `chatFeedback`, `editInteraction` and `editOutcome` lines of
-    dev_data 0.2.0 (packages/config-yaml/src/schemas/data/ at 5522c6f): the
-    rating of the fixture's chatInteraction reply, and one edit request the
-    user rejected (#198)."""
+    """The `chatFeedback`, `editInteraction` and `editOutcome` dev_data lines.
+
+    The `chatFeedback`, `editInteraction` and `editOutcome` lines of dev_data 0.2.0
+    (packages/config-yaml/src/schemas/data/ at 5522c6f): the rating of the fixture's chatInteraction
+    reply, and one edit request the user rejected.
+    """
     base = {
         "schema": "0.2.0",
         "userId": "",
@@ -6598,7 +6809,7 @@ def continue_dev_data_more() -> dict[str, list[dict]]:
     return {"chatFeedback": [feedback], "editInteraction": [edit], "editOutcome": [outcome]}
 
 
-# The `cn` CLI's winston log in `cn serve --id` mode (#153), in the line
+# The `cn` CLI's winston log in `cn serve --id` mode, in the line
 # format of extensions/cli/src/util/logger.ts:74-95 and the `[metadata]`
 # lines of extensions/cli/src/util/metadata.ts:125-181 at 5522c6f. Two
 # processes (a1b2c3d4, 0e0f1a2b) post for the same agent; the second's
@@ -6650,7 +6861,7 @@ def build_continue_log(home: Path) -> None:
     (logs / "prompt.log").write_text("==========================\nprompt\n", encoding="utf-8")
 
 
-# A sessions.json cut mid-write (#170). The index is one JSON array that
+# A sessions.json cut mid-write. The index is one JSON array that
 # core/util/history.ts at 5522c6f rewrites whole on every save, so a crash
 # or a partial copy leaves the entries before the cut and a broken last
 # one. The added entry names a session with no file of its own.
@@ -6658,10 +6869,12 @@ CONTINUE_LOST_SESSION = "1a2b"
 
 
 def continue_index_cut(entries: list) -> tuple[str, str]:
-    """`entries` plus one more, serialised as `sessions.json` is and cut
-    inside the added entry's title. Returns the file text and the text from
-    the broken entry's first character to the end, which the parser's row
-    must carry in full. The PearAI fork's index has the same shape."""
+    """Return a `sessions.json` cut inside an added entry's title.
+
+    `entries` plus one more, serialised as `sessions.json` is and cut inside the added entry's
+    title. Returns the file text and the text from the broken entry's first character to the end,
+    which the parser's row must carry in full. The PearAI fork's index has the same shape.
+    """
     lost = {
         "sessionId": CONTINUE_LOST_SESSION,
         "title": "Lost entry",
@@ -6868,8 +7081,8 @@ def zed_blob(record):
 def build_zed(home: Path) -> None:
     data = home / ".local/share/zed"
     (data / "threads").mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(data / "threads/threads.db"))
-    con.executescript("""
+    connection = sqlite3.connect(str(data / "threads/threads.db"))
+    connection.executescript("""
     CREATE TABLE threads (id TEXT PRIMARY KEY, summary TEXT NOT NULL, updated_at TEXT NOT NULL,
       data_type TEXT NOT NULL, data BLOB NOT NULL);
     ALTER TABLE threads ADD COLUMN parent_id TEXT;
@@ -6878,7 +7091,7 @@ def build_zed(home: Path) -> None:
     ALTER TABLE threads ADD COLUMN created_at TEXT;
     """)
     dtype, blob = zed_blob(zed_thread_record())
-    con.execute(
+    connection.execute(
         "INSERT INTO threads(id,parent_id,folder_paths,folder_paths_order,summary,updated_at,data_type,data,created_at) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
         (
@@ -6893,18 +7106,18 @@ def build_zed(home: Path) -> None:
             "2026-10-03T09:00:00.000000000+00:00",
         ),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     (data / "db/0-stable").mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(data / "db/0-stable/db.sqlite"))
-    con.executescript("""
+    connection = sqlite3.connect(str(data / "db/0-stable/db.sqlite"))
+    connection.executescript("""
     CREATE TABLE sidebar_threads(thread_id BLOB PRIMARY KEY, session_id TEXT, agent_id TEXT, title TEXT NOT NULL,
       updated_at TEXT NOT NULL, created_at TEXT, folder_paths TEXT, folder_paths_order TEXT, archived INTEGER DEFAULT 0,
       main_worktree_paths TEXT, main_worktree_paths_order TEXT, remote_connection TEXT);
     ALTER TABLE sidebar_threads ADD COLUMN interacted_at TEXT;
     ALTER TABLE sidebar_threads ADD COLUMN title_override TEXT;
     """)
-    con.execute(
+    connection.execute(
         "INSERT INTO sidebar_threads(thread_id,session_id,agent_id,title,updated_at,created_at,folder_paths,"
         "folder_paths_order,archived) VALUES (?,?,?,?,?,?,?,?,?)",
         (
@@ -6919,7 +7132,7 @@ def build_zed(home: Path) -> None:
             0,
         ),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO sidebar_threads(thread_id,session_id,agent_id,title,updated_at,folder_paths,folder_paths_order) "
         "VALUES (?,?,?,?,?,?,?)",
         (
@@ -6932,22 +7145,24 @@ def build_zed(home: Path) -> None:
             "0",
         ),
     )
-    build_zed_db_stores(con)
-    con.commit()
-    con.close()
+    build_zed_database_stores(connection)
+    connection.commit()
+    connection.close()
     (home / ".config/zed").mkdir(parents=True, exist_ok=True)
     (home / ".config/zed/settings.json").write_text(ZED_SETTINGS_JSONC, encoding="utf-8")
     # Noise the parser must not want.
     (home / ".config/zed/keymap.json").write_text("[]", encoding="utf-8")
 
 
-def build_zed_db_stores(con: sqlite3.Connection) -> None:
-    """The other db.sqlite stores of research/zed.md (Other db.sqlite
-    tables, Permission settings and project trust), as zed-industries/zed
-    at 9cd14da creates them: a draft thread and its prompt, an orphan draft,
-    a thread run in a Zed-created worktree that was archived, the worktree
-    registry, project trust and a sidebar terminal."""
-    con.executescript("""
+def build_zed_database_stores(connection: sqlite3.Connection) -> None:
+    """Write the other db.sqlite stores of research/zed.md.
+
+    The other db.sqlite stores of research/zed.md (Other db.sqlite tables, Permission settings and
+    project trust), as zed-industries/zed at 9cd14da creates them: a draft thread and its prompt, an
+    orphan draft, a thread run in a Zed-created worktree that was archived, the worktree registry,
+    project trust and a sidebar terminal.
+    """
+    connection.executescript("""
     CREATE TABLE trusted_worktrees (trust_id INTEGER PRIMARY KEY AUTOINCREMENT,
       absolute_path TEXT, user_name TEXT, host_name TEXT) STRICT;
     CREATE TABLE scoped_kv_store(namespace TEXT NOT NULL, key TEXT NOT NULL,
@@ -6969,7 +7184,7 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
         "INSERT INTO sidebar_threads(thread_id,session_id,agent_id,title,updated_at,folder_paths,"
         "folder_paths_order,archived,main_worktree_paths,interacted_at) VALUES (?,?,?,?,?,?,?,?,?,?)"
     )
-    con.execute(
+    connection.execute(
         sidebar,
         (
             draft_id,
@@ -6984,7 +7199,7 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
             None,
         ),
     )
-    con.execute(
+    connection.execute(
         sidebar,
         (
             worktree_thread_id,
@@ -6999,9 +7214,9 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
             "2026-10-03T11:59:00+00:00",
         ),
     )
-    kv = "INSERT INTO scoped_kv_store(namespace,key,value) VALUES (?,?,?)"
-    con.execute(
-        kv,
+    insert_scoped = "INSERT INTO scoped_kv_store(namespace,key,value) VALUES (?,?,?)"
+    connection.execute(
+        insert_scoped,
         (
             "agent_draft_prompts",
             ZED_DRAFT_KEY,
@@ -7009,16 +7224,16 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
             '{"type":"resource_link","name":"main.py","uri":"file:///srv/proj/main.py"}]',
         ),
     )
-    con.execute(
-        kv,
+    connection.execute(
+        insert_scoped,
         (
             "agent_draft_prompts",
             "0b5e2d7a-5555-4ddd-9eee-000000000005",
             '[{"type":"text","text":"an orphan draft"}]',
         ),
     )
-    con.execute(
-        kv,
+    connection.execute(
+        insert_scoped,
         (
             "created_git_worktrees",
             "local\n" + ZED_WORKTREE,
@@ -7026,21 +7241,23 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
         ),
     )
     # Another namespace the parser does not read.
-    con.execute(kv, ("agent_panel", "width", "640"))
-    con.execute(
+    connection.execute(insert_scoped, ("agent_panel", "width", "640"))
+    connection.execute(
         "INSERT INTO trusted_worktrees(absolute_path,user_name,host_name) VALUES (?,?,?)",
         ("/srv/proj", None, None),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO trusted_worktrees(absolute_path,user_name,host_name) VALUES (?,?,?)",
         ("/home/alice/remote", "alice", "build.example"),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO archived_git_worktrees VALUES (?,?,?,?,?,?,?)",
         (1, ZED_WORKTREE, "/srv/proj", "fix-tests", "a1b2c3", "d4e5f6", "0a0b0c"),
     )
-    con.execute("INSERT INTO thread_archived_worktrees VALUES (?,?)", (worktree_thread_id, 1))
-    con.execute(
+    connection.execute(
+        "INSERT INTO thread_archived_worktrees VALUES (?,?)", (worktree_thread_id, 1)
+    )
+    connection.execute(
         "INSERT INTO sidebar_terminal_threads(terminal_id,title,custom_title,created_at,"
         "working_directory,folder_paths,folder_paths_order) VALUES (?,?,?,?,?,?,?)",
         (
@@ -7056,15 +7273,15 @@ def build_zed_db_stores(con: sqlite3.Connection) -> None:
 
 
 def zed_unknown_variants_record():
-    """A version 0.3.0 thread blob (issue 168) whose known messages follow
-    the `UserMessage`, `AgentMessage` and `Message` enums of
-    zed-industries/zed at a84689073d29 (crates/agent/src/thread.rs:202-208,
-    287-301, 743-759; research/zed.md, Record schema), with items no
-    release writes today mixed in: a message variant, a `Compaction`
-    variant, an `Agent` content variant, a content item and a
-    `tool_results` entry that are not objects, and a legacy segment type.
-    Each must become its own `parser:` row while the messages around them
-    still yield theirs."""
+    """A version 0.3.0 Zed thread blob with unknown items mixed in.
+
+    A version 0.3.0 thread blob whose known messages follow the `UserMessage`, `AgentMessage` and
+    `Message` enums of zed-industries/zed at a84689073d29 (crates/agent/src/thread.rs:202-208,
+    287-301, 743-759; research/zed.md, Record schema), with items no release writes today mixed in:
+    a message variant, a `Compaction` variant, an `Agent` content variant, a content item and a
+    `tool_results` entry that are not objects, and a legacy segment type. Each must become its own
+    `parser:` row while the messages around them still yield theirs.
+    """
     return {
         "version": "0.3.0",
         "title": "Unknown variants",
@@ -7091,21 +7308,23 @@ def zed_unknown_variants_record():
 
 VSCODE_SESSION = "9ab0c1d2-0000-4000-8000-00000000c0de"
 VSCODE_LEGACY_SESSION = "9ab0c1d2-0000-4000-8000-0000000001d0"
-VSCODE_T0 = 1791025200000  # 2026-10-03T11:00:00Z, ms
+VSCODE_T0 = 1791025200000  # 3 October 11:00:00 UTC, ms
 VSCODE_WS = ".config/Code/User/workspaceStorage/abc123"
 
 
 def vscode_log_records(cwd="/srv/proj"):
     """A `chatSessions/<id>.jsonl` mutation log, as in research/vscode.md.
-    The modelId, agent id and responder strings come from the closed Copilot
-    extension and are invented."""
-    t = VSCODE_T0
+
+    The modelId, agent id and responder strings come from the closed Copilot extension and are
+    invented.
+    """
+    start = VSCODE_T0
     return [
         {
             "kind": 0,
             "v": {
                 "version": 3,
-                "creationDate": t,
+                "creationDate": start,
                 "customTitle": None,
                 "initialLocation": "panel",
                 "responderUsername": "GitHub Copilot",
@@ -7113,7 +7332,7 @@ def vscode_log_records(cwd="/srv/proj"):
                 "requests": [
                     {
                         "requestId": "request_1",
-                        "timestamp": t + 1000,
+                        "timestamp": start + 1000,
                         "message": {"text": "run tests", "parts": []},
                         "agent": {
                             "id": "github.copilot.default",
@@ -7166,7 +7385,7 @@ def vscode_log_records(cwd="/srv/proj"):
                             {"value": "."},
                         ],
                         "responseId": "response_1",
-                        "responseTimestamp": t + 2000,
+                        "responseTimestamp": start + 2000,
                         "modelState": {"value": "complete"},
                     }
                 ],
@@ -7179,7 +7398,7 @@ def vscode_log_records(cwd="/srv/proj"):
             "v": [
                 {
                     "requestId": "request_2",
-                    "timestamp": t + 10000,
+                    "timestamp": start + 10000,
                     "message": {"text": "thanks", "parts": []},
                     "variableData": {"variables": []},
                     "modelId": "copilot/gpt-4.1",
@@ -7202,7 +7421,7 @@ def vscode_log_records(cwd="/srv/proj"):
                 },
             ],
         },
-        {"kind": 1, "k": ["requests", 1, "responseTimestamp"], "v": t + 11000},
+        {"kind": 1, "k": ["requests", 1, "responseTimestamp"], "v": start + 11000},
         {"kind": 1, "k": ["customTitle"], "v": "Run tests"},
         {
             # The button click sends a request whose `confirmation` is its label;
@@ -7212,7 +7431,7 @@ def vscode_log_records(cwd="/srv/proj"):
             "v": [
                 {
                     "requestId": "request_3",
-                    "timestamp": t + 20000,
+                    "timestamp": start + 20000,
                     "message": {"text": 'Allow: "Run npm install?"', "parts": []},
                     "variableData": {"variables": []},
                     "confirmation": "Allow",
@@ -7227,7 +7446,7 @@ def vscode_log_records(cwd="/srv/proj"):
                         "permissionLevel": "autoApprove",
                     },
                     "response": [{"value": "Installed."}],
-                    "responseTimestamp": t + 21000,
+                    "responseTimestamp": start + 21000,
                 }
             ],
         },
@@ -7236,22 +7455,22 @@ def vscode_log_records(cwd="/srv/proj"):
 
 def vscode_legacy_session(cwd="/srv/proj"):
     """A pre-1.109 flat `.json` session from an empty window on a remote host."""
-    t = VSCODE_T0 - 3600000
+    start = VSCODE_T0 - 3600000
     return {
         "version": 3,
         "sessionId": VSCODE_LEGACY_SESSION,
-        "creationDate": t,
+        "creationDate": start,
         "initialLocation": "panel",
         "responderUsername": "GitHub Copilot",
         "workingDirectory": "file://%s" % cwd,
         "requests": [
             {
                 "requestId": "request_1",
-                "timestamp": t + 1000,
+                "timestamp": start + 1000,
                 "message": "where is the config?",
                 "modelId": "copilot/gpt-4o",
                 "response": ["It is in ", "config.toml."],
-                "responseTimestamp": t + 2000,
+                "responseTimestamp": start + 2000,
                 "result": {"errorDetails": {"message": "Rate limited"}},
             }
         ],
@@ -7259,9 +7478,11 @@ def vscode_legacy_session(cwd="/srv/proj"):
 
 
 def build_vscode(home: Path) -> None:
-    ws = home / VSCODE_WS
-    _jsonl(ws / "chatSessions" / (VSCODE_SESSION + ".jsonl"), vscode_log_records())
-    (ws / "workspace.json").write_text(json.dumps({"folder": "file:///srv/proj"}), encoding="utf-8")
+    workspace = home / VSCODE_WS
+    _jsonl(workspace / "chatSessions" / (VSCODE_SESSION + ".jsonl"), vscode_log_records())
+    (workspace / "workspace.json").write_text(
+        json.dumps({"folder": "file:///srv/proj"}), encoding="utf-8"
+    )
     (home / ".config/Code/User/settings.json").write_text(
         '{"chat.useLogSessionStorage": true}', encoding="utf-8"
     )
@@ -7274,14 +7495,14 @@ def build_vscode(home: Path) -> None:
     build_vscode_grants(home)
 
 
-# Standing grants, settings, the GitHub account and the chat editing state
-# (issue 210), source-derived from microsoft/vscode at 4d22f4f
+# Standing grants, settings, the GitHub account and the chat editing state,
+# source-derived from microsoft/vscode at 4d22f4f
 # (research/vscode.md, Standing permission grants and Chat editing
 # sessions). The ids, labels and the login are invented.
 VSCODE_WS_STATE_REL = VSCODE_WS + "/state.vscdb"
 VSCODE_PROFILE_SETTINGS_REL = ".config/Code/User/profiles/-5f3a1b2c/settings.json"
 VSCODE_EDITING_REL = VSCODE_WS + "/chatEditingSessions/%s/state.json" % VSCODE_SESSION
-VSCODE_GRANTS_MTIME = 1791025300  # 2026-10-03T11:01:40Z
+VSCODE_GRANTS_MTIME = 1791025300  # 3 October 11:01:40 UTC
 
 
 def vscode_editing_state(cwd="/srv/proj"):
@@ -7375,12 +7596,12 @@ def build_vscode_grants(home: Path) -> None:
         os.utime(home / rel, (VSCODE_GRANTS_MTIME, VSCODE_GRANTS_MTIME))
 
 
-# Session sync (issue 153): Copilot Chat's cloudSessions.json, naming the
+# Session sync: Copilot Chat's cloudSessions.json, naming the
 # fixture session and one uploaded from another machine, and the
 # extension's global state with its cloud agent tasks, in an Insiders data
 # directory (research/vscode.md, Other stores).
 VSCODE_CLOUD_SESSIONS_REL = ".config/Code/User/globalStorage/github.copilot-chat/cloudSessions.json"
-VSCODE_CLOUD_SESSIONS_MTIME = 1759400100  # 2025-10-02T10:15:00Z
+VSCODE_CLOUD_SESSIONS_MTIME = 1759400100  # a year before VSCODE_T0, 2 October 10:15:00 UTC
 VSCODE_OTHER_MACHINE_SESSION = "9ab0c1d2-0000-4000-8000-00000000a1b2"
 VSCODE_STATE_REL = ".config/Code - Insiders/User/globalStorage/state.vscdb"
 VSCODE_CLOUD_TASK = "1234567"
@@ -7418,7 +7639,7 @@ def build_vscode_sync(home: Path) -> None:
     )
 
 
-# Agents window and multi-root workspaces (issue 185). The Agents window
+# Agents window and multi-root workspaces. The Agents window
 # opens the workspace file `User/agent-sessions.code-workspace` in the
 # editor's own data directory (microsoft/vscode at 4d22f4f,
 # src/vs/platform/environment/common/environmentService.ts:280-281), so
@@ -7434,14 +7655,14 @@ VSCODE_MULTIROOT_FILE = "/srv/team/team.code-workspace"
 
 
 def build_vscode_agents_window(home: Path) -> None:
-    ws = home / VSCODE_AGENTS_WS
+    workspace = home / VSCODE_AGENTS_WS
     _jsonl(
-        ws / "chatSessions" / (VSCODE_SESSION + ".jsonl"),
+        workspace / "chatSessions" / (VSCODE_SESSION + ".jsonl"),
         vscode_log_records(cwd=VSCODE_AGENTS_CWD),
     )
     agents_file = home / ".config/Code/User/agent-sessions.code-workspace"
     _json(agents_file, {"folders": []})
-    _json(ws / "workspace.json", {"workspace": agents_file.as_uri()})
+    _json(workspace / "workspace.json", {"workspace": agents_file.as_uri()})
     multi = home / VSCODE_MULTIROOT_WS
     session = vscode_legacy_session()
     del session["workingDirectory"]
@@ -7456,10 +7677,10 @@ def build_vscode_agents_window(home: Path) -> None:
 OPENCODE_SESSION = "ses_01OC"
 OPENCODE_V2_SESSION = "ses_02OCV2"
 OPENCODE_LEGACY_SESSION = "ses_00LEGACY"
-OPENCODE_T0 = 1791018000000  # 2026-10-03T09:00:00Z, ms
+OPENCODE_T0 = 1791018000000  # 3 October 09:00:00 UTC, ms
 KILO_SESSION = "ses_01JAX"
 KILO_TASK = "8f1c2b7e-1"
-KILO_T0 = 1791021600000  # 2026-10-03T10:00:00Z, ms
+KILO_T0 = 1791021600000  # 3 October 10:00:00 UTC, ms
 
 OPENCODE_SCHEMA = """
 CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text, name text, icon_url text, icon_color text,
@@ -7482,12 +7703,14 @@ CREATE TABLE credential (id text PRIMARY KEY, provider_id text, type text, name 
 """
 
 
-def _oc_session(con, sid, project_id, directory, title, t, parent=None, model=None):
-    con.execute(
+def _oc_session(
+    connection, session_id, project_id, directory, title, created, parent=None, model=None
+):
+    connection.execute(
         "INSERT INTO session (id, project_id, parent_id, slug, directory, title, version, agent, model, "
         "time_created, time_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (
-            sid,
+            session_id,
             project_id,
             parent,
             title.lower().replace(" ", "-"),
@@ -7496,24 +7719,30 @@ def _oc_session(con, sid, project_id, directory, title, t, parent=None, model=No
             "1.2.0",
             "build",
             json.dumps(model) if model else None,
-            t,
-            t + 5000,
+            created,
+            created + 5000,
         ),
     )
 
 
-def _oc_message(con, mid, sid, t, data):
-    con.execute("INSERT INTO message VALUES (?,?,?,?,?)", (mid, sid, t, t, json.dumps(data)))
+def _oc_message(connection, mid, session_id, created, data):
+    connection.execute(
+        "INSERT INTO message VALUES (?,?,?,?,?)",
+        (mid, session_id, created, created, json.dumps(data)),
+    )
 
 
-def _oc_part(con, pid, mid, sid, t, data):
-    con.execute("INSERT INTO part VALUES (?,?,?,?,?,?)", (pid, mid, sid, t, t, json.dumps(data)))
+def _oc_part(connection, pid, mid, session_id, created, data):
+    connection.execute(
+        "INSERT INTO part VALUES (?,?,?,?,?,?)",
+        (pid, mid, session_id, created, created, json.dumps(data)),
+    )
 
 
-def opencode_assistant(t, cwd="/srv/proj", model="claude-sonnet-4", **extra):
-    d = {
+def opencode_assistant(created, cwd="/srv/proj", model="claude-sonnet-4", **extra):
+    message = {
         "role": "assistant",
-        "time": {"created": t, "completed": t + 3000},
+        "time": {"created": created, "completed": created + 3000},
         "parentID": "msg_01",
         "modelID": model,
         "providerID": "anthropic",
@@ -7523,69 +7752,76 @@ def opencode_assistant(t, cwd="/srv/proj", model="claude-sonnet-4", **extra):
         "cost": 0.01,
         "tokens": {"input": 10, "output": 5, "reasoning": 0, "cache": {"read": 0, "write": 0}},
     }
-    d.update(extra)
-    return d
+    message.update(extra)
+    return message
 
 
-def build_opencode_db(db: Path, t0: int = OPENCODE_T0) -> None:
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(OPENCODE_SCHEMA)
-    con.execute(
+def build_opencode_database(database: Path, start: int = OPENCODE_T0) -> None:
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(OPENCODE_SCHEMA)
+    connection.execute(
         "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
-        ("proj_a1", "/srv/proj", "git", t0, t0, "[]"),
+        ("proj_a1", "/srv/proj", "git", start, start, "[]"),
     )
-    _oc_session(con, OPENCODE_SESSION, "proj_a1", "/srv/proj", "Fix bug", t0)
+    _oc_session(connection, OPENCODE_SESSION, "proj_a1", "/srv/proj", "Fix bug", start)
     _oc_message(
-        con,
+        connection,
         "msg_01",
         OPENCODE_SESSION,
-        t0 + 1000,
+        start + 1000,
         {
             "role": "user",
-            "time": {"created": t0 + 1000},
+            "time": {"created": start + 1000},
             "agent": "build",
             "model": {"providerID": "anthropic", "modelID": "claude-sonnet-4"},
         },
     )
     _oc_part(
-        con, "prt_01", "msg_01", OPENCODE_SESSION, t0 + 1000, {"type": "text", "text": "list files"}
+        connection,
+        "prt_01",
+        "msg_01",
+        OPENCODE_SESSION,
+        start + 1000,
+        {"type": "text", "text": "list files"},
     )
     _oc_part(
-        con,
+        connection,
         "prt_01b",
         "msg_01",
         OPENCODE_SESSION,
-        t0 + 1000,
+        start + 1000,
         {"type": "text", "text": "<system-reminder>plan mode</system-reminder>", "synthetic": True},
     )
-    _oc_message(con, "msg_02", OPENCODE_SESSION, t0 + 2000, opencode_assistant(t0 + 2000))
+    _oc_message(
+        connection, "msg_02", OPENCODE_SESSION, start + 2000, opencode_assistant(start + 2000)
+    )
     _oc_part(
-        con,
+        connection,
         "prt_02",
         "msg_02",
         OPENCODE_SESSION,
-        t0 + 2000,
+        start + 2000,
         {"type": "step-start", "snapshot": "abc123"},
     )
     _oc_part(
-        con,
+        connection,
         "prt_03",
         "msg_02",
         OPENCODE_SESSION,
-        t0 + 2100,
+        start + 2100,
         {
             "type": "reasoning",
             "text": "user wants a listing",
-            "time": {"start": t0 + 2100, "end": t0 + 2200},
+            "time": {"start": start + 2100, "end": start + 2200},
         },
     )
     _oc_part(
-        con,
+        connection,
         "prt_04",
         "msg_02",
         OPENCODE_SESSION,
-        t0 + 2500,
+        start + 2500,
         {
             "type": "tool",
             "callID": "call_x1",
@@ -7596,28 +7832,28 @@ def build_opencode_db(db: Path, t0: int = OPENCODE_T0) -> None:
                 "output": "a.txt",
                 "title": "ls",
                 "metadata": {},
-                "time": {"start": t0 + 2500, "end": t0 + 3000},
+                "time": {"start": start + 2500, "end": start + 3000},
             },
         },
     )
     _oc_part(
-        con,
+        connection,
         "prt_05",
         "msg_02",
         OPENCODE_SESSION,
-        t0 + 3500,
+        start + 3500,
         {
             "type": "text",
             "text": "There is one file, a.txt.",
-            "time": {"start": t0 + 3500, "end": t0 + 3600},
+            "time": {"start": start + 3500, "end": start + 3600},
         },
     )
     _oc_part(
-        con,
+        connection,
         "prt_06",
         "msg_02",
         OPENCODE_SESSION,
-        t0 + 4000,
+        start + 4000,
         {
             "type": "step-finish",
             "reason": "stop",
@@ -7626,28 +7862,30 @@ def build_opencode_db(db: Path, t0: int = OPENCODE_T0) -> None:
         },
     )
     # A session present only in the V2 session_message projection.
-    _oc_session(con, OPENCODE_V2_SESSION, "proj_a1", "/srv/proj", "Run tests", t0 + 10000)
-    con.execute(
+    _oc_session(connection, OPENCODE_V2_SESSION, "proj_a1", "/srv/proj", "Run tests", start + 10000)
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             "msg_v2u",
             OPENCODE_V2_SESSION,
             "user",
             1,
-            t0 + 11000,
-            t0 + 11000,
-            json.dumps({"id": "msg_v2u", "time": {"created": t0 + 11000}, "text": "run the tests"}),
+            start + 11000,
+            start + 11000,
+            json.dumps(
+                {"id": "msg_v2u", "time": {"created": start + 11000}, "text": "run the tests"}
+            ),
         ),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             "msg_v2a",
             OPENCODE_V2_SESSION,
             "assistant",
             2,
-            t0 + 12000,
-            t0 + 14000,
+            start + 12000,
+            start + 14000,
             json.dumps(
                 {
                     "id": "msg_v2a",
@@ -7665,46 +7903,46 @@ def build_opencode_db(db: Path, t0: int = OPENCODE_T0) -> None:
                                 "content": [{"type": "text", "text": "3 passed"}],
                                 "structured": {},
                             },
-                            "time": {"created": t0 + 12500, "completed": t0 + 13000},
+                            "time": {"created": start + 12500, "completed": start + 13000},
                         },
                     ],
-                    "time": {"created": t0 + 12000, "completed": t0 + 14000},
+                    "time": {"created": start + 12000, "completed": start + 14000},
                 }
             ),
         ),
     )
     # Switch records (packages/schema/src/session-message.ts AgentSwitched and
     # ModelSwitched at 907b3bc): `id` and `type` are columns, `data` keeps the rest.
-    con.execute(
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             "msg_v2s1",
             OPENCODE_V2_SESSION,
             "agent-switched",
             3,
-            t0 + 15000,
-            t0 + 15000,
-            json.dumps({"time": {"created": t0 + 15000}, "agent": "plan"}),
+            start + 15000,
+            start + 15000,
+            json.dumps({"time": {"created": start + 15000}, "agent": "plan"}),
         ),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             "msg_v2s2",
             OPENCODE_V2_SESSION,
             "model-switched",
             4,
-            t0 + 16000,
-            t0 + 16000,
+            start + 16000,
+            start + 16000,
             json.dumps(
                 {
-                    "time": {"created": t0 + 16000},
+                    "time": {"created": start + 16000},
                     "model": {"id": "gpt-5-mini", "providerID": "openai"},
                 }
             ),
         ),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO credential (id, provider_id, type, name, value, active, time_created, time_updated) "
         "VALUES (?,?,?,?,?,?,?,?)",
         (
@@ -7714,12 +7952,12 @@ def build_opencode_db(db: Path, t0: int = OPENCODE_T0) -> None:
             "my key",
             '{"type":"key","key":"sk-ant-REDACT"}',
             1,
-            t0,
-            t0,
+            start,
+            start,
         ),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 def _json_file(path: Path, record) -> None:
@@ -7727,31 +7965,31 @@ def _json_file(path: Path, record) -> None:
     path.write_text(json.dumps(record, indent=2), encoding="utf-8")
 
 
-def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> None:
+def build_opencode_storage(storage: Path, start: int = OPENCODE_T0 - 86400000) -> None:
     """The legacy JSON tree: ids inline, one file per record."""
-    sid = OPENCODE_LEGACY_SESSION
+    session_id = OPENCODE_LEGACY_SESSION
     _json_file(
         storage / "project/proj_a1.json",
-        {"id": "proj_a1", "vcs": "git", "worktree": "/srv/proj", "time": {"created": t0}},
+        {"id": "proj_a1", "vcs": "git", "worktree": "/srv/proj", "time": {"created": start}},
     )
     _json_file(
-        storage / "session/proj_a1" / (sid + ".json"),
+        storage / "session/proj_a1" / (session_id + ".json"),
         {
-            "id": sid,
+            "id": session_id,
             "projectID": "proj_a1",
             "directory": "/srv/proj",
             "title": "Old session",
             "version": "0.9.0",
-            "time": {"created": t0, "updated": t0 + 5000},
+            "time": {"created": start, "updated": start + 5000},
         },
     )
     _json_file(
-        storage / "message" / sid / "msg_a.json",
+        storage / "message" / session_id / "msg_a.json",
         {
             "id": "msg_a",
-            "sessionID": sid,
+            "sessionID": session_id,
             "role": "user",
-            "time": {"created": t0 + 1000},
+            "time": {"created": start + 1000},
             "agent": "build",
             "model": {"providerID": "anthropic", "modelID": "claude-sonnet-4"},
         },
@@ -7760,18 +7998,18 @@ def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> N
         storage / "part/msg_a/prt_a1.json",
         {
             "id": "prt_a1",
-            "sessionID": sid,
+            "sessionID": session_id,
             "messageID": "msg_a",
             "type": "text",
             "text": "cat the secrets file",
         },
     )
     _json_file(
-        storage / "message" / sid / "msg_b.json",
+        storage / "message" / session_id / "msg_b.json",
         dict(
-            opencode_assistant(t0 + 2000),
+            opencode_assistant(start + 2000),
             id="msg_b",
-            sessionID=sid,
+            sessionID=session_id,
             error={"name": "APIError", "data": {"message": "overloaded"}},
         ),
     )
@@ -7779,7 +8017,7 @@ def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> N
         storage / "part/msg_b/prt_b1.json",
         {
             "id": "prt_b1",
-            "sessionID": sid,
+            "sessionID": session_id,
             "messageID": "msg_b",
             "type": "tool",
             "callID": "call_r1",
@@ -7788,7 +8026,7 @@ def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> N
                 "status": "error",
                 "input": {"filePath": "/srv/proj/.env"},
                 "error": "permission denied",
-                "time": {"start": t0 + 2500, "end": t0 + 2600},
+                "time": {"start": start + 2500, "end": start + 2600},
             },
         },
     )
@@ -7796,11 +8034,11 @@ def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> N
         storage / "part/msg_b/prt_b2.json",
         {
             "id": "prt_b2",
-            "sessionID": sid,
+            "sessionID": session_id,
             "messageID": "msg_b",
             "type": "text",
             "text": "I could not read it.",
-            "time": {"start": t0 + 2700},
+            "time": {"start": start + 2700},
         },
     )
     (storage / "migration").write_text("2", encoding="utf-8")
@@ -7808,7 +8046,7 @@ def build_opencode_storage(storage: Path, t0: int = OPENCODE_T0 - 86400000) -> N
 
 def build_opencode(home: Path) -> None:
     data = home / ".local/share/opencode"
-    build_opencode_db(data / "opencode.db")
+    build_opencode_database(data / "opencode.db")
     build_opencode_storage(data / "storage")
     (data / "auth.json").write_text(
         '{"anthropic":{"type":"api","key":"sk-ant-REDACT"}}', encoding="utf-8"
@@ -7816,21 +8054,21 @@ def build_opencode(home: Path) -> None:
     _json_file(
         home / ".config/opencode/opencode.json", {"$schema": "https://opencode.ai/config.json"}
     )
-    build_opencode_share_db(data / OPENCODE_SHARE_DB_NAME)
-    build_opencode_v2_db(data / OPENCODE_V2_DB_NAME)
-    build_opencode_next_db(data / OPENCODE_NEXT_DB_NAME)
+    build_opencode_share_database(data / OPENCODE_SHARE_DATABASE_NAME)
+    build_opencode_v2_database(data / OPENCODE_V2_DATABASE_NAME)
+    build_opencode_next_database(data / OPENCODE_NEXT_DATABASE_NAME)
 
 
-# Session sync (issue 153): a channel database with the share records of
+# Session sync: a channel database with the share records of
 # research/opencode.md, Other stores: the `session_share` table and the
 # `session.updated.1` events. One session is shared now, one was shared
 # and then unshared (its share row is gone, its events stay), one never.
-OPENCODE_SHARE_DB_NAME = "opencode-beta.db"
+OPENCODE_SHARE_DATABASE_NAME = "opencode-beta.db"
 OPENCODE_SHARED = "ses_05SHARE"
 OPENCODE_UNSHARED = "ses_06UNSHARE"
 OPENCODE_PRIVATE = "ses_07PRIVATE"
 OPENCODE_SHARE_SECRET = "fixture-share-secret-not-real"
-OPENCODE_SHARE_T0 = OPENCODE_T0 + 3600000  # 2026-10-03T10:00:00Z
+OPENCODE_SHARE_T0 = OPENCODE_T0 + 3600000  # 3 October 10:00:00 UTC
 OPENCODE_SHARE_SCHEMA = """
 CREATE TABLE session_share (session_id text PRIMARY KEY, id text NOT NULL, secret text NOT NULL,
   url text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL);
@@ -7840,11 +8078,13 @@ CREATE TABLE event (id text PRIMARY KEY, aggregate_id text NOT NULL, seq integer
 """
 
 
-def opencode_session_event(sid: str, seq: int, updated: int, share_url: str = "") -> tuple:
-    """An `event` row of type `session.updated.1`: `data` is `{sessionID,
-    info}`, the session's info with `share.url` while it is shared."""
+def opencode_session_event(session_id: str, seq: int, updated: int, share_url: str = "") -> tuple:
+    """An `event` row of type `session.updated.1`.
+
+    `data` is `{sessionID, info}`, the session's info with `share.url` while it is shared.
+    """
     info: dict = {
-        "id": sid,
+        "id": session_id,
         "slug": "s",
         "projectID": "proj_a1",
         "directory": "/srv/proj",
@@ -7854,52 +8094,56 @@ def opencode_session_event(sid: str, seq: int, updated: int, share_url: str = ""
     }
     if share_url:
         info["share"] = {"url": share_url}
-    data = json.dumps({"sessionID": sid, "info": info})
-    return ("evt_%s_%d" % (sid, seq), sid, seq, "session.updated.1", data)
+    data = json.dumps({"sessionID": session_id, "info": info})
+    return ("evt_%s_%d" % (session_id, seq), session_id, seq, "session.updated.1", data)
 
 
-def build_opencode_share_db(db: Path, t0: int = OPENCODE_SHARE_T0) -> None:
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(OPENCODE_SCHEMA + OPENCODE_SHARE_SCHEMA)
-    con.execute(
+def build_opencode_share_database(database: Path, start: int = OPENCODE_SHARE_T0) -> None:
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(OPENCODE_SCHEMA + OPENCODE_SHARE_SCHEMA)
+    connection.execute(
         "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
-        ("proj_a1", "/srv/proj", "git", t0, t0, "[]"),
+        ("proj_a1", "/srv/proj", "git", start, start, "[]"),
     )
-    _oc_session(con, OPENCODE_SHARED, "proj_a1", "/srv/proj", "Shared", t0)
-    _oc_session(con, OPENCODE_UNSHARED, "proj_a1", "/srv/proj", "Unshared", t0 + 10000)
-    _oc_session(con, OPENCODE_PRIVATE, "proj_a1", "/srv/proj", "Private", t0 + 20000)
-    con.execute(
+    _oc_session(connection, OPENCODE_SHARED, "proj_a1", "/srv/proj", "Shared", start)
+    _oc_session(connection, OPENCODE_UNSHARED, "proj_a1", "/srv/proj", "Unshared", start + 10000)
+    _oc_session(connection, OPENCODE_PRIVATE, "proj_a1", "/srv/proj", "Private", start + 20000)
+    connection.execute(
         "INSERT INTO session_share VALUES (?,?,?,?,?,?)",
         (
             OPENCODE_SHARED,
             "SHARE05",
             OPENCODE_SHARE_SECRET,
             "https://opncd.ai/share/SHARE05",
-            t0 + 2000,
-            t0 + 2000,
+            start + 2000,
+            start + 2000,
         ),
     )
     events = [
         # The shared session's own event: its share row already says so.
-        opencode_session_event(OPENCODE_SHARED, 1, t0 + 2000, "https://opncd.ai/share/SHARE05"),
-        opencode_session_event(OPENCODE_UNSHARED, 1, t0 + 11000),
-        opencode_session_event(OPENCODE_UNSHARED, 2, t0 + 12000, "https://opncd.ai/share/UNSHAR06"),
-        opencode_session_event(OPENCODE_UNSHARED, 3, t0 + 13000, "https://opncd.ai/share/UNSHAR06"),
-        opencode_session_event(OPENCODE_UNSHARED, 4, t0 + 14000),
-        opencode_session_event(OPENCODE_UNSHARED, 5, t0 + 15000),
-        opencode_session_event(OPENCODE_PRIVATE, 1, t0 + 21000),
+        opencode_session_event(OPENCODE_SHARED, 1, start + 2000, "https://opncd.ai/share/SHARE05"),
+        opencode_session_event(OPENCODE_UNSHARED, 1, start + 11000),
+        opencode_session_event(
+            OPENCODE_UNSHARED, 2, start + 12000, "https://opncd.ai/share/UNSHAR06"
+        ),
+        opencode_session_event(
+            OPENCODE_UNSHARED, 3, start + 13000, "https://opncd.ai/share/UNSHAR06"
+        ),
+        opencode_session_event(OPENCODE_UNSHARED, 4, start + 14000),
+        opencode_session_event(OPENCODE_UNSHARED, 5, start + 15000),
+        opencode_session_event(OPENCODE_PRIVATE, 1, start + 21000),
     ]
-    con.executemany("INSERT INTO event VALUES (?,?,?,?,?)", events)
-    con.executemany(
+    connection.executemany("INSERT INTO event VALUES (?,?,?,?,?)", events)
+    connection.executemany(
         "INSERT INTO event_sequence VALUES (?,?,NULL)",
         [(OPENCODE_SHARED, 1), (OPENCODE_UNSHARED, 5), (OPENCODE_PRIVATE, 1)],
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
-# OpenCode 2.0 (issue 165), source-derived, not observed on any real install:
+# OpenCode 2.0, source-derived, not observed on any real install:
 # anomalyco/opencode at cb07c555d4d1ca34430b7857b52f104c3d95e09e (CLI 2.0.32).
 # `session_v2` from packages/core/src/session/sql.ts:22-68; `session_message`
 # `data` without `type` and `id` (sql.ts:20, :79-91), shapes from
@@ -7909,13 +8153,13 @@ def build_opencode_share_db(db: Path, t0: int = OPENCODE_SHARE_T0) -> None:
 # session deleted in 2.0 is left only in the 1.x tables. `opencode-next.db`
 # is a pre-release 2.0 database (`project`, `session`, `session_message`,
 # v1-migration.bun.ts:839-846) that 2.0 imports and leaves in place.
-OPENCODE_V2_DB_NAME = "opencode-local.db"
-OPENCODE_NEXT_DB_NAME = "opencode-next.db"
+OPENCODE_V2_DATABASE_NAME = "opencode-local.db"
+OPENCODE_NEXT_DATABASE_NAME = "opencode-next.db"
 OPENCODE_MIGRATED = "ses_10MIGRATED"
 OPENCODE_DELETED = "ses_11DELETED"
 OPENCODE_V2_ONLY = "ses_12NEW"
 OPENCODE_NEXT_ONLY = "ses_13NEXTONLY"
-OPENCODE_V2_T0 = OPENCODE_T0 + 7200000  # 2026-10-03T11:00:00Z
+OPENCODE_V2_T0 = OPENCODE_T0 + 7200000  # 3 October 11:00:00 UTC
 OPENCODE_SESSION_V2_COLUMNS = """(id text PRIMARY KEY, project_id text NOT NULL, workspace_id text,
   parent_id text, fork_session_id text, fork_boundary text, slug text NOT NULL, directory text NOT NULL,
   path text, title text, version text NOT NULL, share_url text, summary_additions integer,
@@ -7929,12 +8173,12 @@ OPENCODE_SESSION_V2_COLUMNS = """(id text PRIMARY KEY, project_id text NOT NULL,
   resume_attempts integer NOT NULL DEFAULT 0)"""
 
 
-def _oc_v2_session(con, table, sid, title, t):
-    con.execute(
+def _oc_v2_session(connection, table, session_id, title, created):
+    connection.execute(
         "INSERT INTO %s (id, project_id, slug, directory, title, version, agent, model, "
         "time_created, time_updated) VALUES (?,?,?,?,?,?,?,?,?,?)" % table,
         (
-            sid,
+            session_id,
             "proj_a1",
             title.lower().replace(" ", "-"),
             "/srv/proj",
@@ -7942,42 +8186,44 @@ def _oc_v2_session(con, table, sid, title, t):
             "2.0.32",
             "build",
             json.dumps({"id": "claude-sonnet-4-5", "providerID": "anthropic"}),
-            t,
-            t + 60000,
+            created,
+            created + 60000,
         ),
     )
 
 
-def _oc_v2_message(con, mid, sid, mtype, seq, t, data):
+def _oc_v2_message(connection, mid, session_id, mtype, seq, created, data):
     """A `session_message` row: `id` and `type` are columns, `data` the rest."""
-    con.execute(
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             mid,
-            sid,
+            session_id,
             mtype,
             seq,
-            t,
-            t,
-            json.dumps(dict(data, time=dict(data.get("time", {}), created=t))),
+            created,
+            created,
+            json.dumps(dict(data, time=dict(data.get("time", {}), created=created))),
         ),
     )
 
 
-def opencode_v2_assistant(t, content, model="claude-sonnet-4-5"):
+def opencode_v2_assistant(created, content, model="claude-sonnet-4-5"):
     return {
         "agent": "build",
         "model": {"id": model, "providerID": "anthropic", "variant": "default"},
         "content": content,
         "finish": "stop",
-        "time": {"completed": t + 3000},
+        "time": {"completed": created + 3000},
     }
 
 
-def _oc_v2_new_session(con, t):
+def _oc_v2_new_session(connection, start):
     """The 2.0-only session: every `session_message` type the parser reads."""
-    sid = OPENCODE_V2_ONLY
-    _oc_v2_message(con, "msg_n1", sid, "user", 1, t + 1000, {"text": "start the server"})
+    session_id = OPENCODE_V2_ONLY
+    _oc_v2_message(
+        connection, "msg_n1", session_id, "user", 1, start + 1000, {"text": "start the server"}
+    )
     tool_ok = {
         "type": "tool",
         "id": "call_n1",
@@ -7987,7 +8233,7 @@ def _oc_v2_new_session(con, t):
             "input": {"command": "npm start"},
             "content": [{"type": "text", "text": "listening on 3000"}],
         },
-        "time": {"created": t + 2500, "completed": t + 2800},
+        "time": {"created": start + 2500, "completed": start + 2800},
     }
     tool_declined = {
         "type": "tool",
@@ -7998,11 +8244,17 @@ def _oc_v2_new_session(con, t):
             "input": {"filePath": "/srv/proj/.env"},
             "error": {"type": "aborted", "message": "The user declined this tool call"},
         },
-        "time": {"created": t + 2900, "completed": t + 2950},
+        "time": {"created": start + 2900, "completed": start + 2950},
     }
     content = [{"type": "text", "text": "Starting it."}, tool_ok, tool_declined]
     _oc_v2_message(
-        con, "msg_n2", sid, "assistant", 2, t + 2000, opencode_v2_assistant(t + 2000, content)
+        connection,
+        "msg_n2",
+        session_id,
+        "assistant",
+        2,
+        start + 2000,
+        opencode_v2_assistant(start + 2000, content),
     )
     shell = {
         "shellID": "sh_01N",
@@ -8015,81 +8267,130 @@ def _oc_v2_new_session(con, t):
             "size": 27,
             "truncated": False,
         },
-        "time": {"completed": t + 4500},
+        "time": {"completed": start + 4500},
     }
-    _oc_v2_message(con, "msg_n3", sid, "shell", 3, t + 4000, shell)
+    _oc_v2_message(connection, "msg_n3", session_id, "shell", 3, start + 4000, shell)
     location = {
         "location": {"directory": "/srv/proj/web"},
         "previous": {"location": {"directory": "/srv/proj"}},
     }
-    _oc_v2_message(con, "msg_n4", sid, "location-switched", 4, t + 5000, location)
+    _oc_v2_message(connection, "msg_n4", session_id, "location-switched", 4, start + 5000, location)
     skill = {"skill": "skl_deploy", "name": "deploy", "text": "Run the deploy script."}
-    _oc_v2_message(con, "msg_n5", sid, "skill", 5, t + 6000, skill)
+    _oc_v2_message(connection, "msg_n5", session_id, "skill", 5, start + 6000, skill)
     compaction = {
         "status": "completed",
         "reason": "auto",
         "summary": "Server started.",
         "recent": "",
     }
-    _oc_v2_message(con, "msg_n6", sid, "compaction", 6, t + 7000, compaction)
+    _oc_v2_message(connection, "msg_n6", session_id, "compaction", 6, start + 7000, compaction)
     switch = {
         "model": {"id": "gpt-5", "providerID": "openai"},
         "previous": {"id": "claude-sonnet-4-5", "providerID": "anthropic"},
     }
-    _oc_v2_message(con, "msg_n7", sid, "model-switched", 7, t + 8000, switch)
-    _oc_v2_message(con, "msg_n8", sid, "idle", 8, t + 9000, {"outcome": "succeeded"})
+    _oc_v2_message(connection, "msg_n7", session_id, "model-switched", 7, start + 8000, switch)
+    _oc_v2_message(
+        connection, "msg_n8", session_id, "idle", 8, start + 9000, {"outcome": "succeeded"}
+    )
 
 
-def build_opencode_v2_db(db: Path, t0: int = OPENCODE_V2_T0) -> None:
+def build_opencode_v2_database(database: Path, start: int = OPENCODE_V2_T0) -> None:
     """A 1.x database upgraded by 2.0: the 1.x tables beside `session_v2`."""
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(OPENCODE_SCHEMA + "CREATE TABLE session_v2 %s;" % OPENCODE_SESSION_V2_COLUMNS)
-    con.execute(
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
+        OPENCODE_SCHEMA + "CREATE TABLE session_v2 %s;" % OPENCODE_SESSION_V2_COLUMNS
+    )
+    connection.execute(
         "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
-        ("proj_a1", "/srv/proj", "git", t0, t0, "[]"),
+        ("proj_a1", "/srv/proj", "git", start, start, "[]"),
     )
     # Migrated: the same turns in the 1.x tables and in session_message.
-    sid, t = OPENCODE_MIGRATED, t0
-    _oc_session(con, sid, "proj_a1", "/srv/proj", "Migrated", t)
-    _oc_v2_session(con, "session_v2", sid, "Migrated", t)
-    user = {"role": "user", "time": {"created": t + 1000}, "agent": "build"}
-    _oc_message(con, "msg_m1", sid, t + 1000, user)
-    _oc_part(con, "prt_m1", "msg_m1", sid, t + 1000, {"type": "text", "text": "migrate me"})
-    _oc_message(con, "msg_m2", sid, t + 2000, opencode_assistant(t + 2000, parentID="msg_m1"))
-    _oc_part(con, "prt_m2", "msg_m2", sid, t + 2100, {"type": "text", "text": "Migrated reply."})
-    _oc_v2_message(con, "msg_m1", sid, "user", 1, t + 1000, {"text": "migrate me"})
+    session_id, created = OPENCODE_MIGRATED, start
+    _oc_session(connection, session_id, "proj_a1", "/srv/proj", "Migrated", created)
+    _oc_v2_session(connection, "session_v2", session_id, "Migrated", created)
+    user = {"role": "user", "time": {"created": created + 1000}, "agent": "build"}
+    _oc_message(connection, "msg_m1", session_id, created + 1000, user)
+    _oc_part(
+        connection,
+        "prt_m1",
+        "msg_m1",
+        session_id,
+        created + 1000,
+        {"type": "text", "text": "migrate me"},
+    )
+    _oc_message(
+        connection,
+        "msg_m2",
+        session_id,
+        created + 2000,
+        opencode_assistant(created + 2000, parentID="msg_m1"),
+    )
+    _oc_part(
+        connection,
+        "prt_m2",
+        "msg_m2",
+        session_id,
+        created + 2100,
+        {"type": "text", "text": "Migrated reply."},
+    )
+    _oc_v2_message(
+        connection, "msg_m1", session_id, "user", 1, created + 1000, {"text": "migrate me"}
+    )
     content = [{"type": "text", "text": "Migrated reply."}]
     _oc_v2_message(
-        con,
+        connection,
         "msg_m2",
-        sid,
+        session_id,
         "assistant",
         2,
-        t + 2000,
-        opencode_v2_assistant(t + 2000, content, model="claude-sonnet-4"),
+        created + 2000,
+        opencode_v2_assistant(created + 2000, content, model="claude-sonnet-4"),
     )
     # Deleted in 2.0: the session_v2 row and its messages are gone.
-    sid, t = OPENCODE_DELETED, t0 + 600000
-    _oc_session(con, sid, "proj_a1", "/srv/proj", "Deleted", t)
-    user = {"role": "user", "time": {"created": t + 1000}, "agent": "build"}
-    _oc_message(con, "msg_d1", sid, t + 1000, user)
-    _oc_part(con, "prt_d1", "msg_d1", sid, t + 1000, {"type": "text", "text": "what was deleted"})
-    _oc_message(con, "msg_d2", sid, t + 2000, opencode_assistant(t + 2000, parentID="msg_d1"))
-    _oc_part(con, "prt_d2", "msg_d2", sid, t + 2100, {"type": "text", "text": "A deleted reply."})
+    session_id, created = OPENCODE_DELETED, start + 600000
+    _oc_session(connection, session_id, "proj_a1", "/srv/proj", "Deleted", created)
+    user = {"role": "user", "time": {"created": created + 1000}, "agent": "build"}
+    _oc_message(connection, "msg_d1", session_id, created + 1000, user)
+    _oc_part(
+        connection,
+        "prt_d1",
+        "msg_d1",
+        session_id,
+        created + 1000,
+        {"type": "text", "text": "what was deleted"},
+    )
+    _oc_message(
+        connection,
+        "msg_d2",
+        session_id,
+        created + 2000,
+        opencode_assistant(created + 2000, parentID="msg_d1"),
+    )
+    _oc_part(
+        connection,
+        "prt_d2",
+        "msg_d2",
+        session_id,
+        created + 2100,
+        {"type": "text", "text": "A deleted reply."},
+    )
     # Written by 2.0 only.
-    _oc_v2_session(con, "session_v2", OPENCODE_V2_ONLY, "Start server", t0 + 1200000)
-    _oc_v2_new_session(con, t0 + 1200000)
-    con.commit()
-    con.close()
+    _oc_v2_session(connection, "session_v2", OPENCODE_V2_ONLY, "Start server", start + 1200000)
+    _oc_v2_new_session(connection, start + 1200000)
+    connection.commit()
+    connection.close()
 
 
-def build_opencode_next_db(db: Path, t0: int = OPENCODE_V2_T0) -> None:
-    """The pre-release 2.0 database: the 2.0-only session's first turns,
-    imported into the main database, and one session found nowhere else."""
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(
+def build_opencode_next_database(database: Path, start: int = OPENCODE_V2_T0) -> None:
+    """The pre-release 2.0 database.
+
+    The 2.0-only session's first turns, imported into the main database, and one session found
+    nowhere else.
+    """
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
         "CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, time_created integer,"
         " time_updated integer, sandboxes text);"
         "CREATE TABLE session %s;"
@@ -8097,20 +8398,36 @@ def build_opencode_next_db(db: Path, t0: int = OPENCODE_V2_T0) -> None:
         " type text NOT NULL, seq integer NOT NULL, time_created integer NOT NULL,"
         " time_updated integer NOT NULL, data text NOT NULL);" % OPENCODE_SESSION_V2_COLUMNS
     )
-    con.execute("INSERT INTO project VALUES (?,?,?,?,?)", ("proj_a1", "/srv/proj", t0, t0, "[]"))
-    t = t0 + 1200000
-    _oc_v2_session(con, "session", OPENCODE_V2_ONLY, "Start server", t)
-    _oc_v2_message(
-        con, "msg_n1", OPENCODE_V2_ONLY, "user", 1, t + 1000, {"text": "start the server"}
+    connection.execute(
+        "INSERT INTO project VALUES (?,?,?,?,?)", ("proj_a1", "/srv/proj", start, start, "[]")
     )
-    t = t0 + 1800000
-    _oc_v2_session(con, "session", OPENCODE_NEXT_ONLY, "Next only", t)
-    _oc_v2_message(con, "msg_x1", OPENCODE_NEXT_ONLY, "user", 1, t + 1000, {"text": "only in next"})
-    con.commit()
-    con.close()
+    created = start + 1200000
+    _oc_v2_session(connection, "session", OPENCODE_V2_ONLY, "Start server", created)
+    _oc_v2_message(
+        connection,
+        "msg_n1",
+        OPENCODE_V2_ONLY,
+        "user",
+        1,
+        created + 1000,
+        {"text": "start the server"},
+    )
+    created = start + 1800000
+    _oc_v2_session(connection, "session", OPENCODE_NEXT_ONLY, "Next only", created)
+    _oc_v2_message(
+        connection,
+        "msg_x1",
+        OPENCODE_NEXT_ONLY,
+        "user",
+        1,
+        created + 1000,
+        {"text": "only in next"},
+    )
+    connection.commit()
+    connection.close()
 
 
-def kilo_task_records(t0: int = KILO_T0 - 86400000):
+def kilo_task_records(start: int = KILO_T0 - 86400000):
     return [
         {
             "role": "user",
@@ -8121,7 +8438,7 @@ def kilo_task_records(t0: int = KILO_T0 - 86400000):
                     "text": "<environment_details>cwd /srv/proj</environment_details>",
                 },
             ],
-            "ts": t0 + 1000,
+            "ts": start + 1000,
         },
         {
             "role": "assistant",
@@ -8134,7 +8451,7 @@ def kilo_task_records(t0: int = KILO_T0 - 86400000):
                     "input": {"command": "pytest -q"},
                 },
             ],
-            "ts": t0 + 2000,
+            "ts": start + 2000,
         },
         {
             "role": "user",
@@ -8146,70 +8463,70 @@ def kilo_task_records(t0: int = KILO_T0 - 86400000):
                     "is_error": False,
                 }
             ],
-            "ts": t0 + 3000,
+            "ts": start + 3000,
         },
         {
             "type": "reasoning",
             "summary": [{"type": "summary_text", "text": "tests pass"}],
-            "ts": t0 + 3500,
+            "ts": start + 3500,
         },
-        {"role": "assistant", "content": "All three tests pass.", "ts": t0 + 4000},
+        {"role": "assistant", "content": "All three tests pass.", "ts": start + 4000},
     ]
 
 
 def build_kilo(home: Path) -> None:
     data = home / ".local/share/kilo"
-    db = data / "kilo.db"
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(OPENCODE_SCHEMA)
-    t0 = KILO_T0
-    con.execute(
+    database = data / "kilo.db"
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(OPENCODE_SCHEMA)
+    start = KILO_T0
+    connection.execute(
         "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes) VALUES (?,?,?,?,?,?)",
-        ("prj_01JAX", "/srv/proj", "git", t0, t0, "[]"),
+        ("prj_01JAX", "/srv/proj", "git", start, start, "[]"),
     )
     _oc_session(
-        con,
+        connection,
         KILO_SESSION,
         "prj_01JAX",
         "/srv/proj",
         "fix tests",
-        t0,
+        start,
         model={"id": "claude-sonnet-4-5", "providerID": "anthropic"},
     )
     _oc_message(
-        con,
+        connection,
         "msg_01JAXU",
         KILO_SESSION,
-        t0 + 1000,
+        start + 1000,
         {
             "role": "user",
-            "time": {"created": t0 + 1000},
+            "time": {"created": start + 1000},
             "agent": "build",
             "model": {"providerID": "anthropic", "modelID": "claude-sonnet-4-5"},
         },
     )
     _oc_part(
-        con,
+        connection,
         "prt_01JAXP",
         "msg_01JAXU",
         KILO_SESSION,
-        t0 + 1000,
+        start + 1000,
         {"type": "text", "text": "fix the tests"},
     )
     _oc_message(
-        con,
+        connection,
         "msg_01JAXA",
         KILO_SESSION,
-        t0 + 2000,
-        dict(opencode_assistant(t0 + 2000, model="claude-sonnet-4-5"), parentID="msg_01JAXU"),
+        start + 2000,
+        dict(opencode_assistant(start + 2000, model="claude-sonnet-4-5"), parentID="msg_01JAXU"),
     )
     _oc_part(
-        con,
+        connection,
         "prt_01JAXT",
         "msg_01JAXA",
         KILO_SESSION,
-        t0 + 2500,
+        start + 2500,
         {
             "type": "tool",
             "callID": "call_1",
@@ -8220,41 +8537,41 @@ def build_kilo(home: Path) -> None:
                 "output": "3 passed",
                 "title": "pytest -q",
                 "metadata": {},
-                "time": {"start": t0 + 2500, "end": t0 + 3000},
+                "time": {"start": start + 2500, "end": start + 3000},
             },
         },
     )
     # A later turn the user sent with another model and the plan agent.
     _oc_message(
-        con,
+        connection,
         "msg_01JAXV",
         KILO_SESSION,
-        t0 + 4000,
+        start + 4000,
         {
             "role": "user",
-            "time": {"created": t0 + 4000},
+            "time": {"created": start + 4000},
             "agent": "plan",
             "model": {"providerID": "openai", "modelID": "gpt-5"},
         },
     )
     _oc_part(
-        con,
+        connection,
         "prt_01JAXQ",
         "msg_01JAXV",
         KILO_SESSION,
-        t0 + 4000,
+        start + 4000,
         {"type": "text", "text": "plan the next fix"},
     )
     # Kilo writes the V2 projection alongside V1; it must not duplicate the rows.
-    con.execute(
+    connection.execute(
         "INSERT INTO session_message VALUES (?,?,?,?,?,?,?)",
         (
             "msg_01JAXB",
             KILO_SESSION,
             "assistant",
             4,
-            t0 + 2000,
-            t0 + 3000,
+            start + 2000,
+            start + 3000,
             json.dumps(
                 {
                     "agent": "build",
@@ -8270,16 +8587,16 @@ def build_kilo(home: Path) -> None:
                                 "content": [{"type": "text", "text": "3 passed"}],
                                 "structured": {},
                             },
-                            "time": {"created": t0 + 2500, "completed": t0 + 3000},
+                            "time": {"created": start + 2500, "completed": start + 3000},
                         }
                     ],
-                    "time": {"created": t0 + 2000, "completed": t0 + 3000},
+                    "time": {"created": start + 2000, "completed": start + 3000},
                 }
             ),
         ),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     (data / "auth.json").write_text('{"kilo":{"type":"oauth","access":"REDACT"}}', encoding="utf-8")
     tasks = home / ".config/Code/User/globalStorage/kilocode.kilo-code/tasks"
     task = tasks / KILO_TASK
@@ -8312,10 +8629,10 @@ def build_kilo(home: Path) -> None:
     build_kilo_share(home)
 
 
-# Session sync (issue 153): Kilo's cloud session marker,
+# Session sync: Kilo's cloud session marker,
 # storage/session_share/<sessionID>.json (research/kilo-code.md, Other stores).
 KILO_SHARE_REL = ".local/share/kilo/storage/session_share/%s.json" % KILO_SESSION
-KILO_SHARE_MTIME = 1791022000  # 2026-10-03T10:06:40Z
+KILO_SHARE_MTIME = 1791022000  # 3 October 10:06:40 UTC
 
 
 def build_kilo_share(home: Path) -> None:
@@ -8330,33 +8647,34 @@ def build_kilo_share(home: Path) -> None:
     os.utime(home / KILO_SHARE_REL, (KILO_SHARE_MTIME, KILO_SHARE_MTIME))
 
 
-# Standing state, past use, scratch directories and deletion (issues 194,
-# 192, 221), source-derived, not observed on any real install: anomalyco/
+# Standing state, past use, scratch directories and deletion,
+# source-derived, not observed on any real install: anomalyco/
 # opencode at cb07c555d4d1ca34430b7857b52f104c3d95e09e and Kilo-Org/kilocode
 # at 87cc35ce6904465a0eed507a8c75c79185863a22. Built by the tests that read
 # them, not by `build_home`, so the other tests' session and dedup counts
 # stay as they are.
-OPENCODE_STATE_DB_NAME = "opencode-state.db"
+OPENCODE_STATE_DATABASE_NAME = "opencode-state.db"
 OPENCODE_ARCHIVED = "ses_20ARCHIVED"
 OPENCODE_PINNED_GONE = "ses_21PINNEDGONE"
-OPENCODE_STATE_T0 = OPENCODE_T0 + 10800000  # 2026-10-03T12:00:00Z
-OPENCODE_STATE_MTIME = 1791043200  # 2026-10-03T16:00:00Z
+OPENCODE_STATE_T0 = OPENCODE_T0 + 10800000  # 3 October 12:00:00 UTC
+OPENCODE_STATE_MTIME = 1791043200  # 3 October 16:00:00 UTC
 OPENCODE_WORKTREE = "/home/alice/.local/share/opencode/worktree/proj_a/brave-otter"
 KILO_LOG_NAME = "2026-10-03T100000.log"
 KILO_SANDBOX_SESSION_HASH = "a" * 64
 KILO_SANDBOX_DIR_HASH = "b" * 64
 
 
-def build_opencode_state_db(db: Path, t0: int = OPENCODE_STATE_T0) -> None:
-    """A 2.0 database with standing state: the `permission` table
-    (packages/core/src/permission/sql.ts:7-20), the `worktree` table
-    (worktree/sql.ts:6-20) and the deprecated `project_directory`
-    (project/sql.ts:31-47), an archived session with a rule list
-    (`session_v2.time_archived`, `permission`), and a tool call refused by a
-    deny rule (`error.type` `permission.rejected`, to-session-error.ts:61)."""
-    db.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db))
-    con.executescript(
+def build_opencode_state_database(database: Path, start: int = OPENCODE_STATE_T0) -> None:
+    """A 2.0 database with standing state.
+
+    The `permission` table (packages/core/src/permission/sql.ts:7-20), the `worktree` table
+    (worktree/sql.ts:6-20) and the deprecated `project_directory` (project/sql.ts:31-47), an
+    archived session with a rule list (`session_v2.time_archived`, `permission`), and a tool call
+    refused by a deny rule (`error.type` `permission.rejected`, to-session-error.ts:61).
+    """
+    database.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database))
+    connection.executescript(
         "CREATE TABLE project (id text PRIMARY KEY, worktree text NOT NULL, vcs text, name text,"
         " time_created integer NOT NULL, time_updated integer NOT NULL, sandboxes text NOT NULL);"
         "CREATE TABLE session_v2 %s;"
@@ -8372,20 +8690,20 @@ def build_opencode_state_db(db: Path, t0: int = OPENCODE_STATE_T0) -> None:
         " type text, strategy text, time_created integer NOT NULL,"
         " PRIMARY KEY (project_id, directory));" % OPENCODE_SESSION_V2_COLUMNS
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO project (id, worktree, vcs, time_created, time_updated, sandboxes)"
         " VALUES (?,?,?,?,?,?)",
-        ("proj_a", "/srv/proj", "git", t0, t0, "[]"),
+        ("proj_a", "/srv/proj", "git", start, start, "[]"),
     )
-    _oc_v2_session(con, "session_v2", OPENCODE_ARCHIVED, "Archived", t0)
+    _oc_v2_session(connection, "session_v2", OPENCODE_ARCHIVED, "Archived", start)
     rules = [
         {"action": "bash", "resource": "git *", "effect": "allow"},
         {"action": "edit", "resource": "*.env", "effect": "deny"},
     ]
-    con.execute(
+    connection.execute(
         "UPDATE session_v2 SET project_id = 'proj_a', time_archived = ?, permission = ?"
         " WHERE id = ?",
-        (t0 + 90000, json.dumps(rules), OPENCODE_ARCHIVED),
+        (start + 90000, json.dumps(rules), OPENCODE_ARCHIVED),
     )
     blocked = {
         "type": "tool",
@@ -8396,42 +8714,43 @@ def build_opencode_state_db(db: Path, t0: int = OPENCODE_STATE_T0) -> None:
             "input": {"filePath": "/srv/proj/.env"},
             "error": {"type": "permission.rejected", "message": "Permission denied: edit"},
         },
-        "time": {"created": t0 + 2500, "completed": t0 + 2600},
+        "time": {"created": start + 2500, "completed": start + 2600},
     }
     _oc_v2_message(
-        con,
+        connection,
         "msg_s1",
         OPENCODE_ARCHIVED,
         "assistant",
         1,
-        t0 + 2000,
-        opencode_v2_assistant(t0 + 2000, [blocked]),
+        start + 2000,
+        opencode_v2_assistant(start + 2000, [blocked]),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO permission VALUES (?,?,?,?,?,?)",
-        ("per_01", "proj_a", "bash", "npm test", t0 + 3000, t0 + 3000),
+        ("per_01", "proj_a", "bash", "npm test", start + 3000, start + 3000),
     )
-    con.execute(
-        "INSERT INTO worktree VALUES (?,?,?,?)", ("proj_a", OPENCODE_WORKTREE, "git", t0 + 4000)
+    connection.execute(
+        "INSERT INTO worktree VALUES (?,?,?,?)", ("proj_a", OPENCODE_WORKTREE, "git", start + 4000)
     )
     # The same worktree in the deprecated table is not repeated; a `main` row is not one.
-    con.executemany(
+    connection.executemany(
         "INSERT INTO project_directory VALUES (?,?,?,?,?)",
         [
-            ("proj_a", OPENCODE_WORKTREE, "git_worktree", "git", t0 + 4000),
-            ("proj_a", "/srv/proj", "main", None, t0),
+            ("proj_a", OPENCODE_WORKTREE, "git_worktree", "git", start + 4000),
+            ("proj_a", "/srv/proj", "main", None, start),
         ],
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 def build_opencode_state(home: Path) -> None:
-    """OpenCode's terminal UI state at the 2.0 shapes
-    (packages/tui/src/prompt/history.tsx:20-23, stash.tsx:9-12,
-    context/local.tsx:517-530), a 1.x stash line (`input`), the database
-    above, and `kv.json` and `service.json` beside them, which the parser
-    must not want."""
+    """Write OpenCode's terminal UI state files at the 2.0 shapes.
+
+    OpenCode's terminal UI state at the 2.0 shapes (packages/tui/src/prompt/history.tsx:20-23,
+    stash.tsx:9-12, context/local.tsx:517-530), a 1.x stash line (`input`), the database above, and
+    `kv.json` and `service.json` beside them, which the parser must not want.
+    """
     state = home / ".local/state/opencode"
     _jsonl(
         state / "prompt-history.jsonl",
@@ -8476,18 +8795,20 @@ def build_opencode_state(home: Path) -> None:
     _json(
         state / "service.json", {"id": "svc", "url": "http://127.0.0.1:4096", "password": "REDACT"}
     )
-    build_opencode_state_db(home / ".local/share/opencode" / OPENCODE_STATE_DB_NAME)
+    build_opencode_state_database(home / ".local/share/opencode" / OPENCODE_STATE_DATABASE_NAME)
 
 
 def build_kilo_state(home: Path) -> None:
-    """Kilo Code's standing state, past use and remote control at 87cc35c:
-    the TUI history and stash in the 1.x shapes (packages/tui/src/prompt/
-    history.tsx:9-25, stash.tsx:9-13), the global config's `permission` key
-    (packages/core/src/v1/config/permission.ts:5-56), a sandbox policy and
-    preference (kilocode/sandbox/store.ts:11-17, preference.ts:10-29), the
-    retention state (kilocode/session/retention.ts:45-54) and a log with the
-    remote control lines (kilo-sessions/remote-session-log.ts:37-61,
-    kilo-sessions.ts:1220, :1259; core/src/util/log.ts:162-189)."""
+    """Kilo Code's standing state, past use and remote control at 87cc35c.
+
+    The TUI history and stash in the 1.x shapes (packages/tui/src/prompt/ history.tsx:9-25,
+    stash.tsx:9-13), the global config's `permission` key
+    (packages/core/src/v1/config/permission.ts:5-56), a sandbox policy and preference
+    (kilocode/sandbox/store.ts:11-17, preference.ts:10-29), the retention state
+    (kilocode/session/retention.ts:45-54) and a log with the remote control lines
+    (kilo-sessions/remote-session-log.ts:37-61, kilo-sessions.ts:1220, :1259;
+    core/src/util/log.ts:162-189).
+    """
     state = home / ".local/state/kilo"
     _jsonl(
         state / "prompt-history.jsonl",
@@ -8562,7 +8883,7 @@ def build_kilo_state(home: Path) -> None:
 
 # ---- Cline and Roo Code (research/cline.md, research/roo-code.md) ----------------
 
-CLINE_TASK = "1791021600000"  # 2026-10-03T10:00:00Z, a Date.now() id
+CLINE_TASK = "1791021600000"  # 3 October 10:00:00 UTC, a Date.now() id
 CLINE_CLI_TASK = "1791021300000"  # API history only, no ui_messages.json
 CLINE_SESSION = "1791021700000_k3x9q"
 CLINE_OLD_SESSION = "1791000000000_old01"
@@ -8577,18 +8898,18 @@ def _json(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
 
-def cline_ui_records(t0=CLINE_T0):
+def cline_ui_records(start=CLINE_T0):
     model = {"modelId": "claude-sonnet-4-5", "providerId": "anthropic", "mode": "act"}
     return [
         {
-            "ts": t0,
+            "ts": start,
             "type": "say",
             "say": "task",
             "text": "fix tests",
             "images": ["data:image/png;base64,AAAA"],
         },
         {
-            "ts": t0 + 1000,
+            "ts": start + 1000,
             "type": "say",
             "say": "api_req_started",
             "text": json.dumps(
@@ -8603,14 +8924,14 @@ def cline_ui_records(t0=CLINE_T0):
             ),
         },
         {
-            "ts": t0 + 1500,
+            "ts": start + 1500,
             "type": "say",
             "say": "reasoning",
             "text": "read the test first",
             "partial": False,
         },
         {
-            "ts": t0 + 2000,
+            "ts": start + 2000,
             "type": "say",
             "say": "tool",
             "modelInfo": model,
@@ -8619,28 +8940,34 @@ def cline_ui_records(t0=CLINE_T0):
             ),
         },
         {
-            "ts": t0 + 3000,
+            "ts": start + 3000,
             "type": "say",
             "say": "text",
             "text": "Running the suite.",
             "modelInfo": model,
         },
-        {"ts": t0 + 4000, "type": "ask", "ask": "command", "text": "pytest -q", "modelInfo": model},
-        {"ts": t0 + 5000, "type": "say", "say": "command_output", "text": "3 passed"},
         {
-            "ts": t0 + 6000,
+            "ts": start + 4000,
+            "type": "ask",
+            "ask": "command",
+            "text": "pytest -q",
+            "modelInfo": model,
+        },
+        {"ts": start + 5000, "type": "say", "say": "command_output", "text": "3 passed"},
+        {
+            "ts": start + 6000,
             "type": "say",
             "say": "checkpoint_created",
             "lastCheckpointHash": "abc123",
         },
         {
-            "ts": t0 + 7000,
+            "ts": start + 7000,
             "type": "say",
             "say": "completion_result",
             "text": "All tests pass.",
             "modelInfo": model,
         },
-        {"ts": t0 + 7001, "type": "ask", "ask": "completion_result", "text": ""},
+        {"ts": start + 7001, "type": "ask", "ask": "completion_result", "text": ""},
     ]
 
 
@@ -8673,32 +9000,32 @@ def cline_api_records():
     ]
 
 
-def cline_task_metadata(t0=CLINE_T0):
+def cline_task_metadata(start=CLINE_T0):
     return {
         "files_in_context": [
             {
                 "path": "src/app.py",
                 "record_state": "active",
                 "record_source": "read_tool",
-                "cline_read_date": t0 + 2000,
+                "cline_read_date": start + 2000,
                 "cline_edit_date": None,
             },
         ],
         "model_usage": [
             {
-                "ts": t0 + 300,
+                "ts": start + 300,
                 "model_id": "claude-sonnet-4-5",
                 "model_provider_id": "anthropic",
                 "mode": "plan",
             },
             {
-                "ts": t0 + 500,
+                "ts": start + 500,
                 "model_id": "claude-sonnet-4-5",
                 "model_provider_id": "anthropic",
                 "mode": "act",
             },
             {
-                "ts": t0 + 8000,
+                "ts": start + 8000,
                 "model_id": "claude-opus-4-5",
                 "model_provider_id": "anthropic",
                 "mode": "act",
@@ -8706,7 +9033,7 @@ def cline_task_metadata(t0=CLINE_T0):
         ],
         "environment_history": [
             {
-                "ts": t0 + 100,
+                "ts": start + 100,
                 "os_name": "linux",
                 "os_version": "6.6",
                 "os_arch": "x64",
@@ -8760,7 +9087,7 @@ def cline_sdk_manifest():
     }
 
 
-def cline_sdk_messages(t0=CLINE_T0 + 100000):
+def cline_sdk_messages(start=CLINE_T0 + 100000):
     return {
         "version": 1,
         "updated_at": "2026-10-03T10:01:50.000Z",
@@ -8769,7 +9096,7 @@ def cline_sdk_messages(t0=CLINE_T0 + 100000):
         "origin": {"source": "cli", "mode": "user", "sessionId": CLINE_SESSION},
         "system_prompt": "You are Cline.",
         "messages": [
-            {"id": "m1", "role": "user", "content": "fix tests", "ts": t0},
+            {"id": "m1", "role": "user", "content": "fix tests", "ts": start},
             {
                 "id": "m2",
                 "role": "assistant",
@@ -8784,7 +9111,7 @@ def cline_sdk_messages(t0=CLINE_T0 + 100000):
                 ],
                 "modelInfo": {"id": "claude-sonnet-4-5", "provider": "anthropic"},
                 "metrics": {"inputTokens": 1200, "outputTokens": 80, "cost": 0.0041},
-                "ts": t0 + 2000,
+                "ts": start + 2000,
             },
             {
                 "id": "m3",
@@ -8798,7 +9125,7 @@ def cline_sdk_messages(t0=CLINE_T0 + 100000):
                         "is_error": False,
                     }
                 ],
-                "ts": t0 + 3000,
+                "ts": start + 3000,
             },
             {
                 "id": "m4",
@@ -8811,13 +9138,13 @@ def cline_sdk_messages(t0=CLINE_T0 + 100000):
 
 
 def build_cline(home: Path) -> None:
-    gs = home / ".config/Code/User/globalStorage/saoudrizwan.claude-dev"
-    task = gs / "tasks" / CLINE_TASK
+    global_storage = home / ".config/Code/User/globalStorage/saoudrizwan.claude-dev"
+    task = global_storage / "tasks" / CLINE_TASK
     _json(task / "ui_messages.json", cline_ui_records())
     _json(task / "api_conversation_history.json", cline_api_records())
     _json(task / "task_metadata.json", cline_task_metadata())
-    _json(gs / "state/taskHistory.json", cline_history_items())
-    _json(gs / "settings/cline_mcp_settings.json", {"mcpServers": {}})
+    _json(global_storage / "state/taskHistory.json", cline_history_items())
+    _json(global_storage / "settings/cline_mcp_settings.json", {"mcpServers": {}})
     data = home / ".cline/data"
     _json(data / "tasks" / CLINE_CLI_TASK / "api_conversation_history.json", cline_api_records())
     _json(
@@ -8825,26 +9152,26 @@ def build_cline(home: Path) -> None:
         [dict(cline_history_items()[0], id=CLINE_CLI_TASK, ts=1791021305000)],
     )
     _json(data / "secrets.json", {"apiKey": "sk-not-real"})
-    sess = data / "sessions" / CLINE_SESSION
-    _json(sess / (CLINE_SESSION + ".json"), cline_sdk_manifest())
-    _json(sess / (CLINE_SESSION + ".messages.json"), cline_sdk_messages())
-    _json(sess / (CLINE_SESSION + ".compaction.json"), {"version": 1})
+    session_dir = data / "sessions" / CLINE_SESSION
+    _json(session_dir / (CLINE_SESSION + ".json"), cline_sdk_manifest())
+    _json(session_dir / (CLINE_SESSION + ".messages.json"), cline_sdk_messages())
+    _json(session_dir / (CLINE_SESSION + ".compaction.json"), {"version": 1})
     (data / "db").mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(data / "db/sessions.db"))
-    con.execute(
+    connection = sqlite3.connect(str(data / "db/sessions.db"))
+    connection.execute(
         "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, source TEXT, pid INTEGER, started_at TEXT, "
         "ended_at TEXT, exit_code INTEGER, status TEXT, interactive INTEGER, provider TEXT, model TEXT, "
         "cwd TEXT, workspace_root TEXT, prompt TEXT, metadata_json TEXT, is_subagent INTEGER, "
         "parent_session_id TEXT, updated_at TEXT)"
     )
-    for sid, started, prompt in (
+    for session_id, started, prompt in (
         (CLINE_SESSION, "2026-10-03T10:01:40.000Z", "fix tests"),
         (CLINE_OLD_SESSION, "2026-10-02T23:00:00.000Z", "an older deleted session"),
     ):
-        con.execute(
+        connection.execute(
             "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
-                sid,
+                session_id,
                 "cli",
                 4242,
                 started,
@@ -8863,15 +9190,17 @@ def build_cline(home: Path) -> None:
                 started,
             ),
         )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 def cline_search_text(message: dict) -> str:
-    """A message as session-search.db indexes it: every string value under
-    `content`, skipping the `data`, `image`, `images`, `reasoning`,
-    `thinking` and `metadata` keys, joined with line breaks
-    (session-history-search.ts:54-95 at 39ff2359)."""
+    """A message as session-search.db indexes it.
+
+    Every string value under `content`, skipping the `data`, `image`, `images`, `reasoning`,
+    `thinking` and `metadata` keys, joined with line breaks (session-history-search.ts:54-95 at
+    39ff2359).
+    """
     parts: list[str] = []
 
     def walk(value) -> None:
@@ -8891,9 +9220,11 @@ def cline_search_text(message: dict) -> str:
 
 
 def cline_session_search_sessions():
-    """(session id, started_at, workspace_root, title, prompt, messages) per
-    indexed session: the fixture's SDK session, whose transcript is on disk,
-    and the older session whose manifest and transcript are gone."""
+    """(session id, started_at, workspace_root, title, prompt, messages) per indexed session.
+
+    The fixture's SDK session, whose transcript is on disk, and the older session whose manifest and
+    transcript are gone.
+    """
     return [
         (
             CLINE_SESSION,
@@ -8928,33 +9259,45 @@ CLINE_SEARCH_FTS = (
 
 
 def build_cline_session_search(home: Path) -> None:
-    """`~/.cline/data/db/session-search.db` as the SDK hub writes it
-    (session-history-search.ts:120-154 and 402-465 at 39ff2359), and
-    `cron.db` beside it, which the parser must not want."""
-    db = home / ".cline/data/db"
-    db.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(db / "session-search.db"))
-    con.execute(
+    """Write `~/.cline/data/db/session-search.db` and `cron.db` beside it.
+
+    `~/.cline/data/db/session-search.db` as the SDK hub writes it (session-history-search.ts:120-154
+    and 402-465 at 39ff2359), and `cron.db` beside it, which the parser must not want.
+    """
+    database_dir = home / ".cline/data/db"
+    database_dir.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(database_dir / "session-search.db"))
+    connection.execute(
         "CREATE TABLE indexed_sessions (session_id TEXT PRIMARY KEY, source_revision TEXT NOT "
         "NULL, indexed_at TEXT NOT NULL, document_count INTEGER NOT NULL, index_version INTEGER "
         "NOT NULL, title TEXT NOT NULL DEFAULT '')"
     )
-    con.execute(CLINE_SEARCH_FTS)
+    connection.execute(CLINE_SEARCH_FTS)
     insert = "INSERT INTO session_search VALUES (?,?,?,?,?,?,?,?)"
-    for sid, started, workspace, title, prompt, messages in cline_session_search_sessions():
-        con.execute(
-            insert, (sid, sid + ":metadata", -1, "session", started, workspace, title, prompt)
+    for session_id, started, workspace, title, prompt, messages in cline_session_search_sessions():
+        connection.execute(
+            insert,
+            (
+                session_id,
+                session_id + ":metadata",
+                -1,
+                "session",
+                started,
+                workspace,
+                title,
+                prompt,
+            ),
         )
         count = 1
         for ordinal, message in enumerate(messages):
             content = cline_search_text(message)
             if not content:
                 continue
-            con.execute(
+            connection.execute(
                 insert,
                 (
-                    sid,
-                    "%s:%d" % (sid, ordinal),
+                    session_id,
+                    "%s:%d" % (session_id, ordinal),
                     ordinal,
                     message.get("role") or "unknown",
                     started,
@@ -8964,35 +9307,44 @@ def build_cline_session_search(home: Path) -> None:
                 ),
             )
             count += 1
-        con.execute(
+        connection.execute(
             "INSERT INTO indexed_sessions VALUES (?,?,?,?,?,?)",
-            (sid, started + ":1024:1791021710000", "2026-10-03T10:02:00.000Z", count, 2, title),
+            (
+                session_id,
+                started + ":1024:1791021710000",
+                "2026-10-03T10:02:00.000Z",
+                count,
+                2,
+                title,
+            ),
         )
-    con.commit()
-    con.close()
-    con = sqlite3.connect(str(db / "cron.db"))
-    con.execute("CREATE TABLE cron_jobs (id TEXT PRIMARY KEY, prompt TEXT)")
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
+    connection = sqlite3.connect(str(database_dir / "cron.db"))
+    connection.execute("CREATE TABLE cron_jobs (id TEXT PRIMARY KEY, prompt TEXT)")
+    connection.commit()
+    connection.close()
 
 
 def build_cline_input_history(home: Path) -> None:
-    """The CLI's `~/.cline/data/cache/user_input_history.jsonl`
-    (apps/cli/src/utils/input-history.ts:54-72 at 39ff2359): every line
-    stamped with the last rewrite's time. "fix tests" repeats the SDK
-    session's prompt; "list the open ports" has no transcript. A model
-    cache beside it is noise the parser must not want."""
+    """Write the Cline CLI's `user_input_history.jsonl` and a model cache.
+
+    The CLI's `~/.cline/data/cache/user_input_history.jsonl`
+    (apps/cli/src/utils/input-history.ts:54-72 at 39ff2359): every line stamped with the last
+    rewrite's time. "fix tests" repeats the SDK session's prompt; "list the open ports" has no
+    transcript. A model cache beside it is noise the parser must not want.
+    """
     cache = home / ".cline/data/cache"
     cache.mkdir(parents=True, exist_ok=True)
-    rewrite = CLINE_T0 + 300000  # 2026-10-03T10:05:00Z
-    lines = [{"prompt": p, "ts": rewrite} for p in ("fix tests", "list the open ports")]
+    rewrite = CLINE_T0 + 300000  # 3 October 10:05:00 UTC
+    lines = [{"prompt": prompt, "ts": rewrite} for prompt in ("fix tests", "list the open ports")]
     (cache / "user_input_history.jsonl").write_text(
-        "".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8"
+        "".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8"
     )
     _json(cache / "openrouter_models.json", {"anthropic/claude-sonnet-4-5": {}})
 
 
-# Enterprise prompt upload (#153): `metadata["enterprise.blobUpload"]`
+# Enterprise prompt upload: `metadata["enterprise.blobUpload"]`
 # (sdk/packages/shared/src/remote-config/blob-storage.ts:56-57, 129-160 at
 # 39ff2359). CLINE_BLOB_SESSION's manifest has the VS Code host's form, with
 # `userDistinctId`; CLINE_BLOB_DELETED survives only as a sessions.db row
@@ -9032,8 +9384,8 @@ def build_cline_blob_upload(home: Path) -> None:
             "accountId": "acct",
         },
     )
-    con = sqlite3.connect(str(data / "db/sessions.db"))
-    con.execute(
+    connection = sqlite3.connect(str(data / "db/sessions.db"))
+    connection.execute(
         "INSERT INTO sessions (session_id, source, started_at, status, provider, model, cwd,"
         " workspace_root, prompt, metadata_json) VALUES (?,?,?,?,?,?,?,?,?,?)",
         (
@@ -9049,11 +9401,11 @@ def build_cline_blob_upload(home: Path) -> None:
             json.dumps({"title": "uploaded", "enterprise.blobUpload": blob}),
         ),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
-# The VS Code extension's enterprise prompt upload queue (#153), the
+# The VS Code extension's enterprise prompt upload queue, the
 # `SyncQueueItem` shape of apps/vscode/src/shared/services/worker/queue.ts:9-31
 # at 39ff2359, one item of each status: CLINE_TASK's transcript uploaded,
 # CLINE_QUEUE_PENDING's waiting and CLINE_QUEUE_FAILED's failing. The two
@@ -9066,7 +9418,7 @@ CLINE_SYNC_SECRET = "FULL TASK FILE CONTENT"
 
 def build_cline_sync_queue(home: Path) -> None:
     items = {}
-    for task, key, status, retries, ts, error in (
+    for task, key, status, retries, timestamp, error in (
         (CLINE_TASK, "api_conversation_history.json", "synced", 0, CLINE_T0 + 5000, None),
         (CLINE_QUEUE_PENDING, "ui_messages.json", "pending", 0, CLINE_T0 + 5500, None),
         (CLINE_QUEUE_FAILED, "ui_messages.json", "failed", 3, CLINE_T0 + 6000, "403 Forbidden"),
@@ -9076,7 +9428,7 @@ def build_cline_sync_queue(home: Path) -> None:
             "taskId": task,
             "key": key,
             "data": CLINE_SYNC_SECRET,
-            "timestamp": ts,
+            "timestamp": timestamp,
             "status": status,
             "retryCount": retries,
             "lastError": error,
@@ -9084,17 +9436,15 @@ def build_cline_sync_queue(home: Path) -> None:
     _json(home / CLINE_SYNC_QUEUE, {"items": items})
 
 
-# Source review of 2026-10-21 (#190), from cline/cline at 41e75efc: the hook
-# audit log (sdk/packages/core/src/hooks/hook-file-hooks.ts:234-254,
-# 629-756), the standing permission settings (apps/vscode/src/shared/
-# AutoApprovalSettings.ts:1-44, sdk/packages/core/src/services/
-# global-settings.ts:61-74, apps/vscode/src/services/mcp/schemas.ts:10-28),
-# the Cline Cloud state (apps/vscode/src/shared/cloud/cloud-sessions.ts:15-52,
-# apps/vscode/src/sdk/cloud-pending-starts.ts:5-12), a rejected and a blocked
-# SDK call (sdk/packages/agents/src/agent-runtime.ts:2469-2512) and an
-# imported session (sdk/packages/core/src/services/session-import/
-# service.ts:20-28). Not part of `build_home`: the tests that need them add
-# them, so the session counts of the other Cline tests stay.
+# From cline/cline at 41e75efc: the hook audit log
+# (sdk/packages/core/src/hooks/hook-file-hooks.ts:234-254, 629-756), the
+# standing permission settings (apps/vscode/src/shared/AutoApprovalSettings.ts:1-44,
+# sdk/packages/core/src/services/global-settings.ts:61-74,
+# apps/vscode/src/services/mcp/schemas.ts:10-28), the Cline Cloud state
+# (apps/vscode/src/shared/cloud/cloud-sessions.ts:15-52, cloud-pending-starts.ts:5-12),
+# a rejected and a blocked SDK call (sdk/packages/agents/src/agent-runtime.ts:2469-2512)
+# and an imported session (sdk/packages/core/src/services/session-import/service.ts:20-28).
+# Not part of `build_home`, so the session counts of the other Cline tests stay.
 CLINE_HOOKS_LOG = ".cline/data/logs/hooks.jsonl"
 CLINE_GLOBAL_STATE = ".cline/data/globalState.json"
 CLINE_GLOBAL_SETTINGS = ".cline/data/settings/global-settings.json"
@@ -9104,17 +9454,17 @@ CLINE_PENDING_SESSION = "ses-01JCLOUDWAIT"
 CLINE_PENDING_START = (
     ".cline/data/cloud-pending-starts/4242-0b6f2c1e-6a1d-4c51-9a7e-2f3d1c0e9b8a.json"
 )
-CLINE_SETTINGS_MTIME = 1791022200  # 2026-10-03T10:10:00Z
+CLINE_SETTINGS_MTIME = 1791022200  # 3 October 10:10:00 UTC
 CLINE_DENIED_SESSION = "1791022100000_den1a"
 CLINE_IMPORTED_SESSION = "1791022300000_imp0r"
 CLINE_REJECTION_SUFFIX = " -- NOT a tool or system failure. Clarify with user before proceeding."
 
 
-def _hook_line(hook: str, ts: str, session: str, **extra) -> dict:
+def _hook_line(hook: str, timestamp: str, session: str, **extra) -> dict:
     line = {
-        "ts": ts,
+        "ts": timestamp,
         "clineVersion": "4.1.25",
-        "timestamp": ts,
+        "timestamp": timestamp,
         "taskId": session,
         "sessionContext": {"rootSessionId": session},
         "workspaceRoots": ["/srv/proj"],
@@ -9127,23 +9477,27 @@ def _hook_line(hook: str, ts: str, session: str, **extra) -> dict:
 
 
 def cline_hook_lines():
-    """CLINE_SESSION's turns as the audit log repeats them, then the tool call
-    and abort of CLINE_OLD_SESSION, whose transcript is gone, and a stale
-    session's shutdown line."""
-    s, old = CLINE_SESSION, CLINE_OLD_SESSION
+    """The Cline hook audit log lines of two sessions and a stale one.
+
+    CLINE_SESSION's turns as the audit log repeats them, then the tool call and abort of
+    CLINE_OLD_SESSION, whose transcript is gone, and a stale session's shutdown line.
+    """
+    session, old = CLINE_SESSION, CLINE_OLD_SESSION
     call = {"id": "call_1", "name": "bash", "input": {"command": "pytest -q"}}
     return [
-        _hook_line("agent_start", "2026-10-03T10:01:40.050Z", s, taskStart={"taskMetadata": {}}),
+        _hook_line(
+            "agent_start", "2026-10-03T10:01:40.050Z", session, taskStart={"taskMetadata": {}}
+        ),
         _hook_line(
             "prompt_submit",
             "2026-10-03T10:01:40.100Z",
-            s,
+            session,
             userPromptSubmit={"prompt": "fix tests", "attachments": []},
         ),
         _hook_line(
             "tool_call",
             "2026-10-03T10:01:42.500Z",
-            s,
+            session,
             iteration=1,
             tool_call=call,
             preToolUse={"toolName": "bash", "parameters": {"command": "pytest -q"}},
@@ -9151,7 +9505,7 @@ def cline_hook_lines():
         _hook_line(
             "tool_result",
             "2026-10-03T10:01:42.900Z",
-            s,
+            session,
             iteration=1,
             tool_result=dict(
                 call,
@@ -9171,7 +9525,7 @@ def cline_hook_lines():
         _hook_line(
             "agent_end",
             "2026-10-03T10:01:49.000Z",
-            s,
+            session,
             iteration=2,
             turn={"outputText": "Fixed.", "status": "completed"},
             taskComplete={"taskMetadata": {}},
@@ -9251,8 +9605,11 @@ def cline_global_state() -> dict:
 
 
 def build_cline_settings_and_cloud(home: Path) -> None:
-    """globalState.json, global-settings.json, the MCP settings file and one
-    pending-start file, each with `CLINE_SETTINGS_MTIME` as its mtime."""
+    """Write the Cline settings files and a pending-start file.
+
+    globalState.json, global-settings.json, the MCP settings file and one pending-start file, each
+    with `CLINE_SETTINGS_MTIME` as its mtime.
+    """
     _json(home / CLINE_GLOBAL_STATE, cline_global_state())
     _json(
         home / CLINE_GLOBAL_SETTINGS,
@@ -9294,8 +9651,11 @@ def build_cline_settings_and_cloud(home: Path) -> None:
 
 
 def build_cline_denied_and_imported(home: Path) -> None:
-    """An SDK session with one call the user rejected (with feedback) and one
-    the policy blocked, and a session imported from Claude Code."""
+    """Write a Cline SDK session with refused calls and an imported one.
+
+    An SDK session with one call the user rejected (with feedback) and one the policy blocked, and a
+    session imported from Claude Code.
+    """
     sessions = home / ".cline/data/sessions"
     manifest = dict(
         cline_sdk_manifest(),
@@ -9306,7 +9666,7 @@ def build_cline_denied_and_imported(home: Path) -> None:
         metadata={"title": "clean up"},
     )
     _json(sessions / CLINE_DENIED_SESSION / (CLINE_DENIED_SESSION + ".json"), manifest)
-    t0 = 1791022100000
+    start = 1791022100000
     rejected = (
         "This tool call was rejected by the user and not executed. The user provided the"
         " following feedback:\n<feedback>\nnot that one\n</feedback>"
@@ -9317,7 +9677,7 @@ def build_cline_denied_and_imported(home: Path) -> None:
         "agent": "lead",
         "sessionId": CLINE_DENIED_SESSION,
         "messages": [
-            {"id": "m1", "role": "user", "content": "clean up", "ts": t0},
+            {"id": "m1", "role": "user", "content": "clean up", "ts": start},
             {
                 "id": "m2",
                 "role": "assistant",
@@ -9336,7 +9696,7 @@ def build_cline_denied_and_imported(home: Path) -> None:
                     },
                 ],
                 "modelInfo": {"id": "claude-sonnet-4-5", "provider": "anthropic"},
-                "ts": t0 + 1000,
+                "ts": start + 1000,
             },
             {
                 "id": "m3",
@@ -9357,7 +9717,7 @@ def build_cline_denied_and_imported(home: Path) -> None:
                         "is_error": True,
                     },
                 ],
-                "ts": t0 + 2000,
+                "ts": start + 2000,
             },
         ],
     }
@@ -9384,11 +9744,11 @@ def build_cline_denied_and_imported(home: Path) -> None:
     _json(sessions / CLINE_IMPORTED_SESSION / (CLINE_IMPORTED_SESSION + ".json"), imported)
 
 
-def roo_ui_records(t0=CLINE_T0 + 200000):
+def roo_ui_records(start=CLINE_T0 + 200000):
     return [
-        {"ts": t0, "type": "say", "say": "text", "text": "rename the helper"},
+        {"ts": start, "type": "say", "say": "text", "text": "rename the helper"},
         {
-            "ts": t0 + 1000,
+            "ts": start + 1000,
             "type": "say",
             "say": "api_req_started",
             "text": json.dumps(
@@ -9402,7 +9762,7 @@ def roo_ui_records(t0=CLINE_T0 + 200000):
             ),
         },
         {
-            "ts": t0 + 2000,
+            "ts": start + 2000,
             "type": "ask",
             "ask": "tool",
             "text": json.dumps(
@@ -9411,10 +9771,10 @@ def roo_ui_records(t0=CLINE_T0 + 200000):
             # approved, by a click or automatically (Task.ts:1489-1502)
             "isAnswered": True,
         },
-        {"ts": t0 + 3000, "type": "ask", "ask": "command", "text": "pytest -q"},
-        {"ts": t0 + 4000, "type": "ask", "ask": "command_output", "text": "1 passed"},
+        {"ts": start + 3000, "type": "ask", "ask": "command", "text": "pytest -q"},
+        {"ts": start + 4000, "type": "ask", "ask": "command_output", "text": "1 passed"},
         {
-            "ts": t0 + 5000,
+            "ts": start + 5000,
             "type": "say",
             "say": "condense_context",
             "partial": False,
@@ -9427,16 +9787,16 @@ def roo_ui_records(t0=CLINE_T0 + 200000):
             },
         },
         {
-            "ts": t0 + 6000,
+            "ts": start + 6000,
             "type": "ask",
             "ask": "followup",
             "text": json.dumps(
                 {"question": "Commit now?", "suggest": [{"answer": "yes"}, {"answer": "no"}]}
             ),
         },
-        {"ts": t0 + 7000, "type": "say", "say": "user_feedback", "text": "yes"},
+        {"ts": start + 7000, "type": "say", "say": "user_feedback", "text": "yes"},
         {
-            "ts": t0 + 8000,
+            "ts": start + 8000,
             "type": "say",
             "say": "completion_result",
             "text": "Renamed and committed.",
@@ -9444,14 +9804,18 @@ def roo_ui_records(t0=CLINE_T0 + 200000):
     ]
 
 
-def roo_api_records(t0=CLINE_T0 + 300000):
+def roo_api_records(start=CLINE_T0 + 300000):
     return [
-        {"role": "user", "content": [{"type": "text", "text": "<task>fix tests</task>"}], "ts": t0},
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": "<task>fix tests</task>"}],
+            "ts": start,
+        },
         {
             "type": "reasoning",
             "summary": [{"type": "summary_text", "text": "check the runner"}],
             "encrypted_content": "gAAAA",
-            "ts": t0 + 1000,
+            "ts": start + 1000,
         },
         {
             "role": "assistant",
@@ -9463,7 +9827,7 @@ def roo_api_records(t0=CLINE_T0 + 300000):
                     "input": {"command": "pytest -q"},
                 }
             ],
-            "ts": t0 + 2000,
+            "ts": start + 2000,
         },
         {
             "role": "user",
@@ -9475,7 +9839,7 @@ def roo_api_records(t0=CLINE_T0 + 300000):
                     "is_error": False,
                 }
             ],
-            "ts": t0 + 3000,
+            "ts": start + 3000,
         },
         {
             "role": "assistant",
@@ -9493,7 +9857,7 @@ def roo_api_records(t0=CLINE_T0 + 300000):
                     "input": {"path": "pytest.ini"},
                 },
             ],
-            "ts": t0 + 4000,
+            "ts": start + 4000,
         },
         {
             "role": "user",
@@ -9511,16 +9875,16 @@ def roo_api_records(t0=CLINE_T0 + 300000):
                     "content": '{"status":"approved","feedback":"ok"}\n\n[pytest]',
                 },
             ],
-            "ts": t0 + 5000,
+            "ts": start + 5000,
         },
     ]
 
 
-def roo_history_item(task_id, ts, task, workspace="/srv/proj"):
+def roo_history_item(task_id, timestamp, task, workspace="/srv/proj"):
     return {
         "id": task_id,
         "number": 1,
-        "ts": ts,
+        "ts": timestamp,
         "task": task,
         "tokensIn": 1200,
         "tokensOut": 80,
@@ -9531,7 +9895,7 @@ def roo_history_item(task_id, ts, task, workspace="/srv/proj"):
     }
 
 
-# The Roo CLI's input history (`.roo/cli-history.json`, issue 122): text
+# The Roo CLI's input history (`.roo/cli-history.json`): text
 # only, so "rename the helper" and the follow-up "yes" pair with the task's
 # own user rows on text alone (any task: the file names none); "/new" (a
 # CLI command that never reaches a task) and "summarise the open issues"
@@ -9557,8 +9921,8 @@ def build_roo_cli_history(home: Path) -> None:
 
 
 def build_roo_code(home: Path) -> None:
-    gs = home / ".config/Code/User/globalStorage/rooveterinaryinc.roo-cline"
-    task = gs / "tasks" / ROO_TASK
+    global_storage = home / ".config/Code/User/globalStorage/rooveterinaryinc.roo-cline"
+    task = global_storage / "tasks" / ROO_TASK
     _json(task / "ui_messages.json", roo_ui_records())
     _json(task / "api_conversation_history.json", roo_api_records())
     _json(
@@ -9581,7 +9945,7 @@ def build_roo_code(home: Path) -> None:
         },
     )
     _json(
-        gs / "tasks/_index.json",
+        global_storage / "tasks/_index.json",
         {
             "version": 1,
             "updatedAt": CLINE_T0 + 208000,
@@ -9603,7 +9967,7 @@ def build_roo_code(home: Path) -> None:
         home / ROO_WS_STATE_REL,
         {"someWorkspaceKey": 1, ROO_RETRY_QUEUE: roo_retry_queue()},
     )
-    _json(gs / "settings/mcp_settings.json", roo_mcp_settings())
+    _json(global_storage / "settings/mcp_settings.json", roo_mcp_settings())
     # A project's MCP file; in a project home its rows carry the project.
     _json(home / ".roo/mcp.json", roo_mcp_settings())
     _vscdb(home / ROO_VSCDB_REL, {ROO_EXTENSION_KEY: roo_global_state()})
@@ -9644,9 +10008,11 @@ def roo_global_state():
 
 
 def roo_retry_queue():
-    """One queued Task Message upload (RetryQueue.ts:73-95 and
-    TelemetryClient.ts:102-153 at Roo-Code v3.53.0); its headers and body
-    must never reach a row."""
+    """One queued Roo Code Task Message upload.
+
+    One queued Task Message upload (RetryQueue.ts:73-95 and TelemetryClient.ts:102-153 at Roo-Code
+    v3.53.0); its headers and body must never reach a row.
+    """
     message = {"ts": CLINE_T0 + 200000, "type": "say", "say": "text", "text": "rename the helper"}
     return [
         {
@@ -9747,21 +10113,21 @@ TABBY_SECRETS = (
 
 
 def tabby_secret_records():
-    s = TABBY_SECRETS
+    secrets = TABBY_SECRETS
     return [
         "INSERT INTO users(id,email,is_admin,auth_token,active,name,password_encrypted) "
-        "VALUES(1,'alice@example.com',1,'%s',1,'Alice','%s')" % (s[0], s[1]),
-        "INSERT INTO registration_token(id,token) VALUES(1,'%s')" % s[2],
+        "VALUES(1,'alice@example.com',1,'%s',1,'Alice','%s')" % (secrets[0], secrets[1]),
+        "INSERT INTO registration_token(id,token) VALUES(1,'%s')" % secrets[2],
         "INSERT INTO refresh_tokens(user_id,token,expires_at) VALUES(1,'%s','2026-12-01 00:00:00')"
-        % s[3],
+        % secrets[3],
         "INSERT INTO integrations(id,kind,display_name,access_token,created_at,updated_at) "
-        "VALUES(1,'github','acme','%s','2026-09-01 09:00:00','2026-09-01 09:00:00')" % s[4],
+        "VALUES(1,'github','acme','%s','2026-09-01 09:00:00','2026-09-01 09:00:00')" % secrets[4],
         "INSERT INTO email_setting(smtp_username,smtp_password,smtp_server,from_address) "
-        "VALUES('mailer','%s','smtp.example.com','tabby@example.com')" % s[5],
+        "VALUES('mailer','%s','smtp.example.com','tabby@example.com')" % secrets[5],
         "INSERT INTO oauth_credential(provider,client_id,client_secret) VALUES('github','cid','%s')"
-        % s[6],
+        % secrets[6],
         "INSERT INTO ldap_credential(host,bind_dn,bind_password,base_dn,user_filter) "
-        "VALUES('ldap.example.com','cn=admin','%s','dc=example','(uid=%%s)')" % s[7],
+        "VALUES('ldap.example.com','cn=admin','%s','dc=example','(uid=%%s)')" % secrets[7],
     ]
 
 
@@ -9772,9 +10138,12 @@ TABBY_SELECT_PAYLOAD = (
 
 
 def tabby_records():
-    """The INSERT statements of research/tabby.md, Parser plan, with the
-    research's single fixture token replaced by one per secret column, and a
-    user_events row whose payload is the pretty JSON event_logger.rs writes."""
+    """The INSERT statements of research/tabby.md, Parser plan, with one token each.
+
+    The INSERT statements of research/tabby.md, Parser plan, with the research's single fixture
+    token replaced by one per secret column, and a user_events row whose payload is the pretty JSON
+    event_logger.rs writes.
+    """
     return [
         *tabby_secret_records(),
         "INSERT INTO threads(id,is_ephemeral,user_id,created_at,updated_at,relevant_questions) "
@@ -9785,10 +10154,10 @@ def tabby_records():
         "INSERT INTO user_events(id,user_id,kind,created_at,payload) VALUES(1,1,'select','2026-10-01 10:00:01',"
         "'%s')" % TABBY_SELECT_PAYLOAD,
         # The event log's completion line as the database logger stores it
-        # (event_logger.rs:79-109): `ts` truncated to the second (#122).
+        # (event_logger.rs:79-109): `ts` truncated to the second.
         "INSERT INTO user_events(id,user_id,kind,created_at,payload) "
         "VALUES(2,1,'completion','2025-10-01 10:00:00','%s')" % TABBY_COMPLETION_PAYLOAD,
-        # An AI-written page made from thread 7 (page.rs:92-133; schema.sql:267-288, #211).
+        # An AI-written page made from thread 7 (page.rs:92-133; schema.sql:267-288).
         "INSERT INTO pages(id,author_id,title,content,created_at,updated_at,code_source_id) "
         "VALUES(4,1,'Cache invalidation','How the cache is cleared.','2026-10-01 11:00:00',"
         "'2026-10-01 11:00:30','acme-app')",
@@ -9826,8 +10195,11 @@ def tabby_backup_records():
 
 
 def tabby_event_records():
-    """The two event log lines of research/tabby.md, Parser plan, plus a
-    chat_completion event, whose body is empty (routes/chat.rs:83)."""
+    """The event log lines of research/tabby.md, Parser plan, and one more.
+
+    The two event log lines of research/tabby.md, Parser plan, plus a chat_completion event, whose
+    body is empty (routes/chat.rs:83).
+    """
     return [
         {
             "user": "1",
@@ -9868,9 +10240,11 @@ TABBY_COMPLETION_PAYLOAD = json.dumps(tabby_event_records()[0]["event"], indent=
 
 
 def tabby_backup2_records():
-    """A later backup in the current schema (#122): the ephemeral thread of
-    the first backup, copied again, and the live database's thread 7."""
-    n = len(tabby_secret_records())
+    """A later backup in the current schema.
+
+    The ephemeral thread of the first backup, copied again, and the live database's thread 7.
+    """
+    count = len(tabby_secret_records())
     return [
         *tabby_secret_records(),
         "INSERT INTO threads(id,is_ephemeral,user_id,created_at,updated_at) "
@@ -9879,12 +10253,12 @@ def tabby_backup2_records():
         """(5,3,'user','dump the users table','2026-09-10 08:00:00','2026-09-10 08:00:00','{}'),"""
         """(6,3,'assistant','Run `select * from users`.','2026-09-10 08:00:04','2026-09-10 08:00:04','{"code":[{"git_url":"https://github.com/acme/ops","filepath":"db.sql","content":"select 1","language":"sql","start_line":null}]}')""",
         # Thread 7 and its messages, as the live database holds them.
-        *tabby_records()[n : n + 2],
+        *tabby_records()[count : count + 2],
     ]
 
 
 TABBY_CONFIG_REL = ".tabby/config.toml"
-# config.rs:259-342: an http chat model with its key, and a local completion model (#211).
+# config.rs:259-342: an http chat model with its key, and a local completion model.
 TABBY_CONFIG = """[model.chat.http]
 kind = "openai/chat"
 model_name = "gpt-4o"
@@ -9920,10 +10294,11 @@ TABBY_VSCDB_REL = "AppData/Roaming/Code/User/globalStorage/state.vscdb"
 
 
 def tabby_vscode_state() -> dict:
-    """The extension's global state (Config.ts:41-66, 139-145): server
-    records with an endpoint token, and `edit.recentlyCommand`, newest first,
-    each entry `JSON.stringify({command, context})` (quickPick.ts:344-351),
-    the last one a bare string."""
+    """The extension's global state (Config.ts:41-66, 139-145).
+
+    Server records with an endpoint token, and `edit.recentlyCommand`, newest first, each entry
+    `JSON.stringify({command, context})` (quickPick.ts:344-351), the last one a bare string.
+    """
     return {
         "server.serverRecords": {"http://localhost:8080": {"token": TABBY_ENDPOINT_TOKEN}},
         "edit.recentlyCommand": [
@@ -9949,30 +10324,32 @@ def tabby_vscode_state() -> dict:
 
 
 def build_tabby(home: Path) -> None:
-    """A Tabby server's home: the live WAL database, a pre-migration backup
-    and a later one holding copies of the same threads, one day of the event
-    log, and the config file as noise."""
-    _wal_db(home / TABBY_REL, TABBY_SCHEMA, tabby_records())
+    """A Tabby server's home.
+
+    The live WAL database, a pre-migration backup and a later one holding copies of the same
+    threads, one day of the event log, and the config file as noise.
+    """
+    _wal_database(home / TABBY_REL, TABBY_SCHEMA, tabby_records())
     for rel, schema, records in (
         (TABBY_BACKUP_REL, TABBY_BACKUP_SCHEMA, tabby_backup_records()),
         (TABBY_BACKUP2_REL, TABBY_SCHEMA, tabby_backup2_records()),
     ):
-        con = sqlite3.connect(str(home / rel))
-        con.executescript(schema)
+        connection = sqlite3.connect(str(home / rel))
+        connection.executescript(schema)
         for sql in records:
-            con.execute(sql)
-        con.commit()
-        con.close()
+            connection.execute(sql)
+        connection.commit()
+        connection.close()
     _jsonl(home / TABBY_EVENTS_REL, tabby_event_records())
     (home / TABBY_CONFIG_REL).write_text(TABBY_CONFIG, encoding="utf-8")
     # The client's config holds the user's token: noise the parser must not want.
     client = home / ".tabby-client/agent/config.toml"
     client.parent.mkdir(parents=True, exist_ok=True)
     client.write_text('[server]\ntoken = "%s"\n' % TABBY_CLIENT_TOKEN, encoding="utf-8")
-    ij = home / TABBY_INTELLIJ_REL
-    ij.parent.mkdir(parents=True, exist_ok=True)
-    ij.write_text(TABBY_INTELLIJ_HISTORY, encoding="utf-8")
-    (ij.parent / "intellij-tabby.xml").write_text(
+    intellij_history = home / TABBY_INTELLIJ_REL
+    intellij_history.parent.mkdir(parents=True, exist_ok=True)
+    intellij_history.write_text(TABBY_INTELLIJ_HISTORY, encoding="utf-8")
+    (intellij_history.parent / "intellij-tabby.xml").write_text(
         '<application><component name="com.tabbyml.intellijtabby.settings.SettingsService">'
         '<option name="serverEndpoint" value="http://localhost:8080" /></component></application>',
         encoding="utf-8",
@@ -9980,7 +10357,7 @@ def build_tabby(home: Path) -> None:
     _vscdb(home / TABBY_VSCDB_REL, {"TabbyML.vscode-tabby": tabby_vscode_state()})
 
 
-# A Tabby server root in a Docker named volume (#124): the catalog's
+# A Tabby server root in a Docker named volume: the catalog's
 # `tabby|*tabby*` DOCKER_VOLUMES line collects the volume whole with its
 # `_data` directory as the base (user `docker`), and the images set
 # TABBY_ROOT=/data (docker/Dockerfile.cuda:88 at 21b2904), so a volume
@@ -9998,20 +10375,22 @@ TABBY_VOLUME_FILES = (
 
 
 def build_tabby_volume(root: Path) -> None:
-    """A collector output directory (collection.json, manifest.jsonl and
-    fs/) holding only the Tabby volume: the main fixture's server root with
-    `.tabby/` stripped, and the telemetry id as noise."""
+    """Write a collector output directory holding only the Tabby volume.
+
+    A collector output directory (collection.json, manifest.jsonl and fs/) holding only the Tabby
+    volume: the main fixture's server root with `.tabby/` stripped, and the telemetry id as noise.
+    """
     import shutil
 
     base = root / ("fs" + TABBY_VOLUME_HOME)
     home = root / "build"
     build_tabby(home)
     for rel in TABBY_VOLUME_FILES:
-        src = home / ".tabby" / rel
+        source = home / ".tabby" / rel
         dst = base / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if src.exists():
-            dst.write_bytes(src.read_bytes())
+        if source.exists():
+            dst.write_bytes(source.read_bytes())
         else:
             dst.write_text("6f1c2a3b-0000-4000-8000-000000000001\n", encoding="utf-8")
     shutil.rmtree(home)
@@ -10172,8 +10551,11 @@ OPENHANDS_PROJECT_HASH = "6b9af143446a411aefa3edb76e4693799bd7513e7ed8d919962d67
 
 
 def openhands_wt_meta():
-    """meta.json of a conversation started with worktree isolation, so its
-    working directory is under the Agent Server's default worktree root."""
+    """`meta.json` of an OpenHands conversation started with worktree isolation.
+
+    meta.json of a conversation started with worktree isolation, so its working directory is under
+    the Agent Server's default worktree root.
+    """
     meta = openhands_meta(OPENHANDS_WT_DIR)
     meta.update(
         id="0f0e0d0c-1111-4000-8000-000000000003",
@@ -10185,9 +10567,12 @@ def openhands_wt_meta():
 
 
 def openhands_wt_base_state():
-    """base_state.json with the standing permission fields, a model set over
-    REST after the last response, and per-response token usage (SDK 33d8aa2
-    `conversation/state.py` and `llm/utils/metrics.py`)."""
+    """`base_state.json` with standing permissions, a model and token usage.
+
+    base_state.json with the standing permission fields, a model set over REST after the last
+    response, and per-response token usage (SDK 33d8aa2 `conversation/state.py` and
+    `llm/utils/metrics.py`).
+    """
     state = openhands_base_state(OPENHANDS_WT_CONV, OPENHANDS_WT_DIR)
     state["agent"]["llm"]["model"] = "litellm_proxy/claude-opus-4-1"
     state["confirmation_policy"] = {
@@ -10210,8 +10595,13 @@ def openhands_wt_base_state():
                 "costs": [],
                 "response_latencies": [],
                 "token_usages": [
-                    {"model": m, "prompt_tokens": 10, "completion_tokens": 5, "response_id": r}
-                    for m, r in usages
+                    {
+                        "model": model,
+                        "prompt_tokens": 10,
+                        "completion_tokens": 5,
+                        "response_id": response_id,
+                    }
+                    for model, response_id in usages
                 ],
             }
         }
@@ -10220,13 +10610,16 @@ def openhands_wt_base_state():
 
 
 def openhands_wt_events(prefix="8a2f0c1d-0000-4000-8000-00000000000", day="2026-10-03T11:00:"):
-    """A security analyzer's verdicts, the agent's own model switch and a
-    hook block (SDK 33d8aa2 `event/security.py`, `tool/builtins/switch_llm.py`)."""
+    """OpenHands security verdicts, a model switch and a hook block.
 
-    def action(n, sec, tool, call, command, response):
+    A security analyzer's verdicts, the agent's own model switch and a hook block (SDK 33d8aa2
+    `event/security.py`, `tool/builtins/switch_llm.py`).
+    """
+
+    def action(number, sec, tool, call, command, response):
         return {
             "kind": "ActionEvent",
-            "id": prefix + str(n),
+            "id": prefix + str(number),
             "timestamp": day + sec,
             "source": "agent",
             "thought": [],
@@ -10237,10 +10630,10 @@ def openhands_wt_events(prefix="8a2f0c1d-0000-4000-8000-00000000000", day="2026-
             "llm_response_id": response,
         }
 
-    def analysis(n, sec, action_n, risk, details=None):
+    def analysis(number, sec, action_n, risk, details=None):
         return {
             "kind": "SecurityAnalysisEvent",
-            "id": prefix + str(n),
+            "id": prefix + str(number),
             "timestamp": day + sec,
             "source": "environment",
             "analyzer": "LLMSecurityAnalyzer",
@@ -10316,10 +10709,11 @@ def openhands_wt_events(prefix="8a2f0c1d-0000-4000-8000-00000000000", day="2026-
 
 
 def openhands_prompt_history():
-    """The CLI's prompt_history.json (OpenHands-CLI 0403f1a
-    `stores/prompt_history.py`): a JSON array, oldest first, naive local
-    times. The first entry repeats the CLI conversation's prompt; the second
-    is in no conversation."""
+    """The CLI's prompt_history.json (OpenHands-CLI 0403f1a `stores/prompt_history.py`).
+
+    A JSON array, oldest first, naive local times. The first entry repeats the CLI conversation's
+    prompt; the second is in no conversation.
+    """
     return [
         {"text": "list the files", "timestamp": "2026-10-02T08:30:01.000000"},
         {"text": "and the hidden files?", "timestamp": "2026-10-02T08:45:00.000000"},
@@ -10327,52 +10721,52 @@ def openhands_prompt_history():
 
 
 def _openhands_conversation(cdir: Path, events) -> None:
-    for n, ev in enumerate(events):
-        path = cdir / "events" / ("event-%05d-%s.json" % (n, ev["id"]))
+    for index, event in enumerate(events):
+        path = cdir / "events" / ("event-%05d-%s.json" % (index, event["id"]))
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(ev, separators=(",", ":")), encoding="utf-8")
+        path.write_text(json.dumps(event, separators=(",", ":")), encoding="utf-8")
     (cdir / "events" / (".eventlog-len-%d.marker" % len(events))).write_text("", encoding="utf-8")
 
 
 def build_openhands(home: Path) -> None:
-    oh = home / ".openhands"
-    conv = oh / "agent-canvas/dev_conversations" / OPENHANDS_CONV
+    openhands = home / ".openhands"
+    conv = openhands / "agent-canvas/dev_conversations" / OPENHANDS_CONV
     _openhands_conversation(conv, openhands_events())
     _json_file(conv / "meta.json", openhands_meta())
     _json_file(conv / "base_state.json", openhands_base_state(OPENHANDS_CONV))
     # CLI conversation with no meta.json: naive times are emitted as if UTC.
-    cli = oh / "conversations" / OPENHANDS_CLI_CONV
+    cli = openhands / "conversations" / OPENHANDS_CLI_CONV
     _openhands_conversation(
         cli, openhands_events("7c2e6d3f-0000-4000-8000-00000000000", "2026-10-02T08:30:")[:4]
     )
     _json_file(cli / "base_state.json", openhands_base_state(OPENHANDS_CLI_CONV))
     # A worktree conversation with the permission and model records.
-    wt = oh / "agent-canvas/dev_conversations" / OPENHANDS_WT_CONV
-    _openhands_conversation(wt, openhands_wt_events())
-    _json_file(wt / "meta.json", openhands_wt_meta())
-    _json_file(wt / "base_state.json", openhands_wt_base_state())
+    worktree_conversation = openhands / "agent-canvas/dev_conversations" / OPENHANDS_WT_CONV
+    _openhands_conversation(worktree_conversation, openhands_wt_events())
+    _json_file(worktree_conversation / "meta.json", openhands_wt_meta())
+    _json_file(worktree_conversation / "base_state.json", openhands_wt_base_state())
     # The CLI's prompt history for /srv/proj, a secondary source.
     _json_file(
-        oh / "projects" / OPENHANDS_PROJECT_HASH / "prompt_history.json",
+        openhands / "projects" / OPENHANDS_PROJECT_HASH / "prompt_history.json",
         openhands_prompt_history(),
     )
-    legacy = oh / "sessions" / OPENHANDS_LEGACY / "events"
-    for n in range(3):
+    legacy = openhands / "sessions" / OPENHANDS_LEGACY / "events"
+    for index in range(3):
         _json_file(
-            legacy / ("%d.json" % n),
+            legacy / ("%d.json" % index),
             {
-                "id": n,
-                "timestamp": "2026-03-01T09:00:0%d.000000" % n,
+                "id": index,
+                "timestamp": "2026-03-01T09:00:0%d.000000" % index,
                 "source": "user",
                 "action": "message",
                 "args": {"content": "hi"},
             },
         )
     _json_file(
-        oh / "settings.json",
+        openhands / "settings.json",
         {"llm_model": "anthropic/claude-sonnet-4-5", "llm_api_key": "sk-not-real"},
     )
-    _json_file(oh / "secrets.json", {"custom_secrets": {"X": {"secret": "not-real"}}})
+    _json_file(openhands / "secrets.json", {"custom_secrets": {"X": {"secret": "not-real"}}})
 
 
 SHELLGPT_CHAT = "deploy-check"
@@ -10467,13 +10861,13 @@ def build_shellgpt(home: Path) -> None:
     )
     # An empty response is written too; it yields no row.
     (temp / "shell_gpt/cache/d41d8cd98f00b204e9800998ecf8427e").write_text("", encoding="utf-8")
-    cfg = home / ".config/shell_gpt"
-    cfg.mkdir(parents=True, exist_ok=True)
-    (cfg / ".sgptrc").write_text(SHELLGPT_SGPTRC, encoding="utf-8")
-    (cfg / "functions").mkdir(parents=True, exist_ok=True)
-    (cfg / "functions/execute_shell.py").write_text("class Function: pass\n", encoding="utf-8")
-    (cfg / "roles").mkdir(parents=True, exist_ok=True)
-    _json_file(cfg / "roles/ShellGPT.json", {"name": "ShellGPT", "role": "assistant"})
+    config = home / ".config/shell_gpt"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / ".sgptrc").write_text(SHELLGPT_SGPTRC, encoding="utf-8")
+    (config / "functions").mkdir(parents=True, exist_ok=True)
+    (config / "functions/execute_shell.py").write_text("class Function: pass\n", encoding="utf-8")
+    (config / "roles").mkdir(parents=True, exist_ok=True)
+    _json_file(config / "roles/ShellGPT.json", {"name": "ShellGPT", "role": "assistant"})
 
 
 # ---- pi, little-coder, letta (pi session format) --------------------------------
@@ -10487,7 +10881,7 @@ LC_SESSION = "0b9e2f4c-1111-4000-8000-000000000001"
 LC_FILE = "2026-10-01T11-00-00-000Z_%s.jsonl" % LC_SESSION
 PI_EXPERIMENTAL = "exp-session-1"
 PI_TRUST = ".pi/agent/trust.json"
-PI_TRUST_MTIME = 1790852000  # 2026-10-01T10:53:20Z
+PI_TRUST_MTIME = 1790852000  # 1 October 10:53:20 UTC
 LETTA_LOCAL_CONV = "local-conv-1"
 LETTA_LOCAL_DIR = "Y29udmVyc2F0aW9uOmxvY2FsLWNvbnYtMQ"  # base64url("conversation:local-conv-1")
 LETTA_AGENT = "agent-1a2b"
@@ -10719,7 +11113,7 @@ def little_coder_session_records(cwd="/srv/proj"):
                 "timestamp": 1790852412000,
             },
         },
-        # The permission gate refuses an edit in manual mode (issue 201).
+        # The permission gate refuses an edit in manual mode.
         {
             "type": "message",
             "id": "a6",
@@ -10780,8 +11174,7 @@ def build_pi(home: Path) -> None:
     _json(home / PI_CRASHES, pi_crash_records())
 
 
-# Secondary and past-use sources beside the sessions (issue 201,
-# research/pi.md, Debug log and crash log): the `/debug` snapshot of the
+# Secondary and past-use sources beside the sessions (research/pi.md, Debug log and crash log): the `/debug` snapshot of the
 # open session's messages and the recent-crash log.
 PI_SETTINGS = ".pi/agent/settings.json"
 PI_DEBUG_LOG = ".pi/agent/pi-debug.log"
@@ -10830,7 +11223,7 @@ def pi_debug_log_text():
         '[1] (w=9) "1 failing"',
         "",
         "=== Agent messages (JSONL) ===",
-        *(json.dumps(m) for m in messages),
+        *(json.dumps(message) for message in messages),
         "",
     ]
     return "\n".join(lines)
@@ -10851,7 +11244,7 @@ def pi_crash_records():
     ]
 
 
-# Session sync (issue 153): a session reported with `/bug` twice, once
+# Session sync: a session reported with `/bug` twice, once
 # uploaded and once exported to a zip (research/pi.md, Record schema).
 PI_BUG_SESSION = "0199a1b2-7c3d-7e4f-8a5b-6c7d8e9f0b3d"
 PI_BUG_FILE = "2026-10-01T13-00-00-000Z_%s.jsonl" % PI_BUG_SESSION
@@ -10860,12 +11253,12 @@ PI_BUG_ZIP = "0199a1b2-9999-7000-8000-00000000b002"
 
 
 def pi_bug_report_records(cwd="/srv/proj"):
-    def report(entry_id, parent, ts, data):
+    def report(entry_id, parent, timestamp, data):
         return {
             "type": "custom",
             "id": entry_id,
             "parentId": parent,
-            "timestamp": ts,
+            "timestamp": timestamp,
             "customType": "pi.bug-report",
             "data": data,
         }
@@ -10928,19 +11321,19 @@ def build_little_coder(home: Path) -> None:
         home / ".pi/agent/little-coder-prompt-history.json",
         ["fix the failing test", "now run lint"],
     )
-    ck = home / ".little-coder/checkpoints" / LC_FILE
-    ck.mkdir(parents=True, exist_ok=True)
-    (ck / "_srv_proj_src_a.ts").write_text("old contents\n", encoding="utf-8")
-    (ck / "_srv_proj_src_new.ts.absent").write_text("", encoding="utf-8")
-    os.utime(ck / "_srv_proj_src_a.ts", (1790852406, 1790852406))
-    os.utime(ck / "_srv_proj_src_new.ts.absent", (1790852407, 1790852407))
+    checkpoints = home / ".little-coder/checkpoints" / LC_FILE
+    checkpoints.mkdir(parents=True, exist_ok=True)
+    (checkpoints / "_srv_proj_src_a.ts").write_text("old contents\n", encoding="utf-8")
+    (checkpoints / "_srv_proj_src_new.ts.absent").write_text("", encoding="utf-8")
+    os.utime(checkpoints / "_srv_proj_src_a.ts", (1790852406, 1790852406))
+    os.utime(checkpoints / "_srv_proj_src_new.ts.absent", (1790852407, 1790852407))
     (home / ".config/little-coder").mkdir(parents=True, exist_ok=True)
     (home / ".config/little-coder/settings.json").write_text("{}", encoding="utf-8")
     build_little_coder_legacy(home)
 
 
-# The retired v0.0.x Python layout under ~/.little-coder (issue 157,
-# research/little-coder.md, The v0.0.x layout).
+# The retired v0.0.x Python layout under ~/.little-coder (research/little-coder.md,
+# The v0.0.x layout).
 LC_LEGACY = ".little-coder/"
 LC_LEGACY_SESSION = "a1b2c3d4"
 LC_LEGACY_OLD_SESSION = "e1f2a3b4"
@@ -10952,7 +11345,7 @@ LC_LEGACY_CONFIG = LC_LEGACY + "config.json"
 LC_LEGACY_CKPT = "c0ffee12"
 LC_LEGACY_SNAPSHOTS = LC_LEGACY + "checkpoints/%s/snapshots.json" % LC_LEGACY_CKPT
 LC_LEGACY_GIST = "aa11bb22cc33dd44ee55ff6677889900"
-LC_LEGACY_CONFIG_MTIME = 1790503200  # 2026-09-27T10:00:00Z
+LC_LEGACY_CONFIG_MTIME = 1790503200  # 27 September 10:00:00 UTC
 
 
 def little_coder_legacy_session(session_id=LC_LEGACY_SESSION, saved_at="2026-09-20 10:15:00"):
@@ -11083,9 +11476,11 @@ def letta_transcript_records():
 
 
 def letta_twin_transcript_records():
-    """The local-backend conversation's transcript: the turn its
-    messages.jsonl also holds, captured at the turn's end, then a turn
-    messages.jsonl no longer has (issue 122)."""
+    """The local-backend conversation's transcript.
+
+    The turn its messages.jsonl also holds, captured at the turn's end, then a turn messages.jsonl
+    no longer has.
+    """
     return [
         *letta_transcript_records(),
         {
@@ -11204,7 +11599,7 @@ def letta_sessions_records(project="/srv/proj"):
         "reasoning_tokens": 0,
         "steps": 0,
     }
-    # Only recordSessionEnd writes the file (issue 158): one line per CLI
+    # Only recordSessionEnd writes the file: one line per CLI
     # session that ended with /exit or /logout, at the time of exit.
     end = {
         "agent_id": LETTA_AGENT,
@@ -11250,12 +11645,12 @@ def build_letta(home: Path) -> None:
     build_letta_stores(home)
 
 
-# Issue 202: the stores of the Parser plan of research/letta.md read since
-# the 2026-10-21 review of letta-code 2a46615d (permissions, channel
-# routing, scheduled tasks and their runs, an interrupted listener turn),
-# all on the server conversation LETTA_CONV so they add no session.
-LETTA_LEGACY_SETTINGS_MTIME = 1790856060  # 2026-10-01T12:01:00Z
-LETTA_LISTENER_MTIME = 1790856240  # 2026-10-01T12:04:00Z
+# The stores of the Parser plan of research/letta.md at letta-code 2a46615d
+# (permissions, channel routing, scheduled tasks and their runs, an
+# interrupted listener turn), all on the server conversation LETTA_CONV so
+# they add no session.
+LETTA_LEGACY_SETTINGS_MTIME = 1790856060  # 1 October 12:01:00 UTC
+LETTA_LISTENER_MTIME = 1790856240  # 1 October 12:04:00 UTC
 LETTA_TASK = "a1b2c3d4"
 LETTA_LISTENER_HASH = "0123456789abcdef01234567"
 LETTA_LISTENER_FILE = "%s_%s.json" % (LETTA_AGENT, LETTA_CONV)
@@ -11297,7 +11692,7 @@ def letta_run_records():
     return [
         dict(
             base,
-            ts=1790906400000,  # 2026-10-02T02:00:00Z
+            ts=1790906400000,  # 2 October 02:00:00 UTC
             status="ok",
             outcome="queued",
             reason="scheduled_time_matched",
@@ -11308,7 +11703,7 @@ def letta_run_records():
         ),
         dict(
             base,
-            ts=1790992800000,  # 2026-10-03T02:00:00Z
+            ts=1790992800000,  # 3 October 02:00:00 UTC
             status="skipped",
             outcome="missed",
             reason="scheduler_inactive",
@@ -11404,13 +11799,13 @@ def build_letta_stores(home: Path) -> None:
     _json(state / (LETTA_LISTENER_FILE + ".recovery-" + "ab" * 12), {})
 
 
-# Session sync (issue 153): the server-side session markers of
+# Session sync: the server-side session markers of
 # research/letta.md, Transcript stores. settings.json is rewritten with
 # `sessionsByServer` and `agents[]` beside the credential the parser must
 # never print, and a local-backend agent's transcript, which is not
 # server state. A project's settings.local.json is built by its test.
-LETTA_SETTINGS_MTIME = 1790856120  # 2026-10-01T12:02:00Z
-LETTA_LOCAL_SETTINGS_MTIME = 1790856180  # 2026-10-01T12:03:00Z
+LETTA_SETTINGS_MTIME = 1790856120  # 1 October 12:02:00 UTC
+LETTA_LOCAL_SETTINGS_MTIME = 1790856180  # 1 October 12:03:00 UTC
 LETTA_LOCAL_AGENT = "agent-local-77"
 LETTA_LOCAL_AGENT_CONV = "local-conv-2"
 
@@ -11445,8 +11840,10 @@ def build_letta_sync(home: Path) -> None:
 
 
 def letta_project_settings():
-    """A project's `.letta/settings.local.json`, which a test places in a
-    discovered project directory."""
+    """A project's `.letta/settings.local.json`.
+
+    A project's `.letta/settings.local.json`, which a test places in a discovered project directory.
+    """
     return {
         "permissions": {"allow": ["Bash(ls)"]},
         "sessionsByServer": {
@@ -11479,9 +11876,12 @@ CREATE TABLE session_model_usage (session_id TEXT NOT NULL, model TEXT NOT NULL,
 
 
 def hermes_records(cwd="/srv/proj"):
-    """The INSERT statements of research/hermes.md, Parser plan, with the shared
-    project path, plus a rewound turn kept as active=0, a multimodal user
-    message behind the NUL json prefix, and a subagent child session."""
+    """The INSERT statements of research/hermes.md, Parser plan, and three more.
+
+    The INSERT statements of research/hermes.md, Parser plan, with the shared project path, plus a
+    rewound turn kept as active=0, a multimodal user message behind the NUL json prefix, and a
+    subagent child session.
+    """
     return [
         "INSERT INTO schema_version VALUES (31)",
         "INSERT INTO sessions VALUES ('%s','cli','anthropic/claude-sonnet-4',NULL,1790856000.0,NULL,NULL,"
@@ -11517,8 +11917,11 @@ def hermes_records(cwd="/srv/proj"):
 
 
 def hermes_diverted_records():
-    """sessions/<id>.jsonl: message dicts appended while state.db was
-    replaced under a running process (hermes_state.py:429-444)."""
+    """sessions/<id>.jsonl.
+
+    Message dicts appended while state.db was replaced under a running process
+    (hermes_state.py:429-444).
+    """
     return [
         {"role": "user", "content": "show the env", "timestamp": 1790859600.0},
         {
@@ -11555,8 +11958,10 @@ HERMES_SESSION_JSONL_REL = ".hermes/sessions/%s.jsonl" % HERMES_SESSION
 
 
 def hermes_pruned_records(cwd="/srv/proj"):
-    """A session the live state.db no longer holds (pruned or deleted), as
-    the quick snapshots keep it."""
+    """A Hermes session the live state.db no longer holds.
+
+    A session the live state.db no longer holds (pruned or deleted), as the quick snapshots keep it.
+    """
     return [
         "INSERT INTO sessions VALUES ('%s','cli','anthropic/claude-sonnet-4',NULL,1789894800.0,"
         "1789894860.0,'user_exit','%s','main','%s','Audit logs')" % (HERMES_PRUNED, cwd, cwd),
@@ -11568,9 +11973,11 @@ def hermes_pruned_records(cwd="/srv/proj"):
 
 
 def hermes_snapshot_records(cwd="/srv/proj"):
-    """state-snapshots/<id>/state.db (hermes_cli/backup.py:1214-1420): the
-    live database as it was at 12:00:04, the main session's first four
-    messages and its first model, plus the pruned session."""
+    """state-snapshots/<id>/state.db (hermes_cli/backup.py:1214-1420).
+
+    The live database as it was at 12:00:04, the main session's first four messages and its first
+    model, plus the pruned session.
+    """
     live = hermes_records(cwd)
     return [
         live[0],
@@ -11585,9 +11992,11 @@ def hermes_snapshot_records(cwd="/srv/proj"):
 
 
 def hermes_session_jsonl_records():
-    """sessions/<main session>.jsonl: a divert of the main session, one
-    message the live state.db also holds (list content, not the NUL json
-    form) and one it lacks."""
+    """sessions/<main session>.jsonl.
+
+    A divert of the main session, one message the live state.db also holds (list content, not the
+    NUL json form) and one it lacks.
+    """
     return [
         {
             "role": "user",
@@ -11604,17 +12013,17 @@ def hermes_session_jsonl_records():
 def _hermes_snapshot(path: Path, inserts) -> None:
     """A snapshot copy: SQLite's backup API leaves a plain database, no WAL."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(HERMES_SCHEMA)
+    connection = sqlite3.connect(str(path))
+    connection.executescript(HERMES_SCHEMA)
     for stmt in inserts:
-        con.execute(stmt)
-    con.commit()
-    con.close()
+        connection.execute(stmt)
+    connection.commit()
+    connection.close()
 
 
 def build_hermes(home: Path) -> None:
     hermes = home / ".hermes"
-    _wal_db(hermes / "state.db", HERMES_SCHEMA, hermes_records())
+    _wal_database(hermes / "state.db", HERMES_SCHEMA, hermes_records())
     _jsonl(home / HERMES_DIVERTED_REL, hermes_diverted_records())
     _hermes_snapshot(
         home / HERMES_SNAPSHOT_OLD_REL,
@@ -11638,11 +12047,11 @@ AGENT_ZERO_REL = "agent-zero/usr/chats/%s/chat.json" % AGENT_ZERO_CHAT
 AGENT_ZERO_LONG = "x" * 600
 
 
-def _a0_message(mid, ai, content, metadata=None):
+def _a0_message(mid, from_ai, content, metadata=None):
     return {
         "_cls": "Message",
         "id": mid,
-        "ai": ai,
+        "ai": from_ai,
         "content": content,
         "metadata": metadata or {},
         "sequence": 0,
@@ -11651,7 +12060,7 @@ def _a0_message(mid, ai, content, metadata=None):
     }
 
 
-# Session sync (issue 153): pastes/pending.json, the paste.rs links of
+# Session sync: pastes/pending.json, the paste.rs links of
 # `hermes debug share` uploads (hermes_cli/debug.py:38-39 at hermes-agent
 # 8b66a51, research/hermes.md, Other stores): expire_at is upload + 21600 s.
 HERMES_PASTES_REL = ".hermes/pastes/pending.json"
@@ -11670,7 +12079,7 @@ def build_hermes_pastes(home: Path) -> None:
     path.write_text(json.dumps(hermes_pastes_records()), encoding="utf-8")
 
 
-# Model-switch markers (issue 180) and malformed tool_calls (issue 182), in a
+# Model-switch markers and malformed tool_calls, in a
 # database of their own so the main fixture's rows stay as they are. Shapes
 # from hermes-agent 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872: the TUI
 # gateway appends a `role = 'user'` row with `display_kind = 'model_switch'`
@@ -11698,25 +12107,26 @@ HERMES_BAD_CALLS_ENTRY = (
 
 
 def hermes_switch_records():
-    """A TUI session (sessions.model rewritten to the last switch's model)
-    whose first API calls used claude-sonnet-4, then two switches: the first
-    marker, superseded, has active=0; the second names no provider, and a
-    third marker's text has an unknown form. Between them three assistant
-    messages whose tool_calls do not decode, with plain user turns before
-    and after."""
-    sid = HERMES_SWITCH
+    """A Hermes TUI session with two model switches and undecodable calls.
+
+    A TUI session (sessions.model rewritten to the last switch's model) whose first API calls used
+    claude-sonnet-4, then two switches: the first marker, superseded, has active=0; the second names
+    no provider, and a third marker's text has an unknown form. Between them three assistant
+    messages whose tool_calls do not decode, with plain user turns before and after.
+    """
+    session_id = HERMES_SWITCH
     marker = HERMES_SWITCH_MARKER
 
-    def msg(role, content, ts, active=1, kind=None, calls=None):
+    def message_row(role, content, timestamp, active=1, kind=None, calls=None):
         return (
             "INSERT INTO messages (session_id,role,content,tool_calls,timestamp,active,"
             "display_kind) VALUES (%s,%s,%s,%s,%s,%d,%s)"
             % (
-                _hermes_sql(sid),
+                _hermes_sql(session_id),
                 _hermes_sql(role),
                 _hermes_sql(content),
                 _hermes_sql(calls),
-                ts,
+                timestamp,
                 active,
                 _hermes_sql(kind),
             )
@@ -11725,26 +12135,29 @@ def hermes_switch_records():
     return [
         "INSERT INTO schema_version VALUES (31)",
         "INSERT INTO sessions VALUES ('%s','tui','anthropic/claude-opus-4',NULL,1790874000.0,"
-        "NULL,NULL,'/srv/proj','main','/srv/proj','Switch models')" % sid,
-        msg("user", "hello", 1790874001.0),
-        msg("assistant", "Hi.", 1790874002.0),
-        msg(
+        "NULL,NULL,'/srv/proj','main','/srv/proj','Switch models')" % session_id,
+        message_row("user", "hello", 1790874001.0),
+        message_row("assistant", "Hi.", 1790874002.0),
+        message_row(
             "user",
             marker % ("openai/gpt-5", " via provider openrouter"),
             1790874010.0,
             active=0,
             kind="model_switch",
         ),
-        msg("user", "list files", 1790874011.0),
-        msg("assistant", "bad json", 1790874012.0, calls=HERMES_BAD_CALLS_JSON),
-        msg("assistant", "", 1790874013.0, calls=HERMES_BAD_CALLS_SCALAR),
-        msg("assistant", "", 1790874014.0, calls=HERMES_BAD_CALLS_ENTRY),
-        msg("user", marker % ("anthropic/claude-opus-4", ""), 1790874020.0, kind="model_switch"),
-        msg("user", "[System: model changed]", 1790874021.0, kind="model_switch"),
-        msg("user", "after the switches", 1790874030.0),
+        message_row("user", "list files", 1790874011.0),
+        message_row("assistant", "bad json", 1790874012.0, calls=HERMES_BAD_CALLS_JSON),
+        message_row("assistant", "", 1790874013.0, calls=HERMES_BAD_CALLS_SCALAR),
+        message_row("assistant", "", 1790874014.0, calls=HERMES_BAD_CALLS_ENTRY),
+        message_row(
+            "user", marker % ("anthropic/claude-opus-4", ""), 1790874020.0, kind="model_switch"
+        ),
+        message_row("user", "[System: model changed]", 1790874021.0, kind="model_switch"),
+        message_row("user", "after the switches", 1790874030.0),
         "INSERT INTO session_model_usage (session_id,model,billing_provider,task,api_call_count,"
         "first_seen,last_seen) VALUES "
-        "('%s','anthropic/claude-sonnet-4','openrouter','',1,1790874002.0,1790874002.0)" % sid,
+        "('%s','anthropic/claude-sonnet-4','openrouter','',1,1790874002.0,1790874002.0)"
+        % session_id,
     ]
 
 
@@ -11757,13 +12170,12 @@ def _hermes_sql(value) -> str:
 
 def build_hermes_switch(path: Path) -> None:
     """state.db at `path` holding hermes_switch_records()."""
-    _wal_db(path, HERMES_SWITCH_SCHEMA, hermes_switch_records())
+    _wal_database(path, HERMES_SWITCH_SCHEMA, hermes_switch_records())
 
 
-# Issue 208, source-derived from hermes-agent
-# 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872 (research/hermes.md, Parser plan);
-# no real install has shown any of these shapes. A gateway state.db of its
-# own: a Telegram session (sessions columns of gateway/session.py and
+# Source-derived from hermes-agent 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872
+# (research/hermes.md, Parser plan); no real install has shown these shapes.
+# A gateway state.db of its own: a Telegram session (sessions columns of gateway/session.py and
 # hermes_state_gateway.py:236-292, its /yolo flag in model_config) with the
 # three terminal approval outcomes (tools/terminal_tool.py:1062-1087), a
 # session imported from Claude Code (hermes_cli/foreign_sessions.py:254-260),
@@ -11842,7 +12254,7 @@ def _hermes_call(call_id: str, command: str) -> str:
 
 
 def hermes_gateway_records():
-    q = _hermes_sql
+    quote = _hermes_sql
     tg_origin = json.dumps(
         {
             "platform": "telegram",
@@ -11865,31 +12277,47 @@ def hermes_gateway_records():
         }
     )
 
-    def session(sid, source, t, cwd, branch, title, **cols):
+    def session(session_id, source, started, cwd, branch, title, **cols):
         names = ["id", "source", "model", "started_at", "cwd", "git_branch", "git_repo_root"]
-        values = [q(sid), q(source), q("openai/gpt-5"), str(t), q(cwd), q(branch), q(cwd)]
+        values = [
+            quote(session_id),
+            quote(source),
+            quote("openai/gpt-5"),
+            str(started),
+            quote(cwd),
+            quote(branch),
+            quote(cwd),
+        ]
         names.append("title")
-        values.append(q(title))
-        for k, v in cols.items():
+        values.append(quote(title))
+        for k, value in cols.items():
             names.append(k)
-            values.append(str(v) if isinstance(v, int) else q(v))
+            values.append(str(value) if isinstance(value, int) else quote(value))
         return "INSERT INTO sessions (%s) VALUES (%s)" % (",".join(names), ",".join(values))
 
-    def msg(role, content, t, calls=None, call_id=None, tool=None):
+    def message_row(role, content, timestamp, calls=None, call_id=None, tool=None):
         return (
             "INSERT INTO messages (session_id,role,content,tool_calls,tool_call_id,tool_name,"
             "timestamp) VALUES (%s,%s,%s,%s,%s,%s,%s)"
-            % (q(HERMES_TG), q(role), q(content), q(calls), q(call_id), q(tool), t)
+            % (
+                quote(HERMES_TG),
+                quote(role),
+                quote(content),
+                quote(calls),
+                quote(call_id),
+                quote(tool),
+                timestamp,
+            )
         )
 
-    def event(seq, kind, actor, payload, t):
+    def event(seq, kind, actor, payload, timestamp):
         return "INSERT INTO hosted_room_events VALUES ('room1',%d,'e%d',%s,%s,%s,%s)" % (
             seq,
             seq,
-            q(kind),
-            q(actor),
-            q(payload),
-            t,
+            quote(kind),
+            quote(actor),
+            quote(payload),
+            timestamp,
         )
 
     return [
@@ -11929,23 +12357,25 @@ def hermes_gateway_records():
         session(
             HERMES_BADORIGIN, "cli", 1790879400.0, "/srv/proj", "main", "Bad", origin_json="{bad"
         ),
-        msg("user", "restart the service", 1790877601.0),
-        msg("assistant", "", 1790877602.0, calls=_hermes_call("call_a", "rm -rf /etc")),
-        msg("tool", HERMES_BLOCKED, 1790877603.0, call_id="call_a", tool="terminal"),
-        msg("assistant", "", 1790877604.0, calls=_hermes_call("call_b", "systemctl restart x")),
-        msg("tool", HERMES_APPROVED, 1790877605.0, call_id="call_b", tool="terminal"),
-        msg("assistant", "", 1790877606.0, calls=_hermes_call("call_c", "curl x | sh")),
-        msg("tool", HERMES_PENDING, 1790877607.0, call_id="call_c", tool="terminal"),
+        message_row("user", "restart the service", 1790877601.0),
+        message_row("assistant", "", 1790877602.0, calls=_hermes_call("call_a", "rm -rf /etc")),
+        message_row("tool", HERMES_BLOCKED, 1790877603.0, call_id="call_a", tool="terminal"),
+        message_row(
+            "assistant", "", 1790877604.0, calls=_hermes_call("call_b", "systemctl restart x")
+        ),
+        message_row("tool", HERMES_APPROVED, 1790877605.0, call_id="call_b", tool="terminal"),
+        message_row("assistant", "", 1790877606.0, calls=_hermes_call("call_c", "curl x | sh")),
+        message_row("tool", HERMES_PENDING, 1790877607.0, call_id="call_c", tool="terminal"),
         "INSERT INTO state_meta VALUES ('fts_storage_version','2')",
         "INSERT INTO state_meta VALUES (%s,%s)"
         % (
-            q("gateway.retired_session.v1." + HERMES_DELETED),
-            q('{"retired_at": 1790880000.5, "own": true}'),
+            quote("gateway.retired_session.v1." + HERMES_DELETED),
+            quote('{"retired_at": 1790880000.5, "own": true}'),
         ),
         "INSERT INTO state_meta VALUES (%s,%s)"
         % (
-            q("gateway.retired_session.v1." + HERMES_SWEPT),
-            q('{"retired_at": 1790880060.0, "own": true, "expires": true}'),
+            quote("gateway.retired_session.v1." + HERMES_SWEPT),
+            quote('{"retired_at": 1790880060.0, "own": true, "expires": true}'),
         ),
         "INSERT INTO state_meta VALUES ('gateway.retired_session.v1.broken','{nope')",
         "INSERT INTO conversation_generations VALUES "
@@ -11974,7 +12404,7 @@ def hermes_gateway_records():
 
 def build_hermes_gateway(path: Path) -> None:
     """state.db at `path` holding hermes_gateway_records()."""
-    _wal_db(path, HERMES_GATEWAY_SCHEMA, hermes_gateway_records())
+    _wal_database(path, HERMES_GATEWAY_SCHEMA, hermes_gateway_records())
 
 
 # .hermes_history: prompt_toolkit's FileHistory form (python-prompt-toolkit
@@ -12051,24 +12481,24 @@ def build_hermes_responses(path: Path) -> None:
             }
         )
 
-    con = sqlite3.connect(str(path))
-    con.executescript(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(
         "CREATE TABLE responses (response_id TEXT PRIMARY KEY, data TEXT NOT NULL,"
         " accessed_at REAL NOT NULL);"
         "CREATE TABLE conversations (name TEXT PRIMARY KEY, response_id TEXT NOT NULL);"
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO responses VALUES (?,?,?)",
         ("resp_2", data("resp_2", 1790884810, second), 1790884811.0),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO responses VALUES (?,?,?)",
         ("resp_1", data("resp_1", 1790884800, first), 1790884801.0),
     )
-    con.execute("INSERT INTO responses VALUES ('resp_bad','{cut',1790884900.0)")
-    con.execute("INSERT INTO conversations VALUES ('math','resp_2')")
-    con.commit()
-    con.close()
+    connection.execute("INSERT INTO responses VALUES ('resp_bad','{cut',1790884900.0)")
+    connection.execute("INSERT INTO conversations VALUES ('math','resp_2')")
+    connection.commit()
+    connection.close()
 
 
 # pairing/<platform>-approved.json (gateway/pairing.py:431-438 at 86fa9e6).
@@ -12150,7 +12580,7 @@ def hermes_trajectory_records():
     ]
 
 
-# A Hermes home in a Docker named volume (issue 181): the catalog's
+# A Hermes home in a Docker named volume: the catalog's
 # `hermes|*hermes*` DOCKER_VOLUMES line collects the volume whole with its
 # `_data` directory as the base (user `docker`). The container's Hermes home
 # is /opt/data (docker-compose.yml:36-37 at hermes-agent 8b66a51 mounts
@@ -12168,12 +12598,14 @@ HERMES_VOLUME_FILES = (
 
 
 def build_hermes_volume(root: Path, cwd="/opt/data/workspace") -> None:
-    """A collector output directory (collection.json, manifest.jsonl and
-    fs/) holding only the Hermes volume: the main fixture's state.db with
-    `cwd` as the project path, its divert, the debug-share list and a
-    config.yaml with no command_allowlist, which gives no rows."""
+    """Write a collector output directory holding only the Hermes volume.
+
+    A collector output directory (collection.json, manifest.jsonl and fs/) holding only the Hermes
+    volume: the main fixture's state.db with `cwd` as the project path, its divert, the debug-share
+    list and a config.yaml with no command_allowlist, which gives no rows.
+    """
     base = root / ("fs" + HERMES_VOLUME_HOME)
-    _wal_db(base / "state.db", HERMES_SCHEMA, hermes_records(cwd))
+    _wal_database(base / "state.db", HERMES_SCHEMA, hermes_records(cwd))
     _jsonl(base / "sessions" / ("%s.jsonl" % HERMES_DIVERTED), hermes_diverted_records())
     _json(base / "pastes" / "pending.json", hermes_pastes_records())
     (base / "config.yaml").write_text("model: anthropic/claude-sonnet-4\n", encoding="utf-8")
@@ -12197,12 +12629,14 @@ def build_hermes_volume(root: Path, cwd="/opt/data/workspace") -> None:
 
 
 def agent_zero_history():
-    """Agent 0's history from research/agent-zero.md, Parser plan, with the
-    assistant message carrying the id of the `agent` log item that streamed
-    it (agent.py:529-534) and its provider model, a second tool result
-    long enough to be saved to messages/1.txt, and a later assistant message
-    from another provider model (a model change)."""
-    ai = json.dumps(
+    """Agent Zero's history of research/agent-zero.md, Parser plan, extended.
+
+    Agent 0's history from research/agent-zero.md, Parser plan, with the assistant message carrying
+    the id of the `agent` log item that streamed it (agent.py:529-534) and its provider model, a
+    second tool result long enough to be saved to messages/1.txt, and a later assistant message from
+    another provider model (a model change).
+    """
+    ai_reply = json.dumps(
         {
             "thoughts": ["list"],
             "headline": "Listing",
@@ -12223,7 +12657,7 @@ def agent_zero_history():
                 _a0_message(
                     "a1",
                     True,
-                    ai,
+                    ai_reply,
                     {
                         "responses": {
                             "response_id": "resp_1",
@@ -12378,8 +12812,11 @@ def agent_zero_chat(logs=None, history=None):
 
 
 def build_agent_zero(home: Path) -> None:
-    """A docker-compose style install in ~/agent-zero, with the long tool
-    result file, and settings and secrets noise."""
+    """Write a docker-compose style Agent Zero install in `~/agent-zero`.
+
+    A docker-compose style install in ~/agent-zero, with the long tool result file, and settings and
+    secrets noise.
+    """
     usr = home / "agent-zero/usr"
     chat = usr / "chats" / AGENT_ZERO_CHAT
     chat.mkdir(parents=True, exist_ok=True)
@@ -12396,7 +12833,7 @@ def build_agent_zero(home: Path) -> None:
     )
 
 
-# Scheduler tasks (issue 204): `usr/scheduler/tasks.json` as the scheduler
+# Scheduler tasks: `usr/scheduler/tasks.json` as the scheduler
 # writes it, `{"tasks": [...]}` (agent0ai/agent-zero ff2a5b9
 # helpers/task_scheduler.py:163-175, 512-519, 584). The scheduled task is
 # bound to AGENT_ZERO_CHAT and its last result repeats the chat's response;
@@ -12446,18 +12883,16 @@ def agent_zero_tasks():
     ]
 
 
-# Standing settings, editor sessions and the connector (issue 204), built
-# only by AgentZeroTests. Shapes from agent0ai/agent-zero ff2a5b9
-# (plugins/_a0_acp/api/session.py:12-20, 131-150;
+# Standing settings, editor sessions and the connector, built only by
+# AgentZeroTests; source-derived, not observed on any real install. Shapes from
+# agent0ai/agent-zero ff2a5b9 (plugins/_a0_acp/api/session.py:12-20, 131-150;
 # plugins/_model_config/api/model_override.py:58;
 # plugins/_a0_connector/api/v1/model_switcher.py:27-46, 211;
-# plugins/_tool_access/default_config.yaml:1-5;
-# plugins/_orchestrator/default_config.yaml:7-37; helpers/plugins.py:60-61;
-# plugins/_telegram_integration/helpers/handler.py:57-64; agent.py:1325-1346;
-# helpers/tool_policy.py:197-208;
-# plugins/_infection_check/helpers/checker.py:180-197) and
-# agent0ai/a0-connector 3741c88 (src/agent_zero_cli/config.py:13-14).
-# Source-derived, not observed on any real install.
+# plugins/_tool_access/default_config.yaml:1-5; plugins/_orchestrator/default_config.yaml:7-37;
+# helpers/plugins.py:60-61; plugins/_telegram_integration/helpers/handler.py:57-64;
+# agent.py:1325-1346; helpers/tool_policy.py:197-208;
+# plugins/_infection_check/helpers/checker.py:180-197) and agent0ai/a0-connector
+# 3741c88 (src/agent_zero_cli/config.py:13-14).
 AGENT_ZERO_ACP_CHAT = "AcpChat1"
 AGENT_ZERO_ACP_REL = "agent-zero/usr/chats/%s/chat.json" % AGENT_ZERO_ACP_CHAT
 AGENT_ZERO_TG_DELETED = "GoneTg01"
@@ -12577,7 +13012,7 @@ def build_agent_zero_extras(home: Path) -> None:
     assert usr.is_dir()
 
 
-# Session sync (issue 153): a Telegram chat whose main agent chained a turn
+# Session sync: a Telegram chat whose main agent chained a turn
 # on a provider-stored response, and a subordinate agent in local mode
 # (ids recorded, nothing stored). Keys from research/agent-zero.md, Record schema
 # (agent.py:1062-1082, plugins/_telegram_integration/helpers/constants.py:5-15
@@ -12654,7 +13089,7 @@ def build_agent_zero_relayed(home: Path) -> None:
     path.write_text(json.dumps(agent_zero_relayed_chat()), encoding="utf-8")
 
 
-# Docker volume layout (issue 175): the README's `docker run -v a0_usr:/a0/usr`
+# Docker volume layout: the README's `docker run -v a0_usr:/a0/usr`
 # (Compose names it `<project>_a0_usr`) and the A0 Launcher's
 # `a0-launcher-<slug>-usr` volume are mounted at /a0/usr, and the collector
 # takes each volume's `_data` as the home, so the chats sit at `chats/` with
@@ -12681,9 +13116,11 @@ def agent_zero_legacy_chat():
 
 
 def build_agent_zero_volume(root: Path) -> Path:
-    """A collected (manifest) input of two Agent Zero volumes under `root`,
-    attributed as the collector writes volume rows (user `docker`, home the
-    volume's `_data`); returns `root`."""
+    """Write a collected input of two Agent Zero volumes under `root`.
+
+    A collected (manifest) input of two Agent Zero volumes under `root`, attributed as the collector
+    writes volume rows (user `docker`, home the volume's `_data`); returns `root`.
+    """
     files = {
         (AGENT_ZERO_VOLUME, AGENT_ZERO_VOLUME_REL): json.dumps(
             agent_zero_chat(), ensure_ascii=False
@@ -12695,7 +13132,7 @@ def build_agent_zero_volume(root: Path) -> Path:
     }
     root.mkdir(parents=True, exist_ok=True)
     (root / "collection.json").write_text(json.dumps({"hostname": "h3"}), encoding="utf-8")
-    with open(root / "manifest.jsonl", "w", encoding="utf-8") as fh:
+    with open(root / "manifest.jsonl", "w", encoding="utf-8") as handle:
         for (volume, rel), text in files.items():
             path = volume + "/" + rel
             disk = root / ("fs" + path)
@@ -12711,7 +13148,7 @@ def build_agent_zero_volume(root: Path) -> Path:
                 "status": "collected",
                 "secret": rel == "settings.json",
             }
-            fh.write(json.dumps(row) + "\n")
+            handle.write(json.dumps(row) + "\n")
     return root
 
 
@@ -12727,8 +13164,11 @@ OI_ARCHIVED = (
 
 
 def open_interpreter_rollout_records(cwd="/srv/proj"):
-    """research/open-interpreter.md, Parser plan, with a reasoning item and a
-    task_complete event added."""
+    """The Open Interpreter records of its research document.
+
+    research/open-interpreter.md, Parser plan, with a reasoning item and a task_complete event
+    added.
+    """
     return [
         {
             "timestamp": "2026-10-01T10:00:00.000Z",
@@ -12862,36 +13302,36 @@ def open_interpreter_ledger():
 
 
 def build_open_interpreter(home: Path) -> None:
-    oi = home / ".openinterpreter"
+    interpreter = home / ".openinterpreter"
     _jsonl(home / OI_ROLLOUT, open_interpreter_rollout_records())
     _jsonl(home / OI_ARCHIVED, open_interpreter_imported_records())
     _jsonl(
-        oi / "history.jsonl",
+        interpreter / "history.jsonl",
         [{"session_id": OI_SESSION, "ts": 1790848801, "text": "list the files"}],
     )
     _jsonl(
-        oi / "session_index.jsonl",
+        interpreter / "session_index.jsonl",
         [{"id": OI_SESSION, "thread_name": "ls", "updated_at": "2026-10-01T10:00:05Z"}],
     )
-    (oi / "external_agent_session_imports.json").write_text(
+    (interpreter / "external_agent_session_imports.json").write_text(
         json.dumps(open_interpreter_ledger()), encoding="utf-8"
     )
-    (oi / "config.toml").write_text('harness = "claude-code"\n', encoding="utf-8")
-    (oi / "auth.json").write_text('{"OPENAI_API_KEY": "sk-not-real"}', encoding="utf-8")
+    (interpreter / "config.toml").write_text('harness = "claude-code"\n', encoding="utf-8")
+    (interpreter / "auth.json").write_text('{"OPENAI_API_KEY": "sk-not-real"}', encoding="utf-8")
     build_open_interpreter_stores(home)
 
 
-# The fork's SQLite set (#122): OI_SESSION's thread row repeats its first
+# The fork's SQLite set: OI_SESSION's thread row repeats its first
 # prompt; OI_ORPHAN's rollout is gone and only the projection, in the
 # fork's schema without item lifecycle times, holds its turn.
 OI_ORPHAN = "0199a1b2-0000-7000-8000-000000000003"
 
 
 def build_open_interpreter_stores(home: Path) -> None:
-    oi = home / ".openinterpreter"
+    interpreter = home / ".openinterpreter"
     sessions = "/home/alice/.openinterpreter/sessions"
     write_codex_state(
-        oi / "state_5.sqlite",
+        interpreter / "state_5.sqlite",
         [
             (
                 OI_SESSION,
@@ -12920,7 +13360,7 @@ def build_open_interpreter_stores(home: Path) -> None:
         ],
     )
     write_thread_history(
-        oi / "thread_history_1.sqlite",
+        interpreter / "thread_history_1.sqlite",
         [(OI_ORPHAN, "t1", 1, 6, "completed", 1790665201, 1790665206, 5000)],
         [
             (
@@ -12948,8 +13388,8 @@ def build_open_interpreter_stores(home: Path) -> None:
         ],
         lifecycle=False,
     )
-    # The fork's tracing log with a sent `/feedback` report for OI_SESSION (#153).
-    write_codex_logs(oi / "logs_2.sqlite", codex_log_rows(OI_SESSION))
+    # The fork's tracing log with a sent `/feedback` report for OI_SESSION.
+    write_codex_logs(interpreter / "logs_2.sqlite", codex_log_rows(OI_SESSION))
 
 
 # -- OpenClaw (openclaw/openclaw at 3b16db7) ---------------------------------------
@@ -13131,21 +13571,21 @@ def openclaw_legacy_records(session_id=OPENCLAW_LEGACY):
     ]
 
 
-# Session sync (issue 153): session_nodes (src/state/openclaw-agent-schema.sql:16-49
+# Session sync: session_nodes (src/state/openclaw-agent-schema.sql:16-49
 # at 3b16db7, the columns the parser reads) with a `publicShare` grant
 # (src/config/sessions/types.ts:627-628) on the live session and none on the
 # reset one, and state/openclaw.sqlite backup_runs
 # (src/state/openclaw-state-schema.sql:1843-1849) with manifests shaped by
 # src/state/backup-run-records.contract.ts:98-124.
 OPENCLAW_SHARE_ID = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
-OPENCLAW_STATE_DB = ".openclaw/state/openclaw.sqlite"
+OPENCLAW_STATE_DATABASE = ".openclaw/state/openclaw.sqlite"
 OPENCLAW_BACKUP_KEY = "backups/main/2026-10-01T10-20-00Z-0a1b2c3d.tar.gz"
 OPENCLAW_BACKUP_COMMIT = "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
 OPENCLAW_NODES_SCHEMA = """
 CREATE TABLE session_nodes (session_key TEXT NOT NULL PRIMARY KEY, current_session_id TEXT NOT NULL,
   entry_json TEXT NOT NULL, updated_at INTEGER NOT NULL, created_via TEXT, label TEXT);
 """
-# Relay, past-use and deletion tables (issue 206): src/state/openclaw-agent-schema.sql
+# Relay, past-use and deletion tables: src/state/openclaw-agent-schema.sql
 # at 146284a, the columns the parser reads. The full-text index is read from the FTS5
 # content table `session_transcript_fts_content` (`id`, then `c0` to `c4` in the
 # column order of lines 809-816) as a plain table.
@@ -13203,12 +13643,14 @@ OPENCLAW_FTS_ONLY = "prompt only the search index still holds"
 
 
 def openclaw_past_use_inserts():
-    """A Telegram conversation linked to the live session and a Control UI
-    one linked to the reset session; a delivery with a reply; a cancelled
-    prompt that never reached the transcript, one consumed by a transcript
-    entry the database holds and one consumed by an entry it lost; two
-    full-text index rows, one of an entry the transcript holds; and a
-    memory tombstone for the deleted session."""
+    """The OpenClaw past-use rows: channels, deliveries and tombstones.
+
+    A Telegram conversation linked to the live session and a Control UI one linked to the reset
+    session; a delivery with a reply; a cancelled prompt that never reached the transcript, one
+    consumed by a transcript entry the database holds and one consumed by an entry it lost; two
+    full-text index rows, one of an entry the transcript holds; and a memory tombstone for the
+    deleted session.
+    """
 
     def prompt(text):
         return json.dumps({"role": "user", "content": [{"type": "text", "text": text}]})
@@ -13243,10 +13685,12 @@ def openclaw_past_use_inserts():
 
 
 def openclaw_state_inserts():
-    """Permission records of state/openclaw.sqlite (src/state/openclaw-state-schema.sql
-    at 146284a, lines 356-475, 512-529 and 794-801) and one inbound channel
-    message (lines 1273-1294); the exec approvals file keeps the socket token,
-    which the parser never reads."""
+    """Permission records of OpenClaw's `state/openclaw.sqlite`.
+
+    Permission records of state/openclaw.sqlite (src/state/openclaw-state-schema.sql at 146284a,
+    lines 356-475, 512-529 and 794-801) and one inbound channel message (lines 1273-1294); the exec
+    approvals file keeps the socket token, which the parser never reads.
+    """
     raw = {
         "version": 1,
         "socket": {"path": "/home/alice/.openclaw/exec.sock", "token": OPENCLAW_SOCKET_TOKEN},
@@ -13283,7 +13727,7 @@ def openclaw_state_inserts():
         # src/state/openclaw-state-schema.sql:1901-1909 at 146284a: a
         # registered repository with its origin, and one without.
         "INSERT INTO projects VALUES ('p-1','proj','/srv/proj','%s','registered',"
-        "1790845100500,1790845100500)" % PROJ_REMOTE,
+        "1790845100500,1790845100500)" % PROJECT_REMOTE,
         "INSERT INTO projects VALUES ('p-2','scratch','/srv/scratch',NULL,'registered',"
         "1790845100600,1790845100600)",
     ]
@@ -13338,9 +13782,11 @@ def openclaw_node_inserts():
 
 
 def openclaw_backup_runs():
-    """(id, created_at, archive_path, status, manifest): an offsite archive
-    upload and a pushed Git backup, which yield rows, and a Git backup whose
-    push failed, a local archive and a failed upload, which do not."""
+    """(id, created_at, archive_path, status, manifest).
+
+    An offsite archive upload and a pushed Git backup, which yield rows, and a Git backup whose push
+    failed, a local archive and a failed upload, which do not.
+    """
     location = {
         "name": "r2-offsite",
         "provider": "cloudflare-r2",
@@ -13402,7 +13848,9 @@ def build_openclaw_state(home: Path) -> None:
         % (rid, created, path, status, json.dumps(manifest))
         for rid, created, path, status, manifest in openclaw_backup_runs()
     ]
-    _wal_db(home / OPENCLAW_STATE_DB, OPENCLAW_STATE_SCHEMA, inserts + openclaw_state_inserts())
+    _wal_database(
+        home / OPENCLAW_STATE_DATABASE, OPENCLAW_STATE_SCHEMA, inserts + openclaw_state_inserts()
+    )
 
 
 def _openclaw_zstd(raw: bytes) -> bytes:
@@ -13411,7 +13859,7 @@ def _openclaw_zstd(raw: bytes) -> bytes:
 
 
 def _openclaw_jsonl(records) -> bytes:
-    return "".join(json.dumps(r) + "\n" for r in records).encode("utf-8")
+    return "".join(json.dumps(record) + "\n" for record in records).encode("utf-8")
 
 
 def build_openclaw(home: Path) -> None:
@@ -13425,14 +13873,14 @@ def build_openclaw(home: Path) -> None:
             {"type": "oauth", "access": OPENCLAW_TOKEN, "refresh": OPENCLAW_TOKEN + "-refresh"}
         ),
     ]
-    for seq, rec in enumerate(openclaw_records()):
-        raw = json.dumps(rec)
-        z = _openclaw_zstd(raw.encode("utf-8")) if rec.get("id") == "b2c3d4e5" else None
+    for seq, record in enumerate(openclaw_records()):
+        raw = json.dumps(record)
+        compressed = _openclaw_zstd(raw.encode("utf-8")) if record.get("id") == "b2c3d4e5" else None
         created = 1790845200000 + seq * 1000
-        if z is not None:
+        if compressed is not None:
             inserts.append(
                 "INSERT INTO transcript_events VALUES ('%s',%d,NULL,%d,X'%s',%d,'{\"version\":1}')"
-                % (OPENCLAW_SESSION, seq, created, z.hex(), len(raw))
+                % (OPENCLAW_SESSION, seq, created, compressed.hex(), len(raw))
             )
         else:
             inserts.append(
@@ -13472,14 +13920,14 @@ def build_openclaw(home: Path) -> None:
     cold = [
         {"kind": "header", "version": 1, "sessionId": OPENCLAW_COLD_SESSION, "generation": "g0"}
     ]
-    for seq, rec in enumerate(openclaw_records(OPENCLAW_COLD_SESSION)[:2]):
+    for seq, record in enumerate(openclaw_records(OPENCLAW_COLD_SESSION)[:2]):
         cold.append(
             {
                 "kind": "event",
-                "row": {"seq": seq, "event_json": json.dumps(rec), "created_at": 1790845200000},
+                "row": {"seq": seq, "event_json": json.dumps(record), "created_at": 1790845200000},
             }
         )
-        cold.append({"kind": "identity", "row": {"event_id": rec["id"], "seq": seq}})
+        cold.append({"kind": "identity", "row": {"event_id": record["id"], "seq": seq}})
     cold_raw = _openclaw_jsonl(cold)
     cold_blob = _openclaw_zstd(cold_raw)
     inserts.append(
@@ -13494,7 +13942,7 @@ def build_openclaw(home: Path) -> None:
             cold_blob.hex(),
         )
     )
-    _wal_db(
+    _wal_database(
         agent / "agent/openclaw-agent.sqlite",
         OPENCLAW_SCHEMA + OPENCLAW_NODES_SCHEMA + OPENCLAW_PAST_USE_SCHEMA,
         inserts + openclaw_node_inserts() + openclaw_past_use_inserts(),
@@ -13507,7 +13955,7 @@ def build_openclaw(home: Path) -> None:
     )
     name = OPENCLAW_DELETED + ".jsonl.deleted.2026-10-02T08-00-00.000Z"
     (sessions / (name + ".zst")).write_bytes(_openclaw_zstd(deleted))
-    # Secondary copies (issue 122): a pre-compaction checkpoint holds the
+    # Secondary copies: a pre-compaction checkpoint holds the
     # entries before the compaction; a pre-doctor branch-repair backup holds
     # the whole file before the repair, with an abandoned branch the
     # repaired file dropped.
@@ -13548,8 +13996,11 @@ NANOBOT_HISTORY_REL = ".nanobot/workspace/memory/history.jsonl"
 
 
 def nanobot_records():
-    """The research document's sample file (Parser plan), plus a hidden-history
-    message and a provider_state line."""
+    """The nanobot research sample file and two more lines.
+
+    The research document's sample file (Parser plan), plus a hidden-history message and a
+    provider_state line.
+    """
     return [
         {
             "_type": "metadata",
@@ -13648,7 +14099,7 @@ def build_nanobot(home: Path) -> None:
     build_nanobot_sweep(home)
 
 
-# nanobot permission, relay, model and run-record sources (issue 207), from
+# nanobot permission, relay, model and run-record sources, from
 # HKUDS/nanobot at 909b277: config/schema.py:428-458,
 # agent/tools/shell_config.py:11-28, channels/base.py:244-257,
 # pairing/store.py:73-85 and 130-160, command/builtin.py:405-448,
@@ -13676,8 +14127,11 @@ NANOBOT_SWEEP_RELS = {
 
 
 def nanobot_config():
-    """`config.json` with the permission settings the parser reads, a channel
-    without `allowFrom`, and a provider key it must never show."""
+    """The nanobot `config.json` fixture.
+
+    `config.json` with the permission settings the parser reads, a channel without `allowFrom`, and
+    a provider key it must never show.
+    """
     return {
         "providers": {"openai": {"apiKey": NANOBOT_TOKEN}},
         "tools": {
@@ -13699,10 +14153,12 @@ def nanobot_config():
 
 
 def build_nanobot_sweep(home: Path) -> None:
-    """A `unified:default` session answering through Telegram with two
-    `/model` switches, `pairing.json`, a cron and a trigger run record of a
-    Slack session that is gone, the noise beside them, and the WebUI sidebar
-    cache."""
+    """Write a nanobot Telegram session with model switches and its stores.
+
+    A `unified:default` session answering through Telegram with two `/model` switches,
+    `pairing.json`, a cron and a trigger run record of a Slack session that is gone, the noise
+    beside them, and the WebUI sidebar cache.
+    """
     switch = "Switched model preset to `%s`.\n- Scope: current session\n- Model: `%s`\n"
     _jsonl(
         home / NANOBOT_UNIFIED_REL,
@@ -13841,7 +14297,7 @@ def build_nanobot_sweep(home: Path) -> None:
     )
 
 
-# nanobot WebUI mirror and CLI history (issue 122). The host is taken to be
+# nanobot WebUI mirror and CLI history. The host is taken to be
 # at UTC+2: the session file's local times read two hours later than the
 # WebUI's true-UTC created_at_ms.
 NANOBOT_WEBUI_KEY = "websocket:chat-1"
@@ -13932,10 +14388,12 @@ def nanobot_webui_records():
 
 
 def build_nanobot_webui(home: Path) -> None:
-    """A WebUI chat whose session file holds only the second turn (a `/new`
-    emptied the first), its WebUI mirror (the first turn rotated into a
-    segment), and the CLI history with one prompt of the legacy cli:direct
-    session and one whose session is gone."""
+    """Write a nanobot WebUI chat, its mirror and the CLI history.
+
+    A WebUI chat whose session file holds only the second turn (a `/new` emptied the first), its
+    WebUI mirror (the first turn rotated into a segment), and the CLI history with one prompt of the
+    legacy cli:direct session and one whose session is gone.
+    """
     _jsonl(
         home / NANOBOT_WEBUI_SESSION_REL,
         [
@@ -14004,7 +14462,7 @@ def build_nanobot_webui(home: Path) -> None:
     )
 
 
-# nanobot's SQLite session store (issue 178), from the schema and import of
+# nanobot's SQLite session store, from the schema and import of
 # HKUDS/nanobot at 909b277 (nanobot/session/sqlite_store.py:44-73, 185-200;
 # nanobot/session/jsonl_migration.py:155-197, 221-232); source-derived, no
 # real install. A second namespace holds the database, the frozen JSONL of
@@ -14012,12 +14470,14 @@ def build_nanobot_webui(home: Path) -> None:
 # database) and a jsonl-backup/ copy of the older workspace file of the
 # heartbeat session, whose first turn a /new later removed from the
 # database.
-NANOBOT_DB_WS = "fedcba9876543210fedcba9876543210"
-NANOBOT_DB_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DB_WS
-NANOBOT_DB_KEY = "discord:555"
-NANOBOT_DB_FROZEN_REL = ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DB_WS
-NANOBOT_DB_BACKUP_REL = ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DB_WS
-NANOBOT_DB_SCHEMA = """
+NANOBOT_DATABASE_WS = "fedcba9876543210fedcba9876543210"
+NANOBOT_DATABASE_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_KEY = "discord:555"
+NANOBOT_DATABASE_FROZEN_REL = ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_BACKUP_REL = (
+    ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DATABASE_WS
+)
+NANOBOT_DATABASE_SCHEMA = """
 CREATE TABLE storage_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE sessions (
     key TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -14043,9 +14503,8 @@ CREATE INDEX sessions_updated ON sessions(updated_at DESC);
 """
 
 
-def nanobot_db_messages():
-    """The discord:555 messages in `position` order; the first four are the
-    frozen JSONL's."""
+def nanobot_database_messages():
+    """The discord:555 messages in `position` order; the first four are the frozen JSONL's."""
     return [
         {"role": "user", "content": "rotate the api key", "timestamp": "2026-10-03T11:00:01"},
         {
@@ -14073,33 +14532,33 @@ def nanobot_db_messages():
     ]
 
 
-def nanobot_db_insert_message(path: Path, key: str, position: int, record: str) -> None:
+def nanobot_database_insert_message(path: Path, key: str, position: int, record: str) -> None:
     """Store `record` verbatim as `messages` row (`key`, `position`)."""
-    con = sqlite3.connect(str(path))
-    con.execute(
+    connection = sqlite3.connect(str(path))
+    connection.execute(
         "INSERT INTO messages (session_key, position, record) VALUES (?, ?, ?)",
         (key, position, record),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 def build_nanobot_sqlite(home: Path) -> None:
-    db = home / NANOBOT_DB_REL
-    db.parent.mkdir(parents=True, exist_ok=True)
-    (db.parent / ".workspace").write_text("/srv/proj\n", encoding="utf-8")
-    meta = {"last_channel": NANOBOT_DB_KEY, "_nanobot_model_preset": "smart"}
-    con = sqlite3.connect(str(db))
-    con.execute("PRAGMA journal_mode = WAL")
-    con.executescript(NANOBOT_DB_SCHEMA)
-    con.execute("PRAGMA user_version = 1")
-    con.execute("INSERT INTO storage_meta VALUES ('jsonl_import', 'complete')")
+    database = home / NANOBOT_DATABASE_REL
+    database.parent.mkdir(parents=True, exist_ok=True)
+    (database.parent / ".workspace").write_text("/srv/proj\n", encoding="utf-8")
+    meta = {"last_channel": NANOBOT_DATABASE_KEY, "_nanobot_model_preset": "smart"}
+    connection = sqlite3.connect(str(database))
+    connection.execute("PRAGMA journal_mode = WAL")
+    connection.executescript(NANOBOT_DATABASE_SCHEMA)
+    connection.execute("PRAGMA user_version = 1")
+    connection.execute("INSERT INTO storage_meta VALUES ('jsonl_import', 'complete')")
     sessions = [
-        (NANOBOT_DB_KEY, "2026-10-03T11:00:00", "2026-10-03T11:00:31", meta),
+        (NANOBOT_DATABASE_KEY, "2026-10-03T11:00:00", "2026-10-03T11:00:31", meta),
         ("heartbeat", "2026-09-28T06:00:00", "2026-10-03T06:00:05", {}),
     ]
     for key, created, updated, metadata in sessions:
-        con.execute(
+        connection.execute(
             "INSERT INTO sessions VALUES (?, ?, ?, ?, NULL, 0, 3, 'g1', '', '', ?)",
             (key, created, updated, json.dumps(metadata), updated),
         )
@@ -14107,24 +14566,27 @@ def build_nanobot_sqlite(home: Path) -> None:
         {"role": "user", "content": "check the inbox", "timestamp": "2026-10-03T06:00:01"},
         {"role": "assistant", "content": "Inbox is empty.", "timestamp": "2026-10-03T06:00:05"},
     ]
-    for key, records in ((NANOBOT_DB_KEY, nanobot_db_messages()), ("heartbeat", heartbeat)):
-        for position, rec in enumerate(records):
-            con.execute(
+    for key, records in (
+        (NANOBOT_DATABASE_KEY, nanobot_database_messages()),
+        ("heartbeat", heartbeat),
+    ):
+        for position, record in enumerate(records):
+            connection.execute(
                 "INSERT INTO messages VALUES (?, ?, ?)",
-                (key, position, json.dumps(rec, separators=(",", ":"))),
+                (key, position, json.dumps(record, separators=(",", ":"))),
             )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     frozen_meta = {
         "_type": "metadata",
-        "key": NANOBOT_DB_KEY,
+        "key": NANOBOT_DATABASE_KEY,
         "created_at": "2026-10-03T11:00:00",
         "updated_at": "2026-10-03T11:00:05",
         "metadata": meta,
     }
-    _jsonl(home / NANOBOT_DB_FROZEN_REL, [frozen_meta, *nanobot_db_messages()[:4]])
+    _jsonl(home / NANOBOT_DATABASE_FROZEN_REL, [frozen_meta, *nanobot_database_messages()[:4]])
     _jsonl(
-        home / NANOBOT_DB_BACKUP_REL,
+        home / NANOBOT_DATABASE_BACKUP_REL,
         [
             {
                 "_type": "metadata",
@@ -14137,7 +14599,7 @@ def build_nanobot_sqlite(home: Path) -> None:
             {"role": "assistant", "content": "Nothing to do.", "timestamp": "2026-09-28T06:00:04"},
         ],
     )
-    (home / NANOBOT_DB_BACKUP_REL).parent.joinpath("heartbeat.checkpoint.json").write_text(
+    (home / NANOBOT_DATABASE_BACKUP_REL).parent.joinpath("heartbeat.checkpoint.json").write_text(
         "{}", encoding="utf-8"
     )
 
@@ -14151,15 +14613,15 @@ VSCDB_SCHEMA = "CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, val
 def _vscdb(path: Path, items: dict) -> None:
     """Add `ItemTable` rows to a plain (non-WAL) state.vscdb."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(VSCDB_SCHEMA.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
-    for k, v in items.items():
-        con.execute(
+    connection = sqlite3.connect(str(path))
+    connection.executescript(VSCDB_SCHEMA.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+    for k, value in items.items():
+        connection.execute(
             "INSERT INTO ItemTable (key, value) VALUES (?, ?)",
-            (k, (v if isinstance(v, str) else json.dumps(v)).encode("utf-8")),
+            (k, (value if isinstance(value, str) else json.dumps(value)).encode("utf-8")),
         )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 CODY_ACCOUNT = "https://sourcegraph.com/-alice"
@@ -14174,8 +14636,7 @@ CODY_TOKEN = "sgp_cody_secret_not_real"
 
 
 def cody_records():
-    """The JetBrains AccountKeyedChatHistory: the research fixture chat and
-    its agentic variant."""
+    """The JetBrains AccountKeyedChatHistory: the research fixture chat and its agentic variant."""
     chat = {
         "id": CODY_CHAT,
         "chatTitle": "Fix flaky test",
@@ -14300,9 +14761,9 @@ def cody_vscode_state():
 
 
 def build_cody(home: Path) -> None:
-    jb = home / CODY_JB_REL
-    jb.parent.mkdir(parents=True, exist_ok=True)
-    jb.write_text(json.dumps(cody_records()), encoding="utf-8")
+    jetbrains_history = home / CODY_JB_REL
+    jetbrains_history.parent.mkdir(parents=True, exist_ok=True)
+    jetbrains_history.write_text(json.dumps(cody_records()), encoding="utf-8")
     (home / ".local/share/Cody-nodejs/user-settings.json").write_text(
         '{"cody.serverEndpoint": "x"}', encoding="utf-8"
     )
@@ -14315,7 +14776,7 @@ def build_cody(home: Path) -> None:
     )
 
 
-# Deep Cody terminal confirmations (issue 169), from sourcegraph/cody-public-snapshot
+# Deep Cody terminal confirmations, from sourcegraph/cody-public-snapshot
 # at 8e20ac6c1460c08b0db581c0204658112a246eda: `CodyTool.ts:166-181` adds one
 # `confirmation` step per command (id `<tool tag>-<uuid>`, title the tool's title,
 # content the command); `ProcessManager.ts:51-61` completes a refused one with
@@ -14381,7 +14842,7 @@ def cody_deep_records():
     return {CODY_ACCOUNT: {"chat": {CODY_DEEP_CHAT: chat}}}
 
 
-# Settings, model preferences and the legacy JetBrains history (issue 197),
+# Settings, model preferences and the legacy JetBrains history,
 # from sourcegraph/cody-public-snapshot at 8e20ac6c1460c08b0db581c0204658112a246eda:
 # the settings keys from `vscode/package.json:1136-1140` and `1176-1213` and the MCP
 # server schema `MCPManager.ts:20-45`; `cody-model-preferences` from
@@ -14487,9 +14948,12 @@ CODY_LEGACY_XML = """<project version="4">
 
 
 def build_cody_settings(home: Path) -> None:
-    """Write the editor settings, the JetBrains model preferences and the
-    VS Code row's preferences; not part of `build_home`, a test adds them.
-    A keybindings file beside settings.json is noise the parser skips."""
+    """Write the Cody editor settings and model preferences.
+
+    Write the editor settings, the JetBrains model preferences and the VS Code row's preferences;
+    not part of `build_home`, a test adds them. A keybindings file beside settings.json is noise the
+    parser skips.
+    """
     path = home / CODY_SETTINGS_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(CODY_SETTINGS_TEXT, encoding="utf-8")
@@ -14517,8 +14981,10 @@ TWINNY_VSCDB_REL = ".vscode-server/data/User/globalStorage/state.vscdb"
 
 
 def twinny_records():
-    """The `rjmacarthy.twinny` global state value: the research fixture plus
-    an unsaved active conversation, a failed tool step and provider keys."""
+    """The `rjmacarthy.twinny` global state value.
+
+    The research fixture plus an unsaved active conversation, a failed tool step and provider keys.
+    """
     return {
         "twinny.conversations": {
             TWINNY_CONVERSATION: {
@@ -14608,10 +15074,10 @@ def twinny_records():
 def build_twinny(home: Path) -> None:
     """Rows only in the -wal sidecar, as with the editor still running."""
 
-    def lit(s):
-        return "'" + s.replace("'", "''") + "'"
+    def lit(text):
+        return "'" + text.replace("'", "''") + "'"
 
-    _wal_db(
+    _wal_database(
         home / TWINNY_VSCDB_REL,
         VSCDB_SCHEMA,
         [
@@ -14624,9 +15090,9 @@ def build_twinny(home: Path) -> None:
             ),
         ],
     )
-    tw = home / ".config/Code/User/globalStorage/rjmacarthy.twinny"
-    tw.mkdir(parents=True, exist_ok=True)
-    (tw / "twinny-providers.json").write_text(
+    twinny = home / ".config/Code/User/globalStorage/rjmacarthy.twinny"
+    twinny.mkdir(parents=True, exist_ok=True)
+    (twinny / "twinny-providers.json").write_text(
         json.dumps({"apiKey": TWINNY_API_KEY}), encoding="utf-8"
     )
 
@@ -14636,12 +15102,13 @@ TWINNY_SAID_REL = ".config/Code/User/globalStorage/state.vscdb"
 
 
 def twinny_said_records():
-    """A 4.3.15 conversation with a message the user sent mid-reply. Since
-    4.3.5 such a message is saved among the reply's `toolSteps[]` as a step
-    `{id: "said.<id>", name: "said", summary: <text>, status: "done",
-    said: true}` (src/extension/chat/tool-steps.ts:101-104 and
-    src/common/types.ts:129-133 at twinnydotdev/twinny 0337b265). The second
-    `said` step has no summary, the third a non-string one."""
+    """A 4.3.15 conversation with a message the user sent mid-reply.
+
+    Since 4.3.5 such a message is saved among the reply's `toolSteps[]` as a step `{id: "said.<id>",
+    name: "said", summary: <text>, status: "done", said: true}`
+    (src/extension/chat/tool-steps.ts:101-104 and src/common/types.ts:129-133 at twinnydotdev/twinny
+    0337b265). The second `said` step has no summary, the third a non-string one.
+    """
     return {
         "twinny.conversations": {
             TWINNY_SAID_CONVERSATION: {
@@ -14697,13 +15164,15 @@ def twinny_said_records():
 
 
 def build_twinny_said(home: Path) -> None:
-    """Write `twinny_said_records()` to a plain state.vscdb in a home of its
-    own (not `build_home`'s), so the main Twinny fixture's rows and the
-    shared homes' session counts are unchanged."""
+    """Write `twinny_said_records()` to a state.vscdb in a home of its own.
+
+    Write `twinny_said_records()` to a plain state.vscdb in a home of its own (not `build_home`'s),
+    so the main Twinny fixture's rows and the shared homes' session counts are unchanged.
+    """
     _vscdb(home / TWINNY_SAID_REL, {"rjmacarthy.twinny": twinny_said_records()})
 
 
-# Twinny 4.3.15 records beside the conversations (#154, #199), from
+# Twinny 4.3.15 records beside the conversations, from
 # research/twinny.md (twinnydotdev/twinny at 0337b265): the standing grants
 # and team policy in the global state value, the per-reply agent-changes
 # record, the Twinny log channel and the review tab's repository in the
@@ -14713,14 +15182,14 @@ TWINNY_415_CHANGE = "5f0e9d8c-2222-4000-8000-000000000001"
 TWINNY_415_USER = ".config/Code/User"
 TWINNY_415_REL = TWINNY_415_USER + "/globalStorage/state.vscdb"
 TWINNY_415_WS = TWINNY_415_USER + "/workspaceStorage/ws1"
-TWINNY_415_WS_DB_REL = TWINNY_415_WS + "/state.vscdb"
+TWINNY_415_WORKSPACE_DATABASE_REL = TWINNY_415_WS + "/state.vscdb"
 TWINNY_415_CHANGES_REL = (
     TWINNY_415_WS + "/rjmacarthy.twinny/agent-changes/%s.json" % TWINNY_415_CHANGE
 )
 TWINNY_415_LOG_DIR = ".config/Code/logs/20261003T120000/window1/exthost/rjmacarthy.twinny"
 TWINNY_415_LOG_REL = TWINNY_415_LOG_DIR + "/Twinny.log"
 TWINNY_415_LOG_OLD_REL = TWINNY_415_LOG_DIR + "/Twinny.log_1"
-TWINNY_415_MTIME = 1791029400  # 2026-10-03T12:10:00Z, the state files' mtime
+TWINNY_415_MTIME = 1791029400  # 3 October 12:10:00 UTC, the state files' mtime
 TWINNY_415_EMAIL = "dev@example.invalid"
 # Two entries and a Debug block, in VS Code's file log format
 # (src/vs/platform/log/common/fileLog.ts:62-101 at microsoft/vscode 4d22f4f9)
@@ -14739,9 +15208,11 @@ TWINNY_415_LOG = (
 
 
 def twinny_415_records():
-    """The global state value: one conversation whose reply changed two
-    files, the standing grants, a team policy and the ChatGPT plan profile
-    (an identity the parser must never emit)."""
+    """The global state value.
+
+    One conversation whose reply changed two files, the standing grants, a team policy and the
+    ChatGPT plan profile (an identity the parser must never emit).
+    """
     return {
         "twinny.conversations": {
             TWINNY_415_CONVERSATION: {
@@ -14800,8 +15271,10 @@ def twinny_415_records():
 
 
 def twinny_415_change_record():
-    """The agent-changes record of the reply above (reply-changes.ts:35-47):
-    `src/a.ts` since put back, so `undone`."""
+    """The agent-changes record of the reply above (reply-changes.ts:35-47).
+
+    `src/a.ts` since put back, so `undone`.
+    """
     return {
         "id": TWINNY_415_CHANGE,
         "root": "/srv/proj",
@@ -14830,12 +15303,14 @@ def twinny_415_change_record():
 
 
 def build_twinny_415(home: Path) -> None:
-    """Write the 4.3.15 stores to a home of their own, plus a noise file the
-    parser must not want (the workspace's workspace.json and the extension
-    host's own log)."""
+    """Write the Twinny 4.3.15 stores to a home of their own.
+
+    Write the 4.3.15 stores to a home of their own, plus a noise file the parser must not want (the
+    workspace's workspace.json and the extension host's own log).
+    """
     _vscdb(home / TWINNY_415_REL, {"rjmacarthy.twinny": twinny_415_records()})
     _vscdb(
-        home / TWINNY_415_WS_DB_REL,
+        home / TWINNY_415_WORKSPACE_DATABASE_REL,
         {
             "rjmacarthy.twinny": {
                 "twinny-workspace-context-reviewOwner": "acme",
@@ -14844,7 +15319,7 @@ def build_twinny_415(home: Path) -> None:
             }
         },
     )
-    for rel in (TWINNY_415_REL, TWINNY_415_WS_DB_REL):
+    for rel in (TWINNY_415_REL, TWINNY_415_WORKSPACE_DATABASE_REL):
         os.utime(home / rel, (TWINNY_415_MTIME, TWINNY_415_MTIME))
     changes = home / TWINNY_415_CHANGES_REL
     changes.parent.mkdir(parents=True, exist_ok=True)
@@ -14958,7 +15433,7 @@ def pearai_index():
     ]
 
 
-def pearai_api_records(t0=1791036000000):
+def pearai_api_records(start=1791036000000):
     return [
         {
             "role": "user",
@@ -14970,7 +15445,7 @@ def pearai_api_records(t0=1791036000000):
                     "(/srv/proj)\n</environment_details>",
                 },
             ],
-            "ts": t0,
+            "ts": start,
         },
         {
             "role": "assistant",
@@ -14981,7 +15456,7 @@ def pearai_api_records(t0=1791036000000):
                     "</execute_command>",
                 }
             ],
-            "ts": t0 + 3000,
+            "ts": start + 3000,
         },
         {
             "role": "user",
@@ -14989,7 +15464,7 @@ def pearai_api_records(t0=1791036000000):
                 {"type": "text", "text": "[execute_command for 'npm test'] Result:"},
                 {"type": "text", "text": "12 passing"},
             ],
-            "ts": t0 + 9000,
+            "ts": start + 9000,
         },
         {
             "role": "assistant",
@@ -14999,42 +15474,51 @@ def pearai_api_records(t0=1791036000000):
                     "text": "<attempt_completion>\n<result>All 12 tests pass.</result>\n</attempt_completion>",
                 }
             ],
-            "ts": t0 + 10000,
+            "ts": start + 10000,
         },
     ]
 
 
-def pearai_permission_records(t0):
-    """Three Roo 3.15.3 approval exchanges (PearAI-Roo-Code at 0b6df736,
-    src/core/prompts/responses.ts:8-14, src/core/Cline.ts:1342-1386): a
-    denial with feedback, a bare denial and an approval with a note."""
+def pearai_permission_records(start):
+    """Three Roo 3.15.3 approval exchanges of PearAI.
 
-    def call(ts, body):
-        return {"role": "assistant", "content": [{"type": "text", "text": body}], "ts": ts}
+    Three Roo 3.15.3 approval exchanges (PearAI-Roo-Code at 0b6df736,
+    src/core/prompts/responses.ts:8-14, src/core/Cline.ts:1342-1386): a denial with feedback, a bare
+    denial and an approval with a note.
+    """
 
-    def result(ts, *texts):
-        return {"role": "user", "content": [{"type": "text", "text": t} for t in texts], "ts": ts}
+    def call(timestamp, body):
+        return {"role": "assistant", "content": [{"type": "text", "text": body}], "ts": timestamp}
+
+    def result(timestamp, *texts):
+        return {
+            "role": "user",
+            "content": [{"type": "text", "text": text} for text in texts],
+            "ts": timestamp,
+        }
 
     return [
         call(
-            t0,
+            start,
             "<write_to_file>\n<path>build/out.txt</path>\n<content>x</content>\n</write_to_file>",
         ),
         result(
-            t0 + 2000,
+            start + 2000,
             "[write_to_file for 'build/out.txt'] Result:",
             "The user denied this operation and provided the following feedback:\n"
             "<feedback>\nnot in build/\n</feedback>",
         ),
-        call(t0 + 3000, "<execute_command>\n<command>rm -rf build</command>\n</execute_command>"),
+        call(
+            start + 3000, "<execute_command>\n<command>rm -rf build</command>\n</execute_command>"
+        ),
         result(
-            t0 + 5000,
+            start + 5000,
             "[execute_command for 'rm -rf build'] Result:",
             "The user denied this operation.",
         ),
-        call(t0 + 6000, "<execute_command>\n<command>make all</command>\n</execute_command>"),
+        call(start + 6000, "<execute_command>\n<command>make all</command>\n</execute_command>"),
         result(
-            t0 + 9000,
+            start + 9000,
             "[execute_command for 'make all'] Result:",
             "The user approved this operation and provided the following context:\n"
             "<feedback>\nuse -j4\n</feedback>",
@@ -15044,13 +15528,15 @@ def pearai_permission_records(t0):
     ]
 
 
-def pearai_permission_ui_asks(t0):
-    """The ui_messages.json asks of the same three calls, each before the API
-    message that answers it."""
+def pearai_permission_ui_asks(start):
+    """The ui_messages.json asks of the three PearAI calls.
+
+    The ui_messages.json asks of the same three calls, each before the API message that answers it.
+    """
     return [
-        {"ts": t0 + 1000, "type": "ask", "ask": "tool", "text": '{"tool":"newFileCreated"}'},
-        {"ts": t0 + 4000, "type": "ask", "ask": "command", "text": "rm -rf build"},
-        {"ts": t0 + 7000, "type": "ask", "ask": "command", "text": "make all"},
+        {"ts": start + 1000, "type": "ask", "ask": "tool", "text": '{"tool":"newFileCreated"}'},
+        {"ts": start + 4000, "type": "ask", "ask": "command", "text": "rm -rf build"},
+        {"ts": start + 7000, "type": "ask", "ask": "command", "text": "make all"},
     ]
 
 
@@ -15078,8 +15564,11 @@ def pearai_log_completion(text):
 
 
 def pearai_output_log():
-    """Three requests: a turn of the fixture session, a turn whose session is
-    gone, and an autocomplete request with another model."""
+    """Three requests.
+
+    A turn of the fixture session, a turn whose session is gone, and an autocomplete request with
+    another model.
+    """
     return "".join(
         (
             pearai_log_settings(
@@ -15139,19 +15628,19 @@ def build_pearai(home: Path) -> None:
     _json(sessions / "sessions.json", pearai_index())
     (home / ".pearai/config.json").write_text('{"models": []}', encoding="utf-8")
     roo = home / PEARAI_ROO
-    t0, u0 = int(PEARAI_TASK), int(PEARAI_UI_TASK)
+    task_start, ui_task_start = int(PEARAI_TASK), int(PEARAI_UI_TASK)
     _json(
         roo / "tasks" / PEARAI_TASK / "api_conversation_history.json",
-        pearai_api_records() + pearai_permission_records(t0 + 20000),
+        pearai_api_records() + pearai_permission_records(task_start + 20000),
     )
     _json(roo / "tasks" / PEARAI_TASK / "task_metadata.json", {"files_in_context": []})
     _json(
         roo / "tasks" / PEARAI_UI_TASK / "ui_messages.json",
-        roo_ui_records(u0) + pearai_permission_ui_asks(u0 + 20000),
+        roo_ui_records(ui_task_start) + pearai_permission_ui_asks(ui_task_start + 20000),
     )
     _json(
         roo / "tasks" / PEARAI_UI_TASK / "api_conversation_history.json",
-        pearai_api_records(u0) + pearai_permission_records(u0 + 20000),
+        pearai_api_records(ui_task_start) + pearai_permission_records(ui_task_start + 20000),
     )
     log = home / PEARAI_LOG_REL
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -15213,14 +15702,14 @@ MUSE_DIR = ".local/share/muse/sessions/2026/10/01/%s/" % MUSE_SESSION
 MUSE_REL = MUSE_DIR + "session.jsonl"
 MUSE_CHILD_REL = MUSE_DIR + "subagent/%s/session.jsonl" % MUSE_CHILD
 MUSE_HISTORY_REL = ".local/share/muse/tui-history.jsonl"
-MUSE_T0 = 1790845200000000  # 2026-10-01T09:00:00Z in microseconds
+MUSE_T0 = 1790845200000000  # 1 October 09:00:00 UTC in microseconds
 
 
-def _muse_env(sid, seq, t_us, ptype, payload, version=1, cause=None, ns="8000"):
+def _muse_env(session_id, seq, t_us, ptype, payload, version=1, cause=None, group="8000"):
     return {
         "schema_version": 1,
-        "id": "00000000-0000-4000-%s-%012d" % (ns, seq),
-        "stream": {"kind": "session", "id": sid},
+        "id": "00000000-0000-4000-%s-%012d" % (group, seq),
+        "stream": {"kind": "session", "id": session_id},
         "sequence": seq,
         "recorded_at": t_us,
         "record_type": "event",
@@ -15232,9 +15721,9 @@ def _muse_env(sid, seq, t_us, ptype, payload, version=1, cause=None, ns="8000"):
     }
 
 
-def _muse_run(sid, seq, t_us, run_id, event, src_seq, ns="8000"):
+def _muse_run(session_id, seq, t_us, run_id, event, source_seq, group="8000"):
     return _muse_env(
-        sid,
+        session_id,
         seq,
         t_us,
         "runtime.session",
@@ -15242,25 +15731,25 @@ def _muse_run(sid, seq, t_us, run_id, event, src_seq, ns="8000"):
             "event": event,
             "kind": "run",
             "run_id": run_id,
-            "source_run_record_id": "10000000-0000-4000-8000-%012d" % src_seq,
-            "source_run_record_sequence": src_seq,
+            "source_run_record_id": "10000000-0000-4000-8000-%012d" % source_seq,
+            "source_run_record_sequence": source_seq,
         },
-        ns=ns,
+        group=group,
     )
 
 
-def _muse_frame(sid, n, ns="8000"):
+def _muse_frame(session_id, frame, group="8000"):
     children = [
         _muse_env(
-            sid,
+            session_id,
             1,
             MUSE_T0,
             "runtime.session.permission_format_declared",
             {"format": "profile_v1", "schema_version": 1},
-            ns=ns,
+            group=group,
         ),
         _muse_env(
-            sid,
+            session_id,
             2,
             MUSE_T0,
             "runtime.session.permission_profile_committed",
@@ -15276,25 +15765,25 @@ def _muse_frame(sid, n, ns="8000"):
                 "schema_version": 1,
                 "source": {"display_name": "Auto-review", "id": ":auto-review", "kind": "built_in"},
             },
-            ns=ns,
+            group=group,
         ),
     ]
     return {
         "retained_frame": "session_permission_transaction",
         "frame_schema_version": 1,
         "outer_log_ordinal": 1,
-        "transaction_id": "a1b2c3d4-0000-4000-8000-%012d" % n,
+        "transaction_id": "a1b2c3d4-0000-4000-8000-%012d" % frame,
         "children": [
-            {"child_index": i, "record_json": json.dumps(c, separators=(",", ":"))}
-            for i, c in enumerate(children)
+            {"child_index": i, "record_json": json.dumps(child, separators=(",", ":"))}
+            for i, child in enumerate(children)
         ],
         "content_sha256": "sha256:" + "0" * 64,
     }
 
 
-def _muse_model(sid, seq, t_us, run_id, ns="8000"):
+def _muse_model(session_id, seq, t_us, run_id, group="8000"):
     return _muse_env(
-        sid,
+        session_id,
         seq,
         t_us,
         "run.model.configured",
@@ -15310,19 +15799,20 @@ def _muse_model(sid, seq, t_us, run_id, ns="8000"):
                 "source": "startup",
             },
         },
-        ns=ns,
+        group=group,
     )
 
 
 def muse_session_records():
-    """The main fixture of research/muse-code.md, Parser plan, less the cut
-    line (tests append one with `write_bad_line`), plus a
-    `session.opened.observed` record with a `security_mode`, an automated
-    review verdict between the approval request and its decision, and a
-    `/model` change after the run (issues 96 and 97). The `security_mode`,
-    `outcome`, `risk_level` and `user_authorization` values are synthetic:
-    the research records the keys, not their values."""
-    s, r, t = MUSE_SESSION, MUSE_RUN, MUSE_T0
+    """The main Muse fixture of research/muse-code.md, Parser plan, extended.
+
+    The main fixture of research/muse-code.md, Parser plan, less the cut line (tests append one with
+    `write_bad_line`), plus a `session.opened.observed` record with a `security_mode`, an automated
+    review verdict between the approval request and its decision, and a `/model` change after the
+    run. The `security_mode`, `outcome`, `risk_level` and `user_authorization` values are synthetic:
+    the research records the keys, not their values.
+    """
+    session, run, start = MUSE_SESSION, MUSE_RUN, MUSE_T0
     bash = {
         "chunk_id": "exec-1-1",
         "command": "npm test",
@@ -15342,11 +15832,11 @@ def muse_session_records():
         "task_stream": {"id": "30000000-0000-7000-8000-000000000001", "kind": "task"},
     }
     return [
-        _muse_frame(s, 1),
+        _muse_frame(session, 1),
         _muse_env(
-            s,
+            session,
             3,
-            t + 100000,
+            start + 100000,
             "runtime.session.metadata",
             {
                 "kind": "metadata",
@@ -15361,14 +15851,14 @@ def muse_session_records():
             },
         ),
         _muse_env(
-            s,
+            session,
             4,
-            t + 200000,
+            start + 200000,
             "session.workspace_branch.observed",
             {
                 "kind": "workspace_branch",
                 "record": {
-                    "command_id": s,
+                    "command_id": session,
                     "commit": "0123456789ab",
                     "reference": {"kind": "branch", "name": "main"},
                     "vcs": "git",
@@ -15377,59 +15867,66 @@ def muse_session_records():
             },
         ),
         _muse_env(
-            s,
+            session,
             5,
-            t + 250000,
+            start + 250000,
             "session.opened.observed",
             {
                 "kind": "session_opened",
                 "record": {
                     "resume": False,
                     "security_mode": "example_mode",
-                    "session_id": s,
+                    "session_id": session,
                     "workspace_kind": "git",
                 },
             },
         ),
         _muse_env(
-            s,
+            session,
             5,
-            t + 300000,
+            start + 300000,
             "session.name.changed",
             {
                 "authority_id": "d0d0d0d0-0000-4000-8000-000000000001",
                 "new_name": "quiet-lyra",
                 "operation_id": "e0e0e0e0-0000-4000-8000-000000000001",
                 "previous_name": None,
-                "session_id": s,
+                "session_id": session,
                 "source": "automatic",
             },
             cause="f0f0f0f0-0000-4000-8000-000000000001",
         ),
-        _muse_model(s, 6, t + 900000, r),
+        _muse_model(session, 6, start + 900000, run),
         _muse_env(
-            s,
+            session,
             7,
-            t + 1000000,
+            start + 1000000,
             "runtime.user_intent.accepted",
             {
                 "bindings": [],
                 "delivery_policy": "session_current",
-                "intent_id": r,
+                "intent_id": run,
                 "model_messages": [{"content": [{"kind": "text", "text": "fix the failing test"}]}],
                 "refill_blocks": [{"kind": "text", "text": "fix the failing test"}],
                 "semantic_kind": {"kind": "chat"},
-                "source_session_id": s,
+                "source_session_id": session,
                 "surface": "main",
                 "wake_policy": "start_once",
             },
         ),
-        _muse_run(s, 8, t + 1000000, r, {"kind": "started", "prompt": "fix the failing test"}, 1),
         _muse_run(
-            s,
+            session,
+            8,
+            start + 1000000,
+            run,
+            {"kind": "started", "prompt": "fix the failing test"},
+            1,
+        ),
+        _muse_run(
+            session,
             9,
-            t + 3000000,
-            r,
+            start + 3000000,
+            run,
             {
                 "kind": "reasoning_summary_delta",
                 "message_id": "20000000-0000-4000-8000-000000000001",
@@ -15439,10 +15936,10 @@ def muse_session_records():
             5,
         ),
         _muse_run(
-            s,
+            session,
             10,
-            t + 3100000,
-            r,
+            start + 3100000,
+            run,
             {
                 "kind": "reasoning_summary_committed",
                 "message_id": "20000000-0000-4000-8000-000000000001",
@@ -15453,10 +15950,10 @@ def muse_session_records():
             6,
         ),
         _muse_run(
-            s,
+            session,
             11,
-            t + 3200000,
-            r,
+            start + 3200000,
+            run,
             {
                 "encrypted_content": "Q-AAAA",
                 "kind": "reasoning_committed",
@@ -15468,10 +15965,10 @@ def muse_session_records():
             7,
         ),
         _muse_run(
-            s,
+            session,
             12,
-            t + 3300000,
-            r,
+            start + 3300000,
+            run,
             {
                 "duration_ms": 2300,
                 "finish_reason": "tool_calls",
@@ -15489,10 +15986,10 @@ def muse_session_records():
             8,
         ),
         _muse_run(
-            s,
+            session,
             13,
-            t + 3400000,
-            r,
+            start + 3400000,
+            run,
             {
                 "kind": "assistant_tool_calls_committed",
                 "message_id": "20000000-0000-4000-8000-000000000003",
@@ -15511,9 +16008,9 @@ def muse_session_records():
             9,
         ),
         _muse_env(
-            s,
+            session,
             14,
-            t + 3500000,
+            start + 3500000,
             "tool_batch.effect.started",
             {
                 "kind": "tool_batch_effect",
@@ -15523,13 +16020,13 @@ def muse_session_records():
                     parallel_profile={"kind": "ineligible"},
                     tool_name="bash",
                 ),
-                "run_id": r,
+                "run_id": run,
             },
         ),
         {
             "retained_marker": "omitted_live_only",
             "schema_version": 1,
-            "stream": {"kind": "session", "id": s},
+            "stream": {"kind": "session", "id": session},
             "position": {"id": "40000000-0000-4000-8000-000000000015", "sequence": 15},
             "omitted_record": {
                 "record_type": "status",
@@ -15541,9 +16038,9 @@ def muse_session_records():
             },
         },
         _muse_env(
-            s,
+            session,
             16,
-            t + 4400000,
+            start + 4400000,
             "tool_batch.effect.terminal",
             {
                 "kind": "tool_batch_effect",
@@ -15556,14 +16053,14 @@ def muse_session_records():
                         "task_completion": {"kind": "terminal", "terminal": {"kind": "completed"}},
                     },
                 ),
-                "run_id": r,
+                "run_id": run,
             },
         ),
         _muse_run(
-            s,
+            session,
             17,
-            t + 4500000,
-            r,
+            start + 4500000,
+            run,
             {
                 "batch_id": "20000000-0000-4000-8000-000000000003",
                 "kind": "tool_result_batch_committed",
@@ -15574,9 +16071,9 @@ def muse_session_records():
             14,
         ),
         _muse_env(
-            s,
+            session,
             18,
-            t + 5000000,
+            start + 5000000,
             "runtime.session",
             {
                 "event": {
@@ -15598,14 +16095,14 @@ def muse_session_records():
                     "tool_name": "network",
                 },
                 "kind": "approval",
-                "run_id": r,
+                "run_id": run,
             },
             version=3,
         ),
         _muse_env(
-            s,
+            session,
             19,
-            t + 5900000,
+            start + 5900000,
             "runtime.session",
             {
                 "event": {
@@ -15622,14 +16119,14 @@ def muse_session_records():
                     "usage": {},
                 },
                 "kind": "approval",
-                "run_id": r,
+                "run_id": run,
             },
             version=3,
         ),
         _muse_env(
-            s,
+            session,
             19,
-            t + 6000000,
+            start + 6000000,
             "runtime.session",
             {
                 "event": {
@@ -15642,25 +16139,25 @@ def muse_session_records():
                     "kind": "decision_applied",
                     "pending_action_id": "50000000-0000-7000-8000-000000000001",
                     "policy_result": "allow",
-                    "session_stream": {"id": s, "kind": "session"},
+                    "session_stream": {"id": session, "kind": "session"},
                 },
                 "kind": "approval",
-                "run_id": r,
+                "run_id": run,
             },
             version=3,
         ),
         _muse_run(
-            s,
+            session,
             20,
-            t + 7000000,
-            r,
+            start + 7000000,
+            run,
             {
                 "child_session_id": MUSE_CHILD,
                 "child_session_log_path": "subagent/%s/session.jsonl" % MUSE_CHILD,
                 "generation_id": 1,
                 "kind": "memory_reminder_child_session_linked",
-                "parent_run_id": r,
-                "parent_session_id": s,
+                "parent_run_id": run,
+                "parent_session_id": session,
                 "reminder_agent_id": "verify-reminder",
                 "task_id": "30000000-0000-7000-8000-000000000003",
                 "task_stream": {"id": "30000000-0000-7000-8000-000000000003", "kind": "task"},
@@ -15668,10 +16165,10 @@ def muse_session_records():
             20,
         ),
         _muse_run(
-            s,
+            session,
             21,
-            t + 9000000,
-            r,
+            start + 9000000,
+            run,
             {
                 "kind": "assistant_message_committed",
                 "message_id": "20000000-0000-4000-8000-000000000004",
@@ -15682,10 +16179,10 @@ def muse_session_records():
             30,
         ),
         _muse_run(
-            s,
+            session,
             22,
-            t + 9100000,
-            r,
+            start + 9100000,
+            run,
             {
                 "eot_gate_ms": 3,
                 "kind": "terminal",
@@ -15697,9 +16194,9 @@ def muse_session_records():
             31,
         ),
         _muse_env(
-            s,
+            session,
             23,
-            t + 15000000,
+            start + 15000000,
             "runtime.model_reconfigure.completed",
             {
                 "kind": "model_reconfigure",
@@ -15710,16 +16207,16 @@ def muse_session_records():
             },
         ),
         _muse_env(
-            s,
+            session,
             23,
-            t + 20000000,
+            start + 20000000,
             "session.end",
             {
                 "kind": "session_end",
                 "record": {
                     "exit_reason": "clean",
                     "schema_version": 1,
-                    "session_id": s,
+                    "session_id": session,
                     "uptime_ms": 20000,
                 },
             },
@@ -15728,32 +16225,32 @@ def muse_session_records():
 
 
 def muse_subagent_records():
-    c, t, ns = MUSE_CHILD, MUSE_T0, "9000"
+    child, start, group = MUSE_CHILD, MUSE_T0, "9000"
     return [
-        _muse_frame(c, 2, ns=ns),
+        _muse_frame(child, 2, group=group),
         _muse_env(
-            c,
+            child,
             3,
-            t + 7100000,
+            start + 7100000,
             "runtime.session.metadata",
             {"kind": "metadata", "record": {"model_id": MUSE_MODEL, "provider_id": "meta"}},
-            ns=ns,
+            group=group,
         ),
-        _muse_model(c, 4, t + 7100000, c, ns=ns),
+        _muse_model(child, 4, start + 7100000, child, group=group),
         _muse_run(
-            c,
+            child,
             5,
-            t + 7200000,
-            c,
+            start + 7200000,
+            child,
             {"kind": "started", "prompt": "You are a reminder observer for the main agent."},
             1,
-            ns=ns,
+            group=group,
         ),
         _muse_run(
-            c,
+            child,
             6,
-            t + 8000000,
-            c,
+            start + 8000000,
+            child,
             {
                 "kind": "assistant_tool_calls_committed",
                 "message_id": "20000000-0000-4000-8000-000000000010",
@@ -15770,13 +16267,13 @@ def muse_subagent_records():
                 ],
             },
             13,
-            ns=ns,
+            group=group,
         ),
         _muse_run(
-            c,
+            child,
             7,
-            t + 8100000,
-            c,
+            start + 8100000,
+            child,
             {
                 "batch_id": "20000000-0000-4000-8000-000000000010",
                 "kind": "tool_result_batch_committed",
@@ -15789,13 +16286,13 @@ def muse_subagent_records():
                 ],
             },
             16,
-            ns=ns,
+            group=group,
         ),
         _muse_run(
-            c,
+            child,
             8,
-            t + 8199999,
-            c,
+            start + 8199999,
+            child,
             {
                 "kind": "terminal",
                 "reason": None,
@@ -15804,7 +16301,7 @@ def muse_subagent_records():
                 "turn_duration_ms": 1000,
             },
             18,
-            ns=ns,
+            group=group,
         ),
     ]
 
@@ -15844,8 +16341,8 @@ def build_muse_code(home: Path) -> None:
 
 
 OLLAMA_CHAT = "0190a000-0000-7000-8000-00000000c001"
-OLLAMA_DB_REL = "Library/Application Support/Ollama/db.sqlite"
-OLLAMA_WIN_DB_REL = "AppData/Local/Ollama/db.sqlite"
+OLLAMA_DATABASE_REL = "Library/Application Support/Ollama/db.sqlite"
+OLLAMA_WINDOWS_DATABASE_REL = "AppData/Local/Ollama/db.sqlite"
 OLLAMA_USER_NAME = "Alice Example"
 OLLAMA_USER_EMAIL = "alice@example.invalid"
 OLLAMA_ATTACHMENT = b"hello"
@@ -15885,13 +16382,14 @@ CREATE TABLE users (name TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '
 
 def ollama_records(schema_version: int = 19):
     """The INSERT statements of research/ollama.md, Parser plan."""
-    c = OLLAMA_CHAT
+    chat = OLLAMA_CHAT
     return [
         "INSERT INTO settings (id, device_id, schema_version) "
         "VALUES (1, '0190a000-0000-7000-8000-00000000d001', %d)" % schema_version,
         "INSERT INTO users VALUES ('%s', '%s', 'free', '2026-03-01 08:59:00-08:00')"
         % (OLLAMA_USER_NAME, OLLAMA_USER_EMAIL),
-        "INSERT INTO chats VALUES ('%s', 'Release notes', '2026-03-01 09:00:00.5-08:00', NULL)" % c,
+        "INSERT INTO chats VALUES ('%s', 'Release notes', '2026-03-01 09:00:00.5-08:00', NULL)"
+        % chat,
         "INSERT INTO messages (id, chat_id, role, content, thinking, model_name, created_at, "
         "updated_at, tool_result) VALUES "
         "(1, '%s', 'user', 'summarise https://example.invalid/notes', '', NULL, "
@@ -15902,16 +16400,17 @@ def ollama_records(schema_version: int = 19):
         "'2026-03-01 09:00:03-08:00', '2026-03-01 09:00:03-08:00', "
         """'{"title":"Notes","content":"Release 2.0 adds X."}'),"""
         "(4, '%s', 'assistant', 'Release 2.0 adds X.', '', 'qwen3:8b', "
-        "'2026-03-01 09:00:04.125-08:00', '2026-03-01 09:00:05-08:00', NULL)" % (c, c, c, c),
+        "'2026-03-01 09:00:04.125-08:00', '2026-03-01 09:00:05-08:00', NULL)"
+        % (chat, chat, chat, chat),
         "INSERT INTO tool_calls VALUES (1, 2, 'function', 'web_fetch', "
         """'{"url":"https://example.invalid/notes"}', NULL)""",
         "INSERT INTO attachments VALUES (1, 1, 'notes.txt', X'%s')" % OLLAMA_ATTACHMENT.hex(),
     ]
 
 
-def write_ollama_db(path: Path, schema_version: int = 19) -> None:
+def write_ollama_database(path: Path, schema_version: int = 19) -> None:
     settings = OLLAMA_SETTINGS_19 if schema_version >= 19 else OLLAMA_SETTINGS_16
-    _wal_db(path, settings + OLLAMA_SCHEMA, ollama_records(schema_version))
+    _wal_database(path, settings + OLLAMA_SCHEMA, ollama_records(schema_version))
 
 
 OLLAMA_CONFIG = (
@@ -15941,13 +16440,13 @@ OLLAMA_CD_PROFILE = """{
 
 
 def build_ollama(home: Path) -> None:
-    write_ollama_db(home / OLLAMA_DB_REL)
-    write_ollama_db(home / OLLAMA_WIN_DB_REL, schema_version=16)
+    write_ollama_database(home / OLLAMA_DATABASE_REL)
+    write_ollama_database(home / OLLAMA_WINDOWS_DATABASE_REL, schema_version=16)
     ollama = home / ".ollama"
     ollama.mkdir(parents=True, exist_ok=True)
     (ollama / "history").write_text("why is the sky blue\n/set nohistory\n/bye\n", encoding="utf-8")
     # The launch configuration: the claude-desktop integration's automode key
-    # is a standing permission setting (issue 188; research/ollama.md,
+    # is a standing permission setting (research/ollama.md,
     # Permission rows), the claude integration has none.
     (ollama / "config.json").write_text(OLLAMA_CONFIG, encoding="utf-8")
     # The Claude Desktop third-party profile the launcher writes, under a
@@ -16008,14 +16507,14 @@ CD_CODE_CLI = "11111111-2222-4333-8444-555555555555"
 CD_CODE_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_SESSION)
 # A Code-tab record with the persisted Remote Control state set (bundle
 # serializer keys, research/claude-desktop.md, Record schema; fixture only).
-CD_CODE_RC_SESSION = "local_e3e3e3e3-9999-4aaa-8bbb-cccccccccccc"
-CD_CODE_RC_CLI = "e3e3e3e3-5555-4666-8777-888888888888"
-CD_CODE_RC_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_RC_SESSION)
+CD_CODE_REMOTE_CONTROL_SESSION = "local_e3e3e3e3-9999-4aaa-8bbb-cccccccccccc"
+CD_CODE_REMOTE_CONTROL_CLI = "e3e3e3e3-5555-4666-8777-888888888888"
+CD_CODE_REMOTE_CONTROL_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_REMOTE_CONTROL_SESSION)
 CD_SCHED_REL = "%s/scheduled-tasks.json" % CD_COWORK_ORG
 CD_WORKTREES_REL = "%s/git-worktrees.json" % CD_BASE
 CD_SPACES_REL = "%s/remote-session-spaces.json" % CD_COWORK_ORG
 CD_REMOTE_SESSION = "0123456789abcdef0123456789abcdef"
-CD_SPACES_MTIME = 1790848800  # 2026-10-01T10:00:00Z
+CD_SPACES_MTIME = 1790848800  # 1 October 10:00:00 UTC
 
 
 def claude_desktop_record():
@@ -16035,7 +16534,7 @@ def claude_desktop_record():
         "initialMessage": "why does the test fail?",
         "sessionType": "agent",
         "emailAddress": "user@example.invalid",
-        # Cowork grants (issue 97): "arrays and objects" in the bundle, the
+        # Cowork grants: "arrays and objects" in the bundle, the
         # type of each key not determined; these values are fixture only.
         "approvedToolNames": ["Bash", "WebFetch"],
         "webFetchAllowedUrls": ["https://example.invalid/docs"],
@@ -16047,35 +16546,38 @@ def claude_desktop_record():
 
 
 def claude_desktop_transcript_records():
-    """The claude-code fixture as the Cowork VM's CLI writes it: guest cwd,
-    `entrypoint` local-agent and the record's `cliSessionId`."""
+    """The claude-code fixture as the Cowork VM's CLI writes it.
+
+    Guest cwd, `entrypoint` local-agent and the record's `cliSessionId`.
+    """
     out = []
-    for r in claude_session_records(cwd=CD_GUEST_CWD):
-        r = dict(r)
-        if "sessionId" in r:
-            r["sessionId"] = CD_CLI_SESSION
-        if "entrypoint" in r:
-            r["entrypoint"] = "local-agent"
-        out.append(r)
+    for record in claude_session_records(cwd=CD_GUEST_CWD):
+        record = dict(record)
+        if "sessionId" in record:
+            record["sessionId"] = CD_CLI_SESSION
+        if "entrypoint" in record:
+            record["entrypoint"] = "local-agent"
+        out.append(record)
     return out
 
 
-def _cd_hmac(n: int) -> str:
-    return "%064x" % n
+def _cd_hmac(number: int) -> str:
+    return "%064x" % number
 
 
 def claude_desktop_audit_records():
-    """The research document's Parser plan, verbatim (HMAC values and tool ids are
-    placeholders). Line 1's prompt has no transcript twin; line 8's and the
-    `init` model repeat the transcript's rows (issue 122). The `npm test`
-    call is not the transcript's, so its id is not the transcript's
-    `toolu_01`: tool rows pair on their id."""
-    sid = CD_CLI_SESSION
+    """The research document's Parser plan, verbatim (HMAC values and tool ids are placeholders).
+
+    Line 1's prompt has no transcript twin; line 8's and the `init` model repeat the transcript's
+    rows. The `npm test` call is not the transcript's, so its id is not the transcript's `toolu_01`:
+    tool rows pair on their id.
+    """
+    session_id = CD_CLI_SESSION
     return [
         {
             "type": "user",
             "uuid": "00000000-0000-4000-8000-0000000000a1",
-            "session_id": sid,
+            "session_id": session_id,
             "parent_tool_use_id": None,
             "client_platform": "desktop_app",
             "timestamp": "2026-10-01T10:00:00.000Z",
@@ -16089,7 +16591,7 @@ def claude_desktop_audit_records():
         {
             "type": "system",
             "subtype": "init",
-            "session_id": sid,
+            "session_id": session_id,
             "cwd": CD_GUEST_CWD,
             "model": "claude-fable-5-1",
             "_audit_timestamp": "2026-10-01T10:00:01.000Z",
@@ -16098,7 +16600,7 @@ def claude_desktop_audit_records():
         {
             "type": "assistant",
             "uuid": "00000000-0000-4000-8000-0000000000a2",
-            "session_id": sid,
+            "session_id": session_id,
             "parent_tool_use_id": None,
             "message": {
                 "model": "claude-fable-5-1",
@@ -16119,7 +16621,7 @@ def claude_desktop_audit_records():
             "type": "system",
             "subtype": "permission_request",
             "uuid": "00000000-0000-4000-8000-0000000000a3",
-            "session_id": sid,
+            "session_id": session_id,
             "tool_name": "Bash",
             "tool_input": {"command": "npm test"},
             "_audit_timestamp": "2026-10-01T10:00:03.100Z",
@@ -16129,7 +16631,7 @@ def claude_desktop_audit_records():
             "type": "system",
             "subtype": "permission_response",
             "uuid": "00000000-0000-4000-8000-0000000000a3",
-            "session_id": sid,
+            "session_id": session_id,
             "tool_name": "Bash",
             "decision": "once",
             "granted": True,
@@ -16139,7 +16641,7 @@ def claude_desktop_audit_records():
         {
             "type": "user",
             "uuid": "00000000-0000-4000-8000-0000000000a4",
-            "session_id": sid,
+            "session_id": session_id,
             "parent_tool_use_id": None,
             "message": {
                 "role": "user",
@@ -16157,7 +16659,7 @@ def claude_desktop_audit_records():
             "duration_api_ms": 4000,
             "is_error": False,
             "num_turns": 2,
-            "session_id": sid,
+            "session_id": session_id,
             "uuid": "00000000-0000-4000-8000-0000000000a5",
             "_audit_timestamp": "2026-10-01T10:00:12.000Z",
             "_audit_hmac": _cd_hmac(7),
@@ -16167,7 +16669,7 @@ def claude_desktop_audit_records():
         {
             "type": "user",
             "uuid": "00000000-0000-4000-8000-0000000000a6",
-            "session_id": sid,
+            "session_id": session_id,
             "parent_tool_use_id": None,
             "client_platform": "desktop_app",
             "timestamp": "2026-10-01T10:00:20.000Z",
@@ -16180,14 +16682,16 @@ def claude_desktop_audit_records():
 
 def claude_desktop_fallback_records():
     """An audit log whose session dir has no transcript: every line counts.
-    Line numbers are what ClaudeDesktopTests.test_audit_fallback asserts."""
-    sid = CD_FALLBACK_CLI
 
-    def line(n, ts, **rec):
-        rec.setdefault("session_id", sid)
-        rec["_audit_timestamp"] = "2026-10-02T09:00:%s.000Z" % ts
-        rec["_audit_hmac"] = _cd_hmac(100 + n)
-        return rec
+    Line numbers are what ClaudeDesktopTests.test_audit_fallback asserts.
+    """
+    session_id = CD_FALLBACK_CLI
+
+    def line(number, second, **record):
+        record.setdefault("session_id", session_id)
+        record["_audit_timestamp"] = "2026-10-02T09:00:%s.000Z" % second
+        record["_audit_hmac"] = _cd_hmac(100 + number)
+        return record
 
     return [
         line(
@@ -16313,7 +16817,7 @@ def claude_desktop_code_record():
         "isArchived": False,
         "title": "Fix the failing test",
         "permissionMode": "default",
-        # Per-session grants (issue 93): the entries' inner shape is not
+        # Per-session grants: the entries' inner shape is not
         # determined (real installs showed both lists empty); fixture only.
         "effort": "high",
         "alwaysAllowedReasons": ["Bash(npm test)"],
@@ -16333,10 +16837,10 @@ def claude_desktop_code_record():
     }
 
 
-def claude_desktop_code_rc_record():
+def claude_desktop_code_remote_control_record():
     return {
-        "sessionId": CD_CODE_RC_SESSION,
-        "cliSessionId": CD_CODE_RC_CLI,
+        "sessionId": CD_CODE_REMOTE_CONTROL_SESSION,
+        "cliSessionId": CD_CODE_REMOTE_CONTROL_CLI,
         "cwd": "/srv/proj",
         "originCwd": "/srv/proj",
         "branch": "main",
@@ -16404,8 +16908,10 @@ def claude_desktop_worktrees():
 
 
 def claude_desktop_remote_spaces():
-    """The research document's Record schema: `entries[]` with `sessionId` (32 hex) and
-    `folders[]`; observed shape, fixture values."""
+    """The research document's Record schema.
+
+    `entries[]` with `sessionId` (32 hex) and `folders[]`; observed shape, fixture values.
+    """
     return {"entries": [{"sessionId": CD_REMOTE_SESSION, "folders": ["/srv/proj", "/srv/docs"]}]}
 
 
@@ -16421,8 +16927,8 @@ def build_claude_desktop(home: Path) -> None:
     code = home / CD_CODE_RECORD_REL
     code.parent.mkdir(parents=True, exist_ok=True)
     code.write_text(json.dumps(claude_desktop_code_record()), encoding="utf-8")
-    (home / CD_CODE_RC_RECORD_REL).write_text(
-        json.dumps(claude_desktop_code_rc_record()), encoding="utf-8"
+    (home / CD_CODE_REMOTE_CONTROL_RECORD_REL).write_text(
+        json.dumps(claude_desktop_code_remote_control_record()), encoding="utf-8"
     )
     (home / CD_SCHED_REL).write_text(json.dumps(claude_desktop_scheduled_tasks()), encoding="utf-8")
     (home / CD_WORKTREES_REL).write_text(json.dumps(claude_desktop_worktrees()), encoding="utf-8")
@@ -16441,10 +16947,10 @@ def build_claude_desktop(home: Path) -> None:
     )
 
 
-# GitHub Copilot CLI (issue 50): the sample records of
+# GitHub Copilot CLI: the sample records of
 # research/copilot-cli.md, Parser plan, verbatim, plus the `/model` switch to
-# Auto of the Linux round (2026-10-16): a `model_picker` change and its two
-# `session.info` lines (issue 133). The last line is cut mid-write, as a log
+# Auto seen on a Linux install: a `model_picker` change and its two
+# `session.info` lines. The last line is cut mid-write, as a log
 # whose session was still running.
 COPILOT_SESSION = "5e55a0a1-0000-4000-8000-000000000001"
 COPILOT_DIR = ".copilot/session-state/%s/" % COPILOT_SESSION
@@ -16460,7 +16966,7 @@ COPILOT_SIDEBAR_REL = (
     "6b9af143446a411aefa3edb76e4693799bd7513e7ed8d919962d6713d3d3b972.json"
 )
 COPILOT_LOG_REL = ".copilot/logs/process-1790845199000-4242.log"
-COPILOT_SETTINGS_MTIME = 1790856000  # 2026-10-01T12:00:00Z
+COPILOT_SETTINGS_MTIME = 1790856000  # 1 October 12:00:00 UTC
 
 COPILOT_EVENT_LINES = [
     '{"id":"e0000000-0000-4000-8000-000000000001","parentId":null,"timestamp":"2026-10-01T09:00:00.000Z","type":"session.start","data":{"sessionId":"5e55a0a1-0000-4000-8000-000000000001","version":1,"producer":"copilot-agent","copilotVersion":"1.0.98","startTime":"2026-10-01T08:59:59.000Z","context":{"cwd":"/srv/proj","gitRoot":"/srv/proj","branch":"main"},"alreadyInUse":false,"remoteSteerable":false,"contextTier":null}}',
@@ -16540,7 +17046,7 @@ COPILOT_STORE_ROWS = [
 COPILOT_MC_TASK = "1c1c1c1c-0000-4000-8000-000000000001"
 COPILOT_MC_SESSION = "2d2d2d2d-0000-4000-8000-000000000001"
 COPILOT_MC_LAST_EVENT = "3e3e3e3e-0000-4000-8000-000000000001"
-COPILOT_WORKSPACE_MTIME = 1790845290  # 2026-10-01T09:01:30Z
+COPILOT_WORKSPACE_MTIME = 1790845290  # 1 October 09:01:30 UTC
 COPILOT_WORKSPACE_YAML = """\
 id: 5e55a0a1-0000-4000-8000-000000000001
 cwd: /srv/proj
@@ -16572,10 +17078,12 @@ COPILOT_LOG = """\
 
 
 def copilot_snapshot_index() -> dict:
-    """`rewind-file-snapshots/index.json` with the snapshot taken before the
-    first prompt (its `eventId` is that `user.message` line's `id`), in the
-    key layout of research/copilot-cli.md, Other stores; the file key is a
-    synthetic hex digest and the images are left out."""
+    """Copilot CLI's `rewind-file-snapshots/index.json`.
+
+    `rewind-file-snapshots/index.json` with the snapshot taken before the first prompt (its
+    `eventId` is that `user.message` line's `id`), in the key layout of research/copilot-cli.md,
+    Other stores; the file key is a synthetic hex digest and the images are left out.
+    """
     return {
         "schema": 1,
         "snapshots": [
@@ -16609,7 +17117,7 @@ def build_copilot_cli(home: Path) -> None:
     (home / COPILOT_WORKSPACE_REL).write_text(COPILOT_WORKSPACE_YAML, encoding="utf-8")
     os.utime(home / COPILOT_WORKSPACE_REL, (COPILOT_WORKSPACE_MTIME, COPILOT_WORKSPACE_MTIME))
     _json_file(home / COPILOT_SNAPSHOTS_REL, copilot_snapshot_index())
-    _wal_db(home / COPILOT_STORE_REL, COPILOT_STORE_SCHEMA, COPILOT_STORE_ROWS)
+    _wal_database(home / COPILOT_STORE_REL, COPILOT_STORE_SCHEMA, COPILOT_STORE_ROWS)
     # Newest first; `/model` was typed between the two prompts.
     _json_file(
         home / COPILOT_HISTORY_REL,
@@ -16647,7 +17155,7 @@ def build_copilot_cli(home: Path) -> None:
     )
 
 
-# GitHub Copilot Desktop (issue 147): the app's own store `.copilot/data.db`,
+# GitHub Copilot Desktop: the app's own store `.copilot/data.db`,
 # with the table and column names of research/copilot-desktop.md, Record schema
 # (a subset of each table's columns, names exact). The project session's id
 # is the Copilot CLI fixture's session, since the app's sessions are the
@@ -16655,22 +17163,22 @@ def build_copilot_cli(home: Path) -> None:
 # sidecar, as on a host where the app is still running. The four scheduling
 # tables and the deletion intent were empty on the real install: their rows
 # are fixture only.
-COPILOT_DESKTOP_DB_REL = ".copilot/data.db"
+COPILOT_DESKTOP_DATABASE_REL = ".copilot/data.db"
 COPILOT_DESKTOP_CHAT = "5d404e14-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_FORK = "9f9f9f9f-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_WORKTREE = "/home/alice/.copilot/repos/copilot-worktrees/proj/octo-user-happy-otter"
-COPILOT_DESKTOP_MTIME = 1790850600  # 2026-10-01T10:30:00Z
-# Checkpoint refs in the app's clone of the project (issue 147): one well
+COPILOT_DESKTOP_MTIME = 1790850600  # 1 October 10:30:00 UTC
+# Checkpoint refs in the app's clone of the project: one well
 # formed, at the project session's checkpoint, and one malformed.
 COPILOT_DESKTOP_REF_DIR = ".copilot/repos/proj/.git/refs/copilot/checkpoints/" + COPILOT_SESSION
 COPILOT_DESKTOP_REF_REL = (
     COPILOT_DESKTOP_REF_DIR + "/00000000000000000001/e0000000-0000-4000-8000-000000000004"
 )
-COPILOT_DESKTOP_REF_MTIME = 1790845201  # 2026-10-01T09:00:01Z
+COPILOT_DESKTOP_REF_MTIME = 1790845201  # 1 October 09:00:01 UTC
 COPILOT_DESKTOP_BAD_REF_REL = (
     COPILOT_DESKTOP_REF_DIR + "/00000000000000000002/e0000000-0000-4000-8000-000000000020"
 )
-COPILOT_DESKTOP_BAD_REF_MTIME = 1790845230  # 2026-10-01T09:00:30Z
+COPILOT_DESKTOP_BAD_REF_MTIME = 1790845230  # 1 October 09:00:30 UTC
 COPILOT_DESKTOP_HEAD_REF_REL = ".copilot/repos/proj/.git/refs/heads/main"
 
 COPILOT_DESKTOP_SCHEMA = """
@@ -16746,9 +17254,12 @@ CREATE TABLE session_deletion_intents (session_id TEXT PRIMARY KEY NOT NULL, cre
 
 
 def copilot_desktop_records() -> list[str]:
-    """The INSERTs of the fixture `data.db`, in the order the parser reads
-    the tables; `build_copilot_desktop` writes them to the -wal sidecar."""
-    s, chat, fork = COPILOT_SESSION, COPILOT_DESKTOP_CHAT, COPILOT_DESKTOP_FORK
+    """The INSERTs of the Copilot Desktop fixture `data.db`.
+
+    The INSERTs of the fixture `data.db`, in the order the parser reads the tables;
+    `build_copilot_desktop` writes them to the -wal sidecar.
+    """
+    session, chat, fork = COPILOT_SESSION, COPILOT_DESKTOP_CHAT, COPILOT_DESKTOP_FORK
     return [
         "INSERT INTO accounts VALUES ('acc1', 'octo-user', 'Octo User', 1, 'github.com',"
         " '2026-10-01T08:50:00.000Z', '2026-10-01T08:50:00.000Z', '2026-10-01T08:50:00.000Z',"
@@ -16765,13 +17276,13 @@ def copilot_desktop_records() -> list[str]:
         " 'happy-otter', 0, 3000, '2026-10-01T08:56:01.000Z', '2026-10-01T08:56:01.000Z',"
         " 'octo-user/proj', 12, NULL, NULL)",
         "INSERT INTO workspace_session_aliases VALUES ('%s', 'ws1', '2026-10-01T09:00:00.000Z')"
-        % s,
+        % session,
         # The project session first by rowid, to show the rows follow created_at.
         "INSERT INTO sessions (id, title, session_type, model, created_at, updated_at,"
         " remote_control_enabled, auto_approve, forked_from_session_id, archived_at,"
         " permission_mode) VALUES ('%s', 'Fix failing test', 'project', 'gpt-6.1-sol',"
         " '2026-10-01T09:00:00.000Z', '2026-10-01T09:00:30.000Z', 0, 1, '%s', NULL, 'on')"
-        % (s, fork),
+        % (session, fork),
         "INSERT INTO sessions (id, title, session_type, model, created_at, updated_at,"
         " remote_control_enabled, auto_approve, forked_from_session_id, archived_at,"
         " permission_mode) VALUES ('%s', 'Say hello', 'general_chat', 'claude-sonnet-5.5',"
@@ -16779,7 +17290,7 @@ def copilot_desktop_records() -> list[str]:
         " '2026-10-01T10:00:00.000Z', NULL)" % chat,
         "INSERT INTO activity_items VALUES ('a1', 'ws1', '%s', 'agent_idle',"
         " 'The fixture year was stale', 0, '2026-10-01T09:00:15.500Z',"
-        " '2026-10-01T09:00:15.500Z', '{}')" % s,
+        " '2026-10-01T09:00:15.500Z', '{}')" % session,
         "INSERT INTO activity_items VALUES ('a2', NULL, '%s', 'agent_idle',"
         " 'Hello! How can I help?', 1, '2026-10-01T08:51:05.000Z', '2026-10-01T08:51:05.000Z',"
         " '{}')" % chat,
@@ -16787,7 +17298,7 @@ def copilot_desktop_records() -> list[str]:
         " 'Workspace happy-otter is ready', 1, '2026-10-01T08:56:02.000Z',"
         " '2026-10-01T08:56:02.000Z', '{}')",
         "INSERT INTO session_checkpoints VALUES ('%s', 'e0000000-0000-4000-8000-000000000004',"
-        " '0123456789abcdef0123456789abcdef01234567', '2026-10-01T09:00:01.200Z')" % s,
+        " '0123456789abcdef0123456789abcdef01234567', '2026-10-01T09:00:01.200Z')" % session,
         "INSERT INTO app_state VALUES ('permission-mode-default-on', 'true',"
         " '2026-10-01T08:50:00.000Z')",
         "INSERT INTO my_copilot_scheduled_tasks VALUES ('t1', 1, 'Nightly lint',"
@@ -16801,15 +17312,18 @@ def copilot_desktop_records() -> list[str]:
         " 'run the linter', NULL, 'background', '%s', NULL, 'completed',"
         " '2026-10-02T02:00:01.000Z', '2026-10-02T02:00:02.000Z')" % chat,
         "INSERT INTO session_automations VALUES ('%s', 'check CI', 'daily', NULL, 9, 1, NULL,"
-        " '2026-10-02T09:00:00.000Z', '2026-10-01T09:20:00.000Z', 'CI check', NULL, NULL)" % s,
+        " '2026-10-02T09:00:00.000Z', '2026-10-01T09:20:00.000Z', 'CI check', NULL, NULL)"
+        % session,
         "INSERT INTO session_deletion_intents VALUES ('%s', '2026-10-01T10:05:00.000Z')" % chat,
     ]
 
 
 def build_copilot_desktop(home: Path) -> None:
-    _wal_db(home / COPILOT_DESKTOP_DB_REL, COPILOT_DESKTOP_SCHEMA, copilot_desktop_records())
-    db = home / COPILOT_DESKTOP_DB_REL
-    os.utime(db, (COPILOT_DESKTOP_MTIME, COPILOT_DESKTOP_MTIME))
+    _wal_database(
+        home / COPILOT_DESKTOP_DATABASE_REL, COPILOT_DESKTOP_SCHEMA, copilot_desktop_records()
+    )
+    database = home / COPILOT_DESKTOP_DATABASE_REL
+    os.utime(database, (COPILOT_DESKTOP_MTIME, COPILOT_DESKTOP_MTIME))
     # Noise the parser must not want: the WebSocket token and the web view's
     # local storage (research/copilot-desktop.md, Credentials and Other stores).
     run = home / ".copilot/run"
@@ -16835,12 +17349,12 @@ def build_copilot_desktop(home: Path) -> None:
             os.utime(ref, (mtime, mtime))
 
 
-# The ChatGPT desktop app's `.codex/sqlite/codex-dev.db` (issue 49): the
-# `local_thread_catalog` column names seen on the macOS install of 2026-10-18
+# The ChatGPT desktop app's `.codex/sqlite/codex-dev.db`: the
+# `local_thread_catalog` column names seen on a macOS install
 # (`pragma table_info`, research/chatgpt-desktop.md, Record schema; the column
 # types other than the REAL times were not recorded) and its
 # hosts table. The rows live only in the -wal sidecar, as on a running app.
-CHATGPT_DESKTOP_DB_REL = ".codex/sqlite/codex-dev.db"
+CHATGPT_DESKTOP_DATABASE_REL = ".codex/sqlite/codex-dev.db"
 CHATGPT_CONVERSATION = "6a0f0e2c-0000-4000-8000-000000000001"
 CHATGPT_TPP_CONVERSATION = "6a0f0e2c-0000-4000-8000-000000000002"
 CHATGPT_HOST = "chatgpt:00000000-0000-4000-8000-0000000000aa:user-FAKEACCOUNT0000"
@@ -16857,21 +17371,23 @@ CREATE TABLE local_thread_catalog_hosts (host_id TEXT PRIMARY KEY, host_kind TEX
 
 
 def chatgpt_desktop_records() -> list[str]:
-    """The INSERTs of the fixture `codex-dev.db`: the app's Codex thread
-    (a `vscode` row, which the parser skips), then two account
-    conversations, one with a title and an empty origin, one with no
-    title and origin `tpp`. Times are REAL epoch seconds with a fraction."""
+    """The INSERTs of the fixture `codex-dev.db`.
+
+    The app's Codex thread (a `vscode` row, which the parser skips), then two account conversations,
+    one with a title and an empty origin, one with no title and origin `tpp`. Times are REAL epoch
+    seconds with a fraction.
+    """
     return [
         "INSERT INTO local_thread_catalog_hosts VALUES ('local', 'local')",
         "INSERT INTO local_thread_catalog_hosts VALUES ('%s', 'chatgpt')" % CHATGPT_HOST,
         "INSERT INTO local_thread_catalog VALUES ('local', '%s', 'Fix the tests',"
         " 1791367200.0, 1791367260.0, '/srv/proj', 'vscode', NULL, 'openai', NULL, 5, 0,"
         " 'user', 1791367260.0, NULL, NULL, NULL, NULL, NULL)" % CODEX_SESSION,
-        # 2026-10-01T10:00:00.250Z and 2026-10-01T11:00:00.500Z.
+        # 1 October 10:00:00.250 UTC and 1 October 11:00:00.500 UTC.
         "INSERT INTO local_thread_catalog VALUES ('%s', '%s', 'Plan a trip',"
         " 1790848800.25, 1790852400.5, NULL, 'chatgpt', NULL, NULL, NULL, 1, 0, NULL,"
         " 1790852400.5, NULL, NULL, '', NULL, NULL)" % (CHATGPT_HOST, CHATGPT_CONVERSATION),
-        # 2026-10-01T09:00:00.000Z and 2026-10-01T09:30:00.000Z.
+        # 1 October 09:00:00.000 UTC and 1 October 09:30:00.000 UTC.
         "INSERT INTO local_thread_catalog VALUES ('%s', '%s', NULL,"
         " 1790845200.0, 1790847000.0, NULL, 'chatgpt', NULL, NULL, NULL, 1, 0, NULL,"
         " 1790847000.0, NULL, NULL, 'tpp', NULL, NULL)" % (CHATGPT_HOST, CHATGPT_TPP_CONVERSATION),
@@ -16879,7 +17395,9 @@ def chatgpt_desktop_records() -> list[str]:
 
 
 def build_chatgpt_desktop(home: Path) -> None:
-    _wal_db(home / CHATGPT_DESKTOP_DB_REL, CHATGPT_DESKTOP_SCHEMA, chatgpt_desktop_records())
+    _wal_database(
+        home / CHATGPT_DESKTOP_DATABASE_REL, CHATGPT_DESKTOP_SCHEMA, chatgpt_desktop_records()
+    )
     # Noise the parser must not want: the app's preferences, a file the
     # catalog attributes to `chatgpt-desktop` itself, so the agent is detected.
     prefs = home / "Library/Preferences/com.openai.codex.plist"
@@ -16887,12 +17405,12 @@ def build_chatgpt_desktop(home: Path) -> None:
     prefs.write_bytes(b"bplist00not a real plist")
 
 
-# Cursor IDE (issue 51, research/cursor.md, Fixtures). Composer ids are
+# Cursor IDE (research/cursor.md, Fixtures). Composer ids are
 # invented UUIDs: a live conversation with the 3.25.9 inline header list,
 # an archived one with 3.26.13 header chunks, a deleted one that only its
 # header row, an agentKv blob, its transcript and ai-tracking row still
 # name, a draft with an unsent message and a header-only draft. Two cloud
-# agents (`bc-<uuid>`, Windows 3.26.13, issue 236): one with a cached
+# agents (`bc-<uuid>`, Windows 3.26.13): one with a cached
 # conversation in conversation-search.db, one in the agent list only.
 CURSOR_LIVE = "c0000001-0000-4000-8000-000000000001"
 CURSOR_CLOUD = "bc-e0000001-0000-4000-8000-000000000001"
@@ -16908,8 +17426,8 @@ CURSOR_DELETED = "c0000003-0000-4000-8000-000000000003"
 CURSOR_DRAFT = "d0000001-0000-4000-8000-000000000001"
 CURSOR_EMPTY_HEAD = "d0000002-0000-4000-8000-000000000002"
 CURSOR_WORKSPACE = "0123456789abcdef0123456789abcdef"
-CURSOR_T0 = 1790848800000  # 2026-10-01T10:00:00Z, epoch ms
-CURSOR_MTIME = 1790863200  # 2026-10-01T14:00:00Z, the settings files' mtime
+CURSOR_T0 = 1790848800000  # 1 October 10:00:00 UTC, epoch ms
+CURSOR_MTIME = 1790863200  # 1 October 14:00:00 UTC, the settings files' mtime
 CURSOR_STATE_REL = "Library/Application Support/Cursor/User/globalStorage/state.vscdb"
 CURSOR_SEARCH_REL = "Library/Application Support/Cursor/User/globalStorage/conversation-search.db"
 CURSOR_TRANSCRIPT_REL = ".cursor/projects/srv-proj/agent-transcripts/%s/%s.jsonl" % (
@@ -16935,17 +17453,20 @@ CREATE TABLE composerHeaders (composerId TEXT PRIMARY KEY, workspaceId TEXT, cre
 
 
 def _cursor_iso(offset_ms: int) -> str:
-    """ISO 8601 with milliseconds and a Z, as bubbles and header entries
-    write `createdAt`, `offset_ms` after `CURSOR_T0`."""
-    at = datetime.datetime.fromtimestamp((CURSOR_T0 + offset_ms) / 1000, datetime.timezone.utc)
-    return at.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (at.microsecond // 1000)
+    """Return the ISO 8601 time `offset_ms` after `CURSOR_T0`.
+
+    ISO 8601 with milliseconds and a Z, as bubbles and header entries write `createdAt`, `offset_ms`
+    after `CURSOR_T0`.
+    """
+    moment = datetime.datetime.fromtimestamp((CURSOR_T0 + offset_ms) / 1000, datetime.timezone.utc)
+    return moment.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (moment.microsecond // 1000)
 
 
 def _cursor_head(bubble_id: str, kind: int, offset_ms: int) -> dict:
     return {"bubbleId": bubble_id, "type": kind, "createdAt": _cursor_iso(offset_ms)}
 
 
-def _cursor_tool(call: str, n: int, command: str, extra: dict | None, result: str) -> dict:
+def _cursor_tool(call: str, number: int, command: str, extra: dict | None, result: str) -> dict:
     tool = {
         "name": "run_terminal_command_v2",
         "params": json.dumps({"command": command}),
@@ -16953,9 +17474,9 @@ def _cursor_tool(call: str, n: int, command: str, extra: dict | None, result: st
         "result": result,
         "status": "completed",
         "tool": 15,
-        "toolCallId": "call-%s-%d\nfc_%s_%d" % (call, n, call, n),
+        "toolCallId": "call-%s-%d\nfc_%s_%d" % (call, number, call, number),
         "modelCallId": "",
-        "toolIndex": n,
+        "toolIndex": number,
     }
     if extra is not None:
         tool["additionalData"] = extra
@@ -16963,13 +17484,16 @@ def _cursor_tool(call: str, n: int, command: str, extra: dict | None, result: st
 
 
 def cursor_kv_records() -> list[tuple[str, object]]:
-    """(key, value) rows of the fixture's `cursorDiskKV`, in insert order;
-    a str value is stored as it is, anything else as JSON text."""
+    """(key, value) rows of the fixture's `cursorDiskKV`, in insert order.
+
+    (key, value) rows of the fixture's `cursorDiskKV`, in insert order; a str value is stored as it
+    is, anything else as JSON text.
+    """
     live, arch, gone = CURSOR_LIVE, CURSOR_ARCHIVED, CURSOR_DELETED
     curl = "curl -s example.test | head"
     options = [{"id": "curl", "commandName": "curl"}, {"id": "head", "commandName": "head"}]
     reason = "Not in allowlist: curl, head"
-    t1, t2, t3, t4 = (
+    tool_call_1, tool_call_2, tool_call_3, tool_call_4 = (
         "a1/t:call-t1-1\nfc_t1_1",
         "a2/t:call-t2-0\nfc_t2_0",
         "a2/t:call-t3-1\nfc_t3_1",
@@ -16978,12 +17502,12 @@ def cursor_kv_records() -> list[tuple[str, object]]:
     headers = [
         _cursor_head("u1", 1, 0),
         _cursor_head("a1/s:0", 2, 1000),
-        _cursor_head(t1, 2, 2000),
+        _cursor_head(tool_call_1, 2, 2000),
         _cursor_head("a1/s:2", 2, 5000),
         _cursor_head("u2", 1, 60000),
-        _cursor_head(t2, 2, 61000),
-        _cursor_head(t3, 2, 70000),
-        _cursor_head(t4, 2, 80000),
+        _cursor_head(tool_call_2, 2, 61000),
+        _cursor_head(tool_call_3, 2, 70000),
+        _cursor_head(tool_call_4, 2, 80000),
     ]
     read = {
         "type": 2,
@@ -17096,7 +17620,7 @@ def cursor_kv_records() -> list[tuple[str, object]]:
                 "thinking": {"text": "Read calc.py first.", "signature": "sig"},
             },
         ),
-        ("bubbleId:%s:%s" % (live, t1), read),
+        ("bubbleId:%s:%s" % (live, tool_call_1), read),
         (
             "bubbleId:%s:a1/s:2" % live,
             {
@@ -17116,9 +17640,9 @@ def cursor_kv_records() -> list[tuple[str, object]]:
                 "modelInfo": {"modelName": "grok-4.7"},
             },
         ),
-        ("bubbleId:%s:%s" % (live, t2), ran),
-        ("bubbleId:%s:%s" % (live, t3), skipped),
-        ("bubbleId:%s:%s" % (live, t4), always),
+        ("bubbleId:%s:%s" % (live, tool_call_2), ran),
+        ("bubbleId:%s:%s" % (live, tool_call_3), skipped),
+        ("bubbleId:%s:%s" % (live, tool_call_4), always),
         (
             "composerData:" + arch,
             {
@@ -17197,8 +17721,10 @@ def cursor_kv_records() -> list[tuple[str, object]]:
 
 
 def cursor_header_rows() -> list[tuple]:
-    """The fixture's `composerHeaders` rows: (composerId, workspaceId,
-    createdAt, lastUpdatedAt, isArchived, value)."""
+    """The fixture's `composerHeaders` rows.
+
+    (composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, value).
+    """
     workspace = {"id": CURSOR_WORKSPACE, "uri": {"fsPath": "/srv/proj"}}
     location = {"type": "local", "status": "active"}
 
@@ -17256,13 +17782,14 @@ def cursor_header_rows() -> list[tuple]:
 
 
 def cursor_review_bubbles() -> list[tuple[dict, dict]]:
-    """(header entry, bubble) pairs that a test appends to the live
-    conversation, from the Linux round (3.25.9 editor window, issue 237):
-    a command whose prompt was still open when the store was copied
-    (`toolFormerData.status` `loading`, `reviewData.status` `Requested`
-    and the preset `selectedOption`), and the editor window's "add python3
-    to the allow list", stored as `selectedOption` `run` with
-    `appliedAllowlistOptionIds`."""
+    """(header entry, bubble) pairs a test appends to the live conversation.
+
+    (header entry, bubble) pairs that a test appends to the live conversation, from a Linux install
+    (3.25.9 editor window): a command whose prompt was still open when the store was copied
+    (`toolFormerData.status` `loading`, `reviewData.status` `Requested` and the preset
+    `selectedOption`), and the editor window's "add python3 to the allow list", stored as
+    `selectedOption` `run` with `appliedAllowlistOptionIds`.
+    """
     command = "python3 -c 'print(1 + 1)'"
     options = [{"id": "python3", "commandName": "python3"}]
     reason = "Not in allowlist: python3"
@@ -17335,9 +17862,11 @@ CURSOR_SECRET = "CURSOR-SECRET-SENTINEL"
 
 
 def cursor_integration_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the editor's own GitHub sign-in and the remote
-    agent host enrolment (3.25.9 Linux, 2026-10-20, issue 236), with two
-    `secret://` rows whose values the parser must never read."""
+    """ItemTable rows of Cursor's GitHub sign-in and agent host enrolment.
+
+    ItemTable rows of the editor's own GitHub sign-in and the remote agent host enrolment (3.25.9
+    Linux), with two `secret://` rows whose values the parser must never read.
+    """
     login, account = CURSOR_GITHUB_LOGIN, CURSOR_ACCOUNT
     scopes = ["repo", "workflow", "user:email", "read:user"]
     usages = [
@@ -17354,7 +17883,7 @@ def cursor_integration_items() -> list[tuple[str, str]]:
             "scopes": ["repo", "read:user"],
         },
     ]
-    buffer = {"type": "Buffer", "data": [ord(c) for c in CURSOR_SECRET]}
+    buffer = {"type": "Buffer", "data": [ord(char) for char in CURSOR_SECRET]}
     return [
         (
             "github-" + login,
@@ -17374,9 +17903,11 @@ def cursor_integration_items() -> list[tuple[str, str]]:
 
 
 def cursor_cloud_agent(bc_id: str, offset_ms: int, **extra) -> dict:
-    """One element of a `cloudAgentRepository.agents.<account>` list, with
-    the key set of the Windows 3.26.13 round; times are epoch ms
-    `offset_ms` after `CURSOR_T0`."""
+    """One element of a `cloudAgentRepository.agents.<account>` list.
+
+    One element of a `cloudAgentRepository.agents.<account>` list, with the key set of a Windows
+    3.26.13 install; times are epoch ms `offset_ms` after `CURSOR_T0`.
+    """
     agent = {
         "bcId": bc_id,
         "cloudTargetKey": "github:alice-gh/demo:main:0123456789abcdef0123",
@@ -17414,10 +17945,11 @@ def cursor_cloud_agent(bc_id: str, offset_ms: int, **extra) -> dict:
 
 
 def cursor_cloud_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the cloud agents (Windows 3.26.13, issue 236): the
-    agent list under both spellings of the account id, the server pins,
-    the repository list, and the connection token, a `secret://` row the
-    parser must never read."""
+    """ItemTable rows of the cloud agents (Windows 3.26.13).
+
+    The agent list under both spellings of the account id, the server pins, the repository list, and
+    the connection token, a `secret://` row the parser must never read.
+    """
     archived = cursor_cloud_agent(CURSOR_CLOUD, 10000000, isArchived=True)
     listed = cursor_cloud_agent(
         CURSOR_CLOUD_LISTED,
@@ -17458,23 +17990,25 @@ CURSOR_ATTEMPT_REL = (
 
 
 def cursor_mcp_key(prefix: str, name: str, padded: bool = False) -> str:
-    """An `mcpOAuth.global.` or `mcpOAuth.secret.` key: the prefix and the
-    URL-safe base64 of `name` (`[<scope>] <field>`), unpadded as on the
-    real install unless `padded`."""
+    """An `mcpOAuth.global.` or `mcpOAuth.secret.` key.
+
+    The prefix and the URL-safe base64 of `name` (`[<scope>] <field>`), unpadded as on the real
+    install unless `padded`.
+    """
     encoded = base64.urlsafe_b64encode(name.encode("utf-8")).decode("ascii")
     return prefix + (encoded if padded else encoded.rstrip("="))
 
 
 def cursor_mcp_items() -> list[tuple[str, str]]:
-    """ItemTable rows of the plugin and MCP steps (Windows 3.26.13, issue
-    236): the MCP OAuth keys of a plugin server and of a second server with
-    no update time or token, an attempt scope, the migration flag, the
-    secret keys whose ciphertext values hold the sentinel the parser must
-    never read, the installed plugin lists and the cloud agent's MCP auth
-    resolution."""
+    """ItemTable rows of the plugin and MCP steps (Windows 3.26.13).
+
+    The MCP OAuth keys of a plugin server and of a second server with no update time or token, an
+    attempt scope, the migration flag, the secret keys whose ciphertext values hold the sentinel the
+    parser must never read, the installed plugin lists and the cloud agent's MCP auth resolution.
+    """
     glob, secret = "mcpOAuth.global.", "mcpOAuth.secret."
     other = "plugin-acme-tracker-tracker::mcpScope:profile:ZGVmYXVsdA"
-    buffer = json.dumps({"type": "Buffer", "data": [ord(c) for c in CURSOR_SECRET]})
+    buffer = json.dumps({"type": "Buffer", "data": [ord(char) for char in CURSOR_SECRET]})
     plugins = json.dumps([{"id": "12345678", "sources": ["user"]}])
     resolution = {
         "agentId": CURSOR_CLOUD,
@@ -17517,8 +18051,11 @@ def cursor_mcp_items() -> list[tuple[str, str]]:
 
 
 def cursor_attempt_record() -> dict:
-    """An `mcp-oauth-attempts/<uuid>.json` file (Windows 3.26.13, the
-    shape after authentication, with no `authorizationServerUrl`)."""
+    """An `mcp-oauth-attempts/<uuid>.json` file.
+
+    An `mcp-oauth-attempts/<uuid>.json` file (Windows 3.26.13, the shape after authentication, with
+    no `authorizationServerUrl`).
+    """
     return {
         "activeIdentifier": "plugin-calendar-calendar::mcpScope:profile:default",
         "attemptId": "a0000002-0000-4000-8000-000000000002",
@@ -17537,9 +18074,11 @@ def cursor_attempt_record() -> dict:
 
 
 def cursor_mcp_bubble() -> tuple[dict, dict]:
-    """(header entry, bubble) of an MCP tool call approved under Allowlist
-    (Windows 3.26.13): no `reviewData`, `additionalData` holds only
-    `status`, and `toolCallBinary` a serialized copy of the call."""
+    """(header entry, bubble) of an MCP tool call approved under Allowlist (Windows 3.26.13).
+
+    No `reviewData`, `additionalData` holds only `status`, and `toolCallBinary` a serialized copy of
+    the call.
+    """
     call = "call-m1-5\nfc_m1_5"
     tool = {
         "name": "mcp-google-calendar-list_events",
@@ -17565,10 +18104,11 @@ def cursor_mcp_bubble() -> tuple[dict, dict]:
 
 
 def cursor_stopped_bubbles() -> list[tuple[dict, dict]]:
-    """(header entry, bubble) of a turn the user stopped (Windows 3.26.13):
-    the call in flight (`tc9`), rejected with `reviewData.status` the
-    string `None` and the preset option, and a queued call (`tc10`),
-    cancelled with an empty `additionalData`."""
+    """(header entry, bubble) of a turn the user stopped (Windows 3.26.13).
+
+    The call in flight (`tc9`), rejected with `reviewData.status` the string `None` and the preset
+    option, and a queued call (`tc10`), cancelled with an empty `additionalData`.
+    """
     stopped = _cursor_tool(
         "t9",
         5,
@@ -17596,13 +18136,13 @@ def cursor_stopped_bubbles() -> list[tuple[dict, dict]]:
 
 def write_cursor_state(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(CURSOR_STATE_SCHEMA)
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CURSOR_STATE_SCHEMA)
     for key, value in cursor_kv_records():
         stored = value if isinstance(value, (str, bytes)) else json.dumps(value)
-        con.execute("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)", (key, stored))
+        connection.execute("INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)", (key, stored))
     for row in cursor_header_rows():
-        con.execute(
+        connection.execute(
             "INSERT INTO composerHeaders (composerId, workspaceId, createdAt, lastUpdatedAt,"
             " isArchived, isSubagent, value) VALUES (?, ?, ?, ?, ?, 0, ?)",
             row,
@@ -17615,17 +18155,19 @@ def write_cursor_state(path: Path) -> None:
         *cursor_cloud_items(),
         *cursor_mcp_items(),
     ):
-        con.execute(
+        connection.execute(
             "INSERT INTO ItemTable (key, value) VALUES (?, ?)", (key, value.encode("utf-8"))
         )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
     os.utime(path, (CURSOR_MTIME, CURSOR_MTIME))
 
 
 def cursor_transcript_records() -> list[dict]:
-    """The live conversation's transcript, written at UTC-4: its user lines
-    are the bubbles u1 and u2 (10:00Z and 10:01Z)."""
+    """The live conversation's transcript, written at UTC-4.
+
+    Its user lines are the bubbles u1 and u2 (10:00Z and 10:01Z).
+    """
 
     def user(tag: str, query: str) -> dict:
         text = "<timestamp>%s</timestamp>\n<user_query>%s</user_query>" % (tag, query)
@@ -17689,33 +18231,33 @@ CREATE TABLE ai_deleted_files (gitPath TEXT, composerId TEXT, conversationId TEX
 
 def write_cursor_tracking(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(CURSOR_TRACKING_SCHEMA)
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CURSOR_TRACKING_SCHEMA)
     for row in (
         ("h1", "composer", "py", "/srv/proj/calc.py", "r1", CURSOR_LIVE, CURSOR_T0 + 3000),
         ("h2", "composer", "py", "/srv/proj/calc.py", "r9", CURSOR_DELETED, CURSOR_T0 - 30540000),
     ):
-        con.execute(
+        connection.execute(
             "INSERT INTO ai_code_hashes VALUES (?, ?, ?, ?, ?, ?, ?, 'grok-4.6', ?)", (*row, 0)
         )
-    con.execute("INSERT INTO tracking_state VALUES ('trackingStartTime', '1790800000000')")
+    connection.execute("INSERT INTO tracking_state VALUES ('trackingStartTime', '1790800000000')")
     # Unpopulated on the real install; shapes from the table definitions.
-    con.execute(
+    connection.execute(
         "INSERT INTO conversation_summaries VALUES (?, 'Add subtract', 'Added subtract().',"
         " '', '[]', 'grok-4.6', 'agent', ?)",
         (CURSOR_LIVE, CURSOR_T0 + 6000),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO ai_deleted_files VALUES ('old.py', ?, ?, 'grok-4.7', ?)",
         (CURSOR_LIVE, CURSOR_LIVE, CURSOR_T0 + 90000),
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO scored_commits (commitHash, branchName, scoredAt, linesAdded, linesDeleted)"
         " VALUES ('abc1234', 'main', ?, 4, 0)",
         (CURSOR_T0 + 400000,),
     )
-    con.commit()
-    con.close()
+    connection.commit()
+    connection.close()
 
 
 CURSOR_SEARCH_SCHEMA = """
@@ -17729,23 +18271,23 @@ CREATE TABLE conversation_fts_content (id INTEGER PRIMARY KEY, c0, c1, c2);
 
 def write_cursor_search(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
-    con.executescript(CURSOR_SEARCH_SCHEMA)
+    connection = sqlite3.connect(str(path))
+    connection.executescript(CURSOR_SEARCH_SCHEMA)
     for row in (
         ("local", CURSOR_LIVE, "Add subtract", CURSOR_T0 + 300000, 0),
         ("local", CURSOR_ARCHIVED, "Read the README", CURSOR_T0 + 7200000, 1),
         ("local", CURSOR_DRAFT, "", CURSOR_T0 + 9000000, 0),
     ):
-        con.execute(
+        connection.execute(
             "INSERT INTO conversations (source, scope, id, title, branches, updated_at,"
             " is_archived) VALUES (?, 'workspace', ?, ?, '[]', ?, ?)",
             row,
         )
-    # A cloud agent's cached conversation (Windows 3.26.13, issue 236): the
+    # A cloud agent's cached conversation (Windows 3.26.13): the
     # FTS5 content holds its title and body; a local row's may be empty
     # (Windows) or hold text (macOS). The
     # fixture writes the shadow table as a plain table, as the parser reads it.
-    con.execute(
+    connection.execute(
         "INSERT INTO conversations (fts_rowid, source, scope, id, title, branches, updated_at,"
         " is_archived, cache_fingerprint) VALUES (10, 'cloud-cache', ?, ?, ?, '', ?, 1, ?)",
         (
@@ -17762,12 +18304,12 @@ def write_cursor_search(path: Path) -> None:
         (3, "", ""),
         (10, "Describe the demo repository", CURSOR_CLOUD_BODY),
     ):
-        con.execute(
+        connection.execute(
             "INSERT INTO conversation_fts_content VALUES (?, ?, ?, '')", (rowid, title, body)
         )
-    con.execute("INSERT INTO conversation_search_settings VALUES (10000)")
-    con.commit()
-    con.close()
+    connection.execute("INSERT INTO conversation_search_settings VALUES (10000)")
+    connection.commit()
+    connection.close()
 
 
 def build_cursor(home: Path) -> None:

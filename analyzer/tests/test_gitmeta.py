@@ -1,5 +1,4 @@
-"""`gitmeta`: the remotes and HEAD of a collected project's repository
-(issue 253)."""
+"""Tests of `gitmeta`: the remotes and HEAD of a collected project's repository."""
 
 import os
 import shutil
@@ -9,12 +8,14 @@ from pathlib import Path
 
 from doubleagent import gitmeta
 from doubleagent.inputs import Artifact, Home
-from fixtures import PROJ_GIT_CONFIG, PROJ_GIT_HEAD, PROJ_GIT_REMOTES
+from fixtures import PROJECT_GIT_CONFIG, PROJECT_GIT_HEAD, PROJECT_GIT_REMOTES
 
 
 class ParseRemotesTests(unittest.TestCase):
+    """`parse_remotes` reads a repository config as git does."""
+
     def test_fixture_config(self):
-        self.assertEqual(gitmeta.parse_remotes(PROJ_GIT_CONFIG), PROJ_GIT_REMOTES)
+        self.assertEqual(gitmeta.parse_remotes(PROJECT_GIT_CONFIG), PROJECT_GIT_REMOTES)
 
     def test_pushurl_is_what_the_file_says(self):
         # git falls back to `url` for pushes; the file has no pushurl, so none.
@@ -61,8 +62,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_comment_backslash_does_not_continue(self):
         # A backslash that ends a full-line or a trailing comment is not a
-        # continuation, so the header after it keeps its own remote (pull
-        # request 254 review); one that ends a value still is.
+        # continuation, so the header after it keeps its own remote; one that
+        # ends a value still is.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git  # cloned from C:\\git\\\n"
@@ -87,8 +88,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_quoted_and_escaped_whitespace_is_kept(self):
         # Only bare whitespace around a value is trimmed, as git trims it; a
-        # quoted or escaped space is part of the path (pull request 254
-        # review). Bare whitespace before a comment still goes.
+        # quoted or escaped space is part of the path. Bare whitespace before a
+        # comment still goes.
         text = (
             '[remote "a"]\n'
             '\turl =   "/srv/mirror.git "  \n'
@@ -100,7 +101,7 @@ class ParseRemotesTests(unittest.TestCase):
             '\turl = "/srv/in ner.git"\n'
         )
         self.assertEqual(
-            [(r["name"], r["urls"]) for r in gitmeta.parse_remotes(text)],
+            [(remote["name"], remote["urls"]) for remote in gitmeta.parse_remotes(text)],
             [
                 ("a", ["/srv/mirror.git "]),
                 ("b", [" /srv/lead.git"]),
@@ -112,7 +113,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_unterminated_quote_is_dropped_and_reported(self):
         # A config cut inside a quoted value: git rejects the line, so the
         # partial text is not a destination; the pair is left out, the valid
-        # remotes stay, and the line is reported (pull request 254 review).
+        # remotes stay, and the line is reported.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git\n"
@@ -139,7 +140,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_unsupported_escape_is_dropped_and_reported(self):
         # git defines \\, \", \n, \t and \b and a backslash before a line
         # end; any other escape makes it reject the line, so the backslash
-        # is never dropped to invent a destination (pull request 254 review).
+        # is never dropped to invent a destination.
         text = (
             '[remote "origin"]\n'
             "\turl = https://h/origin.git\n"
@@ -164,7 +165,7 @@ class ParseRemotesTests(unittest.TestCase):
     def test_dotted_header_subsection_is_lower_cased(self):
         # The deprecated [section.subsection] form lower-cases its subsection
         # (git), so [remote.Origin] and [remote "origin"] are one remote; a
-        # quoted subsection keeps its case (pull request 254 review).
+        # quoted subsection keeps its case.
         text = (
             "[remote.Origin]\n"
             "\turl = https://h/origin.git\n"
@@ -187,8 +188,8 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_bom_crlf_and_unicode_line_separators(self):
         # git accepts a UTF-8 byte-order mark at the start of a config and
-        # ends a line at LF or CRLF only; a U+2028 or U+0085 inside a quoted
-        # path is part of the path (pull request 254 review).
+        # ends a line at LF or CRLF only; a LINE SEPARATOR or NEXT LINE inside a quoted
+        # path is part of the path.
         text = (
             '﻿[remote "origin"]\r\n'
             "\turl = https://h/origin.git\r\n"
@@ -210,7 +211,7 @@ class ParseRemotesTests(unittest.TestCase):
 
     def test_padded_value_is_trimmed_in_one_pass(self):
         # A value padded with many spaces, as untrusted evidence may be, is
-        # trimmed without a pop(0) per space (pull request 254 review).
+        # trimmed without a pop(0) per space.
         pad = " " * 200_000
         text = '[remote "p"]\n\turl =%s"https://h/p.git "%s\n' % (pad, pad)
         self.assertEqual(
@@ -219,8 +220,8 @@ class ParseRemotesTests(unittest.TestCase):
         )
 
     def test_pair_on_the_header_line(self):
-        # git allows a variable after its section header on the same line
-        # (pull request 254 review); a comment there is still a comment.
+        # git allows a variable after its section header on the same line; a
+        # comment there is still a comment.
         text = (
             '[remote "origin"] url = https://h/origin.git\n'
             '[remote "note"] # just a comment\n'
@@ -268,10 +269,11 @@ class ParseRemotesTests(unittest.TestCase):
 
 
 class ParseHeadTests(unittest.TestCase):
+    """`parse_head` reads a HEAD file: a branch, a detached commit or another ref."""
+
     def test_unicode_in_a_branch_name(self):
-        # A ref may hold U+2028 or a trailing U+00A0; the line ends at the
-        # line feed and only ASCII whitespace is trimmed (pull request 254
-        # review).
+        # A ref may hold a LINE SEPARATOR or a trailing NO-BREAK SPACE; the line ends at the
+        # line feed and only ASCII whitespace is trimmed.
         self.assertEqual(
             gitmeta.parse_head("ref: refs/heads/team\N{LINE SEPARATOR}release\N{NO-BREAK SPACE}\n"),
             "team\N{LINE SEPARATOR}release\N{NO-BREAK SPACE}",
@@ -280,7 +282,7 @@ class ParseHeadTests(unittest.TestCase):
         self.assertEqual(gitmeta.parse_head("\n  ref: refs/heads/second \t\n"), "second")
 
     def test_branch(self):
-        self.assertEqual(gitmeta.parse_head(PROJ_GIT_HEAD), "main")
+        self.assertEqual(gitmeta.parse_head(PROJECT_GIT_HEAD), "main")
         self.assertEqual(gitmeta.parse_head("ref: refs/heads/feature/x"), "feature/x")
 
     def test_detached(self):
@@ -296,6 +298,8 @@ class ParseHeadTests(unittest.TestCase):
 
 
 class ProjectGitTests(unittest.TestCase):
+    """`project_git` finds a collected project's repository files and reads them."""
+
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-gitmeta-test-"))
 
@@ -310,9 +314,11 @@ class ProjectGitTests(unittest.TestCase):
         return Artifact(disk, home.original + "/" + rel, rel, agent, home)
 
     def aside(self, home: Home, rel: str, text: str) -> Artifact:
-        """An artifact of `home` at `rel` whose copy is written apart from the
-        others, so two spellings of one name never share a file on a
-        case-insensitive volume."""
+        """An artifact of `home` at `rel` whose copy is written apart from the others.
+
+        An artifact of `home` at `rel` whose copy is written apart from the others, so two spellings
+        of one name never share a file on a case-insensitive volume.
+        """
         disk = (
             self.tmp
             / "aside"
@@ -324,32 +330,34 @@ class ProjectGitTests(unittest.TestCase):
         return Artifact(disk, home.original + "/" + rel, rel, "project", home)
 
     def test_project_git(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         bare = Home(self.tmp / "srv/bare", "/srv/bare", "alice", project=True)
         home = Home(self.tmp / "home/alice", "/home/alice", "alice")
         arts = [
-            self.artifact(proj, ".git/config", PROJ_GIT_CONFIG),
-            self.artifact(proj, ".git/HEAD", PROJ_GIT_HEAD),
+            self.artifact(project, ".git/config", PROJECT_GIT_CONFIG),
+            self.artifact(project, ".git/HEAD", PROJECT_GIT_HEAD),
             self.artifact(bare, "AGENTS.md", "# x\n"),
             # A home's .git is not a project's: never read.
-            self.artifact(home, ".git/config", PROJ_GIT_CONFIG),
+            self.artifact(home, ".git/config", PROJECT_GIT_CONFIG),
         ]
         self.assertEqual(
             gitmeta.project_git(arts),
-            {"/srv/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"}},
+            {"/srv/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"}},
         )
 
     def test_unterminated_quote_is_a_problem(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
-        config = self.artifact(proj, ".git/config", PROJ_GIT_CONFIG + '[remote "cut"]\n\turl = "x')
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        config = self.artifact(
+            project, ".git/config", PROJECT_GIT_CONFIG + '[remote "cut"]\n\turl = "x'
+        )
         problems: list[str] = []
         got = gitmeta.project_git([config], problems)
-        self.assertEqual(got["/srv/proj"]["remotes"], PROJ_GIT_REMOTES)
+        self.assertEqual(got["/srv/proj"]["remotes"], PROJECT_GIT_REMOTES)
         self.assertEqual(
             problems,
             [
                 "/srv/proj/.git/config: line %d: unterminated quoted value"
-                % (PROJ_GIT_CONFIG.count("\n") + 2)
+                % (PROJECT_GIT_CONFIG.count("\n") + 2)
             ],
         )
 
@@ -358,62 +366,61 @@ class ProjectGitTests(unittest.TestCase):
         # keeps the on-disk spelling, on Windows and on a macOS volume alike,
         # so .GIT/CONFIG and .git/head are the repository's files when no
         # exact spelling was collected; where a case-sensitive volume holds
-        # both spellings, git's own wins whatever order the rows come in
-        # (pull request 254 review).
+        # both spellings, git's own wins whatever order the rows come in.
         win = Home(self.tmp / "c/proj", "C:\\proj", "alice", project=True)
         mac = Home(self.tmp / "Users/alice/proj", "/Users/alice/proj", "alice", project=True)
         both = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         arts = [
-            self.artifact(win, ".GIT/CONFIG", PROJ_GIT_CONFIG),
-            self.artifact(win, ".git/head", PROJ_GIT_HEAD),
-            self.artifact(mac, ".GIT/config", PROJ_GIT_CONFIG),
-            self.artifact(mac, ".git/HEAD", PROJ_GIT_HEAD),
+            self.artifact(win, ".GIT/CONFIG", PROJECT_GIT_CONFIG),
+            self.artifact(win, ".git/head", PROJECT_GIT_HEAD),
+            self.artifact(mac, ".GIT/config", PROJECT_GIT_CONFIG),
+            self.artifact(mac, ".git/HEAD", PROJECT_GIT_HEAD),
             # Case-insensitive spelling first, exact second, and the reverse.
             # The variants' copies live apart on disk, since on a
             # case-insensitive volume (this Mac) the two spellings would be
             # one file and the later write would replace the earlier.
             self.aside(both, ".git/head", "ref: refs/heads/other\n"),
-            self.artifact(both, ".git/HEAD", PROJ_GIT_HEAD),
-            self.artifact(both, ".git/config", PROJ_GIT_CONFIG),
+            self.artifact(both, ".git/HEAD", PROJECT_GIT_HEAD),
+            self.artifact(both, ".git/config", PROJECT_GIT_CONFIG),
             self.aside(both, ".GIT/CONFIG", '[remote "x"]\n\turl = https://h/x.git\n'),
         ]
         self.assertEqual(
             gitmeta.project_git(arts),
             {
-                "C:\\proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
-                "/Users/alice/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
-                "/srv/proj": {"remotes": PROJ_GIT_REMOTES, "head": "main"},
+                "C:\\proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
+                "/Users/alice/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
+                "/srv/proj": {"remotes": PROJECT_GIT_REMOTES, "head": "main"},
             },
         )
 
     def test_missing_unreadable_and_symlinked_files(self):
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         # A collected row whose file is gone reads as empty.
-        missing = self.artifact(proj, ".git/HEAD", None)
+        missing = self.artifact(project, ".git/HEAD", None)
         self.assertEqual(gitmeta.project_git([missing]), {"/srv/proj": {"remotes": [], "head": ""}})
         # A symlink is never followed.
         target = self.tmp / "elsewhere"
-        target.write_text(PROJ_GIT_CONFIG, encoding="utf-8")
+        target.write_text(PROJECT_GIT_CONFIG, encoding="utf-8")
         link = self.tmp / "srv/proj/.git/config"
         try:
             os.symlink(target, link)
         except (OSError, NotImplementedError):
             self.skipTest("symlinks not available")
-        config = Artifact(link, "/srv/proj/.git/config", ".git/config", "project", proj)
+        config = Artifact(link, "/srv/proj/.git/config", ".git/config", "project", project)
         self.assertEqual(gitmeta.read_text(link), ("", "not a regular file"))
         problems: list[str] = []
         self.assertEqual(gitmeta.project_git([config], problems)["/srv/proj"]["remotes"], [])
         self.assertEqual(problems, ["/srv/proj/.git/config: not a regular file"])
 
     def test_unreadable_file_is_a_problem(self):
-        # A permission or I/O error is reported, never read as "no remotes"
-        # (pull request 254 review); the other project is still read.
+        # A permission or I/O error is reported, never read as "no remotes";
+        # the other project is still read.
         if os.name == "nt" or not hasattr(os, "geteuid") or os.geteuid() == 0:
             self.skipTest("chmod does not deny access as root or on Windows")
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         other = Home(self.tmp / "srv/other", "/srv/other", "alice", project=True)
-        config = self.artifact(proj, ".git/config", PROJ_GIT_CONFIG)
-        head = self.artifact(other, ".git/HEAD", PROJ_GIT_HEAD)
+        config = self.artifact(project, ".git/config", PROJECT_GIT_CONFIG)
+        head = self.artifact(other, ".git/HEAD", PROJECT_GIT_HEAD)
         os.chmod(config.disk_path, 0)
         try:
             problems: list[str] = []
@@ -434,13 +441,12 @@ class ProjectGitTests(unittest.TestCase):
         self.assertEqual(alone["/srv/proj"]["remotes"], [])
 
     def test_whole_file_is_read(self):
-        # No size cap: a remote past the first MiB is read in full (pull
-        # request 254 review).
-        proj = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
+        # No size cap: a remote past the first MiB is read in full.
+        project = Home(self.tmp / "srv/proj", "/srv/proj", "alice", project=True)
         text = (
             "# " + "x" * (1 << 20) + '\n[remote "far"]\n\turl = https://host/team/repository.git\n'
         )
-        config = self.artifact(proj, ".git/config", text)
+        config = self.artifact(project, ".git/config", text)
         self.assertEqual(
             gitmeta.project_git([config])["/srv/proj"]["remotes"],
             [{"name": "far", "urls": ["https://host/team/repository.git"], "pushurls": []}],

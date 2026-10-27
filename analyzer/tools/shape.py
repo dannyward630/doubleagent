@@ -1,57 +1,30 @@
 #!/usr/bin/env python3
 """Print the shape of an agent's files without printing any value.
 
-A real-install check (an agent installed in a lab VM, or the author's own
-machine) needs the key names, value types and JSONL line types of the files
-the agent wrote, never the values: no prompts, no tokens, no account ids.
-This tool prints that shape and nothing else, so its output can be pasted
-into a research document or a report.
+A real-install check needs the key names, value types and JSONL line types of the files an
+agent wrote, never the values (no prompts, no tokens, no account ids), so the output can be
+pasted into a research document or a report. "Reading a real install" in
+analyzer/docs/development.md documents the output and the options.
 
     python3 -I tools/shape.py ~/.config/Agent
     python3 -I tools/shape.py --enums --depth 3 settings.json sessions/
     python3 -I tools/shape.py --max-size 20000000 --skip logs ~/.agent
 
-Standard library only, and no import from `doubleagent`, so the single file
-can be copied to a VM and run there alone.
+Standard library only, and no import from `doubleagent`, so the single file can be copied to a
+VM and run there alone.
 
-What it prints, per file, in sorted path order:
+Per file, in sorted path order: a JSON document prints its key tree with each value's shape (a
+type, or a string's class); a `.jsonl` or `.ndjson` file prints line counts and byte totals per
+`type`, the keys per type, the short-token values at `ENUM_PATHS`, the key sets of the objects
+in `NESTED_KEYS`, the `system` subtypes, the content block types of messages and the count of
+bad lines; anything else prints its size and, under 1 KiB, a character class.
 
-- a JSON document (a `.json` file, or any file that parses as one JSON
-  document): the key tree, one key per line with the value's shape. Arrays
-  print `[n x <shape of the first element>]`; scalars print a type only
-  (`bool`, `number`, `null`) and strings a class (`str<uuid>`, `str<hex32>`,
-  `str<hex64>`, `str<iso-date>`, `str<abs-path>`, `str<url>`, otherwise
-  `str(len n)`). With `--enums`, a string of at most 16 lower-case letters,
-  digits, `_` and `-` prints as `str=<value>`, except under a key whose name
-  suggests a credential (`token`, `secret`, `key`, `passw`, `cred`, `auth`,
-  `cookie`, `bearer`, `salt`), which keeps the `str(len n)` form.
-- a `.jsonl` or `.ndjson` file: line counts and byte totals per `type` (or
-  per top-level key set), the union of top-level keys per type, the values
-  of the enum-like keys in `ENUM_PATHS` (modes, kinds, decisions, model ids,
-  tool and attachment names; a value prints only when it is a short token,
-  never free text, and a token that is a UUID, a long hex id, an absolute
-  path or a URL prints as `<uuid>`, `<hex>`, `<abs-path>` or `<url>`), the
-  key sets of the nested objects in `NESTED_KEYS`
-  (an `attachment` per `attachment.type`, a `permissionDecision`, a
-  `toolUseResult`), the `subtype` breakdown of `system` lines, the content
-  block types of `user` and `assistant` messages, and the count of lines
-  that do not parse.
-- anything else: the size, `not JSON`, and for a text file under 1 KiB the
-  character class of its content (`hex`, `base64`, `printable`, `binary`).
-
-Keys and paths are redacted: a UUID becomes `<uuid>`, a run of 32 or more
-hex digits `<hex>`, an e-mail address `<email>`, an OpenAI user or
-organisation id (`user-` or `org-` and 20 or more letters and digits)
-`<user-id>` or `<org-id>`, and a key that is itself an absolute path, a
-`win32:` path (`win32:/mnt/c/...`, Codex Desktop's spelling of a Windows
-path) or a URL becomes `<abs-path>` or `<url>`, and so does an absolute
-path after a `<prefix>:` inside a key (`local:<abs-path>`). A key that is
-a JSON-encoded array (Codex Desktop keys some state by
-`["local","<thread>","<path>"]`) prints as that array with each string
-element redacted by the same rules and any other element replaced by
-`<type>`. Keys that are equal after
-redaction print once with a count. Paths print relative to the PATH
-argument that contained them. Symlinks are listed and never followed.
+Keys and paths are redacted: a UUID becomes `<uuid>`, 32 or more hex digits `<hex>`, an e-mail
+address `<email>` and an OpenAI `user-` or `org-` id `<user-id>` or `<org-id>`. A key that is an
+absolute path, a `win32:` path (Codex Desktop's spelling of a Windows path) or a URL becomes
+`<abs-path>` or `<url>`, as does an absolute path after a `<prefix>:` inside a key, and a key
+that is a JSON-encoded array is redacted element by element. Keys equal after redaction print
+once with a count. Symlinks are listed and never followed.
 """
 
 from __future__ import annotations
@@ -105,8 +78,7 @@ SMALL = 1024
 
 
 def redact(text: str) -> str:
-    """Replace UUIDs, long hex runs, e-mail addresses and OpenAI user and
-    organisation ids inside a key or path."""
+    """Replace UUIDs, hex runs, e-mail addresses and OpenAI ids inside a key or path."""
     text = UUID_RE.sub("<uuid>", text)
     text = USER_ID_RE.sub("<user-id>", text)
     text = ORG_ID_RE.sub("<org-id>", text)
@@ -115,9 +87,12 @@ def redact(text: str) -> str:
 
 
 def redact_key(key: str) -> str:
-    """Redact a key: a whole path or URL becomes its class, a JSON-encoded
-    array is redacted element by element, an absolute path after a
-    `<prefix>:` becomes `<abs-path>`, and the rest goes through `redact`."""
+    """Redact a key.
+
+    A whole path or URL becomes its class, a JSON-encoded array is redacted element by element,
+    an absolute path after a `<prefix>:` becomes `<abs-path>`, and the rest goes through
+    `redact`.
+    """
     if ABS_PATH_RE.match(key) or WIN32_PATH_RE.match(key):
         return "<abs-path>"
     if URL_RE.match(key):
@@ -139,6 +114,7 @@ def redact_key(key: str) -> str:
 
 
 def str_class(value: str, enums: bool) -> str:
+    """Return a string's class, `str=<value>` for a short token under `enums`, or its length."""
     if UUID_RE.fullmatch(value):
         return "str<uuid>"
     if len(value) in (32, 64) and re.fullmatch(r"[0-9a-f]+", value):
@@ -155,14 +131,18 @@ def str_class(value: str, enums: bool) -> str:
 
 
 class Shaper:
+    """Print the key tree of a JSON document to a depth, with or without enum values."""
+
     def __init__(self, depth: int, enums: bool) -> None:
+        """Keep the nesting `depth` to print and whether short strings print as values."""
         self.depth = depth
         self.enums = enums
 
     def inline(self, value: object, level: int, guard: bool = False) -> tuple[str, dict | None]:
-        """Return the one-line shape of a value and, for an object that is to
-        be expanded, the object whose keys print on the following lines.
-        `guard` is set under a credential-like key and disables `--enums`."""
+        """Return the one-line shape of a value and the object to expand below it, if any.
+
+        `guard` is set under a credential-like key and disables `--enums`.
+        """
         if isinstance(value, dict):
             if not value:
                 return "{}", None
@@ -172,8 +152,8 @@ class Shaper:
         if isinstance(value, list):
             if not value:
                 return "[]", None
-            inner, obj = self.inline(value[0], level, guard)
-            return "[%d x %s]" % (len(value), inner), obj
+            inner, node = self.inline(value[0], level, guard)
+            return "[%d x %s]" % (len(value), inner), node
         if isinstance(value, bool):
             return "bool", None
         if isinstance(value, (int, float)):
@@ -184,9 +164,10 @@ class Shaper:
             return str_class(value, self.enums and not guard), None
         return type(value).__name__, None
 
-    def lines(self, obj: dict, level: int, indent: str, guard: bool = False) -> list[str]:
+    def lines(self, node: dict, level: int, indent: str, guard: bool = False) -> list[str]:
+        """Return one line per redacted key of `node`, and its children's lines below it."""
         groups: dict[str, list[object]] = {}
-        for key, value in obj.items():
+        for key, value in node.items():
             groups.setdefault(redact_key(str(key)), []).append(value)
         out: list[str] = []
         for key in sorted(groups):
@@ -200,6 +181,7 @@ class Shaper:
         return out
 
     def document(self, doc: object, indent: str) -> list[str]:
+        """Return the lines of a whole JSON document."""
         shape, child = self.inline(doc, 1)
         out = ["%s%s" % (indent, shape)]
         if child is not None:
@@ -252,10 +234,13 @@ NESTED_KEYS: tuple[str, ...] = (
 )
 
 
-def enum_at(rec: object, path: str) -> str | None:
-    """The enum-like value at a dotted path of rec, `true`/`false` for a boolean, the
-    values joined with `|` for a `[]` segment, or None when absent or not enum-like."""
-    node: object = rec
+def enum_at(record: object, path: str) -> str | None:
+    """Return the enum-like value at a dotted path of `record`, or None.
+
+    A boolean is `true` or `false`, a `[]` segment joins its elements' values with `|`, and a
+    value that is absent or not enum-like is None.
+    """
+    node: object = record
     parts = path.split(".")
     for i, part in enumerate(parts):
         if part.endswith("[]"):
@@ -263,9 +248,11 @@ def enum_at(rec: object, path: str) -> str | None:
                 return None
             found = sorted(
                 {
-                    v
-                    for v in (enum_at(item, ".".join(parts[i + 1 :])) for item in node[part[:-2]])
-                    if v is not None
+                    value
+                    for value in (
+                        enum_at(item, ".".join(parts[i + 1 :])) for item in node[part[:-2]]
+                    )
+                    if value is not None
                 }
             )
             return "|".join(found) if found else None
@@ -282,6 +269,7 @@ def enum_at(rec: object, path: str) -> str | None:
 
 
 def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
+    """Return the summary note and the per-type lines of a JSONL file."""
     total = bad = non_object = 0
     counts: Counter[str] = Counter()
     keys: dict[str, set[str]] = {}
@@ -296,18 +284,18 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
             continue
         total += 1
         try:
-            rec = json.loads(raw)
+            record = json.loads(raw)
         except ValueError:
             bad += 1
             continue
-        if not isinstance(rec, dict):
+        if not isinstance(record, dict):
             non_object += 1
             continue
-        top = {redact_key(str(k)) for k in rec}
-        rtype = rec.get("type")
+        top = {redact_key(str(k)) for k in record}
+        rtype = record.get("type")
         if isinstance(rtype, str):
             label = "type=%s" % redact_key(rtype)
-        elif "type" in rec:
+        elif "type" in record:
             label = "type=<%s>" % type(rtype).__name__
         else:
             label = "keys{%s}" % ",".join(sorted(top))
@@ -315,28 +303,28 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
         sizes[label] += len(raw)
         keys.setdefault(label, set()).update(top)
         for path in ENUM_PATHS:
-            value = enum_at(rec, path)
+            value = enum_at(record, path)
             if value is not None:
                 enums.setdefault("%s %s" % (label, path), Counter())[value] += 1
         for name in NESTED_KEYS:
-            sub = rec.get(name)
+            sub = record.get(name)
             if isinstance(sub, dict):
                 kind = enum_at(sub, "type") if name == "attachment" else None
                 nlabel = "%s %s%s keys" % (label, name, "[%s]" % kind if kind else "")
                 nested.setdefault(nlabel, set()).update(redact_key(str(k)) for k in sub)
-                inner = [v for v in sub.values() if isinstance(v, dict)]
+                inner = [member for member in sub.values() if isinstance(member, dict)]
                 if inner:  # a map of objects (`pastedContents`): the union of the inner keys
                     nested.setdefault(nlabel.replace(" keys", ".* keys"), set()).update(
-                        redact_key(str(k)) for v in inner for k in v
+                        redact_key(str(k)) for member in inner for k in member
                     )
         if rtype == "system":
-            sub = rec.get("subtype")
+            sub = record.get("subtype")
             slabel = "subtype=%s" % redact_key(sub) if isinstance(sub, str) else "no subtype"
             sub_counts[slabel] += 1
             sub_keys.setdefault(slabel, set()).update(top)
         if rtype in ("user", "assistant"):
-            msg = rec.get("message")
-            content = msg.get("content") if isinstance(msg, dict) else None
+            message = record.get("message")
+            content = message.get("content") if isinstance(message, dict) else None
             if isinstance(content, list):
                 found = blocks.setdefault(label, set())
                 for block in content:
@@ -346,11 +334,13 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
     for label in sorted(counts):
         out.append("%s%s: %d (%d bytes)" % (indent, label, counts[label], sizes[label]))
         out.append("%s  keys: %s" % (indent, ", ".join(sorted(keys[label]))))
-        for elabel in sorted(e for e in enums if e.startswith(label + " ")):
+        for elabel in sorted(enum for enum in enums if enum.startswith(label + " ")):
             values = enums[elabel]
-            shown = ", ".join("%s=%d" % (v, n) for v, n in sorted(values.items()))
+            shown = ", ".join("%s=%d" % (token, count) for token, count in sorted(values.items()))
             out.append("%s  %s: %s" % (indent, elabel[len(label) + 1 :], shown))
-        for nlabel in sorted(n for n in nested if n.startswith(label + " ")):
+        for nlabel in sorted(
+            nested_label for nested_label in nested if nested_label.startswith(label + " ")
+        ):
             out.append(
                 "%s  %s: %s" % (indent, nlabel[len(label) + 1 :], ", ".join(sorted(nested[nlabel])))
             )
@@ -367,6 +357,7 @@ def jsonl_lines(data: bytes, indent: str) -> tuple[str, list[str]]:
 
 
 def text_class(data: bytes) -> str:
+    """Return `hex`, `base64`, `printable` or `binary` for a small file's content."""
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -382,11 +373,12 @@ def text_class(data: bytes) -> str:
 
 
 def shape_file(path: str, size: int, args: argparse.Namespace) -> tuple[str, list[str]]:
+    """Return the note and the body lines of a regular file."""
     if size > args.max_size:
         return "%d bytes, skipped (large)" % size, []
     try:
-        with open(path, "rb") as fh:
-            data = fh.read()
+        with open(path, "rb") as handle:
+            data = handle.read()
     except OSError as exc:
         return "unreadable (%s)" % type(exc).__name__, []
     size = len(data)
@@ -409,8 +401,11 @@ def shape_file(path: str, size: int, args: argparse.Namespace) -> tuple[str, lis
 
 
 def walk(root: str, skip: set[str]) -> list[tuple[str, str]]:
-    """Return (relative path, kind) pairs under root, sorted, where kind is
-    `file`, `symlink`, `skipped` or `other`; symlinks are never followed."""
+    """Return the sorted (relative path, kind) pairs under `root`.
+
+    The kind is `file`, `symlink`, `skipped`, `other` or `unreadable (<error>)`; symlinks are
+    never followed.
+    """
     found: list[tuple[str, str]] = []
 
     def rel(path: str) -> str:
@@ -448,6 +443,7 @@ def walk(root: str, skip: set[str]) -> list[tuple[str, str]]:
 
 
 def describe(full: str, kind: str, args: argparse.Namespace) -> tuple[str, list[str]]:
+    """Return the note and the body lines of a walked entry of `kind`."""
     if kind == "symlink":
         return "symlink, not followed", []
     if kind == "skipped":
@@ -464,12 +460,14 @@ def describe(full: str, kind: str, args: argparse.Namespace) -> tuple[str, list[
 
 
 def emit(label: str, note: str, body: list[str], out) -> None:
+    """Write one file's block, headed by its redacted path and note."""
     out.write("== %s (%s)\n" % (redact(label), note))
     for line in body:
         out.write(line + "\n")
 
 
 def run(args: argparse.Namespace, out) -> None:
+    """Write the shape of every PATH argument to `out`."""
     skip: set[str] = set(DEFAULT_SKIP) | set(args.skip or ())
     for arg in args.paths:
         out.write("# %s\n" % redact(arg))
@@ -493,42 +491,44 @@ def run(args: argparse.Namespace, out) -> None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(
+    """Parse the command line."""
+    parser = argparse.ArgumentParser(
         prog="shape.py",
         description="Print key names, value types and JSONL line types of files, never values.",
     )
-    ap.add_argument("paths", nargs="+", metavar="PATH", help="file or directory to describe")
-    ap.add_argument(
+    parser.add_argument("paths", nargs="+", metavar="PATH", help="file or directory to describe")
+    parser.add_argument(
         "--max-size",
         type=int,
         default=1024 * 1024,
         metavar="BYTES",
         help="files larger than this print their size only (default 1 MiB)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--skip",
         action="append",
         metavar="NAME",
         help="directory name not to enter, repeatable; added to the Chromium cache "
         "directories, node_modules and .git",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--depth",
         type=int,
         default=6,
         metavar="N",
         help="object nesting depth to print; deeper objects print {...} (default 6)",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--enums",
         action="store_true",
         help="print short lower-case strings ([a-z0-9_-], at most 16) as str=<value>, "
         "except under credential-like keys (token, secret, key, passw, cred, auth, cookie)",
     )
-    return ap.parse_args(argv)
+    return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Print the shape of the paths given and return 0."""
     run(parse_args(argv), sys.stdout)
     return 0
 

@@ -1,3 +1,5 @@
+"""Tests of the bundled catalog: glob matching, parsing and agreement with the docs."""
+
 import re
 import subprocess
 import unittest
@@ -11,28 +13,32 @@ COLLECTOR = REPO / "collectors" / "collect-agent-artifacts.sh"
 
 
 class GlobTests(unittest.TestCase):
-    def rx(self, pat):
-        return catalog.glob_segment_to_regex(pat)
+    """Catalog glob segments compile to the regular expressions the catalog rules need."""
+
+    def pattern(self, glob):
+        return catalog.glob_segment_to_regex(glob)
 
     def test_star_does_not_cross_slash(self):
-        self.assertIsNotNone(self.rx("*.jsonl").fullmatch("a.jsonl"))
-        self.assertIsNone(self.rx("*").fullmatch("a/b"))
+        self.assertIsNotNone(self.pattern("*.jsonl").fullmatch("a.jsonl"))
+        self.assertIsNone(self.pattern("*").fullmatch("a/b"))
 
     def test_question_and_class(self):
-        self.assertIsNotNone(self.rx("rollout-?.jsonl").fullmatch("rollout-1.jsonl"))
-        self.assertIsNotNone(self.rx("[Zz]ed").fullmatch("Zed"))
-        self.assertIsNotNone(self.rx("[Zz]ed").fullmatch("zed"))
-        self.assertIsNone(self.rx("[Zz]ed").fullmatch("Xed"))
-        self.assertIsNotNone(self.rx("[!a]bc").fullmatch("xbc"))
-        self.assertIsNone(self.rx("[!a]bc").fullmatch("abc"))
+        self.assertIsNotNone(self.pattern("rollout-?.jsonl").fullmatch("rollout-1.jsonl"))
+        self.assertIsNotNone(self.pattern("[Zz]ed").fullmatch("Zed"))
+        self.assertIsNotNone(self.pattern("[Zz]ed").fullmatch("zed"))
+        self.assertIsNone(self.pattern("[Zz]ed").fullmatch("Xed"))
+        self.assertIsNotNone(self.pattern("[!a]bc").fullmatch("xbc"))
+        self.assertIsNone(self.pattern("[!a]bc").fullmatch("abc"))
 
     def test_literal_dots_and_spaces(self):
-        self.assertIsNotNone(self.rx("Application Support").fullmatch("Application Support"))
-        self.assertIsNone(self.rx(".claude.json*").fullmatch("xclaudejson"))
-        self.assertIsNotNone(self.rx(".claude.json*").fullmatch(".claude.json.backup"))
+        self.assertIsNotNone(self.pattern("Application Support").fullmatch("Application Support"))
+        self.assertIsNone(self.pattern(".claude.json*").fullmatch("xclaudejson"))
+        self.assertIsNotNone(self.pattern(".claude.json*").fullmatch(".claude.json.backup"))
 
 
 class CatalogTests(unittest.TestCase):
+    """The bundled catalog parses and matches the collector's `--list` output."""
+
     def setUp(self):
         self.cat = catalog.load()
 
@@ -46,11 +52,11 @@ class CatalogTests(unittest.TestCase):
         # Each project entry names a catalog agent, or `project` for a file
         # several agents read (AGENTS.md).
         agents = set(self.cat.agents) | {"project"}
-        self.assertTrue(all(e.agent in agents for e in self.cat.project_entries))
+        self.assertTrue(all(entry.agent in agents for entry in self.cat.project_entries))
 
     def test_every_entry_has_agent_and_glob(self):
-        for e in self.cat.entries:
-            self.assertTrue(e.agent and e.glob and e.segments, e)
+        for entry in self.cat.entries:
+            self.assertTrue(entry.agent and entry.glob and entry.segments, entry)
 
     @unittest.skipUnless(COLLECTOR.exists(), "collector script not present")
     def test_bundled_copy_matches_collector_list(self):
@@ -69,8 +75,11 @@ if __name__ == "__main__":
 
 
 class NoTranscriptsTests(unittest.TestCase):
-    """The `collected` rows of the table in docs/agents.md and the
-    NO_TRANSCRIPTS set the analyzer reports as collected only must agree."""
+    """The docs' `collected` agents and NO_TRANSCRIPTS agree.
+
+    The `collected` rows of the table in docs/agents.md and the NO_TRANSCRIPTS set the analyzer
+    reports as collected only must agree.
+    """
 
     def collected_rows(self) -> set[str]:
         text = (REPO / "docs" / "agents.md").read_text(encoding="utf-8")
@@ -79,7 +88,7 @@ class NoTranscriptsTests(unittest.TestCase):
         out = set()
         for line in table.splitlines():
             # A row is | [`agent`](#agent) | status | validated | notes |.
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
             name = re.match(r"\[`([^`]+)`\]\(#", cells[0])
             if name and len(cells) > 1 and cells[1] == "collected":
                 out.add(name.group(1))

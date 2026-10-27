@@ -46,7 +46,7 @@ HREF = re.compile(r'(<a\s[^>]*?href=")([^"#]*)((?:#[^"]*)?")')
 SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
 BACKTICKS = re.compile(r"`+")
-MARKDOWN_ACTIVE = {c: "&#%d;" % ord(c) for c in "`*_[]\\|!"}
+MARKDOWN_ACTIVE = {char: "&#%d;" % ord(char) for char in "`*_[]\\|!"}
 MARKDOWN_ACTIVE.update({"&": "&amp;", "<": "&lt;", ">": "&gt;"})
 
 
@@ -65,26 +65,27 @@ LINK_CHECK = _load_link_check()
 # Set by on_files: the destination path of every file the site publishes,
 # and the source path of every excluded file by its would-be URL.
 _published: set[str] = set()
-_excluded_src: dict[str, str] = {}
+_excluded_source: dict[str, str] = {}
 
 
 def on_files(files: Any, config: Any) -> Any:
+    """Publish docs/index.md as the home page and each README.md under its own URL."""
     _published.clear()
-    _excluded_src.clear()
-    for f in files:
+    _excluded_source.clear()
+    for file in files:
         dest = None
-        if f.src_uri == HOME_PAGE:
+        if file.src_uri == HOME_PAGE:
             dest = "index.html"
-        elif f.src_uri.endswith("/README.md"):
-            dest = f.src_uri[: -len(".md")] + ".html"
+        elif file.src_uri.endswith("/README.md"):
+            dest = file.src_uri[: -len(".md")] + ".html"
         if dest is not None:
-            f.dest_uri = dest
-            f.url = dest
-            f.__dict__.pop("abs_dest_path", None)
-        if f.inclusion.is_excluded():
-            _excluded_src[f.dest_uri] = f.src_uri
+            file.dest_uri = dest
+            file.url = dest
+            file.__dict__.pop("abs_dest_path", None)
+        if file.inclusion.is_excluded():
+            _excluded_source[file.dest_uri] = file.src_uri
         else:
-            _published.add(f.dest_uri)
+            _published.add(file.dest_uri)
     return files
 
 
@@ -104,7 +105,7 @@ def _code_span(body: str) -> str | None:
     trail = len(body) - len(body.rstrip(" "))
     # Python-Markdown still reads Markdown between inline HTML tags, so
     # every character it acts on is an entity, | included for table cells.
-    escaped = "".join(MARKDOWN_ACTIVE.get(c, c) for c in core)
+    escaped = "".join(MARKDOWN_ACTIVE.get(char, char) for char in core)
     return "<code>%s%s%s</code>" % ("&nbsp;" * lead, escaped, "&nbsp;" * trail)
 
 
@@ -118,9 +119,9 @@ def _rewrite_spans(text: str) -> str:
         stop = text.find("\n\n", opening.end())
         stop = len(text) if stop < 0 else stop
         closing = None
-        for m in BACKTICKS.finditer(text, opening.end(), stop):
-            if m.group(0) == run:
-                closing = m
+        for match in BACKTICKS.finditer(text, opening.end(), stop):
+            if match.group(0) == run:
+                closing = match
                 break
         if closing is None:
             out.append(run)
@@ -134,21 +135,22 @@ def _rewrite_spans(text: str) -> str:
 
 
 def on_page_markdown(markdown: str, page: Any, config: Any, files: Any) -> str:
+    """Write each code span whose end spaces matter, outside fences, as HTML."""
     out: list[str] = []
     chunk: list[str] = []
     fence = ""
     for line in markdown.split("\n"):
-        m = FENCE.match(line)
+        match = FENCE.match(line)
         if fence:
             out.append(line)
-            closing = m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence)
+            closing = match and match.group(1)[0] == fence[0] and len(match.group(1)) >= len(fence)
             if closing and not line.strip().lstrip(fence[0]):
                 fence = ""
-        elif m:
+        elif match:
             if chunk:
                 out.append(_rewrite_spans("\n".join(chunk)))
             chunk = []
-            fence = m.group(1)
+            fence = match.group(1)
             out.append(line)
         else:
             chunk.append(line)
@@ -184,8 +186,8 @@ def _set_heading_ids(html: str, page: Any) -> str:
         page.present_anchor_ids |= set(wanted)
     ids = iter(wanted)
 
-    def heading(m: re.Match[str]) -> str:
-        level, before, old, after, inner = m.groups()
+    def heading(match: re.Match[str]) -> str:
+        level, before, old, after, inner = match.groups()
         new = next(ids)
         inner = inner.replace('href="#%s"' % old, 'href="#%s"' % new)
         return '<h%s%s id="%s"%s>%s</h%s>' % (level, before, new, after, inner, level)
@@ -193,20 +195,21 @@ def _set_heading_ids(html: str, page: Any) -> str:
     return HEADING.sub(heading, html)
 
 
-def _source_link(m: re.Match[str], page_dir: str, docs_dir: str) -> str:
-    start, path, rest = m.groups()
+def _source_link(match: re.Match[str], page_dir: str, docs_dir: str) -> str:
+    start, path, rest = match.groups()
     if not path or path.startswith("/") or SCHEME.match(path):
-        return m.group(0)
+        return match.group(0)
     target = posixpath.normpath(posixpath.join(page_dir, urllib.parse.unquote(path)))
     if target in _published:
-        return m.group(0)
-    rel = _excluded_src.get(target, target)
+        return match.group(0)
+    rel = _excluded_source.get(target, target)
     kind = "tree" if os.path.isdir(os.path.join(docs_dir, rel)) else "blob"
     return "%s%s/%s/main/%s%s" % (start, SOURCE_URL, kind, urllib.parse.quote(rel), rest)
 
 
 def on_page_content(html: str, page: Any, config: Any, files: Any) -> str:
+    """Give the headings GitHub's ids and point links to files that are not pages at GitHub."""
     html = _set_heading_ids(html, page)
     page_dir = posixpath.dirname(page.file.url)
     docs_dir = config["docs_dir"]
-    return HREF.sub(lambda m: _source_link(m, page_dir, docs_dir), html)
+    return HREF.sub(lambda match: _source_link(match, page_dir, docs_dir), html)

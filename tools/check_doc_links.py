@@ -43,7 +43,12 @@ every tracked Markdown file and every untracked one git does not ignore:
   is a word inside a link destination, a reference definition's target or
   an autolink, which the reader does not see. The term
   rule under "Conventions" in AGENTS.md is the reason: a reader who has only
-  the page must not need AGENTS.md to decode a sentence.
+  the page must not need AGENTS.md to decode a sentence;
+- in AGENTS.md alone (`NO_PROVENANCE_FILES`), no inline link or reference
+  definition points at one of this repository's issues or pull requests
+  (`PROVENANCE_LINK`), since that file states rules, not the history behind
+  them (the rule under "Conventions" in AGENTS.md); the link forms its
+  Conventions section shows sit inside code spans and are not matched.
 
 Fenced code blocks and inline code spans are ignored before matching. The
 documentation site (mkdocs/hooks.py) gives every heading the anchor
@@ -116,6 +121,12 @@ TERM_PLAIN: dict[str, tuple[str, ...]] = {"cell": ("per cell", "table cell", "ta
 # The documents that define the terms or whose outline AGENTS.md fixes.
 TERM_EXEMPT_FILES = ("AGENTS.md", "CLAUDE.md")
 TERM_EXEMPT_DIRS = ("research/",)
+# The files that state rules without their history: a link to one of this
+# repository's issues or pull requests is provenance, which they do not carry.
+NO_PROVENANCE_FILES = ("AGENTS.md",)
+PROVENANCE_LINK = re.compile(
+    r"^<?https?://github\.com/seanthegeek/doubleagent/(?:issues|pull)/\d+", re.I
+)
 
 
 def strip_fences(text: str) -> str:
@@ -327,6 +338,12 @@ def main() -> int:
             msg = check_target(f, target, cache)
             if msg:
                 print("%s:%d: %s" % (rel, line_of(text, offset), msg))
+                bad += 1
+            if rel in NO_PROVENANCE_FILES and PROVENANCE_LINK.match(target):
+                print(
+                    "%s:%d: issue or pull request link in a file that states rules, "
+                    "not history: %s" % (rel, line_of(text, offset), target.strip("<>"))
+                )
                 bad += 1
         for m in ISSUE.finditer(text):
             if any(lo <= m.start() and m.end() <= hi for lo, hi in link_text):

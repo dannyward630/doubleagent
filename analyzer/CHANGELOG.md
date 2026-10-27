@@ -191,6 +191,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   heading's first words (`excluded`, `credential files`) can no longer
   move the lines after it into another table and leave their agents
   undetected ([#285]).
+- The `crush` and `gemini-cli` parsers give a `parser:` row, with the
+  file's project, for an unreadable Crush `projects.json`, Gemini CLI
+  `logs.json` or legacy Gemini CLI session file, so the failure sits in
+  the timeline beside the file's other rows; before, the error left the
+  parser and the command reported it as a `problem:` line ([#282]).
 - The `codex-cli`, `continue`, `copilot-cli`, `goose` and `hermes`
   parsers end a line of the YAML, Starlark, Markdown and log files they
   read, and on Python 3.10 the TOML files (3.11 and later read TOML with
@@ -2109,6 +2114,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 [#285]: https://github.com/seanthegeek/doubleagent/issues/285
 [#283]: https://github.com/seanthegeek/doubleagent/issues/283
+[#282]: https://github.com/seanthegeek/doubleagent/issues/282
 [#281]: https://github.com/seanthegeek/doubleagent/issues/281
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277

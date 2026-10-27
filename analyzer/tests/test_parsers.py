@@ -6628,6 +6628,42 @@ class GeminiCliTests(ParserBase):
         self.assertEqual((rows[0].session_id, rows[0].project_path), (GEMINI_SESSION, "/srv/proj"))
         self.assertEqual(rows[0].timestamp_utc, "2026-10-01T09:00:05.000Z")
 
+    def _rows_with_unreadable(self, rel):
+        """Parse every Gemini CLI file of the home with `rel` at mode 000."""
+        path = self.home / rel
+        parser = GeminiCliParser()
+        rows = []
+        path.chmod(0)
+        try:
+            for artifact in self.col.artifacts:
+                if artifact.agent == "gemini-cli" and parser.wants(artifact):
+                    rows.extend(parser.parse(artifact, Options()))
+        finally:
+            path.chmod(0o600)
+        return rows
+
+    @unittest.skipUnless(CAN_DENY, DENY_REASON)
+    def test_unreadable_logs_is_reported(self):
+        rel = ".gemini/tmp/proj/logs.json"
+        rows = self._rows_with_unreadable(rel)
+        problems = [row for row in rows if row.source_file.endswith(rel)]
+        self.assertEqual(
+            [(row.turn_type, row.text, row.project_path) for row in problems],
+            [("system", "parser: unreadable logs.json: Permission denied", "/srv/proj")],
+        )
+        # The transcript beside it is still parsed.
+        self.assertEqual(len([row for row in rows if row.source_file.endswith(self.REL)]), 18)
+
+    @unittest.skipUnless(CAN_DENY, DENY_REASON)
+    def test_unreadable_legacy_session_is_reported(self):
+        rows = self._rows_with_unreadable(self.LEGACY)
+        problems = [row for row in rows if row.source_file.endswith(self.LEGACY)]
+        self.assertEqual(
+            [(row.source_line, row.turn_type, row.text, row.project_path) for row in problems],
+            [(1, "system", "parser: unreadable session file: Permission denied", "/srv/proj")],
+        )
+        self.assertEqual(len([row for row in rows if row.source_file.endswith(self.REL)]), 18)
+
     def test_project_fallbacks(self):
         base = self.home / ".gemini"
         self.assertEqual(resolve_project(base, "proj"), "/srv/proj")  # .project_root
@@ -7166,6 +7202,27 @@ class CrushTests(ParserBase):
             ("system", "/srv/proj", "2026-10-01T12:00:00.000Z"),
         )
         self.assertIn("data_dir=/srv/proj/.crush", rows[0].text)
+
+    @unittest.skipUnless(CAN_DENY, DENY_REASON)
+    def test_unreadable_projects_is_reported(self):
+        rel = ".local/share/crush/projects.json"
+        path = self.home / rel
+        parser = CrushParser()
+        rows = []
+        path.chmod(0)
+        try:
+            for artifact in self.col.artifacts:
+                if artifact.agent == "crush" and parser.wants(artifact):
+                    rows.extend(parser.parse(artifact, Options()))
+        finally:
+            path.chmod(0o600)
+        problems = [row for row in rows if row.source_file.endswith(rel)]
+        self.assertEqual(
+            [(row.turn_type, row.text) for row in problems],
+            [("system", "parser: projects.json could not be read: Permission denied")],
+        )
+        # The session database beside it is still parsed.
+        self.assertEqual(len([row for row in rows if row.source_file.endswith(self.REL)]), 8)
 
     def test_project_path_from_original(self):
         self.assertEqual(project_of("/srv/proj/.crush/crush.db"), "/srv/proj")

@@ -1020,7 +1020,7 @@ another build is a new cell, never a confirmation of the old one.
      stop point: it is completed, with a throwaway account where one
      exists, not cancelled. A GUI agent is the person's to drive.
    - After each step the main session takes a listing of the agent's
-     directories (names, sizes and mtimes only, by a script in the VM's lab
+     directories (names, sizes, modes and mtimes only, by a script in the VM's lab
      directory) and diffs it against the previous one before the next step;
      the diffs are the Observed bullet's evidence. A round that ran every
      task before the first listing says so in its document and gives the
@@ -1038,21 +1038,23 @@ another build is a new cell, never a confirmation of the old one.
    gets a test feeding it those four forms. Copy it to the VM alone and run
    it with `python3 -I`; write no ad-hoc script that prints values. Nothing
    from a real install goes into the repository, an issue or a report
-   beyond file names, key names, types, sizes, file modes, enum values,
-   credential-store item names (an account that names a person given as
-   its class, `<os-user>`) and log lines with ids redacted.
+   beyond file names, key names, types, sizes, file modes, modification
+   times, enum values, credential-store item names (an account or
+   attribute naming a person or login given as its class: `<os-user>`,
+   `<login>`, `<email>`) and log lines with ids redacted.
 3. **Exercise every surface separately.** Each item is its own step with
    its own listing diff, run for every kind of task the surface offers.
    - Before the baseline, check the brief's step table against this list and
      the previous cell's lessons, and fix it. Before the first prompt,
      record the REPL's `?` shortcut list and `/help`.
-   - The first prompt, before any step opens a project directory, is a
-     question no tool can help answer (`what is 17 + 25?`), so the round
-     records a turn with no tool call.
+   - The first prompt of the round, before any prompt about files or a
+     repository, is a question the model answers without a tool
+     (`what is 17 + 25?`), so the round records a turn with no tool call.
    - A prompt that needs a web search (a fact newer than the model can
      know, such as the latest release of a named package), so the round
      records how the agent stores a call of its own web search or fetch
-     tool and its results; a `curl` through the shell is not one.
+     tool and its results; a `curl` through the shell is a missed prompt
+     (see the last item of this list).
    - A session with a tool call, a task that writes files, a scheduled or
      automated task, a plugin or MCP server, a resumed session, and a short
      and a long paste as prompts, each paste its own step.
@@ -1076,10 +1078,9 @@ another build is a new cell, never a confirmation of the old one.
      (a file, the editor's secret storage, the OS keychain, or server-side
      only), whether the repository list is cached, and whether
      repository-bound conversations are stored, cached or fetched.
-   - A source-host CLI the agent leans on (`gh`) is logged in first, as its
-     own step, with a listing showing where its token landed (its
-     plaintext `hosts.yml` over SSH, the OS keychain from the GUI), then
-     the agent's own flow is completed. Log `gh` in with
+   - A source-host CLI the agent leans on (`gh`) is logged in before the
+     agent's own flow, its credentials recorded as the next item says. Log
+     `gh` in with
      `gh auth login --expiring` (gh 2.103.0 or later), only for steps that
      act on the public lab repository and the credential observation
      below, and run `gh auth logout` before the VM is released; the logout
@@ -1087,15 +1088,19 @@ another build is a new cell, never a confirmation of the old one.
      the account's authorized OAuth apps.
    - In every cell, each credential the agent or its source-host CLI
      writes is recorded on each sign-in path the surface offers (over SSH
-     and from the VM's GUI for a CLI in a VM), with a listing before and
-     after: a file by name, size, mode and its key names and types from
-     `analyzer/tools/shape.py`, or an OS credential-store item by its item
-     names (service and account on macOS, target on Windows, attributes
-     under the Secret Service on Linux), never by reading its value. Over
-     SSH an agent may not reach the OS store and write a file fallback
-     instead (Claude Code 2.1.310 on macOS: `~/.claude/.credentials.json`,
-     mode 0600); record it, then sign out and have the person sign in from
-     a terminal in the VM's GUI.
+     and from the VM's GUI for a CLI in a VM; the `lab/` sandbox has no
+     GUI), each sign-in its own step with a listing before and after: a
+     file by the listing's name, size and mode and by its key names and
+     types from `analyzer/tools/shape.py`; an OS credential-store item by
+     its item names (service and account on macOS, target on Windows,
+     attributes under the Secret Service on Linux), listed by a command
+     the brief names and first runs against a dummy item to show it prints
+     no secret. Over SSH an agent may not reach the OS store and write a
+     file fallback instead (Claude Code 2.1.310 on macOS:
+     `~/.claude/.credentials.json`, mode 0600); record it, then sign out
+     and have the person sign in from a terminal in the VM's GUI. That
+     sign-in comes after the last step driven over SSH, since an agent
+     started over SSH may then find neither store.
    - A session deleted the way a user would (the agent's own delete or
      clear, or the project directory removed). When the delete offers to
      remove the synced copy, take it and record whether a local file still
@@ -1111,8 +1116,8 @@ another build is a new cell, never a confirmation of the old one.
      misses is kept as a finding about the agent, and repeated with a
      sharper prompt under the next name. An install command is copied
      from the vendor's page or script, never retyped, and pipes to the
-     shell its shebang names. The person
-     reports what the screen showed at each step.
+     shell its shebang names. The person reports what the screen showed
+     at each step.
 4. **Run the collector in the VM** as the user, before and after the
    delete steps; pull the manifests, summary, log and archive. Read the
    error rows, the `skipped_excluded` rows and the unflagged-key list of

@@ -54,7 +54,7 @@ from .base import (
 ITEM_KEY = "rjmacarthy.twinny"
 CONVERSATIONS = "twinny.conversations"
 ACTIVE = "twinny.active-conversation"
-THINK_RX = re.compile(r"<(think|thinking)>(.*?)(?:</\1>|$)", re.S)
+THINK_PATTERN = re.compile(r"<(think|thinking)>(.*?)(?:</\1>|$)", re.S)
 
 # The webview's global values, stored as `twinny-global-context-<key>`
 # (webview/base.ts:44, 348-360 at 0337b265), in the order they are written.
@@ -63,14 +63,14 @@ STANDING_KEYS = ("agentMode", "autoRunCommands", "alwaysRunCommands", "alwaysRun
 TEAM_POLICY = "twinny.teamPolicy"
 STANDING_SOURCE = "(from state.vscdb rjmacarthy.twinny, file mtime)"
 
-WORKSPACE_DB_RX = re.compile(r"(?:^|/)User/workspaceStorage/[^/]+/state\.vscdb$")
+WORKSPACE_DATABASE_PATTERN = re.compile(r"(?:^|/)User/workspaceStorage/[^/]+/state\.vscdb$")
 WORKSPACE_PREFIX = "twinny-workspace-context-"
-CHANGES_RX = re.compile(
+CHANGES_PATTERN = re.compile(
     r"(?:^|/)User/(?:workspaceStorage/[^/]+|globalStorage)/rjmacarthy\.twinny/"
     r"agent-changes/[^/]+\.json$"
 )
-LOG_RX = re.compile(r"(?:^|/)logs/(?:[^/]+/)+rjmacarthy\.twinny/Twinny\.log(?:_[0-9]+)?$")
-LOG_HEADER_RX = re.compile(
+LOG_PATTERN = re.compile(r"(?:^|/)logs/(?:[^/]+/)+rjmacarthy\.twinny/Twinny\.log(?:_[0-9]+)?$")
+LOG_HEADER_PATTERN = re.compile(
     r"^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{3}) \[(trace|debug|info|warning|error)\] (.*)$"
 )
 
@@ -84,7 +84,7 @@ def split_think(content: str):
             thoughts.append(match.group(2).strip())
         return ""
 
-    return THINK_RX.sub(keep, content).strip(), thoughts
+    return THINK_PATTERN.sub(keep, content).strip(), thoughts
 
 
 def file_change_text(change_id, entry: dict) -> str:
@@ -134,26 +134,26 @@ class TwinnyParser(Parser):
         rel = artifact.rel
         return bool(
             STATE_DB_RX.search(rel)
-            or WORKSPACE_DB_RX.search(rel)
-            or CHANGES_RX.search(rel)
-            or LOG_RX.search(rel)
+            or WORKSPACE_DATABASE_PATTERN.search(rel)
+            or CHANGES_PATTERN.search(rel)
+            or LOG_PATTERN.search(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for an agent-changes record or a log file."""
-        return bool(CHANGES_RX.search(artifact.rel) or LOG_RX.search(artifact.rel))
+        return bool(CHANGES_PATTERN.search(artifact.rel) or LOG_PATTERN.search(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Twinny file."""
         rel = artifact.rel
-        if CHANGES_RX.search(rel):
+        if CHANGES_PATTERN.search(rel):
             yield from self._parse_changes(artifact)
             return
-        if LOG_RX.search(rel):
+        if LOG_PATTERN.search(rel):
             yield from self._parse_log(artifact)
             return
         state, problems = read_item(artifact.disk_path, ITEM_KEY)
-        workspace = bool(WORKSPACE_DB_RX.search(rel))
+        workspace = bool(WORKSPACE_DATABASE_PATTERN.search(rel))
         if isinstance(state, dict):
             if workspace:
                 yield from self._workspace_rows(artifact, state)
@@ -169,21 +169,23 @@ class TwinnyParser(Parser):
             yield row
 
     def _global_rows(self, artifact: Artifact, state: dict, opts: Options) -> Iterator[Row]:
-        convs = state.get(CONVERSATIONS)
-        convs = (
-            list(convs.values())
-            if isinstance(convs, dict)
-            else convs
-            if isinstance(convs, list)
+        conversations = state.get(CONVERSATIONS)
+        conversations = (
+            list(conversations.values())
+            if isinstance(conversations, dict)
+            else conversations
+            if isinstance(conversations, list)
             else []
         )
-        convs = [conversation for conversation in convs if isinstance(conversation, dict)]
+        conversations = [
+            conversation for conversation in conversations if isinstance(conversation, dict)
+        ]
         active = state.get(ACTIVE)
-        ids = {str(conversation.get("id")) for conversation in convs}
+        ids = {str(conversation.get("id")) for conversation in conversations}
         if isinstance(active, dict) and active.get("messages") and str(active.get("id")) not in ids:
-            convs.append(active)
-        for conv in convs:
-            yield from self._conversation(artifact, conv, opts)
+            conversations.append(active)
+        for record in conversations:
+            yield from self._conversation(artifact, record, opts)
         yield from self._standing_rows(artifact, state)
 
     def _system_row(self, artifact: Artifact, timestamp: str, text: str) -> Row:
@@ -216,11 +218,12 @@ class TwinnyParser(Parser):
     def _workspace_rows(self, artifact: Artifact, state: dict) -> Iterator[Row]:
         """The repository the pull request review tab last listed."""
         owner = state.get(WORKSPACE_PREFIX + "reviewOwner")
-        repo = state.get(WORKSPACE_PREFIX + "reviewRepo")
-        if isinstance(owner, str) and owner and isinstance(repo, str) and repo:
+        repository = state.get(WORKSPACE_PREFIX + "reviewRepo")
+        if isinstance(owner, str) and owner and isinstance(repository, str) and repository:
             text = (
                 "source host repository: https://github.com/%s/%s type=review "
-                "(from workspaceStorage state.vscdb rjmacarthy.twinny, file mtime)" % (owner, repo)
+                "(from workspaceStorage state.vscdb rjmacarthy.twinny, file mtime)"
+                % (owner, repository)
             )
             yield self._system_row(artifact, file_mtime(artifact), text)
 
@@ -236,12 +239,12 @@ class TwinnyParser(Parser):
         try:
             record = json.loads(raw.decode("utf-8", errors="replace"))
         except ValueError as error:
-            msg = "agent-changes record is not valid JSON (%s)" % error
-            yield from error_rows(self, artifact, [(0, msg, "")])
+            message = "agent-changes record is not valid JSON (%s)" % error
+            yield from error_rows(self, artifact, [(0, message, "")])
             return
         if not isinstance(record, dict):
-            msg = "agent-changes record is not a JSON object"
-            yield from error_rows(self, artifact, [(0, msg, "")])
+            message = "agent-changes record is not a JSON object"
+            yield from error_rows(self, artifact, [(0, message, "")])
             return
         root = record.get("root")
         root = root if isinstance(root, str) else ""
@@ -264,7 +267,7 @@ class TwinnyParser(Parser):
             with open(artifact.disk_path, "rb") as handle:
                 for line_number, raw in enumerate(handle, 1):
                     line = line_text(raw)
-                    match = LOG_HEADER_RX.match(line)
+                    match = LOG_HEADER_PATTERN.match(line)
                     if match:
                         more = []
                         entries.append(
@@ -287,36 +290,40 @@ class TwinnyParser(Parser):
             yield row
         yield from error_rows(self, artifact, errors)
 
-    def _conversation(self, artifact: Artifact, conv: dict, opts: Options) -> Iterator[Row]:
-        timestamp = to_utc(conv.get("updatedAt"))
-        sid = str(conv.get("id") or "")
-        messages = conv.get("messages")
+    def _conversation(self, artifact: Artifact, conversation: dict, opts: Options) -> Iterator[Row]:
+        timestamp = to_utc(conversation.get("updatedAt"))
+        session_id = str(conversation.get("id") or "")
+        messages = conversation.get("messages")
         messages = (
             [message for message in messages if isinstance(message, dict)]
             if isinstance(messages, list)
             else []
         )
 
-        def row(turn: str, text, model: str = "", name: str = "", tid: str = "") -> Row:
+        def row(turn: str, text, model: str = "", name: str = "", tool_use_id: str = "") -> Row:
             result = self.base_row(artifact)
             result.timestamp_utc = timestamp
-            result.session_id = sid
+            result.session_id = session_id
             result.turn_type = turn
             result.model = model
             result.tool_name = name
-            result.tool_use_id = tid
+            result.tool_use_id = tool_use_id
             result.text = compact(text)
             return result
 
         yield row(
             "system",
             "conversation: %s | messages=%d%s"
-            % (conv.get("title") or "", len(messages), "" if timestamp else " | updatedAt unknown"),
+            % (
+                conversation.get("title") or "",
+                len(messages),
+                "" if timestamp else " | updatedAt unknown",
+            ),
         )
         seen: dict = {}  # per conversation, so the tracked key needs no session id
-        for msg in messages:
-            role = msg.get("role")
-            meta = msg.get("meta")
+        for chat_message in messages:
+            role = chat_message.get("role")
+            meta = chat_message.get("meta")
             if not isinstance(meta, dict):
                 meta = {}
             model = str(meta.get("model") or "")
@@ -324,13 +331,13 @@ class TwinnyParser(Parser):
                 change = track_change("model", seen, "model", model)
                 if change:
                     yield row("system", change, model)
-            content = msg.get("content")
+            content = chat_message.get("content")
             text = content if isinstance(content, str) else text_of(content)
             text, thoughts = split_think(text)
             if opts.include_thinking:
                 for thought in thoughts:
                     yield row("thinking", thought, model)
-            images = msg.get("images")
+            images = chat_message.get("images")
             if isinstance(images, list) and images:
                 text = ("%s\n[%d image(s)]" % (text, len(images))).strip()
             if text:
@@ -342,7 +349,7 @@ class TwinnyParser(Parser):
                     text if turn != "system" else "%s: %s" % (role or "unknown", text),
                     model if turn != "user" else "",
                 )
-            for step in msg.get("toolSteps") or []:
+            for step in chat_message.get("toolSteps") or []:
                 if not isinstance(step, dict):
                     continue
                 if step.get("said") is True:
@@ -358,7 +365,7 @@ class TwinnyParser(Parser):
                     )
                     yield row("user", said)
                     continue
-                name, tid = str(step.get("name") or ""), str(step.get("id") or "")
+                name, tool_use_id = str(step.get("name") or ""), str(step.get("id") or "")
                 args = step.get("args")
                 body = (
                     step.get("command")
@@ -366,19 +373,19 @@ class TwinnyParser(Parser):
                     or step.get("summary")
                     or ""
                 )
-                yield row("tool_use", body, model, name, tid)
+                yield row("tool_use", body, model, name, tool_use_id)
                 out = step.get("output")
                 out = out if isinstance(out, str) else compact_json(out) if out is not None else ""
                 status = str(step.get("status") or "")
                 if status and status != "done":
                     out = "[%s] %s" % (status, out)
-                yield row("tool_result", out, model, name, tid)
+                yield row("tool_result", out, model, name, tool_use_id)
                 if status in ("waiting", "skipped"):
                     decision = "permission decision: " + status
                     if step.get("approval"):
                         decision += " approval=" + setting_value(step["approval"])
-                    yield row("system", decision, model, name, tid)
-            changes = msg.get("changes")
+                    yield row("system", decision, model, name, tool_use_id)
+            changes = chat_message.get("changes")
             if isinstance(changes, dict) and isinstance(changes.get("files"), list):
                 for entry in changes["files"]:
                     if isinstance(entry, dict):

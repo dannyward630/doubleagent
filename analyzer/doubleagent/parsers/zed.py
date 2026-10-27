@@ -26,7 +26,7 @@ under the data directory (`DATA_DIR`) or the config directory (`CONFIG_DIR`):
 Messages carry no time: each row takes the thread's `updated_at`, and the
 thread-start, `git remote:` and `model:` rows the snapshot's time. The blob
 holds one model per thread, so a switch is not recorded. Denials are read
-from failed tool results' texts (`USER_DENIAL`, `AUTO_DENIAL_RX`); an
+from failed tool results' texts (`USER_DENIAL`, `AUTO_DENIAL_PATTERN`); an
 approval leaves no record. `source_line` is the SQLite `rowid`.
 """
 
@@ -51,9 +51,9 @@ from .gemini_cli import parse_jsonc
 DATA_DIR = r"(?:\.local/share/zed|Library/Application Support/Zed|AppData/Local/Zed|\.var/app/dev\.zed\.Zed[A-Za-z]*/data/zed)"
 SANDBOX_FLAGS = ("network_any_host", "allow_fs_write_all", "unsandboxed", "sandbox_fallback")
 CONFIG_DIR = r"(?:\.config/zed|AppData/Roaming/Zed|\.var/app/dev\.zed\.Zed[A-Za-z]*/config/zed)"
-THREADS_RX = re.compile(r"^" + DATA_DIR + r"/threads/threads\.db$")
-SIDEBAR_RX = re.compile(r"^" + DATA_DIR + r"/db/0-[^/]+/db\.sqlite$")
-SETTINGS_RX = re.compile(r"^" + CONFIG_DIR + r"/(?:global_)?settings\.json$")
+THREADS_PATTERN = re.compile(r"^" + DATA_DIR + r"/threads/threads\.db$")
+SIDEBAR_PATTERN = re.compile(r"^" + DATA_DIR + r"/db/0-[^/]+/db\.sqlite$")
+SETTINGS_PATTERN = re.compile(r"^" + CONFIG_DIR + r"/(?:global_)?settings\.json$")
 # Release-channel and platform override blocks of a user settings file
 # (`ReleaseChannelOverrides`, `PlatformOverrides`), each a whole settings
 # object of its own.
@@ -61,7 +61,7 @@ SETTINGS_OVERRIDES = ("dev", "nightly", "preview", "stable", "macos", "linux", "
 USER_DENIAL = "Permission to run tool denied by user"
 # The texts `ToolPermissionDecision::Deny` carries when the rules deny a
 # call with no prompt (crates/agent/src/tool_permissions.rs at 9cd14da).
-AUTO_DENIAL_RX = re.compile(
+AUTO_DENIAL_PATTERN = re.compile(
     r"(?:Blocked by global default: deny"
     r"|Command blocked by security rule for \S+ tool"
     r"|\S+ tool is disabled"
@@ -141,11 +141,15 @@ def mention_text(mention) -> str:
 
 def tool_input_text(tool_use: dict) -> str:
     """Return a tool use's `input` as text, else its `raw_input`."""
-    inp = tool_use.get("input")
-    if isinstance(inp, dict) and set(inp) <= {"type", "value"} and "value" in inp:
-        inp = inp["value"]
-    if inp not in (None, "", {}):
-        return inp if isinstance(inp, str) else compact_json(inp)
+    tool_input = tool_use.get("input")
+    if (
+        isinstance(tool_input, dict)
+        and set(tool_input) <= {"type", "value"}
+        and "value" in tool_input
+    ):
+        tool_input = tool_input["value"]
+    if tool_input not in (None, "", {}):
+        return tool_input if isinstance(tool_input, str) else compact_json(tool_input)
     raw = tool_use.get("raw_input")
     return raw if isinstance(raw, str) else ""
 
@@ -189,18 +193,18 @@ def acp_blocks_text(blocks) -> str:
     return "\n".join(parts)
 
 
-def denial_text(res: dict) -> str:
+def denial_text(result: dict) -> str:
     """Return the `permission decision:` text of a failed tool result Zed wrote for a denial.
 
     Any other result gives "": an approval leaves no record, so only denials
     have a row.
     """
-    if not res.get("is_error"):
+    if not result.get("is_error"):
         return ""
-    text = content_text(res.get("content")).strip()
+    text = content_text(result.get("content")).strip()
     if text == USER_DENIAL:
         return "permission decision: denied"
-    if AUTO_DENIAL_RX.fullmatch(text):
+    if AUTO_DENIAL_PATTERN.fullmatch(text):
         return "permission decision: auto_denied reason=" + text
     return ""
 
@@ -236,18 +240,20 @@ class ZedParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for `threads.db`, a channel's `db.sqlite` or a user settings file."""
         rel = artifact.rel
-        return bool(THREADS_RX.match(rel) or SIDEBAR_RX.match(rel) or SETTINGS_RX.match(rel))
+        return bool(
+            THREADS_PATTERN.match(rel) or SIDEBAR_PATTERN.match(rel) or SETTINGS_PATTERN.match(rel)
+        )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Zed file."""
-        if SETTINGS_RX.match(artifact.rel):
+        if SETTINGS_PATTERN.match(artifact.rel):
             yield from self._parse_settings(artifact)
             return
         if not is_sqlite(artifact.disk_path):
             yield self._file_error(artifact, "not a SQLite database")
             return
         try:
-            if THREADS_RX.match(artifact.rel):
+            if THREADS_PATTERN.match(artifact.rel):
                 yield from self._parse_threads(artifact, opts)
             else:
                 yield from self._parse_sidebar(artifact)
@@ -322,23 +328,28 @@ class ZedParser(Parser):
                 layers.append((name + ".", doc[name]))
         profiles = doc.get("profiles")
         if isinstance(profiles, dict):
-            for name, prof in profiles.items():
-                if isinstance(prof, dict) and isinstance(prof.get("settings"), dict):
-                    layers.append(("profiles.%s.settings." % name, prof["settings"]))
+            for name, profile in profiles.items():
+                if isinstance(profile, dict) and isinstance(profile.get("settings"), dict):
+                    layers.append(("profiles.%s.settings." % name, profile["settings"]))
         for prefix, block in layers:
             agent = block.get("agent")
             if isinstance(agent, dict):
-                for sub in ("tool_permissions", "sandbox_permissions"):
-                    if sub in agent:
-                        yield from flatten_setting(prefix + "agent." + sub, agent[sub])
+                for section_name in ("tool_permissions", "sandbox_permissions"):
+                    if section_name in agent:
+                        yield from flatten_setting(
+                            prefix + "agent." + section_name, agent[section_name]
+                        )
                 if "always_allow_tool_actions" in agent:
                     legacy = agent["always_allow_tool_actions"]
                     yield prefix + "agent.always_allow_tool_actions", legacy
             servers = block.get("agent_servers")
             if isinstance(servers, dict):
-                for sid, cfg in servers.items():
-                    if isinstance(cfg, dict) and "default_mode" in cfg:
-                        yield prefix + "agent_servers.%s.default_mode" % sid, cfg["default_mode"]
+                for session_id, config in servers.items():
+                    if isinstance(config, dict) and "default_mode" in config:
+                        yield (
+                            prefix + "agent_servers.%s.default_mode" % session_id,
+                            config["default_mode"],
+                        )
             session = block.get("session")
             if isinstance(session, dict) and "trust_all_worktrees" in session:
                 yield prefix + "session.trust_all_worktrees", session["trust_all_worktrees"]
@@ -346,22 +357,22 @@ class ZedParser(Parser):
     # -- db/0-<channel>/db.sqlite -------------------------------------------------
     def _parse_sidebar(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        with open_copy(artifact.disk_path) as con:
-            tables = table_names(con)
+        with open_copy(artifact.disk_path) as connection:
+            tables = table_names(connection)
             sidebar = self._select(
-                con,
+                connection,
                 tables,
                 "sidebar_threads",
                 "select rowid as _rowid, * from sidebar_threads order by updated_at",
             )
             trusted = self._select(
-                con,
+                connection,
                 tables,
                 "trusted_worktrees",
                 "select rowid as _rowid, * from trusted_worktrees order by rowid",
             )
             key_values = self._select(
-                con,
+                connection,
                 tables,
                 "scoped_kv_store",
                 "select rowid as _rowid, namespace, key, value"
@@ -370,7 +381,7 @@ class ZedParser(Parser):
             )
             link = "thread_archived_worktrees" in tables
             archived = self._select(
-                con,
+                connection,
                 tables,
                 "archived_git_worktrees",
                 "select a.rowid as _rowid, a.*, t.thread_id as _thread from"
@@ -381,7 +392,7 @@ class ZedParser(Parser):
                 " order by id",
             )
             terminals = self._select(
-                con,
+                connection,
                 tables,
                 "sidebar_terminal_threads",
                 "select rowid as _rowid, * from sidebar_terminal_threads order by created_at",
@@ -407,11 +418,11 @@ class ZedParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     @staticmethod
-    def _select(con: sqlite3.Connection, tables: set, table: str, sql: str) -> list[dict]:
+    def _select(connection: sqlite3.Connection, tables: set, table: str, sql: str) -> list[dict]:
         """Return the rows of `sql` as dicts, or [] when `table` does not exist."""
         if table not in tables:
             return []
-        return [dict(row) for row in con.execute(sql)]
+        return [dict(row) for row in connection.execute(sql)]
 
     def _sidebar_row(self, artifact: Artifact, row: dict) -> Iterator[Row]:
         """Yield an external agent's thread or a native thread's sidebar state.
@@ -495,8 +506,8 @@ class ZedParser(Parser):
         rowid, value = row["_rowid"], row["value"]
         host, _, path = str(row["key"]).partition("\n")
         try:
-            rec = json.loads(value)
-            seconds = rec["created_at_seconds"] + rec.get("created_at_subsec_nanos", 0) / 1e9
+            record = json.loads(value)
+            seconds = record["created_at_seconds"] + record.get("created_at_subsec_nanos", 0) / 1e9
         except (TypeError, ValueError, KeyError, AttributeError) as error:
             label = "unparseable record %d (created_git_worktrees: %s: %s)" % (
                 rowid,
@@ -553,10 +564,12 @@ class ZedParser(Parser):
 
     # -- threads/threads.db -------------------------------------------------------
     def _parse_threads(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        with open_copy(artifact.disk_path) as con:
-            if "threads" not in table_names(con):
+        with open_copy(artifact.disk_path) as connection:
+            if "threads" not in table_names(connection):
                 return
-            for row in con.execute("select rowid as _rowid, * from threads order by updated_at"):
+            for row in connection.execute(
+                "select rowid as _rowid, * from threads order by updated_at"
+            ):
                 yield from self._thread_rows(artifact, dict(row), opts)
 
     def _thread_rows(self, artifact: Artifact, record: dict, opts: Options) -> Iterator[Row]:
@@ -578,20 +591,20 @@ class ZedParser(Parser):
             row.text = compact(text)
             return row
 
-        thread, err, raw = self._decode(record)
+        thread, error, raw = self._decode(record)
         if thread is None:
-            label = "unparseable record %d (%s)" % (record["_rowid"], err)
+            label = "unparseable record %d (%s)" % (record["_rowid"], error)
             yield from error_rows(
                 self, artifact, [(record["_rowid"], label, raw)], session_id, project
             )
             return
 
-        snap = thread.get("initial_project_snapshot")
-        if not isinstance(snap, dict):
-            snap = {}
+        snapshot = thread.get("initial_project_snapshot")
+        if not isinstance(snapshot, dict):
+            snapshot = {}
         worktrees = [
             worktree
-            for worktree in (snap.get("worktree_snapshots") or [])
+            for worktree in (snapshot.get("worktree_snapshots") or [])
             if isinstance(worktree, dict)
         ]
         if not project and worktrees:
@@ -626,7 +639,9 @@ class ZedParser(Parser):
             if isinstance(thread.get("subagent_context"), dict)
             else ""
         )
-        start_ts = to_utc(snap.get("timestamp")) or to_utc(record.get("created_at")) or updated
+        start_timestamp = (
+            to_utc(snapshot.get("timestamp")) or to_utc(record.get("created_at")) or updated
+        )
         yield base(
             "system",
             " ".join(
@@ -639,17 +654,17 @@ class ZedParser(Parser):
                 )
                 if part
             ),
-            start_ts,
+            start_timestamp,
             model,
             branch,
         )
         if remote:
-            yield base("system", GIT_REMOTE_PREFIX + remote, start_ts, model, branch)
+            yield base("system", GIT_REMOTE_PREFIX + remote, start_timestamp, model, branch)
         if model_info.get("model"):
             text = "model: %s" % model_info["model"]
             if model_info.get("provider"):
                 text += " provider=%s" % model_info["provider"]
-            yield base("system", text, start_ts, model, branch)
+            yield base("system", text, start_timestamp, model, branch)
         for key, value in self._grants(thread):
             yield base(
                 "system",
@@ -765,27 +780,27 @@ class ZedParser(Parser):
                 (rowid, "unparseable record %d (%s)" % (position, reason), record_json(item))
             )
 
-        for position, msg in enumerate(messages, 1):
-            if isinstance(msg, str):
-                yield "system", msg.lower(), "", ""
-            elif not isinstance(msg, dict):
-                bad(position, "unknown message variant", msg)
-            elif "User" in msg:
-                yield from self._user(msg["User"], position, bad)
-            elif "Agent" in msg:
-                yield from self._agent(msg["Agent"], position, bad)
-            elif "Compaction" in msg:
-                compaction = msg["Compaction"]
+        for position, message in enumerate(messages, 1):
+            if isinstance(message, str):
+                yield "system", message.lower(), "", ""
+            elif not isinstance(message, dict):
+                bad(position, "unknown message variant", message)
+            elif "User" in message:
+                yield from self._user(message["User"], position, bad)
+            elif "Agent" in message:
+                yield from self._agent(message["Agent"], position, bad)
+            elif "Compaction" in message:
+                compaction = message["Compaction"]
                 if isinstance(compaction, dict) and isinstance(compaction.get("Summary"), str):
                     yield "system", "compaction: " + compaction["Summary"], "", ""
                 elif isinstance(compaction, dict) and "ProviderNative" in compaction:
                     yield "system", "compaction: provider native", "", ""
                 else:
-                    bad(position, "unknown Compaction variant", msg)
-            elif "role" in msg:
-                yield from self._legacy(msg, position, bad)
+                    bad(position, "unknown Compaction variant", message)
+            elif "role" in message:
+                yield from self._legacy(message, position, bad)
             else:
-                bad(position, "unknown message variant", msg)
+                bad(position, "unknown message variant", message)
 
     @staticmethod
     def _user(user_message, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
@@ -831,21 +846,24 @@ class ZedParser(Parser):
             results = {}
         done = set()
 
-        def result(key, res: dict):
-            text = content_text(res.get("content"))
-            if not text and res.get("output") is not None:
+        def result(key, tool_result: dict):
+            text = content_text(tool_result.get("content"))
+            if not text and tool_result.get("output") is not None:
                 text = (
-                    content_text(res["output"])
-                    if not isinstance(res["output"], dict)
-                    else compact_json(res["output"])
+                    content_text(tool_result["output"])
+                    if not isinstance(tool_result["output"], dict)
+                    else compact_json(tool_result["output"])
                 )
-            if res.get("is_error"):
+            if tool_result.get("is_error"):
                 text = "[error] " + text
-            name, tid = str(res.get("tool_name") or ""), str(res.get("tool_use_id") or key)
-            yield "tool_result", text, name, tid
-            decision = denial_text(res)
+            name, tool_use_id = (
+                str(tool_result.get("tool_name") or ""),
+                str(tool_result.get("tool_use_id") or key),
+            )
+            yield "tool_result", text, name, tool_use_id
+            decision = denial_text(tool_result)
             if decision:
-                yield "system", decision, name, tid
+                yield "system", decision, name, tool_use_id
 
         content = agent_message.get("content")
         if isinstance(content, (str, dict)):
@@ -872,31 +890,41 @@ class ZedParser(Parser):
                 yield "thinking", "[redacted thinking]", "", ""
             elif isinstance(item.get("ToolUse"), dict):
                 tool_use = item["ToolUse"]
-                tid = str(tool_use.get("id") or "")
-                yield "tool_use", tool_input_text(tool_use), str(tool_use.get("name") or ""), tid
+                tool_use_id = str(tool_use.get("id") or "")
+                yield (
+                    "tool_use",
+                    tool_input_text(tool_use),
+                    str(tool_use.get("name") or ""),
+                    tool_use_id,
+                )
                 # The result follows its call, so the timeline reads in order.
-                if isinstance(results.get(tid), dict):
-                    done.add(tid)
-                    yield from result(tid, results[tid])
+                if isinstance(results.get(tool_use_id), dict):
+                    done.add(tool_use_id)
+                    yield from result(tool_use_id, results[tool_use_id])
             elif "Image" in item:
                 yield "assistant", "[image]", "", ""
             else:
                 bad(position, "unknown Agent content variant, content[%d]" % k, item)
-        for key, res in results.items():
+        for key, tool_result in results.items():
             if key in done:
                 continue
-            if isinstance(res, dict):
-                yield from result(key, res)
+            if isinstance(tool_result, dict):
+                yield from result(key, tool_result)
             else:
-                bad(position, "Agent tool_results entry %s is not an object" % key, res)
+                bad(position, "Agent tool_results entry %s is not an object" % key, tool_result)
 
     @staticmethod
-    def _legacy(msg: dict, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
-        role = str(msg.get("role") or "").lower()
+    def _legacy(message: dict, position: int, bad) -> Iterator[tuple[str, str, str, str]]:
+        role = str(message.get("role") or "").lower()
         kind = "user" if role == "user" else "assistant" if role == "assistant" else "system"
-        if isinstance(msg.get("text"), str):
-            yield kind, msg["text"] if kind != "system" else "%s: %s" % (role, msg["text"]), "", ""
-        for k, seg in enumerate(msg.get("segments") or []):
+        if isinstance(message.get("text"), str):
+            yield (
+                kind,
+                message["text"] if kind != "system" else "%s: %s" % (role, message["text"]),
+                "",
+                "",
+            )
+        for k, seg in enumerate(message.get("segments") or []):
             segment_type = str(seg.get("type") or "").lower() if isinstance(seg, dict) else ""
             if segment_type == "text":
                 yield kind, str(seg.get("text") or ""), "", ""
@@ -906,7 +934,7 @@ class ZedParser(Parser):
                 yield "thinking", "[redacted thinking]", "", ""
             else:
                 bad(position, "unknown segment variant, segments[%d]" % k, seg)
-        for k, tool_use in enumerate(msg.get("tool_uses") or []):
+        for k, tool_use in enumerate(message.get("tool_uses") or []):
             if not isinstance(tool_use, dict):
                 bad(position, "tool_uses[%d] is not an object" % k, tool_use)
             else:
@@ -916,18 +944,18 @@ class ZedParser(Parser):
                     str(tool_use.get("name") or ""),
                     str(tool_use.get("id") or ""),
                 )
-        for k, res in enumerate(msg.get("tool_results") or []):
-            if not isinstance(res, dict):
-                bad(position, "tool_results[%d] is not an object" % k, res)
+        for k, result in enumerate(message.get("tool_results") or []):
+            if not isinstance(result, dict):
+                bad(position, "tool_results[%d] is not an object" % k, result)
             else:
-                text = content_text(res.get("content"))
-                if res.get("is_error"):
+                text = content_text(result.get("content"))
+                if result.get("is_error"):
                     text = "[error] " + text
-                tid = str(res.get("tool_use_id") or "")
-                yield "tool_result", text, "", tid
-                decision = denial_text(res)
+                tool_use_id = str(result.get("tool_use_id") or "")
+                yield "tool_result", text, "", tool_use_id
+                decision = denial_text(result)
                 if decision:
-                    yield "system", decision, "", tid
+                    yield "system", decision, "", tool_use_id
 
 
 __all__ = [

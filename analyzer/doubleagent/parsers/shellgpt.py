@@ -33,10 +33,10 @@ from ..inputs import Artifact
 from ..model import Row, compact
 from .base import Options, Parser, error_rows, file_mtime, text_of
 
-CHAT_RX = re.compile(r"(^|/)chat_cache/[^/]+$")
-SGPTRC_RX = re.compile(r"(^|/)\.config/shell_gpt/\.sgptrc$")
-FUNCTION_RX = re.compile(r"(^|/)\.config/shell_gpt/functions/[^/]+\.py$")
-CACHE_RX = re.compile(r"(^|/)shell_gpt/cache/[0-9a-f]{32}$")
+CHAT_PATTERN = re.compile(r"(^|/)chat_cache/[^/]+$")
+SGPTRC_PATTERN = re.compile(r"(^|/)\.config/shell_gpt/\.sgptrc$")
+FUNCTION_PATTERN = re.compile(r"(^|/)\.config/shell_gpt/functions/[^/]+\.py$")
+CACHE_PATTERN = re.compile(r"(^|/)shell_gpt/cache/[0-9a-f]{32}$")
 # The `.sgptrc` keys read; every other key (OPENAI_API_KEY above all) is skipped.
 PERMISSION_KEYS = ("OPENAI_USE_FUNCTIONS", "DEFAULT_EXECUTE_SHELL_CMD", "SHELL_INTERACTION")
 MODEL_KEY = "DEFAULT_MODEL"
@@ -55,14 +55,14 @@ def load_messages(raw: str) -> tuple[list[dict], str]:
     try:
         data = json.loads(raw)
     except ValueError as error:
-        err = str(error)
+        reason = str(error)
     else:
         if isinstance(data, list):
             return [message for message in data if isinstance(message, dict)], ""
         return [], "not a JSON array"
     text = raw.lstrip()
     if not text.startswith("["):
-        return [], err
+        return [], reason
     decoder = json.JSONDecoder()
     out: list[dict] = []
     position = 1
@@ -77,7 +77,7 @@ def load_messages(raw: str) -> tuple[list[dict], str]:
             break
         if isinstance(value, dict):
             out.append(value)
-    return out, "truncated after %d message(s): %s" % (len(out), err)
+    return out, "truncated after %d message(s): %s" % (len(out), reason)
 
 
 def call_text(arguments) -> str:
@@ -136,15 +136,15 @@ class ShellGptParser(Parser):
         """Return True for a chat, settings, function or response cache file."""
         rel = artifact.rel
         return bool(
-            CHAT_RX.search(rel)
-            or SGPTRC_RX.search(rel)
-            or FUNCTION_RX.search(rel)
-            or CACHE_RX.search(rel)
+            CHAT_PATTERN.search(rel)
+            or SGPTRC_PATTERN.search(rel)
+            or FUNCTION_PATTERN.search(rel)
+            or CACHE_PATTERN.search(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for a response cache file, which repeats chat answers."""
-        return bool(CACHE_RX.search(artifact.rel))
+        return bool(CACHE_PATTERN.search(artifact.rel))
 
     def _system(self, artifact: Artifact, timestamp: str, text: str) -> Row:
         row = self.base_row(artifact)
@@ -196,13 +196,13 @@ class ShellGptParser(Parser):
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one ShellGPT file."""
         rel = artifact.rel
-        if SGPTRC_RX.search(rel):
+        if SGPTRC_PATTERN.search(rel):
             yield from self._parse_sgptrc(artifact)
             return
-        if FUNCTION_RX.search(rel):
+        if FUNCTION_PATTERN.search(rel):
             yield from self._parse_function(artifact)
             return
-        if CACHE_RX.search(rel):
+        if CACHE_PATTERN.search(rel):
             yield from self._parse_cache(artifact)
             return
         session_id = artifact.disk_path.name
@@ -230,7 +230,7 @@ class ShellGptParser(Parser):
         for index, message in enumerate(messages):
             role = str(message.get("role") or "")
             content = text_of(message.get("content"))
-            prev, pending = pending, ("", "")
+            previous, pending = pending, ("", "")
             if role in ("system", "user"):
                 yield make_row(role, content)
             elif role == "assistant":
@@ -255,7 +255,9 @@ class ShellGptParser(Parser):
                 call_id = str(message.get("tool_call_id") or "")
                 yield make_row("tool_result", content, names.get(call_id, ""), call_id)
             elif role == "function":
-                yield make_row("tool_result", content, str(message.get("name") or prev[1]), prev[0])
+                yield make_row(
+                    "tool_result", content, str(message.get("name") or previous[1]), previous[0]
+                )
             else:
                 yield make_row("system", "%s: %s" % (role or "message", content))
         if error:

@@ -59,20 +59,22 @@ from .cline_legacy import (
 from .continue_dev import ContinueParser, load_session, message_text
 
 ROOT = r"(?:.*/)?User/globalStorage/pearai\.pearai-roo-cline"
-SESSION_RX = re.compile(r"^(?:.*/)?\.pearai/sessions/([^/]+)\.json$")
+SESSION_PATTERN = re.compile(r"^(?:.*/)?\.pearai/sessions/([^/]+)\.json$")
 INDEX_NAME = "sessions.json"
 EXTENSION_ID = "pearai.pearai-roo-cline"
 # The editor's output channel file for the chat extension's `PearAI` channel
 # (pearai-app src/vs/workbench/api/common/extHostOutput.ts:121, :160-170).
-LOG_RX = re.compile(r"^(?:.*/)?logs/[^/]+/window\d+/exthost/output_logging_[^/]+/\d+-PearAI\.log$")
-DEVDATA_RX = re.compile(r"^(?:.*/)?\.pearai/dev_data/(chat|tokens_generated)\.jsonl$")
-STATE_RX = re.compile(r"^(?:.*/)?User/globalStorage/state\.vscdb$")
+LOG_PATTERN = re.compile(
+    r"^(?:.*/)?logs/[^/]+/window\d+/exthost/output_logging_[^/]+/\d+-PearAI\.log$"
+)
+DEVDATA_PATTERN = re.compile(r"^(?:.*/)?\.pearai/dev_data/(chat|tokens_generated)\.jsonl$")
+STATE_PATTERN = re.compile(r"^(?:.*/)?User/globalStorage/state\.vscdb$")
 # Each write to the channel: two lines of 74 `=` (VsCodeExtension.ts:147-155),
 # then `Settings:` ... a rule of 44 `#` ... the prompt, or `Completion:`
 # (core/llm/index.ts:247-261, :586-587).
-LOG_SEPARATOR_RX = re.compile(r"={74}\n={74}\n")
+LOG_SEPARATOR_PATTERN = re.compile(r"={74}\n={74}\n")
 LOG_RULE = "\n\n" + "#" * 44 + "\n\n"
-ROLE_BLOCK_RX = re.compile(r"^<(system|user|assistant)>\n", re.M)
+ROLE_BLOCK_PATTERN = re.compile(r"^<(system|user|assistant)>\n", re.M)
 PERMISSION_TEXTS = (
     ("The user denied this operation and provided the following feedback:", "denied with feedback"),
     (
@@ -115,11 +117,11 @@ TOOL_NAMES = (
     "new_task",
     "fetch_instructions",
 )
-BLOCK_RX = re.compile(r"<(thinking|%s)>(.*?)(?:</\1>|$)" % "|".join(TOOL_NAMES), re.S)
-PARAM_RX = re.compile(r"<([a-z_]+)>(.*?)(?:</\1>|$)", re.S)
-RESULT_RX = re.compile(r"^\[([a-z_]+)\b.*\] Result:\s*$", re.S)
-NOTICE_RX = re.compile(r"^(?:Skipping tool|Tool) \[([a-z_]+)")
-TASK_RX = re.compile(r"^\s*<task>\s*(.*?)\s*</task>\s*$", re.S)
+BLOCK_PATTERN = re.compile(r"<(thinking|%s)>(.*?)(?:</\1>|$)" % "|".join(TOOL_NAMES), re.S)
+PARAM_PATTERN = re.compile(r"<([a-z_]+)>(.*?)(?:</\1>|$)", re.S)
+RESULT_PATTERN = re.compile(r"^\[([a-z_]+)\b.*\] Result:\s*$", re.S)
+NOTICE_PATTERN = re.compile(r"^(?:Skipping tool|Tool) \[([a-z_]+)")
+TASK_PATTERN = re.compile(r"^\s*<task>\s*(.*?)\s*</task>\s*$", re.S)
 
 
 def permission_decision(text: str) -> str:
@@ -137,7 +139,7 @@ def prompt_turn(prompt: str) -> tuple[str, str]:
     A prompt in `_formatChatMessages` form gives its last `<user>` block as
     `user`; any other prompt is a `system` row `model request: <prompt>`.
     """
-    blocks = list(ROLE_BLOCK_RX.finditer(prompt))
+    blocks = list(ROLE_BLOCK_PATTERN.finditer(prompt))
     if not blocks or blocks[0].start() != 0:
         return "system", "model request: " + prompt
     users = [i for i, match in enumerate(blocks) if match.group(1) == "user"]
@@ -150,20 +152,20 @@ def prompt_turn(prompt: str) -> tuple[str, str]:
 
 def xml_blocks(text: str, include_thinking: bool) -> Iterator[tuple[str, str, str]]:
     """Yield (turn_type, text, tool_name) for Roo assistant text with XML tool tags."""
-    pos = 0
-    for match in BLOCK_RX.finditer(text):
-        before = text[pos : match.start()].strip()
+    position = 0
+    for match in BLOCK_PATTERN.finditer(text):
+        before = text[position : match.start()].strip()
         if before:
             yield "assistant", before, ""
-        pos = match.end()
+        position = match.end()
         tag, body = match.group(1), match.group(2)
         if tag == "thinking":
             if include_thinking and body.strip():
                 yield "thinking", body.strip(), ""
             continue
-        params = [value.strip() for _, value in PARAM_RX.findall(body) if value.strip()]
+        params = [value.strip() for _, value in PARAM_PATTERN.findall(body) if value.strip()]
         yield "tool_use", " | ".join(params) if params else body.strip(), tag
-    rest = text[pos:].strip()
+    rest = text[position:].strip()
     if rest:
         yield "assistant", rest, ""
 
@@ -187,22 +189,22 @@ class PearAiParser(LegacyTaskParser):
         """Return True for a session (the index included), task, log, dev_data or state file."""
         rel = artifact.rel
         return bool(
-            SESSION_RX.match(rel)
+            SESSION_PATTERN.match(rel)
             or self.task_match(artifact)
-            or LOG_RX.match(rel)
-            or DEVDATA_RX.match(rel)
-            or STATE_RX.match(rel)
+            or LOG_PATTERN.match(rel)
+            or DEVDATA_PATTERN.match(rel)
+            or STATE_PATTERN.match(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the output channel log or `dev_data/chat.jsonl`."""
-        match = DEVDATA_RX.match(artifact.rel)
-        return bool(LOG_RX.match(artifact.rel) or (match and match.group(1) == "chat"))
+        match = DEVDATA_PATTERN.match(artifact.rel)
+        return bool(LOG_PATTERN.match(artifact.rel) or (match and match.group(1) == "chat"))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one PearAI file."""
-        match = SESSION_RX.match(artifact.rel)
-        dev = DEVDATA_RX.match(artifact.rel)
+        match = SESSION_PATTERN.match(artifact.rel)
+        devdata_match = DEVDATA_PATTERN.match(artifact.rel)
         if match and match.group(1) + ".json" == INDEX_NAME:
             errors = self._continue.index_errors(artifact.disk_path)
             yield from error_rows(self, artifact, errors)
@@ -210,13 +212,13 @@ class PearAiParser(LegacyTaskParser):
             yield from self._parse_session(artifact, opts)
         elif self.task_match(artifact):
             yield from self.parse_task_file(artifact, opts)
-        elif LOG_RX.match(artifact.rel):
+        elif LOG_PATTERN.match(artifact.rel):
             yield from self._parse_output_log(artifact)
-        elif dev and dev.group(1) == "chat":
+        elif devdata_match and devdata_match.group(1) == "chat":
             yield from self._parse_dev_chat(artifact)
-        elif dev:
+        elif devdata_match:
             yield from self._parse_tokens(artifact)
-        elif STATE_RX.match(artifact.rel):
+        elif STATE_PATTERN.match(artifact.rel):
             yield from self._parse_state(artifact, opts)
 
     # ---- agent tasks (Roo fork) ------------------------------------------------
@@ -252,7 +254,7 @@ class PearAiParser(LegacyTaskParser):
         yield from super().parse_task_file(artifact, opts)
 
     def _api_permission_rows(self, artifact: Artifact) -> Iterator[Row]:
-        ctx = self.context(artifact)
+        context = self.context(artifact)
         ui_messages = self.cached_json(artifact.disk_path.parent / UI_FILE)
         asks = sorted(
             message["ts"]
@@ -262,11 +264,11 @@ class PearAiParser(LegacyTaskParser):
             and str(message.get("ask") or message.get("say") or "") in TOOL_USE_KINDS
         )
         errors: list = []
-        for index, msg in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(msg, dict) or msg.get("role") != "user":
+        for index, api_message in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(api_message, dict) or api_message.get("role") != "user":
                 continue
-            content = msg.get("content")
-            timestamp = msg.get("ts")
+            content = api_message.get("content")
+            timestamp = api_message.get("ts")
             name = ""
             for block in content if isinstance(content, list) else []:
                 text = (
@@ -276,7 +278,7 @@ class PearAiParser(LegacyTaskParser):
                 )
                 if not isinstance(text, str):
                     continue
-                hit = RESULT_RX.match(text.strip())
+                hit = RESULT_PATTERN.match(text.strip())
                 if hit:
                     name = hit.group(1)
                     continue
@@ -286,13 +288,13 @@ class PearAiParser(LegacyTaskParser):
                 before = [
                     ask for ask in asks if isinstance(timestamp, (int, float)) and ask <= timestamp
                 ]
-                row = self._row(artifact, ctx, index, to_utc(timestamp) or ctx.start)
+                row = self._row(artifact, context, index, to_utc(timestamp) or context.start)
                 row.turn_type = "system"
                 row.tool_name = name
                 row.tool_use_id = str(before[-1]) if before else ""
                 row.text = "permission decision: " + decision
                 yield row
-        yield from error_rows(self, artifact, errors, ctx.task_id, ctx.project_path)
+        yield from error_rows(self, artifact, errors, context.task_id, context.project_path)
 
     def _parse_state(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         state, problems = self._global_state(artifact.disk_path)
@@ -343,15 +345,15 @@ class PearAiParser(LegacyTaskParser):
         content = msg.get("content")
         if base_turn == "assistant":
             tool_count = 0
-            for turn, text, name, tid in content_rows(content, base_turn, include_thinking):
+            for turn, text, name, tool_use_id in content_rows(content, base_turn, include_thinking):
                 if turn != "assistant":
-                    yield turn, text, name, tid
+                    yield turn, text, name, tool_use_id
                     continue
                 for kind, body, tool in xml_blocks(text, include_thinking):
                     if kind == "tool_use":
                         tool_count += 1
-                        tid = str(n) if tool_count == 1 else "%d.%d" % (n, tool_count)
-                    yield kind, body, tool, tid if kind == "tool_use" else ""
+                        tool_use_id = str(n) if tool_count == 1 else "%d.%d" % (n, tool_count)
+                    yield kind, body, tool, tool_use_id if kind == "tool_use" else ""
             return
         if base_turn != "user" or not isinstance(content, list):
             yield from content_rows(content, base_turn, include_thinking)
@@ -377,8 +379,8 @@ class PearAiParser(LegacyTaskParser):
                 else None
             )
             if isinstance(text, str):
-                match = RESULT_RX.match(text.strip())
-                notice = NOTICE_RX.match(text.strip())
+                match = RESULT_PATTERN.match(text.strip())
+                notice = NOTICE_PATTERN.match(text.strip())
                 hit = match or notice
                 if hit:
                     yield from flush()
@@ -396,7 +398,7 @@ class PearAiParser(LegacyTaskParser):
                         decision = permission_decision(text)
                     result.append(text)
                     continue
-                task = TASK_RX.match(text)
+                task = TASK_PATTERN.match(text)
                 if task:
                     text = task.group(1)
                 if text.strip():
@@ -419,20 +421,20 @@ class PearAiParser(LegacyTaskParser):
             row.text = "parser: unreadable session file"
             yield row
             return
-        sess, problem = load_session(raw)
-        session_id = sess.get("sessionId")
+        session, problem = load_session(raw)
+        session_id = session.get("sessionId")
         if not session_id:
-            match = SESSION_RX.match(artifact.rel)
+            match = SESSION_PATTERN.match(artifact.rel)
             assert match is not None  # wants() accepted only matching paths
             session_id = match.group(1)
         session_id = str(session_id)
         entry = self._continue._index(artifact.disk_path.parent).get(session_id, {})
         timestamp = to_utc(entry.get("dateCreated"))
-        project = str(sess.get("workspaceDirectory") or entry.get("workspaceDirectory") or "")
-        history = sess.get("history")
+        project = str(session.get("workspaceDirectory") or entry.get("workspaceDirectory") or "")
+        history = session.get("history")
         if not isinstance(history, list):
             history = []
-        search = sess.get("perplexityHistory")
+        search = session.get("perplexityHistory")
         if not isinstance(search, list):
             search = []
 
@@ -447,7 +449,7 @@ class PearAiParser(LegacyTaskParser):
             row.text = compact(text)
             return row
 
-        bits = ["session start: %s" % (sess.get("title") or entry.get("title") or "")]
+        bits = ["session start: %s" % (session.get("title") or entry.get("title") or "")]
         if entry.get("integrationType"):
             bits.append("integration=%s" % entry["integrationType"])
         bits.append("history=%d perplexityHistory=%d" % (len(history), len(search)))
@@ -459,9 +461,9 @@ class PearAiParser(LegacyTaskParser):
         for position, item in enumerate(history + search, 1):
             if not isinstance(item, dict) or not isinstance(item.get("message"), dict):
                 continue
-            msg = item["message"]
-            role = msg.get("role")
-            text = message_text(msg.get("content"))
+            message = item["message"]
+            role = message.get("role")
+            text = message_text(message.get("content"))
             model = ""
             for prompt_log in item.get("promptLogs") or []:
                 options = (
@@ -473,14 +475,14 @@ class PearAiParser(LegacyTaskParser):
                     if change:
                         yield base(position, "system", change, model)
             if role == "user":
-                ctx = [
+                context = [
                     str(context_item.get("description") or context_item.get("name") or "")
                     for context_item in item.get("contextItems") or []
                     if isinstance(context_item, dict)
                 ]
-                ctx = [label for label in ctx if label]
-                if ctx:
-                    text = "%s\n[context: %s]" % (text, ", ".join(ctx))
+                context = [label for label in context if label]
+                if context:
+                    text = "%s\n[context: %s]" % (text, ", ".join(context))
                 if text:
                     yield base(position, "user", text)
             elif role == "assistant":
@@ -516,7 +518,7 @@ class PearAiParser(LegacyTaskParser):
         models: dict = {}
         model = ""
         chat = False
-        starts = [match.end() for match in LOG_SEPARATOR_RX.finditer(raw)]
+        starts = [match.end() for match in LOG_SEPARATOR_PATTERN.finditer(raw)]
         # Two lines of 74 `=` and their newlines before every write.
         preamble = raw[: starts[0] - 2 * 75] if starts else raw
         if preamble.strip():
@@ -574,22 +576,22 @@ class PearAiParser(LegacyTaskParser):
     def _parse_dev_chat(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
         index = self._continue._index(artifact.disk_path.parent.parent / "sessions")
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
-            options = rec.get("completionOptions")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            options = record.get("completionOptions")
             model = str(options.get("model") or "") if isinstance(options, dict) else ""
-            session_id = str(rec.get("sessionId") or "")
+            session_id = str(record.get("sessionId") or "")
             project = str(index.get(session_id, {}).get("workspaceDirectory") or "")
             texts = []
-            if isinstance(rec.get("prompt"), str):
-                texts.append(prompt_turn(rec["prompt"]))
-            if isinstance(rec.get("completion"), str):
-                texts.append(("assistant", rec["completion"]))
-            if isinstance(rec.get("feedback"), bool):
+            if isinstance(record.get("prompt"), str):
+                texts.append(prompt_turn(record["prompt"]))
+            if isinstance(record.get("completion"), str):
+                texts.append(("assistant", record["completion"]))
+            if isinstance(record.get("feedback"), bool):
                 texts.append(
                     (
                         "system",
                         "user feedback: %s (from dev_data/chat.jsonl)"
-                        % setting_value(rec["feedback"]),
+                        % setting_value(record["feedback"]),
                     )
                 )
             for turn, text in texts:
@@ -606,13 +608,13 @@ class PearAiParser(LegacyTaskParser):
 
     def _parse_tokens(self, artifact: Artifact) -> Iterator[Row]:
         errors: list = []
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
             row.source_line = line_number
             row.turn_type = "system"
-            row.model = str(rec.get("model") or "")
+            row.model = str(record.get("model") or "")
             row.text = "tokens generated: " + " ".join(
-                "%s=%s" % (key, setting_value(rec.get(key)) if key in rec else "-")
+                "%s=%s" % (key, setting_value(record.get(key)) if key in record else "-")
                 for key in ("model", "provider", "promptTokens", "generatedTokens")
             )
             yield row

@@ -52,16 +52,18 @@ from .cline_legacy import (
 )
 
 ROOT = r"(?:(?:.*/)?User/globalStorage/rooveterinaryinc\.roo-cline|\.vscode-mock/global-storage)"
-ITEM_RX = re.compile(r"^%s/tasks/[^/]+/history_item\.json$" % ROOT, re.I)
-INDEX_RX = re.compile(r"^%s/tasks/_index\.json$" % ROOT, re.I)
-MCP_RX = re.compile(r"^%s/settings/mcp_settings\.json$" % ROOT, re.I)
+ITEM_PATTERN = re.compile(r"^%s/tasks/[^/]+/history_item\.json$" % ROOT, re.I)
+INDEX_PATTERN = re.compile(r"^%s/tasks/_index\.json$" % ROOT, re.I)
+MCP_PATTERN = re.compile(r"^%s/settings/mcp_settings\.json$" % ROOT, re.I)
 CLI_HISTORY_REL = ".roo/cli-history.json"
 CLI_SETTINGS_REL = ".roo/cli-settings.json"
 PROJECT_MCP_REL = ".roo/mcp.json"
 GLOBAL_STATE_REL = ".vscode-mock/global-storage/global-state.json"
-WORKSPACE_STATE_RX = re.compile(r"^\.vscode-mock/workspace-storage/[^/]+/workspace-state\.json$")
-WORKSPACE_DB_RX = re.compile(r"(?:^|/)User/workspaceStorage/[^/]+/state\.vscdb$")
-ENTRIES_KEY_RX = re.compile(r'"entries"\s*:\s*(?=\[)')
+WORKSPACE_STATE_PATTERN = re.compile(
+    r"^\.vscode-mock/workspace-storage/[^/]+/workspace-state\.json$"
+)
+WORKSPACE_DATABASE_PATTERN = re.compile(r"(?:^|/)User/workspaceStorage/[^/]+/state\.vscdb$")
+ENTRIES_KEY_PATTERN = re.compile(r'"entries"\s*:\s*(?=\[)')
 ITEM_FILE = "history_item.json"
 
 # The extension's global and workspace state is one `ItemTable` row keyed
@@ -124,13 +126,13 @@ class RooCodeParser(LegacyTaskParser):
         rel = artifact.rel
         return bool(
             self.task_match(artifact)
-            or ITEM_RX.match(rel)
-            or INDEX_RX.match(rel)
-            or MCP_RX.match(rel)
-            or WORKSPACE_STATE_RX.match(rel)
+            or ITEM_PATTERN.match(rel)
+            or INDEX_PATTERN.match(rel)
+            or MCP_PATTERN.match(rel)
+            or WORKSPACE_STATE_PATTERN.match(rel)
             or rel in (CLI_HISTORY_REL, CLI_SETTINGS_REL, PROJECT_MCP_REL, GLOBAL_STATE_REL)
             or STATE_DB_RX.search(rel)
-            or WORKSPACE_DB_RX.search(rel)
+            or WORKSPACE_DATABASE_PATTERN.search(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
@@ -155,7 +157,7 @@ class RooCodeParser(LegacyTaskParser):
         rel = artifact.rel
         if self.task_match(artifact):
             yield from self.parse_task_file(artifact, opts)
-        elif ITEM_RX.match(rel):
+        elif ITEM_PATTERN.match(rel):
             item = load_json(artifact.disk_path)
             if isinstance(item, dict):
                 yield from self._history_rows(artifact, item, 1, opts)
@@ -166,11 +168,11 @@ class RooCodeParser(LegacyTaskParser):
                     [(0, "history_item.json is not a JSON object", "")],
                     artifact.disk_path.parent.name,
                 )
-        elif INDEX_RX.match(rel):
+        elif INDEX_PATTERN.match(rel):
             yield from self._parse_index(artifact, opts)
         elif rel == CLI_HISTORY_REL:
             yield from self._parse_cli_history(artifact)
-        elif MCP_RX.match(rel) or rel == PROJECT_MCP_REL:
+        elif MCP_PATTERN.match(rel) or rel == PROJECT_MCP_REL:
             yield from self._parse_mcp(artifact)
         elif rel == CLI_SETTINGS_REL:
             yield from self._parse_cli_settings(artifact)
@@ -180,14 +182,14 @@ class RooCodeParser(LegacyTaskParser):
                 yield self._bad_file(artifact, "global-state.json is not a JSON object")
             else:
                 yield from self._global_state_rows(artifact, state, rel)
-        elif WORKSPACE_STATE_RX.match(rel):
+        elif WORKSPACE_STATE_PATTERN.match(rel):
             state = self._json_object(artifact)
             if state is None:
                 yield self._bad_file(artifact, "workspace-state.json is not a JSON object")
             else:
                 yield from self._retry_queue_rows(artifact, state, rel)
-        elif STATE_DB_RX.search(rel) or WORKSPACE_DB_RX.search(rel):
-            yield from self._parse_state_db(artifact)
+        elif STATE_DB_RX.search(rel) or WORKSPACE_DATABASE_PATTERN.search(rel):
+            yield from self._parse_state_database(artifact)
 
     # ---- per-call permission decisions ---------------------------------------
 
@@ -210,11 +212,11 @@ class RooCodeParser(LegacyTaskParser):
         """
         answered = {
             index
-            for index, msg in iter_json_array(artifact.disk_path, [])
-            if isinstance(msg, dict)
-            and msg.get("type") == "ask"
-            and msg.get("ask") == "tool"
-            and msg.get("isAnswered") is True
+            for index, message in iter_json_array(artifact.disk_path, [])
+            if isinstance(message, dict)
+            and message.get("type") == "ask"
+            and message.get("ask") == "tool"
+            and message.get("isAnswered") is True
         }
         for row in self._parse_ui(artifact, self.context(artifact), opts):
             yield row
@@ -230,20 +232,22 @@ class RooCodeParser(LegacyTaskParser):
         file; alone, the shared rows come with each decision after its
         `tool_result` row.
         """
-        ctx = self.context(artifact)
+        context = self.context(artifact)
         if (artifact.disk_path.parent / UI_FILE).is_file():
             errors: list = []
-            for index, timestamp, tid, name, text in api_decisions(artifact.disk_path, errors):
-                row = self._row(artifact, ctx, index, to_utc(timestamp) or ctx.start)
-                row.tool_use_id = tid
+            for index, timestamp, tool_use_id, name, text in api_decisions(
+                artifact.disk_path, errors
+            ):
+                row = self._row(artifact, context, index, to_utc(timestamp) or context.start)
+                row.tool_use_id = tool_use_id
                 row.tool_name = name
                 yield system_like(row, text)
-            yield from error_rows(self, artifact, errors, ctx.task_id, ctx.project_path)
+            yield from error_rows(self, artifact, errors, context.task_id, context.project_path)
             return
         pending: dict[str, list[tuple[str, str]]] = {}
-        for _index, _timestamp, tid, name, text in api_decisions(artifact.disk_path, []):
-            pending.setdefault(tid, []).append((name, text))
-        for row in self._parse_api(artifact, ctx, opts):
+        for _index, _timestamp, tool_use_id, name, text in api_decisions(artifact.disk_path, []):
+            pending.setdefault(tool_use_id, []).append((name, text))
+        for row in self._parse_api(artifact, context, opts):
             yield row
             if row.turn_type == "tool_result" and pending.get(row.tool_use_id):
                 name, text = pending[row.tool_use_id].pop(0)
@@ -275,7 +279,7 @@ class RooCodeParser(LegacyTaskParser):
             # Cut mid-write (the CLI rewrites the whole file per prompt): walk
             # the entries array as far as it parses.
             text = read_text(artifact.disk_path) if data is None else None
-            match = ENTRIES_KEY_RX.search(text) if text is not None else None
+            match = ENTRIES_KEY_PATTERN.search(text) if text is not None else None
             if match and text is not None:
                 entries = iter_array_at(text, match.end(), errors)
             else:
@@ -302,8 +306,8 @@ class RooCodeParser(LegacyTaskParser):
         for position, entry in enumerate(index["entries"], 1):
             if not isinstance(entry, dict):
                 continue
-            tid = str(entry.get("id") or "")
-            if tid and (tasks / tid / ITEM_FILE).is_file():
+            task_id = str(entry.get("id") or "")
+            if task_id and (tasks / task_id / ITEM_FILE).is_file():
                 continue
             yield from self._history_rows(artifact, entry, position, opts)
 
@@ -353,8 +357,8 @@ class RooCodeParser(LegacyTaskParser):
         cloud_source = "%s, Roo Code Cloud settings cache" % source
         user = state.get("user-settings")
         if isinstance(user, dict):
-            conf = user.get("settings")
-            value = conf.get("taskSyncEnabled") if isinstance(conf, dict) else None
+            config = user.get("settings")
+            value = config.get("taskSyncEnabled") if isinstance(config, dict) else None
             yield self._setting_row(
                 artifact,
                 "sync setting",
@@ -362,8 +366,8 @@ class RooCodeParser(LegacyTaskParser):
                 "unset (defaults to true)" if value is None else value,
                 cloud_source,
             )
-        org = state.get("organization-settings")
-        cloud = org.get("cloudSettings") if isinstance(org, dict) else None
+        organization = state.get("organization-settings")
+        cloud = organization.get("cloudSettings") if isinstance(organization, dict) else None
         if isinstance(cloud, dict):
             for key in ORG_SYNC_KEYS:
                 if cloud.get(key) is not None:
@@ -393,8 +397,8 @@ class RooCodeParser(LegacyTaskParser):
             return
         project = artifact.home.original if artifact.home.project else ""
         servers = doc.get("mcpServers")
-        for name, conf in servers.items() if isinstance(servers, dict) else ():
-            tools = conf.get("alwaysAllow") if isinstance(conf, dict) else None
+        for name, config in servers.items() if isinstance(servers, dict) else ():
+            tools = config.get("alwaysAllow") if isinstance(config, dict) else None
             for tool in tools if isinstance(tools, list) else ():
                 yield self._setting_row(
                     artifact,
@@ -405,9 +409,9 @@ class RooCodeParser(LegacyTaskParser):
                     project,
                 )
 
-    def _parse_state_db(self, artifact: Artifact) -> Iterator[Row]:
+    def _parse_state_database(self, artifact: Artifact) -> Iterator[Row]:
         values, problems = read_items(artifact.disk_path, EXTENSION_KEYS)
-        workspace = bool(WORKSPACE_DB_RX.search(artifact.rel))
+        workspace = bool(WORKSPACE_DATABASE_PATTERN.search(artifact.rel))
         for key in EXTENSION_KEYS:
             state = values.get(key)
             if state is None:
@@ -436,26 +440,26 @@ class RooCodeParser(LegacyTaskParser):
         written.
         """
         queue = state.get(RETRY_QUEUE_KEY)
-        for index, req in enumerate(queue if isinstance(queue, list) else [], 1):
-            if not isinstance(req, dict):
+        for index, request in enumerate(queue if isinstance(queue, list) else [], 1):
+            if not isinstance(request, dict):
                 continue
-            event = queued_event(req)
-            props = event.get("properties")
-            task_id = props.get("taskId") if isinstance(props, dict) else None
+            event = queued_event(request)
+            properties = event.get("properties")
+            task_id = properties.get("taskId") if isinstance(properties, dict) else None
             row = self.base_row(artifact)
             row.source_line = index
             row.turn_type = "system"
-            row.timestamp_utc = to_utc(req.get("timestamp"))
+            row.timestamp_utc = to_utc(request.get("timestamp"))
             row.session_id = str(task_id or "")
             parts = [
-                "cloud upload queued: %s" % (event.get("type") or req.get("operation") or "-"),
+                "cloud upload queued: %s" % (event.get("type") or request.get("operation") or "-"),
                 "task=%s" % (task_id or "-"),
-                "type=%s" % (req.get("type") or "-"),
-                "retries=%s" % req.get("retryCount", "-"),
-                "url=%s" % (req.get("url") or "-"),
+                "type=%s" % (request.get("type") or "-"),
+                "retries=%s" % request.get("retryCount", "-"),
+                "url=%s" % (request.get("url") or "-"),
             ]
-            if req.get("lastError"):
-                parts.append("lastError=%s" % req["lastError"])
+            if request.get("lastError"):
+                parts.append("lastError=%s" % request["lastError"])
             row.text = compact(
                 "%s (Roo Code Cloud retry queue, from %s %s, request timestamp)"
                 % (" ".join(parts), source, RETRY_QUEUE_KEY)
@@ -471,9 +475,9 @@ def system_like(like: Row, text: str) -> Row:
     return dataclasses.replace(like, turn_type="system", text=compact(text))
 
 
-def queued_event(req: dict) -> dict:
+def queued_event(request: dict) -> dict:
     """Return the JSON event body of a queued request, or {} when it is not a JSON object."""
-    options = req.get("options")
+    options = request.get("options")
     body = options.get("body") if isinstance(options, dict) else None
     if not isinstance(body, str):
         return {}
@@ -497,10 +501,10 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
     """
     names: dict[str, str] = {}
     decoder = json.JSONDecoder()
-    for index, msg in iter_json_array(path, errors):
-        if not isinstance(msg, dict) or not isinstance(msg.get("content"), list):
+    for index, message in iter_json_array(path, errors):
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
             continue
-        for block in msg["content"]:
+        for block in message["content"]:
             if not isinstance(block, dict):
                 continue
             if block.get("type") == "tool_use":
@@ -520,5 +524,5 @@ def api_decisions(path: Path, errors: list) -> Iterator[tuple[int, object, str, 
             text = "permission decision: %s" % status["status"]
             if status.get("feedback") is not None:
                 text += " feedback=%s" % setting_value(status["feedback"])
-            tid = str(block.get("tool_use_id") or "")
-            yield index, msg.get("ts"), tid, names.get(tid, ""), text
+            tool_use_id = str(block.get("tool_use_id") or "")
+            yield index, message.get("ts"), tool_use_id, names.get(tool_use_id, ""), text

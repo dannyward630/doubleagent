@@ -51,13 +51,13 @@ from .codex import flat_toml, load_toml
 # `_data` (the `tabby|*tabby*` volume line), which holds the server root
 # itself, since the images set `TABBY_ROOT=/data`.
 ROOT = r"(?:\.tabby/)?"
-DB_RX = re.compile(r"^%see/(?:dev-)?db\.sqlite$" % ROOT)
-BACKUP_RX = re.compile(r"^%see/(?:dev-)?db\.backup-[^/]+\.sqlite$" % ROOT)
-EVENTS_RX = re.compile(r"^%sevents/\d{4}-\d{2}-\d{2}\.json$" % ROOT)
-CONFIG_RX = re.compile(r"^%sconfig\.toml$" % ROOT)
+DATABASE_PATTERN = re.compile(r"^%see/(?:dev-)?db\.sqlite$" % ROOT)
+BACKUP_PATTERN = re.compile(r"^%see/(?:dev-)?db\.backup-[^/]+\.sqlite$" % ROOT)
+EVENTS_PATTERN = re.compile(r"^%sevents/\d{4}-\d{2}-\d{2}\.json$" % ROOT)
+CONFIG_PATTERN = re.compile(r"^%sconfig\.toml$" % ROOT)
 # The IntelliJ plugin's inline-edit command history, in the IDE's `options/`
 # directory where the catalog's `intellij-tabby*.xml` lines collect it.
-INTELLIJ_HISTORY_RX = re.compile(
+INTELLIJ_HISTORY_PATTERN = re.compile(
     r"(?:^|/)JetBrains/[^/]+/options/intellij-tabby-command-history\.xml$"
 )
 INTELLIJ_HISTORY_COMPONENT = "com.tabbyml.intellijtabby.inlineChat.CommandHistory"
@@ -116,21 +116,21 @@ def _list(value) -> list:
     return value if isinstance(value, list) else []
 
 
-def _select(con: sqlite3.Connection, table: str, order: str) -> Iterator[dict]:
+def _select(connection: sqlite3.Connection, table: str, order: str) -> Iterator[dict]:
     """Yield the rows of `table`, restricted to the whitelisted columns it has."""
-    have = {row[1] for row in con.execute("pragma table_info(%s)" % table)}
-    cols = [column for column in COLUMNS[table] if column in have]
-    if not cols:
+    have = {row[1] for row in connection.execute("pragma table_info(%s)" % table)}
+    columns = [column for column in COLUMNS[table] if column in have]
+    if not columns:
         return
-    order_cols = [column for column in order.split(",") if column.strip() in have]
-    sql = "select %s from %s" % (", ".join(cols), table)
-    if order_cols:
-        sql += " order by " + ", ".join(order_cols)
-    for row in con.execute(sql):
-        yield dict(zip(cols, row, strict=False))
+    order_columns = [column for column in order.split(",") if column.strip() in have]
+    sql = "select %s from %s" % (", ".join(columns), table)
+    if order_columns:
+        sql += " order by " + ", ".join(order_columns)
+    for row in connection.execute(sql):
+        yield dict(zip(columns, row, strict=False))
 
 
-def _loc(filepath, start_line) -> str:
+def _location(filepath, start_line) -> str:
     path_text = str(filepath or "")
     return (
         "%s:%s" % (path_text, start_line)
@@ -139,30 +139,30 @@ def _loc(filepath, start_line) -> str:
     )
 
 
-def attachment_parts(att: dict) -> list[str]:
+def attachment_parts(attachment: dict) -> list[str]:
     """Return short descriptions of what was attached to a message."""
     parts: list[str] = []
-    for code in _list(att.get("code")):
+    for code in _list(attachment.get("code")):
         if isinstance(code, dict):
-            repo = str(code.get("git_url") or "")
+            repository = str(code.get("git_url") or "")
             if code.get("commit"):
-                repo += "@" + str(code["commit"])
+                repository += "@" + str(code["commit"])
             parts.append(
-                _join("code", repo, _loc(code.get("filepath"), code.get("start_line"))).replace(
-                    " | ", " "
-                )
+                _join(
+                    "code", repository, _location(code.get("filepath"), code.get("start_line"))
+                ).replace(" | ", " ")
             )
-    for code in _list(att.get("client_code")):
+    for code in _list(attachment.get("client_code")):
         if isinstance(code, dict):
             parts.append(
-                ("client_code " + _loc(code.get("filepath"), code.get("start_line"))).strip()
+                ("client_code " + _location(code.get("filepath"), code.get("start_line"))).strip()
             )
-    for doc in _list(att.get("doc")):
+    for doc in _list(attachment.get("doc")):
         if isinstance(doc, dict):
             label = doc.get("title") or doc.get("sha") or ""
             link = doc.get("link") or doc.get("page_link") or ""
             parts.append(_join("doc", str(label), str(link)).replace(" | ", " "))
-    file_list = att.get("code_file_list")
+    file_list = attachment.get("code_file_list")
     if isinstance(file_list, dict) and isinstance(file_list.get("file_list"), list):
         parts.append("code_file_list %d files" % len(file_list["file_list"]))
     return parts
@@ -170,9 +170,9 @@ def attachment_parts(att: dict) -> list[str]:
 
 def message_attachment(message: dict) -> dict:
     """Return a thread message's attachment, from the pre-0.25 columns when it lacks one."""
-    att = _json(message.get("attachment"), None)
-    if isinstance(att, dict):
-        return att
+    attachment = _json(message.get("attachment"), None)
+    if isinstance(attachment, dict):
+        return attachment
     # Pre-0.25 databases (threads.rs:34-38): separate columns, no `attachment`.
     return {
         "code": _json(message.get("code_attachments"), None),
@@ -181,9 +181,9 @@ def message_attachment(message: dict) -> dict:
     }
 
 
-def first_git_url(att: dict) -> str:
+def first_git_url(attachment: dict) -> str:
     """Return the first `code[].git_url` of an attachment, else ""."""
-    for code in _list(att.get("code")):
+    for code in _list(attachment.get("code")):
         if isinstance(code, dict) and code.get("git_url"):
             return str(code["git_url"])
     return ""
@@ -229,12 +229,12 @@ def _command_text(item) -> str:
     An entry is `JSON.stringify({command, context})` or a bare command string
     (quickPick.ts:322-351).
     """
-    cmd = _json(item, None) if isinstance(item, str) else item
-    if isinstance(cmd, dict) and cmd.get("command"):
-        text = str(cmd["command"])
+    command = _json(item, None) if isinstance(item, str) else item
+    if isinstance(command, dict) and command.get("command"):
+        text = str(command["command"])
         files = [
             str(context.get("uri"))
-            for context in _list(cmd.get("context"))
+            for context in _list(command.get("context"))
             if isinstance(context, dict) and context.get("uri")
         ]
         return "%s [context: %s]" % (text, "; ".join(files)) if files else text
@@ -263,11 +263,11 @@ class TabbyParser(Parser):
         if not self._own(artifact):
             return bool(STATE_DB_RX.search(rel))
         return bool(
-            DB_RX.match(rel)
-            or BACKUP_RX.match(rel)
-            or EVENTS_RX.match(rel)
-            or CONFIG_RX.match(rel)
-            or INTELLIJ_HISTORY_RX.search(rel)
+            DATABASE_PATTERN.match(rel)
+            or BACKUP_PATTERN.match(rel)
+            or EVENTS_PATTERN.match(rel)
+            or CONFIG_PATTERN.match(rel)
+            or INTELLIJ_HISTORY_PATTERN.search(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
@@ -275,21 +275,25 @@ class TabbyParser(Parser):
         rel = artifact.rel
         if not self._own(artifact):
             return bool(STATE_DB_RX.search(rel))
-        return bool(BACKUP_RX.match(rel) or EVENTS_RX.match(rel) or INTELLIJ_HISTORY_RX.search(rel))
+        return bool(
+            BACKUP_PATTERN.match(rel)
+            or EVENTS_PATTERN.match(rel)
+            or INTELLIJ_HISTORY_PATTERN.search(rel)
+        )
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Tabby file."""
         rel = artifact.rel
         if not self._own(artifact):
             yield from self._parse_vscode_state(artifact, opts)
-        elif EVENTS_RX.match(rel):
+        elif EVENTS_PATTERN.match(rel):
             yield from self._parse_events(artifact, opts)
-        elif CONFIG_RX.match(rel):
+        elif CONFIG_PATTERN.match(rel):
             yield from self._parse_config(artifact, opts)
-        elif INTELLIJ_HISTORY_RX.search(rel):
+        elif INTELLIJ_HISTORY_PATTERN.search(rel):
             yield from self._parse_intellij_history(artifact, opts)
         else:
-            yield from self._parse_db(artifact, opts, bool(BACKUP_RX.match(rel)))
+            yield from self._parse_database(artifact, opts, bool(BACKUP_PATTERN.match(rel)))
 
     def _row(
         self,
@@ -312,7 +316,7 @@ class TabbyParser(Parser):
         return row
 
     # -- db.sqlite and its backups -------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options, backup: bool) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options, backup: bool) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             yield self._row(artifact, 0, text="parser: not a SQLite database")
             return
@@ -327,11 +331,11 @@ class TabbyParser(Parser):
                 ),
             )
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 users: dict[str, str] = {}
                 if "users" in tables:
-                    for user in _select(con, "users", "id"):
+                    for user in _select(connection, "users", "id"):
                         label = str(user.get("email") or "")
                         if user.get("name"):
                             label = (
@@ -339,38 +343,39 @@ class TabbyParser(Parser):
                             )
                         users[str(user.get("id"))] = label
                 if "threads" in tables:
-                    yield from self._threads(artifact, con, tables, users, opts)
+                    yield from self._threads(artifact, connection, tables, users, opts)
                 if "pages" in tables:
-                    yield from self._pages(artifact, con, tables, users, opts)
+                    yield from self._pages(artifact, connection, tables, users, opts)
                 if "user_events" in tables:
-                    yield from self._user_events(artifact, con, users, opts)
+                    yield from self._user_events(artifact, connection, users, opts)
                 if "integrations" in tables:
-                    yield from self._integrations(artifact, con, tables, opts)
+                    yield from self._integrations(artifact, connection, tables, opts)
         except sqlite3.DatabaseError as error:
             yield self._row(artifact, 0, text="parser: SQLite error: %s" % error)
 
     def _threads(
         self,
         artifact: Artifact,
-        con: sqlite3.Connection,
+        connection: sqlite3.Connection,
         tables: set,
         users: dict[str, str],
         opts: Options,
     ) -> Iterator[Row]:
         messages: dict[str, list[dict]] = {}
         if "thread_messages" in tables:
-            for message in _select(con, "thread_messages", "thread_id,created_at,id"):
+            for message in _select(connection, "thread_messages", "thread_id,created_at,id"):
                 messages.setdefault(str(message.get("thread_id")), []).append(message)
-        threads = list(_select(con, "threads", "created_at,id"))
+        threads = list(_select(connection, "threads", "created_at,id"))
         known = {str(thread.get("id")) for thread in threads}
         # Messages whose thread row is gone still get parsed, under their thread id.
-        threads += [{"id": tid} for tid in messages if tid not in known]
+        threads += [{"id": thread_id} for thread_id in messages if thread_id not in known]
         for thread in threads:
-            tid = str(thread.get("id"))
-            msgs = messages.get(tid, [])
-            atts = [message_attachment(message) for message in msgs]
+            thread_id = str(thread.get("id"))
+            thread_messages = messages.get(thread_id, [])
+            attachments = [message_attachment(message) for message in thread_messages]
             project = next(
-                (url for url in (first_git_url(attachment) for attachment in atts) if url), ""
+                (url for url in (first_git_url(attachment) for attachment in attachments) if url),
+                "",
             )
             questions = [
                 str(question) for question in _list(_json(thread.get("relevant_questions"), None))
@@ -379,7 +384,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 int(thread["id"]) if str(thread.get("id")).isdigit() else 0,
-                tid,
+                thread_id,
                 project,
                 to_utc(thread.get("created_at")),
                 opts=opts,
@@ -397,10 +402,10 @@ class TabbyParser(Parser):
                     "relevant questions: " + "; ".join(questions) if questions else "",
                 ),
             )
-            for message, att in zip(msgs, atts, strict=False):
+            for message, attached in zip(thread_messages, attachments, strict=False):
                 role = str(message.get("role") or "")
                 text = str(message.get("content") or "")
-                parts = attachment_parts(att)
+                parts = attachment_parts(attached)
                 if message.get("code_source_id"):
                     parts.insert(0, "code_source %s" % message["code_source_id"])
                 if parts:
@@ -410,7 +415,7 @@ class TabbyParser(Parser):
                 yield self._row(
                     artifact,
                     message.get("id") or 0,
-                    tid,
+                    thread_id,
                     project,
                     to_utc(message.get("created_at")),
                     role if role in ("user", "assistant") else "system",
@@ -419,9 +424,13 @@ class TabbyParser(Parser):
                 )
 
     def _user_events(
-        self, artifact: Artifact, con: sqlite3.Connection, users: dict[str, str], opts: Options
+        self,
+        artifact: Artifact,
+        connection: sqlite3.Connection,
+        users: dict[str, str],
+        opts: Options,
     ) -> Iterator[Row]:
-        for user_event in _select(con, "user_events", "created_at,id"):
+        for user_event in _select(connection, "user_events", "created_at,id"):
             line = user_event.get("id") or 0
             timestamp = to_utc(user_event.get("created_at"))
             owner = "user=%s" % (
@@ -444,7 +453,7 @@ class TabbyParser(Parser):
     def _pages(
         self,
         artifact: Artifact,
-        con: sqlite3.Connection,
+        connection: sqlite3.Connection,
         tables: set,
         users: dict[str, str],
         opts: Options,
@@ -456,21 +465,24 @@ class TabbyParser(Parser):
         """
         sections: dict[str, list[dict]] = {}
         if "page_sections" in tables:
-            for sec in _select(con, "page_sections", "page_id,position,id"):
-                sections.setdefault(str(sec.get("page_id")), []).append(sec)
-        pages = list(_select(con, "pages", "created_at,id"))
+            for section in _select(connection, "page_sections", "page_id,position,id"):
+                sections.setdefault(str(section.get("page_id")), []).append(section)
+        pages = list(_select(connection, "pages", "created_at,id"))
         known = {str(page.get("id")) for page in pages}
         # Sections whose page row is gone still get parsed, under their page id.
         pages += [{"id": page_id} for page_id in sections if page_id not in known]
         for page in pages:
             page_id = str(page.get("id"))
             line = int(page_id) if page_id.isdigit() else 0
-            sid = "page:%s" % page_id
-            secs = sections.get(page_id, [])
-            atts = [_json(sec.get("attachment"), {}) for sec in secs]
-            atts = [attachment if isinstance(attachment, dict) else {} for attachment in atts]
+            session_id = "page:%s" % page_id
+            page_sections = sections.get(page_id, [])
+            attachments = [_json(section.get("attachment"), {}) for section in page_sections]
+            attachments = [
+                attachment if isinstance(attachment, dict) else {} for attachment in attachments
+            ]
             project = next(
-                (url for url in (first_git_url(attachment) for attachment in atts) if url), ""
+                (url for url in (first_git_url(attachment) for attachment in attachments) if url),
+                "",
             )
             timestamp = to_utc(page.get("created_at"))
             owner = users.get(str(page.get("author_id")), "")
@@ -483,7 +495,7 @@ class TabbyParser(Parser):
             yield self._row(
                 artifact,
                 line,
-                sid,
+                session_id,
                 project,
                 timestamp,
                 opts=opts,
@@ -497,30 +509,37 @@ class TabbyParser(Parser):
             )
             if page.get("content"):
                 yield self._row(
-                    artifact, line, sid, project, timestamp, "assistant", str(page["content"]), opts
+                    artifact,
+                    line,
+                    session_id,
+                    project,
+                    timestamp,
+                    "assistant",
+                    str(page["content"]),
+                    opts,
                 )
-            for sec, att in zip(secs, atts, strict=False):
+            for section, attached in zip(page_sections, attachments, strict=False):
                 text = "\n\n".join(
                     str(part)
-                    for part in (sec.get("title"), sec.get("content"))
+                    for part in (section.get("title"), section.get("content"))
                     if part not in (None, "")
                 )
-                parts = attachment_parts(att)
+                parts = attachment_parts(attached)
                 if parts:
                     text = "%s [attachments: %s]" % (text, "; ".join(parts))
                 yield self._row(
                     artifact,
-                    sec.get("id") or 0,
-                    sid,
+                    section.get("id") or 0,
+                    session_id,
                     project,
-                    to_utc(sec.get("created_at")) or timestamp,
+                    to_utc(section.get("created_at")) or timestamp,
                     "assistant",
                     text,
                     opts,
                 )
 
     def _integrations(
-        self, artifact: Artifact, con: sqlite3.Connection, tables: set, opts: Options
+        self, artifact: Artifact, connection: sqlite3.Connection, tables: set, opts: Options
     ) -> Iterator[Row]:
         """Yield the source-host integrations and the repositories cached from them.
 
@@ -528,7 +547,7 @@ class TabbyParser(Parser):
         selected.
         """
         names: dict[str, tuple[str, str]] = {}
-        for integration in _select(con, "integrations", "created_at,id"):
+        for integration in _select(connection, "integrations", "created_at,id"):
             kind = str(integration.get("kind") or "")
             api_base = str(integration.get("api_base") or "")
             host = INTEGRATION_HOSTS.get(kind) or urlparse(api_base).hostname or "-"
@@ -545,7 +564,7 @@ class TabbyParser(Parser):
             )
         if "provided_repositories" not in tables:
             return
-        for repository in _select(con, "provided_repositories", "integration_id,id"):
+        for repository in _select(connection, "provided_repositories", "integration_id,id"):
             name, kind = names.get(str(repository.get("integration_id")), ("", ""))
             yield self._row(
                 artifact,
@@ -597,11 +616,11 @@ class TabbyParser(Parser):
         if not isinstance(models, dict):
             return
         for group in MODEL_GROUPS:
-            conf = models.get(group)
-            if not isinstance(conf, dict):
+            config = models.get(group)
+            if not isinstance(config, dict):
                 continue
             for kind in ("http", "local"):
-                body = conf.get(kind)
+                body = config.get(kind)
                 if isinstance(body, dict):
                     yield self._row(
                         artifact,
@@ -626,8 +645,8 @@ class TabbyParser(Parser):
             text="inline edit command history: %d commands, newest first (from %s, no times)"
             % (len(commands), source),
         )
-        for index, cmd in enumerate(commands, 1):
-            yield self._row(artifact, index, turn_type="user", text=cmd, opts=opts)
+        for index, command in enumerate(commands, 1):
+            yield self._row(artifact, index, turn_type="user", text=command, opts=opts)
 
     def _parse_intellij_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         try:
@@ -638,15 +657,15 @@ class TabbyParser(Parser):
             )
             return
         commands: list[str] = []
-        for comp in root.iter("component"):
-            if comp.get("name") != INTELLIJ_HISTORY_COMPONENT:
+        for component in root.iter("component"):
+            if component.get("name") != INTELLIJ_HISTORY_COMPONENT:
                 continue
-            for opt in comp.iter("option"):
-                if opt.get("name") == "history":
+            for option in component.iter("option"):
+                if option.get("name") == "history":
                     commands += [
                         str(element.get("value"))
-                        for element in opt.iter()
-                        if element is not opt and element.get("value") is not None
+                        for element in option.iter()
+                        if element is not option and element.get("value") is not None
                     ]
         if commands:
             yield from self._history_rows(
@@ -672,21 +691,21 @@ class TabbyParser(Parser):
     # -- events/YYYY-MM-DD.json ----------------------------------------------------------
     def _parse_events(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
-            user = rec.get("user")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            user = record.get("user")
             owner = "user=%s" % user if user not in (None, "") else ""
-            event = rec.get("event")
+            event = record.get("event")
             if not isinstance(event, dict):
                 yield self._row(
                     artifact,
                     line_number,
-                    timestamp=to_utc(rec.get("ts")),
+                    timestamp=to_utc(record.get("ts")),
                     opts=opts,
-                    text="unknown log entry: " + compact_json(rec),
+                    text="unknown log entry: " + compact_json(record),
                 )
                 continue
             yield from self._event_rows(
-                artifact, line_number, to_utc(rec.get("ts")), owner, event, opts
+                artifact, line_number, to_utc(record.get("ts")), owner, event, opts
             )
         yield from error_rows(self, artifact, errors)
 

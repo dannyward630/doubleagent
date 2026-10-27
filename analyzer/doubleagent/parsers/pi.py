@@ -54,7 +54,7 @@ from .base import (
 )
 from .cline_legacy import iter_json_array
 
-SESSION_RX = re.compile(r"^\.pi/agent/(?:sessions/[^/]+/)?[^/]+\.jsonl$")
+SESSION_PATTERN = re.compile(r"^\.pi/agent/(?:sessions/[^/]+/)?[^/]+\.jsonl$")
 TRUST_REL = ".pi/agent/trust.json"
 SETTINGS_REL = ".pi/agent/settings.json"
 DEBUG_REL = ".pi/agent/pi-debug.log"
@@ -65,11 +65,11 @@ DEBUG_HEADER = "Debug output at "
 # assistant message is when its stream started; the session file stamps the
 # entry when the message ended.
 DEBUG_TOLERANCE_SECONDS = 3600.0
-SESSION_NAME_RX = re.compile(r"_([^_/]+)\.jsonl$")
+SESSION_NAME_PATTERN = re.compile(r"_([^_/]+)\.jsonl$")
 # The refusal texts of little-coder's permission-gate extension.
 GATE_REFUSALS = ("edit cancelled by user", "command cancelled by user")
 GATE_PREFIX = "shell whitelist:"
-META_RX = re.compile(r"^\.pi/agent/experimental/sessions/([^/]+)/meta\.json$")
+META_PATTERN = re.compile(r"^\.pi/agent/experimental/sessions/([^/]+)/meta\.json$")
 
 ARG_KEYS = ("command", "path", "file_path", "pattern", "code", "url", "query")
 SKIPPED_ENTRIES = ("custom", "label", "usage")
@@ -95,22 +95,22 @@ def read_session(path) -> SessionFile:
     """Read a pi-format session file into its header, entries and bad lines."""
     session = SessionFile()
     first = True
-    for line_number, rec in iter_jsonl(path, session.errors):
+    for line_number, record in iter_jsonl(path, session.errors):
         if first:
             first = False
-            if rec.get("type") == "session":
-                session.header, session.header_line = rec, line_number
+            if record.get("type") == "session":
+                session.header, session.header_line = record, line_number
                 continue
-        session.entries.append((line_number, rec))
+        session.entries.append((line_number, record))
     return session
 
 
 def entry_keys(path) -> set[tuple[str, str]]:
     """Return the (id, timestamp) of every entry, for fork deduplication."""
     out: set[tuple[str, str]] = set()
-    for _, rec in read_session(path).entries:
-        if rec.get("id"):
-            out.add((str(rec.get("id")), str(rec.get("timestamp") or "")))
+    for _, record in read_session(path).entries:
+        if record.get("id"):
+            out.add((str(record.get("id")), str(record.get("timestamp") or "")))
     return out
 
 
@@ -175,17 +175,17 @@ def entry_rows(
     """
     skip = skip or set()
     seen: dict = {}  # the model in use, for the `model:` rows
-    for line_number, rec in session.entries:
-        if skip and (str(rec.get("id") or ""), str(rec.get("timestamp") or "")) in skip:
+    for line_number, record in session.entries:
+        if skip and (str(record.get("id") or ""), str(record.get("timestamp") or "")) in skip:
             continue
-        etype = rec.get("type")
-        raw_msg = rec.get("message")
-        msg: dict = raw_msg if isinstance(raw_msg, dict) else {}
+        entry_type = record.get("type")
+        raw_message = record.get("message")
+        message: dict = raw_message if isinstance(raw_message, dict) else {}
 
         def base(model: str = "") -> Row:
             row = parser.base_row(artifact)
             row.source_line = line_number
-            row.timestamp_utc = to_utc(rec.get("timestamp")) or to_utc(msg.get("timestamp"))
+            row.timestamp_utc = to_utc(record.get("timestamp")) or to_utc(message.get("timestamp"))
             row.session_id = session_id
             row.project_path = project_path
             row.model = model
@@ -198,55 +198,60 @@ def entry_rows(
             row.text = compact(text)
             return row
 
-        if etype == "message":
-            yield from _message_rows(msg, rec, base, emit, opts, seen, session_id)
-        elif etype == "model_change":
-            model = str(rec.get("modelId") or "")
-            text = switch_text(seen, session_id, model, str(rec.get("provider") or ""))
+        if entry_type == "message":
+            yield from _message_rows(message, record, base, emit, opts, seen, session_id)
+        elif entry_type == "model_change":
+            model = str(record.get("modelId") or "")
+            text = switch_text(seen, session_id, model, str(record.get("provider") or ""))
             if text:
                 yield emit(base(model), "system", text)
-        elif etype == "thinking_level_change":
+        elif entry_type == "thinking_level_change":
             yield emit(
-                base(), "system", "thinking_level_change: %s" % (rec.get("thinkingLevel") or "")
+                base(), "system", "thinking_level_change: %s" % (record.get("thinkingLevel") or "")
             )
-        elif etype == "compaction":
-            yield emit(
-                base(),
-                "system",
-                _label(
-                    "compaction: tokensBefore=%s" % (rec.get("tokensBefore") or ""),
-                    str(rec.get("summary") or ""),
-                ),
-            )
-        elif etype == "branch_summary":
+        elif entry_type == "compaction":
             yield emit(
                 base(),
                 "system",
                 _label(
-                    "branch_summary from %s" % (rec.get("fromId") or ""),
-                    str(rec.get("summary") or ""),
+                    "compaction: tokensBefore=%s" % (record.get("tokensBefore") or ""),
+                    str(record.get("summary") or ""),
                 ),
             )
-        elif etype == "custom_message":
+        elif entry_type == "branch_summary":
             yield emit(
                 base(),
                 "system",
                 _label(
-                    "custom_message %s" % (rec.get("customType") or ""), text_of(rec.get("content"))
+                    "branch_summary from %s" % (record.get("fromId") or ""),
+                    str(record.get("summary") or ""),
                 ),
             )
-        elif etype == "context_edit":
-            rep = rec.get("replacement")
-            what = text_of(rep.get("content")) if isinstance(rep, dict) else "omitted from context"
+        elif entry_type == "custom_message":
             yield emit(
                 base(),
                 "system",
-                _label("context_edit target=%s" % (rec.get("targetId") or ""), what),
+                _label(
+                    "custom_message %s" % (record.get("customType") or ""),
+                    text_of(record.get("content")),
+                ),
             )
-        elif etype == "session_info":
-            yield emit(base(), "system", "session_info: name=%s" % (rec.get("name") or ""))
-        elif etype == "custom" and rec.get("customType") == BUG_REPORT:
-            text = bug_report_text(rec.get("data"))
+        elif entry_type == "context_edit":
+            replacement = record.get("replacement")
+            what = (
+                text_of(replacement.get("content"))
+                if isinstance(replacement, dict)
+                else "omitted from context"
+            )
+            yield emit(
+                base(),
+                "system",
+                _label("context_edit target=%s" % (record.get("targetId") or ""), what),
+            )
+        elif entry_type == "session_info":
+            yield emit(base(), "system", "session_info: name=%s" % (record.get("name") or ""))
+        elif entry_type == "custom" and record.get("customType") == BUG_REPORT:
+            text = bug_report_text(record.get("data"))
             if text:
                 yield emit(base(), "system", text)
         # Other custom entries, label, usage and unknown types carry no
@@ -262,56 +267,56 @@ def bug_report_text(data) -> str:
     if not isinstance(data, dict):
         return ""
 
-    def val(key: str) -> str:
+    def field_text(key: str) -> str:
         value = data.get(key)
         return "-" if value in (None, "") else setting_value(value)
 
-    src = "(from session entry %s, entry timestamp)" % BUG_REPORT
+    source = "(from session entry %s, entry timestamp)" % BUG_REPORT
     if data.get("delivery") == "upload":
         return (
             "session synced: bug report %s uploaded to radius.pi.dev transcript=%s summary=%s %s"
             % (
-                val("id"),
-                val("sessionIncluded"),
-                val("summaryIncluded"),
-                src,
+                field_text("id"),
+                field_text("sessionIncluded"),
+                field_text("summaryIncluded"),
+                source,
             )
         )
     if data.get("delivery") == "zip":
-        return "bug report exported: %s path=%s %s" % (val("id"), val("path"), src)
+        return "bug report exported: %s path=%s %s" % (field_text("id"), field_text("path"), source)
     return ""
 
 
 def _message_rows(
-    msg: dict, rec: dict, base, emit, opts: Options, seen: dict, session_id: str
+    message: dict, record: dict, base, emit, opts: Options, seen: dict, session_id: str
 ) -> Iterator[Row]:
-    role = msg.get("role")
+    role = message.get("role")
     if role == "user":
-        text = text_of(msg.get("content"))
+        text = text_of(message.get("content"))
         if text:
             yield emit(base(), "user", text)
     elif role == "assistant":
-        requested = str(msg.get("model") or "")
-        model = str(msg.get("responseModel") or "") or requested
-        text = model_text(seen, session_id, model, str(msg.get("provider") or ""), requested)
+        requested = str(message.get("model") or "")
+        model = str(message.get("responseModel") or "") or requested
+        text = model_text(seen, session_id, model, str(message.get("provider") or ""), requested)
         if text:
             yield emit(base(model), "system", text)
-        content = msg.get("content")
+        content = message.get("content")
         if isinstance(content, str):
             content = [{"type": "text", "text": content}]
         for part in content if isinstance(content, list) else []:
             if not isinstance(part, dict):
                 continue
-            ptype = part.get("type")
-            if ptype == "text" and part.get("text"):
+            part_type = part.get("type")
+            if part_type == "text" and part.get("text"):
                 yield emit(base(model), "assistant", str(part.get("text")))
-            elif ptype == "thinking" and opts.include_thinking:
+            elif part_type == "thinking" and opts.include_thinking:
                 text = str(part.get("thinking") or "")
                 if part.get("redacted") and not text:
                     text = "[redacted]"
                 if text:
                     yield emit(base(model), "thinking", text)
-            elif ptype == "toolCall":
+            elif part_type == "toolCall":
                 name = str(part.get("name") or "")
                 yield emit(
                     base(model),
@@ -320,22 +325,22 @@ def _message_rows(
                     tool_name=name,
                     tool_use_id=str(part.get("id") or ""),
                 )
-        if msg.get("stopReason") in ("error", "aborted"):
+        if message.get("stopReason") in ("error", "aborted"):
             yield emit(
                 base(model),
                 "system",
                 _label(
-                    "assistant stopReason=%s" % msg.get("stopReason"),
-                    str(msg.get("errorMessage") or ""),
+                    "assistant stopReason=%s" % message.get("stopReason"),
+                    str(message.get("errorMessage") or ""),
                 ),
             )
     elif role == "toolResult":
-        reason = text_of(msg.get("content"))
-        text = "[error] " + reason if msg.get("isError") else reason
-        tool_name = str(msg.get("toolName") or "")
-        tool_use_id = str(msg.get("toolCallId") or "")
+        reason = text_of(message.get("content"))
+        text = "[error] " + reason if message.get("isError") else reason
+        tool_name = str(message.get("toolName") or "")
+        tool_use_id = str(message.get("toolCallId") or "")
         yield emit(base(), "tool_result", text, tool_name=tool_name, tool_use_id=tool_use_id)
-        if msg.get("isError") and (reason in GATE_REFUSALS or reason.startswith(GATE_PREFIX)):
+        if message.get("isError") and (reason in GATE_REFUSALS or reason.startswith(GATE_PREFIX)):
             yield emit(
                 base(),
                 "system",
@@ -344,31 +349,37 @@ def _message_rows(
                 tool_use_id=tool_use_id,
             )
     elif role == "bashExecution":
-        eid = str(rec.get("id") or "")
+        entry_id = str(record.get("id") or "")
         yield emit(
-            base(), "tool_use", str(msg.get("command") or ""), tool_name="bash", tool_use_id=eid
+            base(),
+            "tool_use",
+            str(message.get("command") or ""),
+            tool_name="bash",
+            tool_use_id=entry_id,
         )
-        out = str(msg.get("output") or "")
+        out = str(message.get("output") or "")
         notes = []
-        if msg.get("exitCode") not in (None, 0):
-            notes.append("exit %s" % msg.get("exitCode"))
-        if msg.get("cancelled"):
+        if message.get("exitCode") not in (None, 0):
+            notes.append("exit %s" % message.get("exitCode"))
+        if message.get("cancelled"):
             notes.append("cancelled")
-        if msg.get("truncated"):
+        if message.get("truncated"):
             notes.append("truncated")
         if notes:
             out = (out + "\n" if out else "") + "[%s]" % ", ".join(notes)
-        yield emit(base(), "tool_result", out, tool_name="bash", tool_use_id=eid)
+        yield emit(base(), "tool_result", out, tool_name="bash", tool_use_id=entry_id)
     elif role == "system":
-        yield emit(base(), "system", _label("system prompt", text_of(msg.get("content"))))
+        yield emit(base(), "system", _label("system prompt", text_of(message.get("content"))))
     elif role == "custom":
         yield emit(
             base(),
             "system",
-            _label("custom %s" % (msg.get("customType") or ""), text_of(msg.get("content"))),
+            _label(
+                "custom %s" % (message.get("customType") or ""), text_of(message.get("content"))
+            ),
         )
     elif role in ("branchSummary", "compactionSummary"):
-        yield emit(base(), "system", _label(role, str(msg.get("summary") or "")))
+        yield emit(base(), "system", _label(role, str(message.get("summary") or "")))
 
 
 def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
@@ -391,15 +402,15 @@ def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
         parts = [part for part in rel.split("/") if part]
         if not parts or ".." in parts:
             continue
-        cur = root
+        current = root
         safe = True
         for part in parts:
-            cur = cur / part
-            if cur.is_symlink():
+            current = current / part
+            if current.is_symlink():
                 safe = False
                 break
-        if safe and cur.is_file():
-            return cur
+        if safe and current.is_file():
+            return current
     return None
 
 
@@ -418,7 +429,7 @@ class PiParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for a session, trust, settings, debug, crash or metadata file."""
         return artifact.rel in (TRUST_REL, SETTINGS_REL, DEBUG_REL, CRASHES_REL) or bool(
-            SESSION_RX.match(artifact.rel) or META_RX.match(artifact.rel)
+            SESSION_PATTERN.match(artifact.rel) or META_PATTERN.match(artifact.rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
@@ -445,7 +456,7 @@ class PiParser(Parser):
         if artifact.rel == CRASHES_REL:
             yield from self._parse_crashes(artifact)
             return
-        match = META_RX.match(artifact.rel)
+        match = META_PATTERN.match(artifact.rel)
         if match:
             yield from self._parse_meta(artifact, match.group(1), opts)
             return
@@ -455,14 +466,14 @@ class PiParser(Parser):
             if not session.entries:
                 yield from error_rows(self, artifact, session.errors)
             return
-        sid = str(header.get("id") or "")
+        session_id = str(header.get("id") or "")
         cwd = str(header.get("cwd") or "")
         parent = str(header.get("parentSession") or "")
 
         row = self.base_row(artifact)
         row.source_line = session.header_line
         row.timestamp_utc = to_utc(header.get("timestamp"))
-        row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
+        row.session_id, row.project_path, row.turn_type = session_id, cwd, "system"
         text = "session start: version=%s cwd=%s" % (header.get("version") or 1, cwd)
         if parent:
             text += " parentSession=%s" % parent
@@ -487,26 +498,28 @@ class PiParser(Parser):
                 row = self.base_row(artifact)
                 row.source_line = session.header_line
                 row.timestamp_utc = to_utc(header.get("timestamp"))
-                row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
+                row.session_id, row.project_path, row.turn_type = session_id, cwd, "system"
                 row.text = compact(
                     "fork: %d entries copied from the parent session %s omitted; "
                     "they are in the parent's rows" % (dropped, parent),
                 )
                 yield row
 
-        yield from entry_rows(self, artifact, session, opts, sid, cwd, skip if dropped else None)
+        yield from entry_rows(
+            self, artifact, session, opts, session_id, cwd, skip if dropped else None
+        )
 
         why = little_coder_markers(artifact, session)
         if why:
             row = self.base_row(artifact)
             row.source_line = session.header_line
             row.timestamp_utc = to_utc(header.get("timestamp"))
-            row.session_id, row.project_path, row.turn_type = sid, cwd, "system"
+            row.session_id, row.project_path, row.turn_type = session_id, cwd, "system"
             row.text = compact(
                 "session driven by little-coder (pi launcher): %s" % "; ".join(why),
             )
             yield row
-        yield from error_rows(self, artifact, session.errors, sid, cwd)
+        yield from error_rows(self, artifact, session.errors, session_id, cwd)
 
     def _parse_trust(self, artifact: Artifact) -> Iterator[Row]:
         """Yield one standing row per project path of `trust.json`, at the file's mtime."""
@@ -567,16 +580,16 @@ class PiParser(Parser):
                 if not line.strip():
                     continue
                 try:
-                    msg = json.loads(line)
+                    message = json.loads(line)
                 except ValueError as error:
                     session.errors.append((line_number, "unparseable line (%s)" % error, line))
                     continue
-                if not isinstance(msg, dict):
+                if not isinstance(message, dict):
                     session.errors.append(
                         (line_number, "unparseable line (not a JSON object)", line)
                     )
                     continue
-                session.entries.append((line_number, {"type": "message", "message": msg}))
+                session.entries.append((line_number, {"type": "message", "message": message}))
         row = self.base_row(artifact)
         row.source_line, row.turn_type, row.timestamp_utc = 1, "system", written
         row.text = compact(
@@ -590,32 +603,32 @@ class PiParser(Parser):
     def _parse_crashes(self, artifact: Artifact) -> Iterator[Row]:
         """Yield one row per crash record of `crashes.json`, at its own time."""
         errors: list = []
-        for index, rec in iter_json_array(artifact.disk_path, errors):
-            if not isinstance(rec, dict):
+        for index, record in iter_json_array(artifact.disk_path, errors):
+            if not isinstance(record, dict):
                 continue
-            session_file = str(rec.get("sessionFile") or "")
-            match = SESSION_NAME_RX.search(session_file.replace("\\", "/"))
+            session_file = str(record.get("sessionFile") or "")
+            match = SESSION_NAME_PATTERN.search(session_file.replace("\\", "/"))
             row = self.base_row(artifact)
             row.source_line, row.turn_type = index, "system"
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
+            row.timestamp_utc = to_utc(record.get("timestamp"))
             row.session_id = match.group(1) if match else ""
-            row.project_path = str(rec.get("cwd") or "")
+            row.project_path = str(record.get("cwd") or "")
             text = "crash: %s %s version=%s sessionFile=%s (from %s, record timestamp)" % (
-                _dash(rec.get("kind")),
-                _dash(rec.get("message")),
-                _dash(rec.get("version")),
-                _dash(rec.get("sessionFile")),
+                _dash(record.get("kind")),
+                _dash(record.get("message")),
+                _dash(record.get("version")),
+                _dash(record.get("sessionFile")),
                 artifact.rel,
             )
-            if rec.get("stack"):
-                text += "\n" + str(rec.get("stack"))
+            if record.get("stack"):
+                text += "\n" + str(record.get("stack"))
             row.text = compact(text)
             yield row
         yield from error_rows(self, artifact, errors)
 
-    def _parse_meta(self, artifact: Artifact, sid: str, opts: Options) -> Iterator[Row]:
+    def _parse_meta(self, artifact: Artifact, session_id: str, opts: Options) -> Iterator[Row]:
         row = self.base_row(artifact)
-        row.session_id, row.turn_type, row.source_line = sid, "system", 1
+        row.session_id, row.turn_type, row.source_line = session_id, "system", 1
         try:
             with open(artifact.disk_path, "rb") as handle:
                 meta = json.loads(handle.read().decode("utf-8", errors="replace"))
@@ -643,17 +656,17 @@ def little_coder_markers(artifact: Artifact, session: SessionFile) -> list[str]:
     """Return why a pi session looks driven by little-coder, empty when it does not."""
     types: dict[str, None] = {}
     llamacpp = False
-    for _, rec in session.entries:
-        if rec.get("type") == "custom_message":
-            custom_type = str(rec.get("customType") or "")
+    for _, record in session.entries:
+        if record.get("type") == "custom_message":
+            custom_type = str(record.get("customType") or "")
             if custom_type.startswith("lc-"):
                 types.setdefault(custom_type)
-        elif rec.get("type") == "message":
-            msg = rec.get("message")
+        elif record.get("type") == "message":
+            message = record.get("message")
             if (
-                isinstance(msg, dict)
-                and msg.get("role") == "assistant"
-                and msg.get("provider") == "llamacpp"
+                isinstance(message, dict)
+                and message.get("role") == "assistant"
+                and message.get("provider") == "llamacpp"
             ):
                 llamacpp = True
     why = []

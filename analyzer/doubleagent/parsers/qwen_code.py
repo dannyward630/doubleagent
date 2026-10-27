@@ -52,14 +52,14 @@ from .base import (
 )
 from .gemini_cli import parse_jsonc, trusted_folder_rows
 
-SESSION_RX = re.compile(r"^\.qwen/projects/[^/]+/chats/(?:archive/)?[^/]+\.jsonl$")
-LOGS_RX = re.compile(r"^\.qwen/tmp/[^/]+/logs\.json$")
-TRUSTED_RX = re.compile(r"^\.qwen/trustedFolders\.json$")
-CHANNELS_RX = re.compile(r"^\.qwen/(channels/(?:sessions\.json|daemon/[^/]+/routes\.json))$")
+SESSION_PATTERN = re.compile(r"^\.qwen/projects/[^/]+/chats/(?:archive/)?[^/]+\.jsonl$")
+LOGS_PATTERN = re.compile(r"^\.qwen/tmp/[^/]+/logs\.json$")
+TRUSTED_PATTERN = re.compile(r"^\.qwen/trustedFolders\.json$")
+CHANNELS_PATTERN = re.compile(r"^\.qwen/(channels/(?:sessions\.json|daemon/[^/]+/routes\.json))$")
 # `~/.qwen/settings.json`, or a project's `.qwen/settings.json` (a project
 # catalog file), for the standing permission rules.
-SETTINGS_RX = re.compile(r"^\.qwen/settings\.json$")
-USAGE_RX = re.compile(r"^\.qwen/usage_record\.jsonl$")
+SETTINGS_PATTERN = re.compile(r"^\.qwen/settings\.json$")
+USAGE_PATTERN = re.compile(r"^\.qwen/usage_record\.jsonl$")
 PERMISSION_LISTS = ("allow", "ask", "deny")
 # `ToolCallEvent` as `logToolCall` records it in a `ui_telemetry` record,
 # and the class's own default name, which an older build may have written.
@@ -95,11 +95,11 @@ def args_summary(args) -> str:
     return args if isinstance(args, str) else compact_json(args)
 
 
-def _parts(rec: dict) -> list:
-    msg = rec.get("message")
-    if not isinstance(msg, dict):
+def _parts(record: dict) -> list:
+    message = record.get("message")
+    if not isinstance(message, dict):
         return []
-    parts = msg.get("parts")
+    parts = message.get("parts")
     return [part for part in parts if isinstance(part, dict)] if isinstance(parts, list) else []
 
 
@@ -136,7 +136,7 @@ def system_text(subtype: str, payload) -> str:
     return "%s: %s" % (subtype, detail) if detail else subtype
 
 
-def injected_origin(rec: dict) -> str:
+def injected_origin(record: dict) -> str:
     """Return the row prefix of a `type: user` record the user did not type, else "".
 
     The prefix is `<subtype> (provenance=<provenance> agent=<agentName>
@@ -144,15 +144,15 @@ def injected_origin(rec: dict) -> str:
     the user's when its `provenance` is absent or `real_user`, unless its
     subtype is one only the system or another agent writes.
     """
-    provenance = str(rec.get("provenance") or "")
-    subtype = str(rec.get("subtype") or "")
+    provenance = str(record.get("provenance") or "")
+    subtype = str(record.get("subtype") or "")
     if provenance in ("", "real_user") and subtype not in INJECTED_SUBTYPES:
         return ""
-    payload = rec.get("systemPayload")
+    payload = record.get("systemPayload")
     author = payload.get("author") if isinstance(payload, dict) else None
     author = author if isinstance(author, dict) else {}
-    name = rec.get("agentName") or author.get("name")
-    agent_id = rec.get("agentId") or author.get("agentId")
+    name = record.get("agentName") or author.get("name")
+    agent_id = record.get("agentId") or author.get("agentId")
     keys = [
         "%s=%s" % (key, value)
         for key, value in (("provenance", provenance), ("agent", name), ("agentId", agent_id))
@@ -173,27 +173,33 @@ class QwenCodeParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for a chat file (not its ledger sidecar) or another read file."""
         rel = artifact.rel
-        for pattern in (LOGS_RX, TRUSTED_RX, CHANNELS_RX, SETTINGS_RX, USAGE_RX):
+        for pattern in (
+            LOGS_PATTERN,
+            TRUSTED_PATTERN,
+            CHANNELS_PATTERN,
+            SETTINGS_PATTERN,
+            USAGE_PATTERN,
+        ):
             if pattern.match(rel):
                 return True
-        return bool(SESSION_RX.match(rel)) and not rel.endswith(SIDECAR_SUFFIX)
+        return bool(SESSION_PATTERN.match(rel)) and not rel.endswith(SIDECAR_SUFFIX)
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for a prompt log or the usage records."""
-        return bool(LOGS_RX.match(artifact.rel) or USAGE_RX.match(artifact.rel))
+        return bool(LOGS_PATTERN.match(artifact.rel) or USAGE_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one Qwen Code file."""
-        channels = CHANNELS_RX.match(artifact.rel)
-        if TRUSTED_RX.match(artifact.rel):
+        channels = CHANNELS_PATTERN.match(artifact.rel)
+        if TRUSTED_PATTERN.match(artifact.rel):
             yield from trusted_folder_rows(self, artifact)
-        elif SETTINGS_RX.match(artifact.rel):
+        elif SETTINGS_PATTERN.match(artifact.rel):
             yield from self._parse_settings(artifact)
-        elif USAGE_RX.match(artifact.rel):
+        elif USAGE_PATTERN.match(artifact.rel):
             yield from self._parse_usage(artifact)
         elif channels:
             yield from self._parse_channel_routes(artifact, channels.group(1))
-        elif LOGS_RX.match(artifact.rel):
+        elif LOGS_PATTERN.match(artifact.rel):
             yield from self._parse_logs(artifact, opts)
         else:
             yield from self._parse_session(artifact, opts)
@@ -269,10 +275,10 @@ class QwenCodeParser(Parser):
             yield self._settings_row(artifact, timestamp, project, text)
             return
         settings: list = []
-        perms = doc.get("permissions")
-        perms = perms if isinstance(perms, dict) else {}
+        permissions = doc.get("permissions")
+        permissions = permissions if isinstance(permissions, dict) else {}
         for key in PERMISSION_LISTS:
-            entries = perms.get(key)
+            entries = permissions.get(key)
             if isinstance(entries, list):
                 settings.extend(("permissions." + key, entry) for entry in entries)
         tools = doc.get("tools")
@@ -292,9 +298,9 @@ class QwenCodeParser(Parser):
         The file survives the session's delete.
         """
         errors: list = []
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
-            models = rec.get("models")
-            tools = rec.get("tools")
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            models = record.get("models")
+            tools = record.get("tools")
             by_name = tools.get("byName") if isinstance(tools, dict) else None
             counts = [
                 "%s=%s" % (name, stats.get("count") if isinstance(stats, dict) else stats)
@@ -303,10 +309,10 @@ class QwenCodeParser(Parser):
             row = self.base_row(artifact)
             row.source_line = line_number
             row.turn_type = "system"
-            row.timestamp_utc = to_utc(rec.get("startTime"))
-            row.session_id = str(rec.get("sessionId") or "")
-            row.project_path = str(rec.get("project") or "")
-            duration = rec.get("durationMs")
+            row.timestamp_utc = to_utc(record.get("startTime"))
+            row.session_id = str(record.get("sessionId") or "")
+            row.project_path = str(record.get("project") or "")
+            duration = record.get("durationMs")
             row.text = compact(
                 "session usage: project %s duration %s models %s tools %s"
                 " (from usage_record.jsonl, startTime)"
@@ -321,23 +327,23 @@ class QwenCodeParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     @staticmethod
-    def _context_changes(rec: dict, session_id: str, models: dict, modes: dict) -> list:
+    def _context_changes(record: dict, session_id: str, models: dict, modes: dict) -> list:
         """Return the `model:` and `permission mode:` changes a record's `executionContext` makes.
 
         Each item is (row text, model for the `model` column), for a model or
         mode that differs from the one in force for the session.
         """
-        ctx = rec.get("executionContext")
-        if not isinstance(ctx, dict):
+        execution_context = record.get("executionContext")
+        if not isinstance(execution_context, dict):
             return []
         out = []
-        model = str(ctx.get("modelId") or "")
+        model = str(execution_context.get("modelId") or "")
         change = track_change("model", models, session_id, model)
         if change:
-            auth = ctx.get("authType")
-            out.append((change + (" auth=%s" % auth if auth else ""), model))
+            auth_type = execution_context.get("authType")
+            out.append((change + (" auth=%s" % auth_type if auth_type else ""), model))
         mode = track_change(
-            "permission mode", modes, session_id, str(ctx.get("approvalMode") or "")
+            "permission mode", modes, session_id, str(execution_context.get("approvalMode") or "")
         )
         if mode:
             out.append((mode, ""))
@@ -348,46 +354,46 @@ class QwenCodeParser(Parser):
         session_id = project_path = ""
         models: dict = {}  # session id -> model in force, for the model rows
         modes: dict = {}  # session id -> approval mode in force
-        for line_number, rec in iter_jsonl(artifact.disk_path, errors):
-            rtype = rec.get("type")
-            if rec.get("sessionId"):
-                session_id = str(rec["sessionId"])
-            if rec.get("cwd"):
-                project_path = str(rec["cwd"])
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
+            record_type = record.get("type")
+            if record.get("sessionId"):
+                session_id = str(record["sessionId"])
+            if record.get("cwd"):
+                project_path = str(record["cwd"])
 
             def base(turn_type: str, text: str) -> Row:
                 row = self.base_row(artifact)
                 row.source_line = line_number
-                row.timestamp_utc = to_utc(rec.get("timestamp"))
+                row.timestamp_utc = to_utc(record.get("timestamp"))
                 row.session_id = session_id
-                row.project_path = str(rec.get("cwd") or "")
-                row.git_branch = str(rec.get("gitBranch") or "")
+                row.project_path = str(record.get("cwd") or "")
+                row.git_branch = str(record.get("gitBranch") or "")
                 row.turn_type = turn_type
                 row.text = compact(text)
                 return row
 
-            for text, model in self._context_changes(rec, session_id, models, modes):
+            for text, model in self._context_changes(record, session_id, models, modes):
                 row = base("system", text)
                 row.model = model
                 yield row
-            parts = _parts(rec)
-            if rtype == "user":
+            parts = _parts(record)
+            if record_type == "user":
                 text = "\n".join(
                     part["text"]
                     for part in parts
                     if isinstance(part.get("text"), str) and not part.get("thought")
                 )
                 if not text:
-                    payload = rec.get("systemPayload")
+                    payload = record.get("systemPayload")
                     if isinstance(payload, dict):
                         text = str(payload.get("displayText") or "")
-                origin = injected_origin(rec)
+                origin = injected_origin(record)
                 if origin:
                     yield base("system", "%s: %s" % (origin, text) if text else origin)
                 else:
                     yield base("user", text)
-            elif rtype == "assistant":
-                model = str(rec.get("model") or "")
+            elif record_type == "assistant":
+                model = str(record.get("model") or "")
                 change = track_change("model", models, session_id, model)
                 if change:
                     row = base("system", change)
@@ -409,33 +415,35 @@ class QwenCodeParser(Parser):
                         continue
                     row.model = model
                     yield row
-            elif rtype == "tool_result":
-                tcr = rec.get("toolCallResult")
-                tcr = tcr if isinstance(tcr, dict) else {}
+            elif record_type == "tool_result":
+                tool_call_result = record.get("toolCallResult")
+                tool_call_result = tool_call_result if isinstance(tool_call_result, dict) else {}
                 responses = [
                     part["functionResponse"]
                     for part in parts
                     if isinstance(part.get("functionResponse"), dict)
                 ]
                 first_response = responses[0] if responses else {}
-                display = tcr.get("resultDisplay")
+                display = tool_call_result.get("resultDisplay")
                 if isinstance(display, str) and display:
                     text = display
                 elif first_response:
                     text = _response_text(first_response.get("response"))
                 else:
                     text = compact_json(display) if display else ""
-                status = str(tcr.get("status") or "")
+                status = str(tool_call_result.get("status") or "")
                 if status and status != "success":
                     tag = (
                         status
-                        if not tcr.get("errorType")
-                        else "%s %s" % (status, tcr.get("errorType"))
+                        if not tool_call_result.get("errorType")
+                        else "%s %s" % (status, tool_call_result.get("errorType"))
                     )
                     text = "[%s] %s" % (tag, text)
                 row = base("tool_result", text)
                 row.tool_name = str(first_response.get("name") or "")
-                row.tool_use_id = str(tcr.get("callId") or first_response.get("id") or "")
+                row.tool_use_id = str(
+                    tool_call_result.get("callId") or first_response.get("id") or ""
+                )
                 yield row
                 if status in DECISION_STATUSES:
                     decision_row = base("system", "permission decision: %s" % status)
@@ -444,9 +452,9 @@ class QwenCodeParser(Parser):
                         row.tool_use_id,
                     )
                     yield decision_row
-            elif rtype == "system":
-                subtype = str(rec.get("subtype") or "system")
-                payload = rec.get("systemPayload")
+            elif record_type == "system":
+                subtype = str(record.get("subtype") or "system")
+                payload = record.get("systemPayload")
                 text = system_text(subtype, payload)
                 model = ""
                 if subtype == "session_model" and isinstance(payload, dict):
@@ -488,14 +496,14 @@ class QwenCodeParser(Parser):
 
     def _parse_logs(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for idx, entry in self._iter_array(artifact.disk_path, errors):
+        for index, entry in self._iter_array(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = idx
+            row.source_line = index
             row.timestamp_utc = to_utc(entry.get("timestamp"))
             row.session_id = str(entry.get("sessionId") or "")
-            etype = entry.get("type")
+            entry_type = entry.get("type")
             message = entry.get("message")
-            if etype == "user":
+            if entry_type == "user":
                 row.turn_type = "user"
                 text = message if isinstance(message, str) else compact_json(message)
             else:
@@ -506,7 +514,7 @@ class QwenCodeParser(Parser):
                         event = json.loads(message)
                     except ValueError:
                         event = message
-                if etype == "model_switch" and isinstance(event, dict):
+                if entry_type == "model_switch" and isinstance(event, dict):
                     text = "model: %s -> %s reason=%s" % (
                         event.get("fromModel"),
                         event.get("toModel"),
@@ -515,7 +523,7 @@ class QwenCodeParser(Parser):
                     row.model = str(event.get("toModel") or "")
                 else:
                     text = "%s: %s" % (
-                        etype,
+                        entry_type,
                         event if isinstance(event, str) else compact_json(event),
                     )
             row.text = compact(text)
@@ -536,7 +544,7 @@ class QwenCodeParser(Parser):
         with open(path, "rb") as handle:
             data = handle.read().decode("utf-8", errors="replace")
         decoder = json.JSONDecoder()
-        pos = 0
+        offset = 0
         length = len(data)
 
         def skip(position: int) -> int:
@@ -544,27 +552,27 @@ class QwenCodeParser(Parser):
                 position += 1
             return position
 
-        pos = skip(pos)
-        if pos >= length:
+        offset = skip(offset)
+        if offset >= length:
             return
-        if data[pos] != "[":
+        if data[offset] != "[":
             errors.append((0, "not a JSON array", ""))
             return
-        pos = skip(pos + 1)
-        idx = 0
-        while pos < length and data[pos] != "]":
-            idx += 1
+        offset = skip(offset + 1)
+        index = 0
+        while offset < length and data[offset] != "]":
+            index += 1
             try:
-                value, pos = decoder.raw_decode(data, pos)
+                value, offset = decoder.raw_decode(data, offset)
             except ValueError as error:
                 errors.append(
-                    (idx, "unparseable record %d (%s)" % (idx, error), tail_text(data, pos))
+                    (index, "unparseable record %d (%s)" % (index, error), tail_text(data, offset))
                 )
                 return
             if isinstance(value, dict):
-                yield idx, value
-            pos = skip(pos)
-            if pos < length and data[pos] == ",":
-                pos = skip(pos + 1)
-        if pos >= length:
-            errors.append((idx + 1, "unterminated JSON array", ""))
+                yield index, value
+            offset = skip(offset)
+            if offset < length and data[offset] == ",":
+                offset = skip(offset + 1)
+        if offset >= length:
+            errors.append((index + 1, "unterminated JSON array", ""))

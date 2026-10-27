@@ -24,7 +24,7 @@ Files read, under `User/`:
   `source host repository:` rows, so `records_sync` and `records_origin` are set.
 - Every profile's and workspace's `state.vscdb`: the `GRANT_KEYS`,
   `OPT_IN_KEY` and `ALLOWLIST_KEY` grants and, in a profile, the GitHub
-  account usage keys (`USAGE_KEY_RX`); `secret://` rows are never read.
+  account usage keys (`USAGE_KEY_PATTERN`); `secret://` rows are never read.
 - A profile's `settings.json` (JSONC): the auto-approve keys and the default model.
 - `chatEditingSessions/<key>/state.json`, a secondary source (a file
   repeating which files a request edited) that survives the chat's delete.
@@ -60,25 +60,25 @@ USER_DIR = (
     r"^(?:(?:\.config|Library/Application Support|AppData/Roaming)/(?:Code[^/]*|VSCodium[^/]*|Positron|Trae[^/]*)"
     r"|\.vscode-server[^/]*/data|\.vscodium-server[^/]*/data|\.positron-server/data)/User/"
 )
-SESSION_RX = re.compile(
+SESSION_PATTERN = re.compile(
     USER_DIR + r"(?:workspaceStorage/[^/]+/chatSessions/[^/]+\.jsonl?"
     r"|globalStorage/emptyWindowChatSessions/[^/]+\.jsonl?"
     r"|globalStorage/transferredChatSessions/[^/]+\.json)$"
 )
 
-CLOUD_SESSIONS_RX = re.compile(
+CLOUD_SESSIONS_PATTERN = re.compile(
     USER_DIR + r"globalStorage/github\.copilot-chat/cloudSessions\.json$"
 )
 # A `state.vscdb` of the default profile (`globalStorage/`, also the
 # application scope), of another profile (`profiles/<id>/globalStorage/`,
 # the Agents window's under `profiles/builtin/agents/`) or of a workspace
 # (`workspaceStorage/<hash>/`).
-STATE_RX = re.compile(
+STATE_PATTERN = re.compile(
     USER_DIR + r"(?P<scope>globalStorage|profiles/(?:builtin/)?[^/]+/globalStorage"
     r"|workspaceStorage/[^/]+)/state\.vscdb$"
 )
-SETTINGS_RX = re.compile(USER_DIR + r"(?:profiles/(?:builtin/)?[^/]+/)?settings\.json$")
-EDITING_RX = re.compile(
+SETTINGS_PATTERN = re.compile(USER_DIR + r"(?:profiles/(?:builtin/)?[^/]+/)?settings\.json$")
+EDITING_PATTERN = re.compile(
     USER_DIR + r"workspaceStorage/[^/]+/chatEditingSessions/(?P<key>[^/]+)/state\.json$"
 )
 COPILOT_STATE_KEY = "GitHub.copilot-chat"
@@ -97,8 +97,10 @@ OPT_IN_KEY = "chat.tools.global.autoApprove.optIn"
 ALLOWLIST_KEY = "chat.externalPath.workspaceAllowlist"
 # `<providerId>-<account label>-usages` and `-mcpserver-usages`, application
 # scope (authenticationUsageService.ts:103, authenticationMcpUsageService.ts:101).
-USAGE_KEY_RX = re.compile(r"^(github(?:-enterprise)?)-(.+?)(-mcpserver)?-usages$")
-SETTINGS_PERMISSION_RX = re.compile(r"^chat\.tools\..*[Aa]utoApprov|^chat\.permissions\.default$")
+USAGE_KEY_PATTERN = re.compile(r"^(github(?:-enterprise)?)-(.+?)(-mcpserver)?-usages$")
+SETTINGS_PERMISSION_PATTERN = re.compile(
+    r"^chat\.tools\..*[Aa]utoApprov|^chat\.permissions\.default$"
+)
 DEFAULT_MODEL_KEY = "chat.defaultModel"
 # `ModifiedFileEntryState`, a const enum serialised as its index
 # (chatEditingService.ts:353-357 at 4d22f4f).
@@ -109,12 +111,12 @@ class MutationError(ValueError):
     """A mutation-log record that cannot be applied to the session state."""
 
 
-def apply_mutation(state, rec: dict):
+def apply_mutation(state, record: dict):
     """Apply one mutation-log record to `state` and return the new state."""
-    kind = rec.get("kind")
+    kind = record.get("kind")
     if kind == 0:
-        return rec.get("v")
-    path = rec.get("k")
+        return record.get("v")
+    path = record.get("k")
     if not isinstance(path, list) or (not path and kind != 2):
         raise MutationError("bad path %r" % (path,))
     if kind == 2 and not path:
@@ -123,7 +125,7 @@ def apply_mutation(state, rec: dict):
         parent = _walk(state, path[:-1])
         key = path[-1]
         if kind == 1:
-            _set(parent, key, rec.get("v"))
+            _set(parent, key, record.get("v"))
             return state
         if kind == 3:
             try:
@@ -142,21 +144,21 @@ def apply_mutation(state, rec: dict):
             _set(parent, key, target)
     if not isinstance(target, list):
         raise MutationError("push to non-list at %r" % (path,))
-    if isinstance(rec.get("i"), int):
-        del target[rec["i"] :]
-    items = rec.get("v")
+    if isinstance(record.get("i"), int):
+        del target[record["i"] :]
+    items = record.get("v")
     target.extend(items if isinstance(items, list) else [items])
     return state
 
 
 def _walk(state, path):
-    cur = state
+    current = state
     for key in path:
         try:
-            cur = cur[key]
+            current = current[key]
         except (KeyError, IndexError, TypeError):
             raise MutationError("path %r not found" % (path,)) from None
-    return cur
+    return current
 
 
 def _set(parent, key, value):
@@ -180,8 +182,8 @@ def md_text(value) -> str:
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
-        val = value.get("value")
-        return val if isinstance(val, str) else ""
+        text = value.get("value")
+        return text if isinstance(text, str) else ""
     if isinstance(value, list):
         return "\n".join(md_text(item) for item in value)
     return str(value)
@@ -261,9 +263,9 @@ def confirmed_text(part: dict) -> str:
         reason = md_text(confirmed.get("reason"))
     else:
         value, pairs, reason = setting_value(confirmed), [], ""
-    src = part.get("source")
-    if isinstance(src, dict) and src.get("type"):
-        pairs.append("tool_source=%s" % setting_value(src["type"]))
+    source = part.get("source")
+    if isinstance(source, dict) and source.get("type"):
+        pairs.append("tool_source=%s" % setting_value(source["type"]))
     text = " ".join(["permission decision: confirmed=" + value, *pairs])
     return "%s reason=%s" % (text, reason) if reason else text
 
@@ -277,8 +279,8 @@ def confirmation_part_text(part: dict) -> str:
         pairs.append("buttons=%s" % compact_json(part["buttons"]))
     if part.get("title"):
         pairs.append("title=%s" % setting_value(part["title"]))
-    msg = md_text(part.get("message"))
-    return " ".join(pairs) + ("\n" + msg if msg else "")
+    message = md_text(part.get("message"))
+    return " ".join(pairs) + ("\n" + message if message else "")
 
 
 def tool_result_text(part: dict) -> str:
@@ -289,23 +291,25 @@ def tool_result_text(part: dict) -> str:
     if isinstance(result_details, dict):
         out = result_details.get("output")
         if isinstance(out, list):
-            vals = []
+            values = []
             for output in out:
                 if isinstance(output, dict):
                     value = output.get("value", output.get("text"))
-                    vals.append(value if isinstance(value, str) else compact_json(value))
+                    values.append(value if isinstance(value, str) else compact_json(value))
                 elif isinstance(output, str):
-                    vals.append(output)
-            text = "\n".join(vals)
+                    values.append(output)
+            text = "\n".join(values)
         elif out is not None:
             text = out if isinstance(out, str) else compact_json(out)
         is_error = is_error or bool(result_details.get("isError"))
     elif isinstance(result_details, list):
         text = "\n".join(uri_text(uri) for uri in result_details)
     if part.get("resultError"):
-        err = part["resultError"]
+        error = part["resultError"]
         text = "\n".join(
-            chunk for chunk in (md_text(err) if not isinstance(err, bool) else "", text) if chunk
+            chunk
+            for chunk in (md_text(error) if not isinstance(error, bool) else "", text)
+            if chunk
         )
     if not text:
         text = md_text(part.get("pastTenseMessage"))
@@ -398,35 +402,35 @@ class VsCodeParser(Parser):
         """Return True for a chat session, `cloudSessions.json`, state, settings or edit state."""
         rel = artifact.rel
         return bool(
-            SESSION_RX.match(rel)
-            or CLOUD_SESSIONS_RX.match(rel)
-            or STATE_RX.match(rel)
-            or SETTINGS_RX.match(rel)
-            or EDITING_RX.match(rel)
+            SESSION_PATTERN.match(rel)
+            or CLOUD_SESSIONS_PATTERN.match(rel)
+            or STATE_PATTERN.match(rel)
+            or SETTINGS_PATTERN.match(rel)
+            or EDITING_PATTERN.match(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for a chat editing state, which repeats which files a request edited."""
-        return bool(EDITING_RX.match(artifact.rel))
+        return bool(EDITING_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one VS Code file."""
-        if CLOUD_SESSIONS_RX.match(artifact.rel):
+        if CLOUD_SESSIONS_PATTERN.match(artifact.rel):
             yield from self._parse_cloud_sessions(artifact)
             return
-        if STATE_RX.match(artifact.rel):
+        if STATE_PATTERN.match(artifact.rel):
             yield from self._parse_state(artifact)
             return
-        if SETTINGS_RX.match(artifact.rel):
+        if SETTINGS_PATTERN.match(artifact.rel):
             yield from self._parse_settings(artifact)
             return
-        if EDITING_RX.match(artifact.rel):
+        if EDITING_PATTERN.match(artifact.rel):
             yield from self._parse_editing(artifact)
             return
-        req_lines: dict[int, int] = {}
+        request_lines: dict[int, int] = {}
         errors: list = []
         if artifact.rel.endswith(".jsonl"):
-            state = self._replay(artifact, req_lines, errors)
+            state = self._replay(artifact, request_lines, errors)
         else:
             try:
                 with open(artifact.disk_path, "rb") as handle:
@@ -470,15 +474,15 @@ class VsCodeParser(Parser):
                     if part
                 ),
                 state.get("creationDate"),
-                req_lines.get(-1, 0),
+                request_lines.get(-1, 0),
             )
         requests = state.get("requests")
         if not isinstance(requests, list):
             requests = []
         seen: dict = {}
-        for i, req in enumerate(requests):
-            if isinstance(req, dict):
-                yield from self._request_rows(req, req_lines.get(i, 0), base, opts, seen)
+        for i, request in enumerate(requests):
+            if isinstance(request, dict):
+                yield from self._request_rows(request, request_lines.get(i, 0), base, opts, seen)
         yield from error_rows(self, artifact, errors, session_id, project)
 
     def _system_row(self, artifact: Artifact, session_id: str, timestamp: str, text: str) -> Row:
@@ -527,7 +531,7 @@ class VsCodeParser(Parser):
         standing grant at the file's mtime, then a `parser:` row per problem
         reading the database or a value.
         """
-        scope = STATE_RX.match(artifact.rel)
+        scope = STATE_PATTERN.match(artifact.rel)
         workspace = bool(scope and scope.group("scope").startswith("workspaceStorage/"))
         keys = [*GRANT_KEYS, OPT_IN_KEY, ALLOWLIST_KEY]
         if not workspace:
@@ -544,10 +548,10 @@ class VsCodeParser(Parser):
             usages, more = self._usage_items(artifact.disk_path)
             problems.extend(more)
             yield from self._source_host_rows(artifact, usages)
-        timestamp, src = file_mtime(artifact), user_rel(artifact.rel)
+        timestamp, source = file_mtime(artifact), user_rel(artifact.rel)
         for text in grant_texts(values, problems):
             row = self._system_row(
-                artifact, "", timestamp, "%s (from %s, file mtime)" % (text, src)
+                artifact, "", timestamp, "%s (from %s, file mtime)" % (text, source)
             )
             row.project_path = project
             yield row
@@ -557,10 +561,10 @@ class VsCodeParser(Parser):
             yield row
         yield from error_rows(self, artifact, errors, "", project)
 
-    def _selected_repo_rows(self, artifact: Artifact, repos) -> Iterator[Row]:
+    def _selected_repo_rows(self, artifact: Artifact, repositories) -> Iterator[Row]:
         """Yield a `source host repository:` row per repository picked for a cloud agent task."""
         source = "(from state.vscdb %s %s, timestamp)" % (COPILOT_STATE_KEY, SELECTED_REPOS_KEY)
-        for entry in repos if isinstance(repos, list) else ():
+        for entry in repositories if isinstance(repositories, list) else ():
             if isinstance(entry, dict) and entry.get("name"):
                 yield self._system_row(
                     artifact,
@@ -580,17 +584,17 @@ class VsCodeParser(Parser):
         if path.is_symlink() or not sqlite_util.is_sqlite(path):
             return [], []
         try:
-            with sqlite_util.open_copy(path) as con:
-                if "ItemTable" not in sqlite_util.table_names(con):
+            with sqlite_util.open_copy(path) as connection:
+                if "ItemTable" not in sqlite_util.table_names(connection):
                     return [], []
                 sql = "select key, value from ItemTable where key like 'github%-usages'"
-                found = [(row[0], row[1]) for row in con.execute(sql)]
+                found = [(row[0], row[1]) for row in connection.execute(sql)]
         except (sqlite3.DatabaseError, OSError):
             return [], []
         out: list[tuple[str, object]] = []
         problems: list[str] = []
         for key, value in found:
-            if not isinstance(key, str) or not USAGE_KEY_RX.match(key):
+            if not isinstance(key, str) or not USAGE_KEY_PATTERN.match(key):
                 continue
             if isinstance(value, memoryview):
                 value = value.tobytes()
@@ -609,7 +613,7 @@ class VsCodeParser(Parser):
         login; a GitHub Enterprise label ends ` - <host><path>`.
         """
         for key, entries in usages:
-            match = USAGE_KEY_RX.match(key)
+            match = USAGE_KEY_PATTERN.match(key)
             if not match or not isinstance(entries, list):
                 continue
             provider, label, mcp = match.group(1), match.group(2), match.group(3)
@@ -647,26 +651,26 @@ class VsCodeParser(Parser):
         default model, at the file's mtime; one `parser:` row when the file
         is not a JSON object.
         """
-        timestamp, src = file_mtime(artifact), user_rel(artifact.rel)
+        timestamp, source = file_mtime(artifact), user_rel(artifact.rel)
         try:
             doc = parse_jsonc(artifact.disk_path.read_bytes())
         except (OSError, ValueError) as error:
             doc = error
         if not isinstance(doc, dict):
             why = " (%s)" % doc if isinstance(doc, Exception) else ""
-            text = "parser: %s is not a JSON object%s" % (src, why)
+            text = "parser: %s is not a JSON object%s" % (source, why)
             yield self._system_row(artifact, "", "", text)
             return
         for key, value in doc.items():
             if key == DEFAULT_MODEL_KEY:
                 texts = ["model setting: %s=%s" % (key, setting_value(value))]
-            elif SETTINGS_PERMISSION_RX.match(key):
+            elif SETTINGS_PERMISSION_PATTERN.match(key):
                 texts = list(setting_texts(key, value))
             else:
                 continue
             for text in texts:
                 row = self._system_row(
-                    artifact, "", timestamp, "%s (from %s, file mtime)" % (text, src)
+                    artifact, "", timestamp, "%s (from %s, file mtime)" % (text, source)
                 )
                 row.source_line = 1
                 yield row
@@ -678,7 +682,7 @@ class VsCodeParser(Parser):
         session id and the workspace's folder as the project; a whole-file
         `parser:` row when it does not decode or is not a JSON object.
         """
-        match = EDITING_RX.match(artifact.rel)
+        match = EDITING_PATTERN.match(artifact.rel)
         session_id = match.group("key") if match else ""
         errors: list = []
         project = self._workspace_json(artifact.disk_path.parent.parent.parent, errors)[0]
@@ -724,7 +728,7 @@ class VsCodeParser(Parser):
                 "session origin: remote GitHub cloud agent " + source,
             )
 
-    def _replay(self, artifact: Artifact, req_lines: dict[int, int], errors: list):
+    def _replay(self, artifact: Artifact, request_lines: dict[int, int], errors: list):
         """Replay a `.jsonl` mutation log and return the session state.
 
         A line that does not decode, or whose mutation does not apply, is
@@ -739,47 +743,49 @@ class VsCodeParser(Parser):
                 if not stripped:
                     continue
                 try:
-                    rec = json.loads(stripped.decode("utf-8", errors="replace"))
+                    record = json.loads(stripped.decode("utf-8", errors="replace"))
                 except ValueError as error:
                     errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                     continue
-                if not isinstance(rec, dict):
+                if not isinstance(record, dict):
                     continue
                 try:
-                    state = apply_mutation(state, rec)
+                    state = apply_mutation(state, record)
                 except MutationError as error:
                     errors.append(
                         (line_number, "mutation not applied (%s)" % error, line_text(raw))
                     )
                     continue
-                self._track(rec, state, line_number, req_lines)
+                self._track(record, state, line_number, request_lines)
         return state
 
     @staticmethod
-    def _track(rec: dict, state, line_number: int, req_lines: dict[int, int]) -> None:
+    def _track(record: dict, state, line_number: int, request_lines: dict[int, int]) -> None:
         """Remember the log line that created each request."""
-        kind, path = rec.get("kind"), rec.get("k") or []
+        kind, path = record.get("kind"), record.get("k") or []
         if kind == 0:
-            req_lines.clear()
-            req_lines[-1] = line_number
-            reqs = state.get("requests") if isinstance(state, dict) else None
-            for i in range(len(reqs) if isinstance(reqs, list) else 0):
-                req_lines[i] = line_number
+            request_lines.clear()
+            request_lines[-1] = line_number
+            requests = state.get("requests") if isinstance(state, dict) else None
+            for i in range(len(requests) if isinstance(requests, list) else 0):
+                request_lines[i] = line_number
         elif path == ["requests"]:
-            reqs = state.get("requests") if isinstance(state, dict) else None
-            total = len(reqs) if isinstance(reqs, list) else 0
+            requests = state.get("requests") if isinstance(state, dict) else None
+            total = len(requests) if isinstance(requests, list) else 0
             start = 0
             if kind == 2:
                 start = (
-                    rec["i"] if isinstance(rec.get("i"), int) else total - len(rec.get("v") or [])
+                    record["i"]
+                    if isinstance(record.get("i"), int)
+                    else total - len(record.get("v") or [])
                 )
-            for i in list(req_lines):
+            for i in list(request_lines):
                 if i >= start:
-                    del req_lines[i]
+                    del request_lines[i]
             for i in range(max(start, 0), total):
-                req_lines[i] = line_number
+                request_lines[i] = line_number
         elif kind == 1 and len(path) == 2 and path[0] == "requests" and isinstance(path[1], int):
-            req_lines[path[1]] = line_number
+            request_lines[path[1]] = line_number
 
     @staticmethod
     def _workspace_folder(artifact: Artifact, errors: list) -> tuple[str, str]:
@@ -796,13 +802,13 @@ class VsCodeParser(Parser):
         return VsCodeParser._workspace_json(artifact.disk_path.parent.parent, errors)
 
     @staticmethod
-    def _workspace_json(ws_dir: Path, errors: list) -> tuple[str, str]:
+    def _workspace_json(workspace_dir: Path, errors: list) -> tuple[str, str]:
         """Return `(folder, workspace_file)` from `<ws_dir>/workspace.json`.
 
         As `_workspace_folder` describes; also read for a workspace's
         `state.vscdb` and chat editing state.
         """
-        workspace_file = ws_dir / "workspace.json"
+        workspace_file = workspace_dir / "workspace.json"
         try:
             if workspace_file.is_symlink() or not workspace_file.is_file():
                 return "", ""
@@ -819,40 +825,42 @@ class VsCodeParser(Parser):
             uri_to_path(str(data.get("workspace") or "")),
         )
 
-    def _request_rows(self, req: dict, line: int, base, opts: Options, seen: dict) -> Iterator[Row]:
-        model = str(req.get("modelId") or "")
-        req_ts = req.get("timestamp")
+    def _request_rows(
+        self, request: dict, line: int, base, opts: Options, seen: dict
+    ) -> Iterator[Row]:
+        model = str(request.get("modelId") or "")
+        request_timestamp = request.get("timestamp")
         # One file is one session, so the tracked keys need no session id.
         # The model's options (`modelConfiguration`) are tracked with it.
-        config = req.get("modelConfiguration")
+        config = request.get("modelConfiguration")
         pairs = ""
         if model and isinstance(config, dict):
             pairs = " ".join("%s=%s" % (key, setting_value(config[key])) for key in sorted(config))
         change = track_change("model", seen, "model", model + (" " + pairs if pairs else ""))
         if change:
-            yield base("system", change, req_ts, line, model)
-        mode_info = req.get("modeInfo")
+            yield base("system", change, request_timestamp, line, model)
+        mode_info = request.get("modeInfo")
         if not isinstance(mode_info, dict):
             mode_info = {}
         mode = mode_info.get("telemetryModeId")
         change = track_change("permission mode", seen, "mode", setting_value(mode) if mode else "")
         if change:
-            yield base("system", change, req_ts, line, model)
+            yield base("system", change, request_timestamp, line, model)
         level = mode_info.get("permissionLevel")
         change = track_change(
             "permission level", seen, "level", setting_value(level) if level else ""
         )
         if change:
-            yield base("system", change, req_ts, line, model)
-        resp_ts = req.get("responseTimestamp") or req_ts
-        msg = req.get("message")
+            yield base("system", change, request_timestamp, line, model)
+        response_timestamp = request.get("responseTimestamp") or request_timestamp
+        message = request.get("message")
         text = (
-            msg
-            if isinstance(msg, str)
-            else (msg.get("text") if isinstance(msg, dict) else "") or ""
+            message
+            if isinstance(message, str)
+            else (message.get("text") if isinstance(message, dict) else "") or ""
         )
         names = []
-        variable_data = req.get("variableData")
+        variable_data = request.get("variableData")
         for variable in (
             variable_data.get("variables") if isinstance(variable_data, dict) else None
         ) or []:
@@ -860,20 +868,20 @@ class VsCodeParser(Parser):
                 names.append(str(variable["name"]))
         if names:
             text = "%s\n[attached: %s]" % (text, ", ".join(names))
-        if req.get("isSystemInitiated"):
-            yield base("system", "system initiated: " + text, req_ts, line, model)
+        if request.get("isSystemInitiated"):
+            yield base("system", "system initiated: " + text, request_timestamp, line, model)
         else:
-            yield base("user", text, req_ts, line, model)
-        if isinstance(req.get("confirmation"), str) and req["confirmation"]:
+            yield base("user", text, request_timestamp, line, model)
+        if isinstance(request.get("confirmation"), str) and request["confirmation"]:
             yield base(
                 "system",
-                "permission decision: confirmation=" + req["confirmation"],
-                req_ts,
+                "permission decision: confirmation=" + request["confirmation"],
+                request_timestamp,
                 line,
                 model,
             )
 
-        response = req.get("response")
+        response = request.get("response")
         if isinstance(response, (str, dict)):
             response = [response]
         run: list[str] = []
@@ -882,7 +890,7 @@ class VsCodeParser(Parser):
             joined = "".join(run).strip()
             del run[:]
             if joined:
-                return base("assistant", joined, resp_ts, line, model)
+                return base("assistant", joined, response_timestamp, line, model)
             return None
 
         for part in response or []:
@@ -908,34 +916,38 @@ class VsCodeParser(Parser):
                 if opts.include_thinking:
                     thought = md_text(part.get("value"))
                     if thought:
-                        yield base("thinking", thought, resp_ts, line, model)
+                        yield base("thinking", thought, response_timestamp, line, model)
             elif kind == "toolInvocationSerialized":
-                tid = str(part.get("toolCallId") or "")
-                tname = str(part.get("toolId") or "")
-                use = base("tool_use", tool_call_text(part), resp_ts, line, model)
-                use.tool_name, use.tool_use_id = tname, tid
+                tool_use_id = str(part.get("toolCallId") or "")
+                tool_name = str(part.get("toolId") or "")
+                use = base("tool_use", tool_call_text(part), response_timestamp, line, model)
+                use.tool_name, use.tool_use_id = tool_name, tool_use_id
                 yield use
-                res = base("tool_result", tool_result_text(part), resp_ts, line, model)
-                res.tool_name, res.tool_use_id = tname, tid
-                yield res
+                result_row = base(
+                    "tool_result", tool_result_text(part), response_timestamp, line, model
+                )
+                result_row.tool_name, result_row.tool_use_id = tool_name, tool_use_id
+                yield result_row
                 decision = confirmed_text(part)
                 if decision:
-                    decision_row = base("system", decision, resp_ts, line, model)
-                    decision_row.tool_name, decision_row.tool_use_id = tname, tid
+                    decision_row = base("system", decision, response_timestamp, line, model)
+                    decision_row.tool_name, decision_row.tool_use_id = tool_name, tool_use_id
                     yield decision_row
             elif kind == "confirmation":
-                yield base("system", confirmation_part_text(part), resp_ts, line, model)
+                yield base("system", confirmation_part_text(part), response_timestamp, line, model)
             elif kind == "textEditGroup":
-                yield base("system", "edit: " + uri_text(part.get("uri")), resp_ts, line, model)
+                yield base(
+                    "system", "edit: " + uri_text(part.get("uri")), response_timestamp, line, model
+                )
         row = flush()
         if row:
             yield row
-        result = req.get("result")
-        err = result.get("errorDetails") if isinstance(result, dict) else None
-        if isinstance(err, dict) and err.get("message"):
-            yield base("system", "error: %s" % err["message"], resp_ts, line, model)
-        elif req.get("isCanceled"):
-            yield base("system", "canceled", resp_ts, line, model)
+        result = request.get("result")
+        error = result.get("errorDetails") if isinstance(result, dict) else None
+        if isinstance(error, dict) and error.get("message"):
+            yield base("system", "error: %s" % error["message"], response_timestamp, line, model)
+        elif request.get("isCanceled"):
+            yield base("system", "canceled", response_timestamp, line, model)
 
 
 __all__ = [

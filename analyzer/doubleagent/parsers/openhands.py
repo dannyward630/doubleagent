@@ -53,16 +53,16 @@ from .base import (
 )
 from .cline_legacy import iter_json_array
 
-EVENT_RX = re.compile(
+EVENT_PATTERN = re.compile(
     r"^\.openhands/(?:agent-canvas/(?:dev_)?conversations|conversations)/"
     r"([0-9a-fA-F]{32})/events/event-(\d{5,})-[0-9a-fA-F-]{8,}\.json$"
 )
-EVENT_NAME_RX = re.compile(r"^event-(\d{5,})-[0-9a-fA-F-]{8,}\.json$")
-STATE_RX = re.compile(
+EVENT_NAME_PATTERN = re.compile(r"^event-(\d{5,})-[0-9a-fA-F-]{8,}\.json$")
+STATE_PATTERN = re.compile(
     r"^\.openhands/(?:agent-canvas/(?:dev_)?conversations|conversations)/"
     r"([0-9a-fA-F]{32})/base_state\.json$"
 )
-HISTORY_RX = re.compile(r"^\.openhands/projects/([0-9a-f]{64})/prompt_history\.json$")
+HISTORY_PATTERN = re.compile(r"^\.openhands/projects/([0-9a-f]{64})/prompt_history\.json$")
 CONVERSATION_GLOBS = (
     "agent-canvas/dev_conversations/*/base_state.json",
     "agent-canvas/conversations/*/base_state.json",
@@ -74,7 +74,7 @@ CONVERSATION_GLOBS = (
 # /tmp to /private/tmp.
 WORKTREE_ROOTS = ("/tmp/conversation-worktrees/", "/private/tmp/conversation-worktrees/")
 SWITCH_KINDS = ("SwitchLLMObservation", "ClassifyAndSwitchLLMObservation")
-LEGACY_RX = re.compile(
+LEGACY_PATTERN = re.compile(
     r"^\.openhands/(?:sessions|users/[^/]+/conversations)/([^/]+)/events/(\d+)\.json$"
 )
 
@@ -152,14 +152,14 @@ def _naive(value) -> datetime | None:
     return parsed if parsed.tzinfo is None else None
 
 
-def _fmt_offset(seconds: int) -> str:
+def _format_offset(seconds: int) -> str:
     sign = "+" if seconds >= 0 else "-"
     seconds = abs(seconds)
     return "UTC%s%02d:%02d" % (sign, seconds // 3600, seconds % 3600 // 60)
 
 
 @dataclass
-class _Conv:
+class _Conversation:
     session_id: str
     project_path: str = ""
     model: str = ""
@@ -199,86 +199,86 @@ class OpenHandsParser(Parser):
 
     def __init__(self) -> None:
         """Start with an empty cache of loaded conversations."""
-        self._cache: dict[tuple, _Conv] = {}
+        self._cache: dict[tuple, _Conversation] = {}
 
     def wants(self, artifact: Artifact) -> bool:
         """Return True for an event file, `base_state.json`, prompt history or legacy event."""
         rel = artifact.rel
         return bool(
-            EVENT_RX.match(rel)
-            or LEGACY_RX.match(rel)
-            or STATE_RX.match(rel)
-            or HISTORY_RX.match(rel)
+            EVENT_PATTERN.match(rel)
+            or LEGACY_PATTERN.match(rel)
+            or STATE_PATTERN.match(rel)
+            or HISTORY_PATTERN.match(rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for the CLI's prompt history."""
-        return bool(HISTORY_RX.match(artifact.rel))
+        return bool(HISTORY_PATTERN.match(artifact.rel))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one OpenHands file; a conversation's first event adds its header."""
-        if LEGACY_RX.match(artifact.rel):
+        if LEGACY_PATTERN.match(artifact.rel):
             yield from self._parse_legacy(artifact, opts)
             return
-        if HISTORY_RX.match(artifact.rel):
+        if HISTORY_PATTERN.match(artifact.rel):
             yield from self._parse_history(artifact)
             return
-        if STATE_RX.match(artifact.rel):
+        if STATE_PATTERN.match(artifact.rel):
             yield from self._parse_state(artifact)
             return
-        conv = self._conversation(artifact.disk_path.parent.parent)
+        conversation = self._conversation(artifact.disk_path.parent.parent)
         name = artifact.disk_path.name
-        if name == conv.first_event:
-            row = self._row(artifact, conv, "system")
-            row.timestamp_utc = conv.created
-            row.text = compact(conv.header)
+        if name == conversation.first_event:
+            row = self._row(artifact, conversation, "system")
+            row.timestamp_utc = conversation.created
+            row.text = compact(conversation.header)
             yield row
             for text in (
-                "model: " + conv.initial_model if conv.initial_model else "",
-                conv.scratch,
+                "model: " + conversation.initial_model if conversation.initial_model else "",
+                conversation.scratch,
             ):
                 if text:
-                    row = self._row(artifact, conv, "system")
-                    row.timestamp_utc = conv.created
-                    row.model = conv.initial_model or conv.model
+                    row = self._row(artifact, conversation, "system")
+                    row.timestamp_utc = conversation.created
+                    row.model = conversation.initial_model or conversation.model
                     row.text = text
                     yield row
-            for problem in conv.problems:
-                row = self._row(artifact, conv, "system")
+            for problem in conversation.problems:
+                row = self._row(artifact, conversation, "system")
                 row.text = problem
                 yield row
         event, reason = _load_json(artifact.disk_path)
         if not isinstance(event, dict):
-            row = self._row(artifact, conv, "system")
+            row = self._row(artifact, conversation, "system")
             row.text = "parser: event file %s" % (reason or "is not a JSON object")
             yield row
             return
-        timestamp = self._timestamp(event.get("timestamp"), conv)
-        model = conv.event_model.get(name, conv.initial_model or conv.model)
+        timestamp = self._timestamp(event.get("timestamp"), conversation)
+        model = conversation.event_model.get(name, conversation.initial_model or conversation.model)
         rows: list[Row] = []
-        if name in conv.model_before:
-            rows.append(self._row(artifact, conv, "system"))
-            rows[-1].text = conv.model_before[name]
-        rows.extend(self._event_rows(artifact, conv, event, opts))
+        if name in conversation.model_before:
+            rows.append(self._row(artifact, conversation, "system"))
+            rows[-1].text = conversation.model_before[name]
+        rows.extend(self._event_rows(artifact, conversation, event, opts))
         for row in rows:
             row.timestamp_utc = timestamp
             row.model = model
             yield row
-        if name in conv.model_after:
-            row = self._row(artifact, conv, "system")
-            row.text, row.model = conv.model_after[name]
+        if name in conversation.model_after:
+            row = self._row(artifact, conversation, "system")
+            row.text, row.model = conversation.model_after[name]
             row.timestamp_utc = timestamp
             yield row
 
     # -- base_state.json: standing permissions and a model set over REST ----------------
     def _parse_state(self, artifact: Artifact) -> Iterator[Row]:
-        conv = self._conversation(artifact.disk_path.parent)
+        conversation = self._conversation(artifact.disk_path.parent)
         timestamp = file_mtime(artifact)
-        texts = list(conv.settings)
-        if conv.final_model_row:
-            texts.append((conv.final_model_row, "", ""))
+        texts = list(conversation.settings)
+        if conversation.final_model_row:
+            texts.append((conversation.final_model_row, "", ""))
         for text, tool_name, tool_use_id in texts:
-            row = self._row(artifact, conv, "system")
+            row = self._row(artifact, conversation, "system")
             row.timestamp_utc = timestamp
             row.text = text
             row.tool_name, row.tool_use_id = tool_name, tool_use_id
@@ -286,7 +286,7 @@ class OpenHandsParser(Parser):
 
     # -- CLI prompt history (secondary) -----------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
-        match = HISTORY_RX.match(artifact.rel)
+        match = HISTORY_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         project = _project_for_hash(artifact.disk_path.parent.parent.parent, match.group(1))
         errors: list = []
@@ -309,7 +309,7 @@ class OpenHandsParser(Parser):
         yield from error_rows(self, artifact, errors, "", project)
 
     # -- conversation context ---------------------------------------------------------
-    def _conversation(self, cdir: Path) -> _Conv:
+    def _conversation(self, conversation_dir: Path) -> _Conversation:
         def mtime(path: Path) -> int:
             try:
                 return path.stat().st_mtime_ns
@@ -317,49 +317,50 @@ class OpenHandsParser(Parser):
                 return 0
 
         key = (
-            str(cdir),
-            mtime(cdir / "meta.json"),
-            mtime(cdir / "base_state.json"),
-            mtime(cdir / "events"),
+            str(conversation_dir),
+            mtime(conversation_dir / "meta.json"),
+            mtime(conversation_dir / "base_state.json"),
+            mtime(conversation_dir / "events"),
         )
-        conv = self._cache.get(key)
-        if conv is None:
-            conv = self._load_conversation(cdir)
+        conversation = self._cache.get(key)
+        if conversation is None:
+            conversation = self._load_conversation(conversation_dir)
             if len(self._cache) > 256:
                 self._cache.clear()
-            self._cache[key] = conv
-        return conv
+            self._cache[key] = conversation
+        return conversation
 
-    def _load_conversation(self, cdir: Path) -> _Conv:
-        conv = _Conv(session_id=cdir.name)
-        meta = _load_object(cdir / "meta.json", conv.problems)
-        state = _load_object(cdir / "base_state.json", conv.problems)
-        conv.project_path = str(
+    def _load_conversation(self, conversation_dir: Path) -> _Conversation:
+        conversation = _Conversation(session_id=conversation_dir.name)
+        meta = _load_object(conversation_dir / "meta.json", conversation.problems)
+        state = _load_object(conversation_dir / "base_state.json", conversation.problems)
+        conversation.project_path = str(
             _dict_or_empty(meta.get("workspace")).get("working_dir")
             or _dict_or_empty(state.get("workspace")).get("working_dir")
             or ""
         )
-        conv.model = str(
+        conversation.model = str(
             _dict_or_empty(_dict_or_empty(state.get("agent")).get("llm")).get("model") or ""
         )
 
         events: list[tuple[int, str]] = []
         try:
-            for path in (cdir / "events").iterdir():
-                match = EVENT_NAME_RX.match(path.name)
+            for path in (conversation_dir / "events").iterdir():
+                match = EVENT_NAME_PATTERN.match(path.name)
                 if match and not path.is_symlink():
                     events.append((int(match.group(1)), path.name))
         except OSError:
             pass
         events.sort()
-        conv.first_event = events[0][1] if events else ""
+        conversation.first_event = events[0][1] if events else ""
         loaded = [
-            (fname, _dict_or_empty(_read_json(cdir / "events" / fname))) for _, fname in events
+            (file_name, _dict_or_empty(_read_json(conversation_dir / "events" / file_name)))
+            for _, file_name in events
         ]
         first = loaded[0][1] if loaded else {}
-        _track_models(conv, state, loaded)
-        conv.settings = _settings(state, conv.actions)
-        conv.scratch = _scratch(conv.project_path)
+        _track_models(conversation, state, loaded)
+        conversation.settings = _settings(state, conversation.actions)
+        conversation.scratch = _scratch(conversation.project_path)
 
         created = _aware(meta.get("created_at"))
         naive_first = _naive(first.get("timestamp"))
@@ -367,22 +368,22 @@ class OpenHandsParser(Parser):
             diff = (naive_first.replace(tzinfo=timezone.utc) - created).total_seconds()
             offset = int((diff + SKEW) // QUARTER) * QUARTER
             if abs(offset) <= MAX_OFFSET:
-                conv.offset = offset
+                conversation.offset = offset
         if created is not None:
-            conv.created = to_utc(meta.get("created_at"))
+            conversation.created = to_utc(meta.get("created_at"))
         else:
-            conv.created = self._timestamp(first.get("timestamp"), conv)
+            conversation.created = self._timestamp(first.get("timestamp"), conversation)
 
-        if conv.offset is not None:
+        if conversation.offset is not None:
             basis = (
                 "event times are host local, corrected by %s from meta.json created_at"
-                % _fmt_offset(conv.offset)
+                % _format_offset(conversation.offset)
             )
         elif naive_first is not None:
             basis = "event times are host local with no zone, emitted as if UTC"
         else:
             basis = ""
-        conv.header = _join(
+        conversation.header = _join(
             "conversation start",
             str(meta.get("title") or ""),
             "id=%s" % meta["id"] if meta.get("id") else "",
@@ -392,61 +393,61 @@ class OpenHandsParser(Parser):
             "forked_from=%s" % meta["forked_from_conversation_id"]
             if meta.get("forked_from_conversation_id")
             else "",
-            "model=%s" % (conv.initial_model or conv.model)
-            if conv.initial_model or conv.model
+            "model=%s" % (conversation.initial_model or conversation.model)
+            if conversation.initial_model or conversation.model
             else "",
             "status=%s" % state["execution_status"] if state.get("execution_status") else "",
             "%d events" % len(events),
             basis,
         )
-        return conv
+        return conversation
 
     @staticmethod
-    def _timestamp(value, conv: _Conv) -> str:
+    def _timestamp(value, conversation: _Conversation) -> str:
         naive = _naive(value)
-        if naive is not None and conv.offset is not None:
-            return to_utc((naive - timedelta(seconds=conv.offset)).isoformat() + "+00:00")
+        if naive is not None and conversation.offset is not None:
+            return to_utc((naive - timedelta(seconds=conversation.offset)).isoformat() + "+00:00")
         return to_utc(value) if isinstance(value, str) else ""
 
-    def _row(self, artifact: Artifact, conv: _Conv, turn_type: str) -> Row:
+    def _row(self, artifact: Artifact, conversation: _Conversation, turn_type: str) -> Row:
         row = self.base_row(artifact)
-        row.session_id = conv.session_id
-        row.project_path = conv.project_path
-        row.model = conv.model
+        row.session_id = conversation.session_id
+        row.project_path = conversation.project_path
+        row.model = conversation.model
         row.turn_type = turn_type
         row.source_line = 1
         return row
 
     # -- events -----------------------------------------------------------------------
     def _event_rows(
-        self, artifact: Artifact, conv: _Conv, event: dict, opts: Options
+        self, artifact: Artifact, conversation: _Conversation, event: dict, opts: Options
     ) -> Iterator[Row]:
         kind = str(event.get("kind") or "")
 
         def make_row(turn_type: str, text: str, tool_name: str = "", tool_use_id: str = "") -> Row:
-            row = self._row(artifact, conv, turn_type)
+            row = self._row(artifact, conversation, turn_type)
             row.tool_name, row.tool_use_id = tool_name, tool_use_id
             row.text = compact(text)
             return row
 
         if kind == "MessageEvent":
-            msg = _dict_or_empty(event.get("llm_message"))
-            role = str(msg.get("role") or event.get("source") or "")
+            message = _dict_or_empty(event.get("llm_message"))
+            role = str(message.get("role") or event.get("source") or "")
             if opts.include_thinking:
-                thinking = _thinking(msg)
+                thinking = _thinking(message)
                 if thinking:
                     yield make_row("thinking", thinking)
-            text = text_of(msg.get("content"))
+            text = text_of(message.get("content"))
             if role == "tool":
                 yield make_row(
                     "tool_result",
                     text,
-                    str(msg.get("name") or ""),
-                    str(msg.get("tool_call_id") or ""),
+                    str(message.get("name") or ""),
+                    str(message.get("tool_call_id") or ""),
                 )
             elif text or role in ("user", "system"):
                 yield make_row(role if role in ("user", "assistant", "system") else "system", text)
-            for call in msg.get("tool_calls") or []:
+            for call in message.get("tool_calls") or []:
                 call = _dict_or_empty(call)
                 function = _dict_or_empty(call.get("function"))
                 yield make_row(
@@ -469,9 +470,9 @@ class OpenHandsParser(Parser):
                 str(event.get("tool_call_id") or ""),
             )
         elif kind == "ObservationEvent":
-            obs = _dict_or_empty(event.get("observation"))
-            text = text_of(obs.get("content"))
-            if obs.get("is_error"):
+            observation = _dict_or_empty(event.get("observation"))
+            text = text_of(observation.get("content"))
+            if observation.get("is_error"):
                 text = "[error] " + text
             yield make_row(
                 "tool_result",
@@ -513,12 +514,12 @@ class OpenHandsParser(Parser):
                 str(event.get("tool_kind") or "acp"),
                 str(event.get("tool_call_id") or ""),
             )
-            raw_in = event.get("raw_input")
+            raw_input = event.get("raw_input")
             yield make_row(
                 "tool_use",
                 _join(
                     str(event.get("title") or ""),
-                    compact_json(raw_in) if raw_in is not None else "",
+                    compact_json(raw_input) if raw_input is not None else "",
                 ),
                 name,
                 call_id,
@@ -579,7 +580,7 @@ class OpenHandsParser(Parser):
         elif kind == "SecurityAnalysisEvent" and _dict_or_empty(event.get("risks")):
             details = _dict_or_empty(event.get("details"))
             for action_id, risk in _dict_or_empty(event.get("risks")).items():
-                tool_name, tool_use_id = conv.actions.get(str(action_id), ("", ""))
+                tool_name, tool_use_id = conversation.actions.get(str(action_id), ("", ""))
                 detail = details.get(action_id)
                 yield make_row(
                     "system",
@@ -604,7 +605,7 @@ class OpenHandsParser(Parser):
 
     # -- legacy 0.x ---------------------------------------------------------------------
     def _parse_legacy(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        match = LEGACY_RX.match(artifact.rel)
+        match = LEGACY_PATTERN.match(artifact.rel)
         assert match is not None  # parse() routes only matching paths here
         mine = int(match.group(2))
         numbers = []
@@ -667,7 +668,7 @@ def _scratch(working_dir: str) -> str:
     return ""
 
 
-def _track_models(conv: _Conv, state: dict, loaded: list[tuple[str, dict]]) -> None:
+def _track_models(conversation: _Conversation, state: dict, loaded: list[tuple[str, dict]]) -> None:
     """Fill the conversation's model rows and ActionEvent map from its events in index order.
 
     Each response's model comes from `stats.usage_to_metrics.*.token_usages[]`
@@ -682,9 +683,9 @@ def _track_models(conv: _Conv, state: dict, loaded: list[tuple[str, dict]]) -> N
     ).values():
         for usage in _dict_or_empty(metrics).get("token_usages") or []:
             usage = _dict_or_empty(usage)
-            rid, model = usage.get("response_id"), usage.get("model")
-            if isinstance(rid, str) and rid and isinstance(model, str) and model:
-                by_response.setdefault(rid, model)
+            response_id, model = usage.get("response_id"), usage.get("model")
+            if isinstance(response_id, str) and response_id and isinstance(model, str) and model:
+                by_response.setdefault(response_id, model)
 
     initial, switched = "", False
     for _, event in loaded:
@@ -695,26 +696,27 @@ def _track_models(conv: _Conv, state: dict, loaded: list[tuple[str, dict]]) -> N
         if initial:
             break
     if not initial and not switched:
-        initial = conv.model
-    conv.initial_model = current = initial
-    for fname, event in loaded:
+        initial = conversation.model
+    conversation.initial_model = current = initial
+    for file_name, event in loaded:
         if event.get("kind") == "ActionEvent" and event.get("id"):
-            conv.actions[str(event["id"])] = (
+            conversation.actions[str(event["id"])] = (
                 str(event.get("tool_name") or ""),
                 str(event.get("tool_call_id") or ""),
             )
         model = by_response.get(str(event.get("llm_response_id") or ""), "")
         if model and model != current:
-            conv.model_before[fname] = _model_text(current, model)
+            conversation.model_before[file_name] = _model_text(current, model)
             current = model
-        conv.event_model[fname] = current
+        conversation.event_model[file_name] = current
         new, suffix = _switch(event)
         if new and new != current:
-            conv.model_after[fname] = (_model_text(current, new) + suffix, new)
+            conversation.model_after[file_name] = (_model_text(current, new) + suffix, new)
             current = new
-    if conv.model and current and conv.model != current:
-        conv.final_model_row = "%s (from base_state.json agent.llm, file mtime)" % _model_text(
-            current, conv.model
+    if conversation.model and current and conversation.model != current:
+        conversation.final_model_row = (
+            "%s (from base_state.json agent.llm, file mtime)"
+            % _model_text(current, conversation.model)
         )
 
 
@@ -724,16 +726,16 @@ def _model_text(old: str, new: str) -> str:
 
 def _switch(event: dict) -> tuple[str, str]:
     """Return (new model, ` profile=<name>[ class=<class>]`) of a model switch, else ("", "")."""
-    obs = _dict_or_empty(event.get("observation"))
-    if event.get("kind") != "ObservationEvent" or obs.get("kind") not in SWITCH_KINDS:
+    observation = _dict_or_empty(event.get("observation"))
+    if event.get("kind") != "ObservationEvent" or observation.get("kind") not in SWITCH_KINDS:
         return "", ""
-    new = obs.get("active_model")
-    if obs.get("is_error") or not isinstance(new, str) or not new:
+    new = observation.get("active_model")
+    if observation.get("is_error") or not isinstance(new, str) or not new:
         return "", ""
-    profile = obs.get("profile_name") or obs.get("model")
+    profile = observation.get("profile_name") or observation.get("model")
     suffix = " profile=%s" % profile if isinstance(profile, str) and profile else ""
-    if obs.get("chosen_class"):
-        suffix += " class=%s" % obs["chosen_class"]
+    if observation.get("chosen_class"):
+        suffix += " class=%s" % observation["chosen_class"]
     return new, suffix
 
 
@@ -773,11 +775,11 @@ def _join_space(*parts: str) -> str:
     return " ".join(part for part in parts if part)
 
 
-def _thinking(rec: dict) -> str:
+def _thinking(record: dict) -> str:
     parts = []
-    if isinstance(rec.get("reasoning_content"), str):
-        parts.append(rec["reasoning_content"])
-    for block in rec.get("thinking_blocks") or []:
+    if isinstance(record.get("reasoning_content"), str):
+        parts.append(record["reasoning_content"])
+    for block in record.get("thinking_blocks") or []:
         if isinstance(block, dict) and isinstance(block.get("thinking"), str):
             parts.append(block["thinking"])
     return _join(*parts)
@@ -786,11 +788,11 @@ def _thinking(rec: dict) -> str:
 def _action_text(event: dict) -> str:
     """Return a terminal action's command, a file edit's `<command> <path>`, else the arguments."""
     action = _dict_or_empty(event.get("action"))
-    cmd, path = action.get("command"), action.get("path")
+    command, path = action.get("command"), action.get("path")
     if isinstance(path, str) and path:
-        return "%s %s" % (cmd, path) if isinstance(cmd, str) and cmd else path
-    if isinstance(cmd, str) and cmd:
-        return cmd
+        return "%s %s" % (command, path) if isinstance(command, str) and command else path
+    if isinstance(command, str) and command:
+        return command
     args = _dict_or_empty(event.get("tool_call")).get("arguments")
     if isinstance(args, str) and args:
         return args

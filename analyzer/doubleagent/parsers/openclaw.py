@@ -45,8 +45,8 @@ from .pi import model_text, switch_text
 from .zed import decompress
 
 STATE = r"(?:\.openclaw(?:-[^/]+)?|\.clawdbot|\.moltbot)"
-DB_RX = re.compile(r"^" + STATE + r"/agents/[^/]+/agent/openclaw-agent\.sqlite$")
-STATE_DB_RX = re.compile(r"^" + STATE + r"/state/openclaw\.sqlite$")
+AGENT_DATABASE_PATTERN = re.compile(r"^" + STATE + r"/agents/[^/]+/agent/openclaw-agent\.sqlite$")
+STATE_DATABASE_PATTERN = re.compile(r"^" + STATE + r"/state/openclaw\.sqlite$")
 SESSIONS = r"^" + STATE + r"/(?:agents/[^/]+/)?sessions/"
 ARCHIVE_SUFFIX = r"\.jsonl\.(reset|deleted)\.\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d(?:\.\d{3})?Z(?:\.[0-9a-f]{32})?(?:\.zst)?"
 # A pre-compaction checkpoint and a pre-doctor repair backup (`artifacts.ts:13-17`).
@@ -55,7 +55,7 @@ COPY_SUFFIX = (
     r"|\.jsonl\.pre-doctor-(?:branch|openai-codex)-repair-"
     r"\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z\.bak"
 )
-JSONL_RX = re.compile(
+JSONL_PATTERN = re.compile(
     SESSIONS
     + r"(?P<name>[^/]+?)(?:(?P<archive>"
     + ARCHIVE_SUFFIX
@@ -63,8 +63,8 @@ JSONL_RX = re.compile(
     + COPY_SUFFIX
     + r")|\.jsonl)$"
 )
-COLD_RX = re.compile(SESSIONS + r"cold/[0-9a-f]{64}\.jsonl\.zst$")
-SKIP_NAME_RX = re.compile(r"\.trajectory$")
+COLD_PATTERN = re.compile(SESSIONS + r"cold/[0-9a-f]{64}\.jsonl\.zst$")
+SKIP_NAME_PATTERN = re.compile(r"\.trajectory$")
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 # Channels that are not a messaging platform: the Control UI and the
 # internal wake sources (`src/utils/message-channel-constants.ts:3`, `14-20`).
@@ -177,14 +177,14 @@ def _iter_lines(data: bytes, errors: list) -> Iterator[tuple[int, dict]]:
         if not stripped:
             continue
         try:
-            rec = json.loads(stripped.decode("utf-8", errors="replace"))
+            record = json.loads(stripped.decode("utf-8", errors="replace"))
         except ValueError as error:
             errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
             continue
-        if not isinstance(rec, dict):
+        if not isinstance(record, dict):
             errors.append((line_number, "unparseable line (not a JSON object)", line_text(raw)))
             continue
-        yield line_number, rec
+        yield line_number, record
 
 
 def _platform(channel) -> bool:
@@ -314,7 +314,7 @@ def _publication_text(table: str, row: dict) -> str:
     )
 
 
-class _Db:
+class _DatabaseState:
     """Hold what one agent database's passes share.
 
     That is the rows to attach after a generation's session-start row, the
@@ -328,8 +328,10 @@ class _Db:
         self.ids: set[tuple[str, str]] = set()
         self.cwds: dict[str, str] = {}
 
-    def attach(self, sid: str, line: int, timestamp: str, text: str, model: str = "") -> None:
-        self.attached.setdefault(sid, []).append((line, timestamp, text, model))
+    def attach(
+        self, session_id: str, line: int, timestamp: str, text: str, model: str = ""
+    ) -> None:
+        self.attached.setdefault(session_id, []).append((line, timestamp, text, model))
 
 
 class _Session:
@@ -354,7 +356,7 @@ class _Session:
         self.seen: dict = {}  # the model in use, for the `model:` rows
         # The agent database's shared state; the session-start row pops the
         # rows attached to its generation and yields them.
-        self.ctx: _Db | None = None
+        self.database_state: _DatabaseState | None = None
 
 
 class OpenClawParser(Parser):
@@ -369,26 +371,30 @@ class OpenClawParser(Parser):
     def wants(self, artifact: Artifact) -> bool:
         """Return True for an agent or state database, a cold archive or a transcript file."""
         rel = artifact.rel
-        if DB_RX.match(rel) or COLD_RX.match(rel) or STATE_DB_RX.match(rel):
+        if (
+            AGENT_DATABASE_PATTERN.match(rel)
+            or COLD_PATTERN.match(rel)
+            or STATE_DATABASE_PATTERN.match(rel)
+        ):
             return True
-        match = JSONL_RX.match(rel)
-        return bool(match) and not SKIP_NAME_RX.search(match.group("name"))
+        match = JSONL_PATTERN.match(rel)
+        return bool(match) and not SKIP_NAME_PATTERN.search(match.group("name"))
 
     def secondary(self, artifact: Artifact) -> bool:
         """Return True for a published archive, checkpoint or pre-doctor copy.
 
         The database and the plain legacy `.jsonl` are primary.
         """
-        match = JSONL_RX.match(artifact.rel)
+        match = JSONL_PATTERN.match(artifact.rel)
         return bool(match) and bool(match.group("archive") or match.group("copy"))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         """Yield the rows of one OpenClaw file."""
-        if DB_RX.match(artifact.rel):
+        if AGENT_DATABASE_PATTERN.match(artifact.rel):
             if is_sqlite(artifact.disk_path):
-                yield from self._parse_db(artifact, opts)
-        elif STATE_DB_RX.match(artifact.rel):
-            yield from self._parse_state_db(artifact)
+                yield from self._parse_database(artifact, opts)
+        elif STATE_DATABASE_PATTERN.match(artifact.rel):
+            yield from self._parse_state_database(artifact)
         else:
             yield from self._parse_file(artifact, opts)
 
@@ -448,90 +454,114 @@ class OpenClawParser(Parser):
         )
         timestamp = timestamp or to_utc(header.get("timestamp"))
         yield self._row(artifact, session, line, timestamp, "system", text, opts, session.model)
-        mtext = model_text(session.seen, session.session_id, session.model, session.provider)
-        if mtext:
+        model_line = model_text(session.seen, session.session_id, session.model, session.provider)
+        if model_line:
             yield self._row(
-                artifact, session, line, timestamp, "system", mtext, opts, session.model
+                artifact, session, line, timestamp, "system", model_line, opts, session.model
             )
-        if session.ctx is not None:
-            session.ctx.cwds.setdefault(session.session_id, session.cwd)
-            for aline, ats, atext, amodel in session.ctx.attached.pop(session.session_id, []):
-                yield self._row(artifact, session, aline, ats, "system", atext, opts, amodel)
+        if session.database_state is not None:
+            session.database_state.cwds.setdefault(session.session_id, session.cwd)
+            for (
+                attached_line,
+                attached_timestamp,
+                attached_text,
+                attached_model,
+            ) in session.database_state.attached.pop(session.session_id, []):
+                yield self._row(
+                    artifact,
+                    session,
+                    attached_line,
+                    attached_timestamp,
+                    "system",
+                    attached_text,
+                    opts,
+                    attached_model,
+                )
 
     def _entry_rows(
-        self, artifact: Artifact, session: _Session, line: int, rec: dict, created_at, opts: Options
+        self,
+        artifact: Artifact,
+        session: _Session,
+        line: int,
+        record: dict,
+        created_at,
+        opts: Options,
     ) -> Iterator[Row]:
-        etype = rec.get("type")
-        msg = rec.get("message")
-        if not isinstance(msg, dict):
-            msg = {}
+        entry_type = record.get("type")
+        message = record.get("message")
+        if not isinstance(message, dict):
+            message = {}
         timestamp = (
-            to_utc(rec.get("timestamp")) or to_utc(msg.get("timestamp")) or to_utc(created_at)
+            to_utc(record.get("timestamp"))
+            or to_utc(message.get("timestamp"))
+            or to_utc(created_at)
         )
-        if etype == "session":
-            yield from self._start(artifact, session, line, timestamp, rec, opts)
+        if entry_type == "session":
+            yield from self._start(artifact, session, line, timestamp, record, opts)
             return
         if not session.started:
             yield from self._start(artifact, session, line, timestamp, None, opts)
-        if session.ctx is not None and rec.get("id") not in (None, ""):
-            session.ctx.ids.add((session.session_id, str(rec["id"])))
-        if etype == "message":
-            yield from self._message_rows(artifact, session, line, timestamp, rec, msg, opts)
+        if session.database_state is not None and record.get("id") not in (None, ""):
+            session.database_state.ids.add((session.session_id, str(record["id"])))
+        if entry_type == "message":
+            yield from self._message_rows(artifact, session, line, timestamp, record, message, opts)
             return
 
         def system(text: str, model: str = "") -> Row:
             return self._row(artifact, session, line, timestamp, "system", text, opts, model)
 
-        if etype == "model_change":
-            session.model = str(rec.get("modelId") or "")
-            mtext = switch_text(
-                session.seen, session.session_id, session.model, str(rec.get("provider") or "")
+        if entry_type == "model_change":
+            session.model = str(record.get("modelId") or "")
+            model_line = switch_text(
+                session.seen, session.session_id, session.model, str(record.get("provider") or "")
             )
-            if mtext:
-                yield system(mtext, session.model)
-        elif etype == "thinking_level_change":
-            yield system("thinking level: %s" % (rec.get("thinkingLevel") or ""))
-        elif etype == "compaction":
+            if model_line:
+                yield system(model_line, session.model)
+        elif entry_type == "thinking_level_change":
+            yield system("thinking level: %s" % (record.get("thinkingLevel") or ""))
+        elif entry_type == "compaction":
             tokens = " ".join(
                 part
                 for part in (
-                    "tokens_before=%s" % rec["tokensBefore"]
-                    if rec.get("tokensBefore") is not None
+                    "tokens_before=%s" % record["tokensBefore"]
+                    if record.get("tokensBefore") is not None
                     else "",
-                    "tokens_after=%s" % rec["tokensAfter"]
-                    if rec.get("tokensAfter") is not None
+                    "tokens_after=%s" % record["tokensAfter"]
+                    if record.get("tokensAfter") is not None
                     else "",
                 )
                 if part
             )
             yield system(
-                "compaction%s: %s" % (" (%s)" % tokens if tokens else "", rec.get("summary") or "")
+                "compaction%s: %s"
+                % (" (%s)" % tokens if tokens else "", record.get("summary") or "")
             )
-        elif etype == "reset":
-            yield system("reset: %s" % (rec.get("reason") or ""))
-        elif etype == "branch_summary":
-            yield system("branch summary: %s" % (rec.get("summary") or ""))
-        elif etype == "custom":
+        elif entry_type == "reset":
+            yield system("reset: %s" % (record.get("reason") or ""))
+        elif entry_type == "branch_summary":
+            yield system("branch summary: %s" % (record.get("summary") or ""))
+        elif entry_type == "custom":
             yield system(
-                "custom %s: %s" % (rec.get("customType") or "", compact_json(rec.get("data")))
+                "custom %s: %s" % (record.get("customType") or "", compact_json(record.get("data")))
             )
-        elif etype == "custom_message":
+        elif entry_type == "custom_message":
             yield system(
-                "custom message %s: %s" % (rec.get("customType") or "", text_of(rec.get("content")))
+                "custom message %s: %s"
+                % (record.get("customType") or "", text_of(record.get("content")))
             )
-        elif etype == "label":
+        elif entry_type == "label":
             yield system(
-                "label: %s (entry %s)" % (rec.get("label") or "", rec.get("targetId") or "")
+                "label: %s (entry %s)" % (record.get("label") or "", record.get("targetId") or "")
             )
-        elif etype == "session_info":
-            yield system("session name: %s" % (rec.get("name") or ""))
+        elif entry_type == "session_info":
+            yield system("session name: %s" % (record.get("name") or ""))
         else:
             rest = {
                 key: value
-                for key, value in rec.items()
+                for key, value in record.items()
                 if key not in ("type", "id", "parentId", "timestamp")
             }
-            yield system("%s: %s" % (etype or "entry", compact_json(rest)))
+            yield system("%s: %s" % (entry_type or "entry", compact_json(rest)))
 
     def _message_rows(
         self,
@@ -539,37 +569,37 @@ class OpenClawParser(Parser):
         session: _Session,
         line: int,
         timestamp: str,
-        rec: dict,
-        msg: dict,
+        record: dict,
+        message: dict,
         opts: Options,
     ) -> Iterator[Row]:
-        role = msg.get("role")
+        role = message.get("role")
         if role == "user":
-            text = text_of(msg.get("content"))
-            if msg.get("runtimeContext") or msg.get("runtimeContextCarrier"):
+            text = text_of(message.get("content"))
+            if message.get("runtimeContext") or message.get("runtimeContextCarrier"):
                 yield self._row(
                     artifact, session, line, timestamp, "system", "runtime context: " + text, opts
                 )
             else:
                 yield self._row(artifact, session, line, timestamp, "user", text, opts)
         elif role == "assistant":
-            requested = str(msg.get("model") or "")
-            model = str(msg.get("responseModel") or "") or requested or session.model
+            requested = str(message.get("model") or "")
+            model = str(message.get("responseModel") or "") or requested or session.model
             if model:
                 session.model = model
-            if msg.get("responseModel") or requested:
-                mtext = model_text(
+            if message.get("responseModel") or requested:
+                model_line = model_text(
                     session.seen,
                     session.session_id,
                     model,
-                    str(msg.get("provider") or ""),
+                    str(message.get("provider") or ""),
                     requested,
                 )
-                if mtext:
+                if model_line:
                     yield self._row(
-                        artifact, session, line, timestamp, "system", mtext, opts, model
+                        artifact, session, line, timestamp, "system", model_line, opts, model
                     )
-            content = msg.get("content")
+            content = message.get("content")
             if isinstance(content, str):
                 content = [{"type": "text", "text": content}]
             for block in content if isinstance(content, list) else []:
@@ -621,21 +651,21 @@ class OpenClawParser(Parser):
                     yield self._row(
                         artifact, session, line, timestamp, "assistant", "[image]", opts, model
                     )
-            stop = msg.get("stopReason")
-            if stop in ("error", "aborted") or msg.get("errorMessage"):
+            stop = message.get("stopReason")
+            if stop in ("error", "aborted") or message.get("errorMessage"):
                 yield self._row(
                     artifact,
                     session,
                     line,
                     timestamp,
                     "system",
-                    "assistant %s: %s" % (stop or "error", msg.get("errorMessage") or ""),
+                    "assistant %s: %s" % (stop or "error", message.get("errorMessage") or ""),
                     opts,
                     model,
                 )
         elif role == "toolResult":
-            text = text_of(msg.get("content"))
-            if msg.get("isError"):
+            text = text_of(message.get("content"))
+            if message.get("isError"):
                 text = "[error] " + text
             yield self._row(
                 artifact,
@@ -646,27 +676,27 @@ class OpenClawParser(Parser):
                 text,
                 opts,
                 "",
-                str(msg.get("toolName") or ""),
-                str(msg.get("toolCallId") or ""),
+                str(message.get("toolName") or ""),
+                str(message.get("toolCallId") or ""),
             )
         elif role == "bashExecution":
-            tid = str(rec.get("id") or "")
+            tool_use_id = str(record.get("id") or "")
             yield self._row(
                 artifact,
                 session,
                 line,
                 timestamp,
                 "tool_use",
-                str(msg.get("command") or ""),
+                str(message.get("command") or ""),
                 opts,
                 "",
                 "bash",
-                tid,
+                tool_use_id,
             )
-            status = "exit=%s" % msg.get("exitCode")
-            if msg.get("cancelled"):
+            status = "exit=%s" % message.get("exitCode")
+            if message.get("cancelled"):
                 status += " cancelled"
-            if msg.get("truncated"):
+            if message.get("truncated"):
                 status += " truncated"
             yield self._row(
                 artifact,
@@ -674,11 +704,11 @@ class OpenClawParser(Parser):
                 line,
                 timestamp,
                 "tool_result",
-                "[%s] %s" % (status, msg.get("output") or ""),
+                "[%s] %s" % (status, message.get("output") or ""),
                 opts,
                 "",
                 "bash",
-                tid,
+                tool_use_id,
             )
         elif role in ("branchSummary", "compactionSummary"):
             label = "branch summary" if role == "branchSummary" else "compaction summary"
@@ -688,7 +718,7 @@ class OpenClawParser(Parser):
                 line,
                 timestamp,
                 "system",
-                "%s: %s" % (label, msg.get("summary") or ""),
+                "%s: %s" % (label, message.get("summary") or ""),
                 opts,
             )
         elif role == "custom":
@@ -698,7 +728,8 @@ class OpenClawParser(Parser):
                 line,
                 timestamp,
                 "system",
-                "custom %s: %s" % (msg.get("customType") or "", text_of(msg.get("content"))),
+                "custom %s: %s"
+                % (message.get("customType") or "", text_of(message.get("content"))),
                 opts,
             )
         else:
@@ -708,7 +739,8 @@ class OpenClawParser(Parser):
                 line,
                 timestamp,
                 "system",
-                "%s: %s" % (role or "message", text_of(msg.get("content")) or compact_json(msg)),
+                "%s: %s"
+                % (role or "message", text_of(message.get("content")) or compact_json(message)),
                 opts,
             )
 
@@ -733,8 +765,8 @@ class OpenClawParser(Parser):
         3: unparseable line (<reason>)`).
         """
         located = [
-            (rowid, "%s line %d: %s" % (label, line_number, msg), raw)
-            for line_number, msg, raw in errors
+            (rowid, "%s line %d: %s" % (label, line_number, message), raw)
+            for line_number, message, raw in errors
         ]
         yield from error_rows(self, artifact, located, session.session_id, session.cwd)
 
@@ -745,15 +777,15 @@ class OpenClawParser(Parser):
 
         `fixed_line` overrides the line for blobs.
         """
-        for line_number, rec in records:
+        for line_number, record in records:
             line = fixed_line or line_number
-            if "kind" in rec and "type" not in rec:
-                kind = rec.get("kind")
+            if "kind" in record and "type" not in record:
+                kind = record.get("kind")
                 if kind == "header" and not session.session_id:
-                    session.session_id = str(rec.get("sessionId") or "")
-                if kind != "event" or not isinstance(rec.get("row"), dict):
+                    session.session_id = str(record.get("sessionId") or "")
+                if kind != "event" or not isinstance(record.get("row"), dict):
                     continue
-                inner = rec["row"]
+                inner = record["row"]
                 try:
                     entry = json.loads(inner.get("event_json") or "")
                 except (TypeError, ValueError) as error:
@@ -771,11 +803,11 @@ class OpenClawParser(Parser):
                         artifact, session, line, entry, inner.get("created_at"), opts
                     )
                 continue
-            yield from self._entry_rows(artifact, session, line, rec, None, opts)
+            yield from self._entry_rows(artifact, session, line, record, None, opts)
 
     # -- JSONL files ----------------------------------------------------------------
     def _parse_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        match = JSONL_RX.match(artifact.rel)
+        match = JSONL_PATTERN.match(artifact.rel)
         session = _Session(session_id=match.group("name") if match else "")
         session.header_id = True
         if match and match.group("archive"):
@@ -787,9 +819,9 @@ class OpenClawParser(Parser):
             session.key, key_error = self._legacy_key(artifact, session.session_id)
         with open(artifact.disk_path, "rb") as handle:
             raw = handle.read()
-        data, err = _maybe_zstd(raw)
+        data, error = _maybe_zstd(raw)
         if data is None:
-            yield self._bad(artifact, session, 1, "could not decompress (%s)" % err, opts)
+            yield self._bad(artifact, session, 1, "could not decompress (%s)" % error, opts)
             if key_error:
                 yield from error_rows(
                     self, artifact, [(0, key_error, "")], session.session_id, session.cwd
@@ -829,49 +861,53 @@ class OpenClawParser(Parser):
         return "", ""
 
     # -- SQLite store -------------------------------------------------------------------
-    def _parse_db(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+    def _parse_database(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        ctx = _Db()
-        with open_copy(artifact.disk_path) as con:
-            tables = table_names(con)
+        database_state = _DatabaseState()
+        with open_copy(artifact.disk_path) as connection:
+            tables = table_names(connection)
             if "transcript_events" not in tables and "openclaw_engine_anchor" in tables:
-                yield from error_rows(self, artifact, [self._anchor_error(con, "agent")])
+                yield from error_rows(self, artifact, [self._anchor_error(connection, "agent")])
                 return
             windows: dict[str, dict] = {}
             if "session_windows" in tables:
-                for window in con.execute("select rowid as _rowid, * from session_windows"):
+                for window in connection.execute("select rowid as _rowid, * from session_windows"):
                     window = dict(window)
                     windows[str(window.get("session_id"))] = window
-            relayed = self._db_relays(con, tables, windows, ctx)
-            nodes = self._db_nodes(con, errors) if "session_nodes" in tables else []
-            self._attach_nodes(nodes, relayed, ctx)
+            relayed = self._database_relays(connection, tables, windows, database_state)
+            nodes = self._database_nodes(connection, errors) if "session_nodes" in tables else []
+            self._attach_nodes(nodes, relayed, database_state)
             if "transcript_events" in tables:
-                yield from self._db_events(artifact, con, windows, ctx, opts)
+                yield from self._database_events(
+                    artifact, connection, windows, database_state, opts
+                )
             if "session_transcript_archives" in tables:
-                yield from self._db_archives(artifact, con, windows, ctx, opts)
+                yield from self._database_archives(
+                    artifact, connection, windows, database_state, opts
+                )
             if "session_transcript_cold_archives" in tables:
-                yield from self._db_cold(artifact, con, windows, ctx, opts)
+                yield from self._database_cold(artifact, connection, windows, database_state, opts)
             if "session_pending_inputs" in tables:
-                yield from self._db_pending(artifact, con, ctx, errors)
+                yield from self._database_pending(artifact, connection, database_state, errors)
             if "session_transcript_fts_content" in tables:
-                yield from self._db_fts(artifact, con, ctx)
+                yield from self._database_fts(artifact, connection, database_state)
             if "conversation_deliveries" in tables and "conversations" in tables:
                 current = {
                     str(node["session_key"]): str(node["current_session_id"]) for node in nodes
                 }
-                yield from self._db_deliveries(artifact, con, ctx, current)
+                yield from self._database_deliveries(artifact, connection, database_state, current)
             if "memory_session_tombstones" in tables:
-                yield from self._db_tombstones(artifact, con, ctx)
+                yield from self._database_tombstones(artifact, connection, database_state)
         # Rows attached to a generation with no transcript rows in the database.
-        for sid, items in list(ctx.attached.items()):
-            session = _Session(sid)
-            session.cwd = ctx.cwds.get(sid, "")
+        for session_id, items in list(database_state.attached.items()):
+            session = _Session(session_id)
+            session.cwd = database_state.cwds.get(session_id, "")
             for line, timestamp, text, model in items:
                 yield self._row(artifact, session, line, timestamp, "system", text, opts, model)
         yield from error_rows(self, artifact, errors)
 
     @staticmethod
-    def _anchor_error(con, label: str) -> tuple[int, str, str]:
+    def _anchor_error(connection, label: str) -> tuple[int, str, str]:
         """Return the whole-file error of a PostgreSQL engine anchor.
 
         The anchor is the `openclaw_engine_anchor (store_id, engine, schema)`
@@ -879,7 +915,9 @@ class OpenClawParser(Parser):
         (`src/infra/database-engine/open.ts:149`).
         """
         try:
-            row = con.execute("select store_id, schema from openclaw_engine_anchor").fetchone()
+            row = connection.execute(
+                "select store_id, schema from openclaw_engine_anchor"
+            ).fetchone()
         except sqlite3.DatabaseError:
             row = None
         store, schema = (row["store_id"], row["schema"]) if row is not None else ("-", "-")
@@ -892,13 +930,13 @@ class OpenClawParser(Parser):
         )
 
     @staticmethod
-    def _db_nodes(con, errors: list) -> list[dict]:
+    def _database_nodes(connection, errors: list) -> list[dict]:
         """Return the `session_nodes` rows with `entry_json` decoded into `entry`.
 
         An `entry_json` that does not decode is appended to `errors`.
         """
         nodes: list[dict] = []
-        for row in con.execute(
+        for row in connection.execute(
             "select rowid as _rowid, session_key, current_session_id, entry_json, updated_at"
             " from session_nodes order by rowid"
         ):
@@ -916,7 +954,7 @@ class OpenClawParser(Parser):
         return nodes
 
     @staticmethod
-    def _attach_nodes(nodes: list[dict], relayed: set, ctx: _Db) -> None:
+    def _attach_nodes(nodes: list[dict], relayed: set, database_state: _DatabaseState) -> None:
         """Attach the rows of each session's metadata entry to its current generation.
 
         The rows are the public share (to the generation it publishes), the
@@ -926,12 +964,12 @@ class OpenClawParser(Parser):
         """
         for node in nodes:
             entry, line = node["entry"], node["_rowid"]
-            sid = str(node["current_session_id"] or "")
+            session_id = str(node["current_session_id"] or "")
             timestamp = to_utc(node.get("updated_at"))
             grant = entry.get("publicShare")
             if isinstance(grant, dict) and grant.get("id"):
-                ctx.attach(
-                    str(grant.get("sessionId") or sid),
+                database_state.attach(
+                    str(grant.get("sessionId") or session_id),
                     line,
                     to_utc(grant.get("createdAt")),
                     "session synced: public share %s generation %s (from openclaw-agent.sqlite"
@@ -939,17 +977,17 @@ class OpenClawParser(Parser):
                     % (grant.get("id") or "-", grant.get("sessionId") or "-"),
                 )
             relay = _delivery_relay(entry.get("delivery"))
-            if relay and sid not in relayed:
-                ctx.attach(sid, line, timestamp, relay)
+            if relay and session_id not in relayed:
+                database_state.attach(session_id, line, timestamp, relay)
             override = entry.get("modelOverride")
             if isinstance(override, str) and override:
-                ctx.attach(sid, line, timestamp, _override_text(entry), override)
+                database_state.attach(session_id, line, timestamp, _override_text(entry), override)
             for key in SESSION_PERMISSION_KEYS:
                 value = entry.get(key)
                 if value in (None, "", {}, []):
                     continue
-                ctx.attach(
-                    sid,
+                database_state.attach(
+                    session_id,
                     line,
                     timestamp,
                     "permission setting: %s=%s (from openclaw-agent.sqlite"
@@ -967,8 +1005,8 @@ class OpenClawParser(Parser):
                     )
                     or "-"
                 )
-                ctx.attach(
-                    sid,
+                database_state.attach(
+                    session_id,
                     line,
                     to_utc(entry.get("archivedAt")),
                     "session archived: %s by %s (from openclaw-agent.sqlite"
@@ -977,7 +1015,9 @@ class OpenClawParser(Parser):
                 )
 
     @staticmethod
-    def _db_relays(con, tables: set, windows: dict[str, dict], ctx: _Db) -> set:
+    def _database_relays(
+        connection, tables: set, windows: dict[str, dict], database_state: _DatabaseState
+    ) -> set:
         """Attach the `session relayed:` rows and return the generations that got one.
 
         One per platform conversation linked to a generation
@@ -988,7 +1028,7 @@ class OpenClawParser(Parser):
         """
         relayed: set = set()
         if "session_conversations" in tables and "conversations" in tables:
-            for row in con.execute(
+            for row in connection.execute(
                 "select l.rowid as _rowid, l.session_id, l.role, l.first_seen_at, c.channel,"
                 " c.account_id, c.kind, c.peer_id, c.thread_id from session_conversations l"
                 " join conversations c using (conversation_id)"
@@ -996,9 +1036,9 @@ class OpenClawParser(Parser):
             ):
                 if not _platform(row["channel"]):
                     continue
-                sid = str(row["session_id"] or "")
-                ctx.attach(
-                    sid,
+                session_id = str(row["session_id"] or "")
+                database_state.attach(
+                    session_id,
                     row["_rowid"],
                     to_utc(row["first_seen_at"]),
                     "session relayed: %s account %s %s peer %s thread %s role %s (from"
@@ -1013,12 +1053,12 @@ class OpenClawParser(Parser):
                         row["role"] or "-",
                     ),
                 )
-                relayed.add(sid)
-        for sid, window in windows.items():
+                relayed.add(session_id)
+        for session_id, window in windows.items():
             timestamp = to_utc(window.get("started_at")) or to_utc(window.get("created_at"))
-            if sid not in relayed and _platform(window.get("channel")):
-                ctx.attach(
-                    sid,
+            if session_id not in relayed and _platform(window.get("channel")):
+                database_state.attach(
+                    session_id,
                     window["_rowid"],
                     timestamp,
                     "session relayed: %s account %s %s (from openclaw-agent.sqlite"
@@ -1029,34 +1069,36 @@ class OpenClawParser(Parser):
                         window.get("chat_type") or "-",
                     ),
                 )
-                relayed.add(sid)
+                relayed.add(session_id)
             if window.get("hook_external_content_source") == "gmail":
-                ctx.attach(
-                    sid,
+                database_state.attach(
+                    session_id,
                     window["_rowid"],
                     timestamp,
                     "session relayed: gmail hook (from openclaw-agent.sqlite session_windows"
                     " hook_external_content_source, started_at)",
                 )
-                relayed.add(sid)
+                relayed.add(session_id)
         return relayed
 
-    def _ctx_row(
+    def _context_row(
         self,
         artifact: Artifact,
-        ctx: _Db,
-        sid: str,
+        database_state: _DatabaseState,
+        session_id: str,
         line: int,
         timestamp: str,
         turn_type: str,
         text: str,
     ) -> Row:
         """Return a row of a table read after the transcripts, with its generation's `cwd`."""
-        session = _Session(sid)
-        session.cwd = ctx.cwds.get(sid, "")
+        session = _Session(session_id)
+        session.cwd = database_state.cwds.get(session_id, "")
         return self._row(artifact, session, line, timestamp, turn_type, text, Options())
 
-    def _db_pending(self, artifact: Artifact, con, ctx: _Db, errors: list) -> Iterator[Row]:
+    def _database_pending(
+        self, artifact: Artifact, connection, database_state: _DatabaseState, errors: list
+    ) -> Iterator[Row]:
         """Yield the prompts of `session_pending_inputs` the transcript lacks.
 
         One never consumed (`queued`, `interrupted` or `cancelled` with
@@ -1066,17 +1108,17 @@ class OpenClawParser(Parser):
         consumed it is not in the database. A `message_json` that does not
         decode is appended to `errors`.
         """
-        for record in con.execute(
+        for record in connection.execute(
             "select seq, input_id, session_id, run_id, message_json, state, accepted_at,"
             " consumed_event_id from session_pending_inputs order by seq"
         ):
-            sid = str(record["session_id"] or "")
+            session_id = str(record["session_id"] or "")
             consumed = record["consumed_event_id"]
-            if consumed and (sid, str(consumed)) in ctx.ids:
+            if consumed and (session_id, str(consumed)) in database_state.ids:
                 continue
             raw = record["message_json"] if isinstance(record["message_json"], str) else ""
             try:
-                msg = json.loads(raw)
+                message = json.loads(raw)
             except ValueError as error:
                 errors.append(
                     (
@@ -1086,20 +1128,26 @@ class OpenClawParser(Parser):
                     )
                 )
                 continue
-            msg = msg if isinstance(msg, dict) else {}
+            message = message if isinstance(message, dict) else {}
             timestamp = to_utc(record["accepted_at"])
-            row = self._ctx_row(
-                artifact, ctx, sid, record["seq"], timestamp, "user", text_of(msg.get("content"))
+            row = self._context_row(
+                artifact,
+                database_state,
+                session_id,
+                record["seq"],
+                timestamp,
+                "user",
+                text_of(message.get("content")),
             )
             if consumed:
                 row.recovered = "yes"
                 yield row
                 continue
             yield row
-            yield self._ctx_row(
+            yield self._context_row(
                 artifact,
-                ctx,
-                sid,
+                database_state,
+                session_id,
                 record["seq"],
                 timestamp,
                 "system",
@@ -1108,7 +1156,9 @@ class OpenClawParser(Parser):
                 % (record["state"] or "-", record["input_id"] or "-", record["run_id"] or "-"),
             )
 
-    def _db_fts(self, artifact: Artifact, con, ctx: _Db) -> Iterator[Row]:
+    def _database_fts(
+        self, artifact: Artifact, connection, database_state: _DatabaseState
+    ) -> Iterator[Row]:
         """Yield the full-text index's entries the transcript no longer holds, marked recovered.
 
         The index `session_transcript_fts` is read from its FTS5 content table
@@ -1116,29 +1166,38 @@ class OpenClawParser(Parser):
         timestamp) as a plain table, matched on `(session_id, message_id)`.
         """
         have = {
-            record[1] for record in con.execute("pragma table_info(session_transcript_fts_content)")
+            record[1]
+            for record in connection.execute("pragma table_info(session_transcript_fts_content)")
         }
         if not {"id", "c0", "c1", "c2", "c3", "c4"} <= have:
             return
-        for record in con.execute(
+        for record in connection.execute(
             "select id, c0, c1, c2, c3, c4 from session_transcript_fts_content order by id"
         ):
-            sid, message_id = str(record["c1"] or ""), str(record["c2"] or "")
-            if message_id and (sid, message_id) in ctx.ids:
+            session_id, message_id = str(record["c1"] or ""), str(record["c2"] or "")
+            if message_id and (session_id, message_id) in database_state.ids:
                 continue
             role = str(record["c3"] or "")
             text = compact(record["c0"])
             timestamp = to_utc(record["c4"])
             if role in ("user", "assistant"):
-                row = self._ctx_row(artifact, ctx, sid, record["id"], timestamp, role, text)
+                row = self._context_row(
+                    artifact, database_state, session_id, record["id"], timestamp, role, text
+                )
             else:
                 label = "%s: %s" % (role or "message", text)
-                row = self._ctx_row(artifact, ctx, sid, record["id"], timestamp, "system", label)
+                row = self._context_row(
+                    artifact, database_state, session_id, record["id"], timestamp, "system", label
+                )
             row.recovered = "yes"
             yield row
 
-    def _db_deliveries(
-        self, artifact: Artifact, con, ctx: _Db, current: dict[str, str]
+    def _database_deliveries(
+        self,
+        artifact: Artifact,
+        connection,
+        database_state: _DatabaseState,
+        current: dict[str, str],
     ) -> Iterator[Row]:
         """Yield one `channel delivery:` row per send or turn to a platform conversation.
 
@@ -1146,15 +1205,15 @@ class OpenClawParser(Parser):
         replied to it; the session is the current generation of
         `source_session_key`.
         """
-        for row in con.execute(
+        for row in connection.execute(
             "select d.rowid as _rowid, d.*, c.channel from conversation_deliveries d"
             " join conversations c using (conversation_id) order by d.created_at, d.rowid"
         ):
-            sid = current.get(str(row["source_session_key"] or ""), "")
-            yield self._ctx_row(
+            session_id = current.get(str(row["source_session_key"] or ""), "")
+            yield self._context_row(
                 artifact,
-                ctx,
-                sid,
+                database_state,
+                session_id,
                 row["_rowid"],
                 to_utc(row["created_at"]),
                 "system",
@@ -1170,10 +1229,10 @@ class OpenClawParser(Parser):
                 ),
             )
             if row["reply_text"] is not None:
-                yield self._ctx_row(
+                yield self._context_row(
                     artifact,
-                    ctx,
-                    sid,
+                    database_state,
+                    session_id,
                     row["_rowid"],
                     to_utc(row["reply_timestamp"]),
                     "system",
@@ -1182,27 +1241,29 @@ class OpenClawParser(Parser):
                     % (row["reply_text"], row["reply_message_id"] or "-"),
                 )
 
-    def _db_tombstones(self, artifact: Artifact, con, ctx: _Db) -> Iterator[Row]:
+    def _database_tombstones(
+        self, artifact: Artifact, connection, database_state: _DatabaseState
+    ) -> Iterator[Row]:
         """Yield one row per session `openclaw memory forget` removed from the memory index."""
-        for row in con.execute(
+        for row in connection.execute(
             "select rowid as _rowid, session_id, agent_id, reason, created_at"
             " from memory_session_tombstones order by created_at, rowid"
         ):
-            sid = str(row["session_id"] or "")
-            yield self._ctx_row(
+            session_id = str(row["session_id"] or "")
+            yield self._context_row(
                 artifact,
-                ctx,
-                sid,
+                database_state,
+                session_id,
                 row["_rowid"],
                 to_utc(row["created_at"]),
                 "system",
                 "session forgotten from memory: %s agent %s reason=%s (from"
                 " openclaw-agent.sqlite memory_session_tombstones, created_at)"
-                % (sid or "-", row["agent_id"] or "-", row["reason"] or "-"),
+                % (session_id or "-", row["agent_id"] or "-", row["reason"] or "-"),
             )
 
     # -- state/openclaw.sqlite ----------------------------------------------------------
-    def _parse_state_db(self, artifact: Artifact) -> Iterator[Row]:
+    def _parse_state_database(self, artifact: Artifact) -> Iterator[Row]:
         """Yield the rows of `state/openclaw.sqlite`.
 
         `backup uploaded:` from `backup_runs`, the permission rows of
@@ -1218,14 +1279,14 @@ class OpenClawParser(Parser):
             return
         data: dict[str, list[dict]] = {}
         try:
-            with open_copy(artifact.disk_path) as con:
-                tables = table_names(con)
+            with open_copy(artifact.disk_path) as connection:
+                tables = table_names(connection)
                 if "backup_runs" not in tables and "openclaw_engine_anchor" in tables:
-                    yield from error_rows(self, artifact, [self._anchor_error(con, "state")])
+                    yield from error_rows(self, artifact, [self._anchor_error(connection, "state")])
                     return
                 for table, query in STATE_QUERIES:
                     if table in tables:
-                        data[table] = [dict(record) for record in con.execute(query)]
+                        data[table] = [dict(record) for record in connection.execute(query)]
         except sqlite3.DatabaseError as error:
             yield from error_rows(
                 self, artifact, [(0, "state/openclaw.sqlite unreadable (%s)" % error, "")]
@@ -1407,13 +1468,13 @@ class OpenClawParser(Parser):
     def _window_session(
         session_id: str,
         windows: dict[str, dict],
-        ctx: _Db,
+        database_state: _DatabaseState,
         key: str = "",
         extra: str = "",
     ) -> _Session:
         window = windows.get(session_id) or {}
         parts: list[str] = []
-        for col in (
+        for column in (
             "channel",
             "account_id",
             "chat_type",
@@ -1423,8 +1484,8 @@ class OpenClawParser(Parser):
             "spawned_by",
             "display_name",
         ):
-            if window.get(col) not in (None, ""):
-                parts.append("%s=%s" % (col, window[col]))
+            if window.get(column) not in (None, ""):
+                parts.append("%s=%s" % (column, window[column]))
         if extra:
             parts.append(extra)
         if window.get("model_provider"):
@@ -1436,25 +1497,30 @@ class OpenClawParser(Parser):
             str(window.get("model") or ""),
             str(window.get("model_provider") or ""),
         )
-        session.ctx = ctx
+        session.database_state = database_state
         return session
 
-    def _db_events(
-        self, artifact: Artifact, con, windows: dict[str, dict], ctx: _Db, opts: Options
+    def _database_events(
+        self,
+        artifact: Artifact,
+        connection,
+        windows: dict[str, dict],
+        database_state: _DatabaseState,
+        opts: Options,
     ) -> Iterator[Row]:
         session: _Session | None = None
-        for row in con.execute(
+        for row in connection.execute(
             "select rowid as _rowid, session_id, seq, event_json, event_zstd, created_at "
             "from transcript_events order by session_id, seq"
         ):
             row = dict(row)
-            sid = str(row.get("session_id") or "")
-            if session is None or session.session_id != sid:
-                session = self._window_session(sid, windows, ctx)
+            session_id = str(row.get("session_id") or "")
+            if session is None or session.session_id != session_id:
+                session = self._window_session(session_id, windows, database_state)
             line = row["_rowid"]
             raw = row.get("event_json")
             if raw is None and row.get("event_zstd") is not None:
-                data, err = _maybe_zstd(row["event_zstd"])
+                data, reason = _maybe_zstd(row["event_zstd"])
                 if data is None:
                     if not session.started:
                         yield from self._start(
@@ -1464,23 +1530,23 @@ class OpenClawParser(Parser):
                         artifact,
                         session,
                         line,
-                        "event seq %s could not be decompressed (%s)" % (row.get("seq"), err),
+                        "event seq %s could not be decompressed (%s)" % (row.get("seq"), reason),
                         opts,
                         to_utc(row.get("created_at")),
                     )
                     continue
                 raw = data.decode("utf-8", errors="replace")
-            err = None  # set only when the JSON does not parse
+            reason = None  # set only when the JSON does not parse
             try:
-                rec = json.loads(
+                record = json.loads(
                     raw
                     if isinstance(raw, str)
                     else bytes(raw or b"").decode("utf-8", errors="replace")
                 )
             except ValueError as error:
-                rec = None
-                err = str(error)
-            if not isinstance(rec, dict):
+                record = None
+                reason = str(error)
+            if not isinstance(record, dict):
                 if not session.started:
                     yield from self._start(
                         artifact, session, line, to_utc(row.get("created_at")), None, opts
@@ -1490,36 +1556,43 @@ class OpenClawParser(Parser):
                     session,
                     line,
                     "event seq %s unreadable: %s"
-                    % (row.get("seq"), err if err is not None else "not a JSON object"),
+                    % (row.get("seq"), reason if reason is not None else "not a JSON object"),
                     opts,
                     to_utc(row.get("created_at")),
                 )
                 continue
-            yield from self._entry_rows(artifact, session, line, rec, row.get("created_at"), opts)
+            yield from self._entry_rows(
+                artifact, session, line, record, row.get("created_at"), opts
+            )
 
-    def _db_archives(
-        self, artifact: Artifact, con, windows: dict[str, dict], ctx: _Db, opts: Options
+    def _database_archives(
+        self,
+        artifact: Artifact,
+        connection,
+        windows: dict[str, dict],
+        database_state: _DatabaseState,
+        opts: Options,
     ) -> Iterator[Row]:
-        for row in con.execute(
+        for row in connection.execute(
             "select rowid as _rowid, session_id, session_key, reason, encoding, archive_name, "
             "created_at, archive_blob from session_transcript_archives "
             "order by created_at"
         ):
             row = dict(row)
-            sid = str(row.get("session_id") or "")
+            session_id = str(row.get("session_id") or "")
             extra = "archive=%s name=%s" % (row.get("reason") or "", row.get("archive_name") or "")
             session = self._window_session(
-                sid, windows, ctx, str(row.get("session_key") or ""), extra
+                session_id, windows, database_state, str(row.get("session_key") or ""), extra
             )
             line = row["_rowid"]
-            data, err = _maybe_zstd(row.get("archive_blob") or b"")
+            data, error = _maybe_zstd(row.get("archive_blob") or b"")
             if data is None:
                 yield self._bad(
                     artifact,
                     session,
                     line,
                     "archive %s could not be decompressed (%s)"
-                    % (row.get("archive_name") or sid, err),
+                    % (row.get("archive_name") or session_id, error),
                     opts,
                     to_utc(row.get("created_at")),
                 )
@@ -1527,7 +1600,7 @@ class OpenClawParser(Parser):
                 errors: list = []
                 records = _iter_lines(data, errors)
                 yield from self._records(artifact, session, records, opts, fixed_line=line)
-                label = "archive %s" % (row.get("archive_name") or sid)
+                label = "archive %s" % (row.get("archive_name") or session_id)
                 yield from self._blob_errors(artifact, session, line, label, errors)
             if row.get("reason") == "deleted":
                 yield self._row(
@@ -1538,31 +1611,39 @@ class OpenClawParser(Parser):
                     "system",
                     "session deleted: %s archive %s (from openclaw-agent.sqlite"
                     " session_transcript_archives reason deleted, created_at)"
-                    % (sid or "-", row.get("archive_name") or "-"),
+                    % (session_id or "-", row.get("archive_name") or "-"),
                     opts,
                 )
 
-    def _db_cold(
-        self, artifact: Artifact, con, windows: dict[str, dict], ctx: _Db, opts: Options
+    def _database_cold(
+        self,
+        artifact: Artifact,
+        connection,
+        windows: dict[str, dict],
+        database_state: _DatabaseState,
+        opts: Options,
     ) -> Iterator[Row]:
-        for row in con.execute(
+        for row in connection.execute(
             "select rowid as _rowid, session_id, archive_name, archived_at, archive_blob "
             "from session_transcript_cold_archives where storage = 'sqlite' order by archived_at"
         ):
             row = dict(row)
-            sid = str(row.get("session_id") or "")
+            session_id = str(row.get("session_id") or "")
             session = self._window_session(
-                sid, windows, ctx, extra="cold_archive=%s" % (row.get("archive_name") or "")
+                session_id,
+                windows,
+                database_state,
+                extra="cold_archive=%s" % (row.get("archive_name") or ""),
             )
             line = row["_rowid"]
-            data, err = _maybe_zstd(row.get("archive_blob") or b"")
+            data, error = _maybe_zstd(row.get("archive_blob") or b"")
             if data is None:
                 yield self._bad(
                     artifact,
                     session,
                     line,
                     "cold archive %s could not be decompressed (%s)"
-                    % (row.get("archive_name") or sid, err),
+                    % (row.get("archive_name") or session_id, error),
                     opts,
                     to_utc(row.get("archived_at")),
                 )
@@ -1571,7 +1652,7 @@ class OpenClawParser(Parser):
             yield from self._records(
                 artifact, session, _iter_lines(data, errors), opts, fixed_line=line
             )
-            label = "cold archive %s" % (row.get("archive_name") or sid)
+            label = "cold archive %s" % (row.get("archive_name") or session_id)
             yield from self._blob_errors(artifact, session, line, label, errors)
 
 

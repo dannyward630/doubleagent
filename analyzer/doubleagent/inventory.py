@@ -24,6 +24,7 @@ import os
 import stat
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TypedDict, cast
 
 from .errors import InputError
 from .timeutil import to_utc
@@ -83,6 +84,34 @@ def input_files(paths: Iterable[Path]) -> list[Path]:
     return out
 
 
+class _RecordType(TypedDict):
+    type: str
+
+
+# The functional form, because the collectors' key `at` is shorter than the
+# code style allows a field name to be.
+_RecordTime = TypedDict("_RecordTime", {"at": str}, total=False)  # noqa: UP013 (see above)
+
+
+class InventoryRecord(_RecordType, _RecordTime, total=False):
+    """One host or agent line of a collector's inventory output."""
+
+    host: str
+    collector: str
+    mode: str
+    users_scanned: int
+    users_unreadable: int
+    docker_volumes: int
+    user: str
+    agent: str
+    files: int
+    bytes: int
+    first: str
+    last: str
+    projects: int
+    evidence: str
+
+
 def _cell(field: str, value) -> str:
     if value is None:
         return ""
@@ -91,7 +120,7 @@ def _cell(field: str, value) -> str:
     return str(value)
 
 
-def _record(line: str) -> dict | None:
+def _record(line: str) -> InventoryRecord | None:
     line = line.strip().lstrip("﻿")
     if not line.startswith("{"):
         return None
@@ -101,7 +130,7 @@ def _record(line: str) -> dict | None:
         return None
     if not isinstance(record, dict) or record.get("type") not in ("host", "agent"):
         return None
-    return record
+    return cast(InventoryRecord, record)
 
 
 def read_file(path: Path) -> tuple[list[list[str]], int]:

@@ -65,7 +65,7 @@ CODEX_SESSION = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 # OpenClaw projects table record, with a push URL that embeds a token, and
 # `upstream`. `origin` has a second `url`, a mirror every push also goes
 # to. HEAD names the branch `main`.
-PROJ_REMOTE = "git@github.com:alice/proj.git"
+PROJECT_REMOTE = "git@github.com:alice/proj.git"
 PROJECT_MIRROR = "https://mirror.example.com/alice/proj.git"
 PROJECT_PUSH_URL = "https://alice:FIXTURE-TOKEN@github.com/alice/proj.git"
 PROJECT_UPSTREAM = "https://github.com/upstream/proj.git"
@@ -84,10 +84,10 @@ PROJECT_GIT_CONFIG = (
     '[branch "main"]\n'
     "\tremote = origin\n"
     "\tmerge = refs/heads/main\n"
-) % (PROJ_REMOTE, PROJECT_MIRROR, PROJECT_PUSH_URL, PROJECT_UPSTREAM)
+) % (PROJECT_REMOTE, PROJECT_MIRROR, PROJECT_PUSH_URL, PROJECT_UPSTREAM)
 PROJECT_GIT_HEAD = "ref: refs/heads/main\n"
 PROJECT_GIT_REMOTES = [
-    {"name": "origin", "urls": [PROJ_REMOTE, PROJECT_MIRROR], "pushurls": [PROJECT_PUSH_URL]},
+    {"name": "origin", "urls": [PROJECT_REMOTE, PROJECT_MIRROR], "pushurls": [PROJECT_PUSH_URL]},
     {"name": "upstream", "urls": [PROJECT_UPSTREAM], "pushurls": []},
 ]
 CODEX_SUBAGENT = "aaaaaaaa-bbbb-4ccc-8ddd-000000000002"
@@ -1851,7 +1851,7 @@ def codex_rollout_records(cwd="/srv/proj"):
                 "git": {
                     "commit_hash": "0a1b2c3d",
                     "branch": "feature/x",
-                    "repository_url": PROJ_REMOTE,
+                    "repository_url": PROJECT_REMOTE,
                 },
                 "creator_account_id": CODEX_ACCOUNT,
                 "creator_user_id": CODEX_USER,
@@ -2215,9 +2215,9 @@ def write_codex_state(path: Path, threads, cwd="/srv/proj", origins=None) -> Non
     """Write a `state_5.sqlite` with one `threads` row per entry of `threads`.
 
     A `state_5.sqlite` with one `threads` row per entry of `threads`; `origins` maps a thread id to
-    its `git_origin_url` (by default the fixture session's is `PROJ_REMOTE`).
+    its `git_origin_url` (by default the fixture session's is `PROJECT_REMOTE`).
     """
-    origins = {CODEX_SESSION: PROJ_REMOTE} if origins is None else origins
+    origins = {CODEX_SESSION: PROJECT_REMOTE} if origins is None else origins
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(path))
     connection.executescript(CODEX_STATE_SCHEMA)
@@ -2364,7 +2364,7 @@ CREATE TABLE logs (
     estimated_bytes INTEGER NOT NULL DEFAULT 0
 );
 """
-CODEX_FEEDBACK_TS = 1791367200  # 7 October 10:00:00 UTC
+CODEX_FEEDBACK_TIMESTAMP = 1791367200  # 7 October 10:00:00 UTC
 CODEX_NO_THREAD = "no-active-thread-0199b0c0-0000-7000-8000-00000000000f"
 
 
@@ -2376,9 +2376,9 @@ def codex_log_rows(thread_id: str):
     reordered.
     """
     return [
-        (CODEX_FEEDBACK_TS - 5, 0, "INFO", "codex_core::codex", "turn started", thread_id),
+        (CODEX_FEEDBACK_TIMESTAMP - 5, 0, "INFO", "codex_core::codex", "turn started", thread_id),
         (
-            CODEX_FEEDBACK_TS - 1,
+            CODEX_FEEDBACK_TIMESTAMP - 1,
             0,
             "ERROR",
             "codex_feedback",
@@ -2386,7 +2386,7 @@ def codex_log_rows(thread_id: str):
             thread_id,
         ),
         (
-            CODEX_FEEDBACK_TS,
+            CODEX_FEEDBACK_TIMESTAMP,
             250_000_000,
             "INFO",
             "codex_feedback",
@@ -2395,7 +2395,7 @@ def codex_log_rows(thread_id: str):
             thread_id,
         ),
         (
-            CODEX_FEEDBACK_TS + 60,
+            CODEX_FEEDBACK_TIMESTAMP + 60,
             0,
             "INFO",
             "codex_feedback",
@@ -4383,7 +4383,7 @@ def _utc_text(epoch: int) -> str:
 
 QWEN_SESSION = "e5f6a7b8-4444-4000-8000-000000000011"
 QWEN_ARCHIVED = "0a0b0c0d-4444-4000-8000-000000000022"
-QWEN_TMP = "3f0a9c" + "0" * 58  # sha256(cwd) directory name
+QWEN_TEMPORARY = "3f0a9c" + "0" * 58  # sha256(cwd) directory name
 QWEN_TRUST_MTIME = 1790856000  # 1 October 12:00:00 UTC, trustedFolders.json's mtime
 
 
@@ -4602,7 +4602,7 @@ def build_qwen(home: Path) -> None:
     (chats / (QWEN_SESSION + ".runtime.json")).write_text(
         '{"session_id": "x", "started_at": 1790848800}', encoding="utf-8"
     )
-    temporary = home / ".qwen/tmp" / QWEN_TMP
+    temporary = home / ".qwen/tmp" / QWEN_TEMPORARY
     temporary.mkdir(parents=True, exist_ok=True)
     (temporary / "logs.json").write_text(
         json.dumps(qwen_logs_entries(), indent=2), encoding="utf-8"
@@ -5868,7 +5868,7 @@ TRUST_JSONC = (
 )
 
 
-def _wal_db(path: Path, script: str, inserts) -> None:
+def _wal_database(path: Path, script: str, inserts) -> None:
     """Build a WAL-mode SQLite file whose rows live only in the -wal sidecar.
 
     Build a WAL-mode SQLite file whose schema is checkpointed into the main file and whose rows live
@@ -5944,7 +5944,7 @@ def build_crush(home: Path) -> None:
     Crush run in the home directory, so its per-project store is ~/.crush/crush.db, plus the global
     project registry and config noise.
     """
-    _wal_db(home / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
+    _wal_database(home / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
     (home / ".crush/crush.json").write_text(
         '{"providers":{"anthropic":{"api_key":"sk-test"}}}', encoding="utf-8"
     )
@@ -6223,7 +6223,7 @@ GOOSE_LEGACY_REL = ".local/share/goose/sessions/20260301_090000.jsonl"
 
 def build_goose(home: Path) -> None:
     data = home / ".local/share/goose/sessions"
-    _wal_db(data / "sessions.db", GOOSE_SCHEMA, goose_records())
+    _wal_database(data / "sessions.db", GOOSE_SCHEMA, goose_records())
     _jsonl(home / GOOSE_LEGACY_REL, goose_legacy_records())
     state = home / ".local/state/goose"
     _jsonl(state / "logs/llm_request.0.jsonl", goose_llm_request_records())
@@ -8054,16 +8054,16 @@ def build_opencode(home: Path) -> None:
     _json_file(
         home / ".config/opencode/opencode.json", {"$schema": "https://opencode.ai/config.json"}
     )
-    build_opencode_share_database(data / OPENCODE_SHARE_DB_NAME)
-    build_opencode_v2_database(data / OPENCODE_V2_DB_NAME)
-    build_opencode_next_database(data / OPENCODE_NEXT_DB_NAME)
+    build_opencode_share_database(data / OPENCODE_SHARE_DATABASE_NAME)
+    build_opencode_v2_database(data / OPENCODE_V2_DATABASE_NAME)
+    build_opencode_next_database(data / OPENCODE_NEXT_DATABASE_NAME)
 
 
 # Session sync: a channel database with the share records of
 # research/opencode.md, Other stores: the `session_share` table and the
 # `session.updated.1` events. One session is shared now, one was shared
 # and then unshared (its share row is gone, its events stay), one never.
-OPENCODE_SHARE_DB_NAME = "opencode-beta.db"
+OPENCODE_SHARE_DATABASE_NAME = "opencode-beta.db"
 OPENCODE_SHARED = "ses_05SHARE"
 OPENCODE_UNSHARED = "ses_06UNSHARE"
 OPENCODE_PRIVATE = "ses_07PRIVATE"
@@ -8153,8 +8153,8 @@ def build_opencode_share_database(database: Path, start: int = OPENCODE_SHARE_T0
 # session deleted in 2.0 is left only in the 1.x tables. `opencode-next.db`
 # is a pre-release 2.0 database (`project`, `session`, `session_message`,
 # v1-migration.bun.ts:839-846) that 2.0 imports and leaves in place.
-OPENCODE_V2_DB_NAME = "opencode-local.db"
-OPENCODE_NEXT_DB_NAME = "opencode-next.db"
+OPENCODE_V2_DATABASE_NAME = "opencode-local.db"
+OPENCODE_NEXT_DATABASE_NAME = "opencode-next.db"
 OPENCODE_MIGRATED = "ses_10MIGRATED"
 OPENCODE_DELETED = "ses_11DELETED"
 OPENCODE_V2_ONLY = "ses_12NEW"
@@ -8653,7 +8653,7 @@ def build_kilo_share(home: Path) -> None:
 # at 87cc35ce6904465a0eed507a8c75c79185863a22. Built by the tests that read
 # them, not by `build_home`, so the other tests' session and dedup counts
 # stay as they are.
-OPENCODE_STATE_DB_NAME = "opencode-state.db"
+OPENCODE_STATE_DATABASE_NAME = "opencode-state.db"
 OPENCODE_ARCHIVED = "ses_20ARCHIVED"
 OPENCODE_PINNED_GONE = "ses_21PINNEDGONE"
 OPENCODE_STATE_T0 = OPENCODE_T0 + 10800000  # 3 October 12:00:00 UTC
@@ -8795,7 +8795,7 @@ def build_opencode_state(home: Path) -> None:
     _json(
         state / "service.json", {"id": "svc", "url": "http://127.0.0.1:4096", "password": "REDACT"}
     )
-    build_opencode_state_database(home / ".local/share/opencode" / OPENCODE_STATE_DB_NAME)
+    build_opencode_state_database(home / ".local/share/opencode" / OPENCODE_STATE_DATABASE_NAME)
 
 
 def build_kilo_state(home: Path) -> None:
@@ -10329,7 +10329,7 @@ def build_tabby(home: Path) -> None:
     The live WAL database, a pre-migration backup and a later one holding copies of the same
     threads, one day of the event log, and the config file as noise.
     """
-    _wal_db(home / TABBY_REL, TABBY_SCHEMA, tabby_records())
+    _wal_database(home / TABBY_REL, TABBY_SCHEMA, tabby_records())
     for rel, schema, records in (
         (TABBY_BACKUP_REL, TABBY_BACKUP_SCHEMA, tabby_backup_records()),
         (TABBY_BACKUP2_REL, TABBY_SCHEMA, tabby_backup2_records()),
@@ -12023,7 +12023,7 @@ def _hermes_snapshot(path: Path, inserts) -> None:
 
 def build_hermes(home: Path) -> None:
     hermes = home / ".hermes"
-    _wal_db(hermes / "state.db", HERMES_SCHEMA, hermes_records())
+    _wal_database(hermes / "state.db", HERMES_SCHEMA, hermes_records())
     _jsonl(home / HERMES_DIVERTED_REL, hermes_diverted_records())
     _hermes_snapshot(
         home / HERMES_SNAPSHOT_OLD_REL,
@@ -12170,7 +12170,7 @@ def _hermes_sql(value) -> str:
 
 def build_hermes_switch(path: Path) -> None:
     """state.db at `path` holding hermes_switch_records()."""
-    _wal_db(path, HERMES_SWITCH_SCHEMA, hermes_switch_records())
+    _wal_database(path, HERMES_SWITCH_SCHEMA, hermes_switch_records())
 
 
 # Source-derived from hermes-agent 86fa9e6ca1de7ee71132d2be0103f3e37d1fa872
@@ -12404,7 +12404,7 @@ def hermes_gateway_records():
 
 def build_hermes_gateway(path: Path) -> None:
     """state.db at `path` holding hermes_gateway_records()."""
-    _wal_db(path, HERMES_GATEWAY_SCHEMA, hermes_gateway_records())
+    _wal_database(path, HERMES_GATEWAY_SCHEMA, hermes_gateway_records())
 
 
 # .hermes_history: prompt_toolkit's FileHistory form (python-prompt-toolkit
@@ -12605,7 +12605,7 @@ def build_hermes_volume(root: Path, cwd="/opt/data/workspace") -> None:
     list and a config.yaml with no command_allowlist, which gives no rows.
     """
     base = root / ("fs" + HERMES_VOLUME_HOME)
-    _wal_db(base / "state.db", HERMES_SCHEMA, hermes_records(cwd))
+    _wal_database(base / "state.db", HERMES_SCHEMA, hermes_records(cwd))
     _jsonl(base / "sessions" / ("%s.jsonl" % HERMES_DIVERTED), hermes_diverted_records())
     _json(base / "pastes" / "pending.json", hermes_pastes_records())
     (base / "config.yaml").write_text("model: anthropic/claude-sonnet-4\n", encoding="utf-8")
@@ -13578,7 +13578,7 @@ def openclaw_legacy_records(session_id=OPENCLAW_LEGACY):
 # (src/state/openclaw-state-schema.sql:1843-1849) with manifests shaped by
 # src/state/backup-run-records.contract.ts:98-124.
 OPENCLAW_SHARE_ID = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
-OPENCLAW_STATE_DB = ".openclaw/state/openclaw.sqlite"
+OPENCLAW_STATE_DATABASE = ".openclaw/state/openclaw.sqlite"
 OPENCLAW_BACKUP_KEY = "backups/main/2026-10-01T10-20-00Z-0a1b2c3d.tar.gz"
 OPENCLAW_BACKUP_COMMIT = "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
 OPENCLAW_NODES_SCHEMA = """
@@ -13727,7 +13727,7 @@ def openclaw_state_inserts():
         # src/state/openclaw-state-schema.sql:1901-1909 at 146284a: a
         # registered repository with its origin, and one without.
         "INSERT INTO projects VALUES ('p-1','proj','/srv/proj','%s','registered',"
-        "1790845100500,1790845100500)" % PROJ_REMOTE,
+        "1790845100500,1790845100500)" % PROJECT_REMOTE,
         "INSERT INTO projects VALUES ('p-2','scratch','/srv/scratch',NULL,'registered',"
         "1790845100600,1790845100600)",
     ]
@@ -13848,7 +13848,9 @@ def build_openclaw_state(home: Path) -> None:
         % (rid, created, path, status, json.dumps(manifest))
         for rid, created, path, status, manifest in openclaw_backup_runs()
     ]
-    _wal_db(home / OPENCLAW_STATE_DB, OPENCLAW_STATE_SCHEMA, inserts + openclaw_state_inserts())
+    _wal_database(
+        home / OPENCLAW_STATE_DATABASE, OPENCLAW_STATE_SCHEMA, inserts + openclaw_state_inserts()
+    )
 
 
 def _openclaw_zstd(raw: bytes) -> bytes:
@@ -13940,7 +13942,7 @@ def build_openclaw(home: Path) -> None:
             cold_blob.hex(),
         )
     )
-    _wal_db(
+    _wal_database(
         agent / "agent/openclaw-agent.sqlite",
         OPENCLAW_SCHEMA + OPENCLAW_NODES_SCHEMA + OPENCLAW_PAST_USE_SCHEMA,
         inserts + openclaw_node_inserts() + openclaw_past_use_inserts(),
@@ -14468,11 +14470,13 @@ def build_nanobot_webui(home: Path) -> None:
 # database) and a jsonl-backup/ copy of the older workspace file of the
 # heartbeat session, whose first turn a /new later removed from the
 # database.
-NANOBOT_DB_WS = "fedcba9876543210fedcba9876543210"
-NANOBOT_DB_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DB_WS
-NANOBOT_DB_KEY = "discord:555"
-NANOBOT_DB_FROZEN_REL = ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DB_WS
-NANOBOT_DB_BACKUP_REL = ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DB_WS
+NANOBOT_DATABASE_WS = "fedcba9876543210fedcba9876543210"
+NANOBOT_DATABASE_REL = ".nanobot/sessions/%s/sessions.sqlite3" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_KEY = "discord:555"
+NANOBOT_DATABASE_FROZEN_REL = ".nanobot/sessions/%s/ZGlzY29yZDo1NTU.jsonl" % NANOBOT_DATABASE_WS
+NANOBOT_DATABASE_BACKUP_REL = (
+    ".nanobot/sessions/%s/jsonl-backup/heartbeat.jsonl" % NANOBOT_DATABASE_WS
+)
 NANOBOT_DATABASE_SCHEMA = """
 CREATE TABLE storage_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE sessions (
@@ -14528,7 +14532,7 @@ def nanobot_database_messages():
     ]
 
 
-def nanobot_db_insert_message(path: Path, key: str, position: int, record: str) -> None:
+def nanobot_database_insert_message(path: Path, key: str, position: int, record: str) -> None:
     """Store `record` verbatim as `messages` row (`key`, `position`)."""
     connection = sqlite3.connect(str(path))
     connection.execute(
@@ -14540,17 +14544,17 @@ def nanobot_db_insert_message(path: Path, key: str, position: int, record: str) 
 
 
 def build_nanobot_sqlite(home: Path) -> None:
-    database = home / NANOBOT_DB_REL
+    database = home / NANOBOT_DATABASE_REL
     database.parent.mkdir(parents=True, exist_ok=True)
     (database.parent / ".workspace").write_text("/srv/proj\n", encoding="utf-8")
-    meta = {"last_channel": NANOBOT_DB_KEY, "_nanobot_model_preset": "smart"}
+    meta = {"last_channel": NANOBOT_DATABASE_KEY, "_nanobot_model_preset": "smart"}
     connection = sqlite3.connect(str(database))
     connection.execute("PRAGMA journal_mode = WAL")
     connection.executescript(NANOBOT_DATABASE_SCHEMA)
     connection.execute("PRAGMA user_version = 1")
     connection.execute("INSERT INTO storage_meta VALUES ('jsonl_import', 'complete')")
     sessions = [
-        (NANOBOT_DB_KEY, "2026-10-03T11:00:00", "2026-10-03T11:00:31", meta),
+        (NANOBOT_DATABASE_KEY, "2026-10-03T11:00:00", "2026-10-03T11:00:31", meta),
         ("heartbeat", "2026-09-28T06:00:00", "2026-10-03T06:00:05", {}),
     ]
     for key, created, updated, metadata in sessions:
@@ -14562,7 +14566,10 @@ def build_nanobot_sqlite(home: Path) -> None:
         {"role": "user", "content": "check the inbox", "timestamp": "2026-10-03T06:00:01"},
         {"role": "assistant", "content": "Inbox is empty.", "timestamp": "2026-10-03T06:00:05"},
     ]
-    for key, records in ((NANOBOT_DB_KEY, nanobot_database_messages()), ("heartbeat", heartbeat)):
+    for key, records in (
+        (NANOBOT_DATABASE_KEY, nanobot_database_messages()),
+        ("heartbeat", heartbeat),
+    ):
         for position, record in enumerate(records):
             connection.execute(
                 "INSERT INTO messages VALUES (?, ?, ?)",
@@ -14572,14 +14579,14 @@ def build_nanobot_sqlite(home: Path) -> None:
     connection.close()
     frozen_meta = {
         "_type": "metadata",
-        "key": NANOBOT_DB_KEY,
+        "key": NANOBOT_DATABASE_KEY,
         "created_at": "2026-10-03T11:00:00",
         "updated_at": "2026-10-03T11:00:05",
         "metadata": meta,
     }
-    _jsonl(home / NANOBOT_DB_FROZEN_REL, [frozen_meta, *nanobot_database_messages()[:4]])
+    _jsonl(home / NANOBOT_DATABASE_FROZEN_REL, [frozen_meta, *nanobot_database_messages()[:4]])
     _jsonl(
-        home / NANOBOT_DB_BACKUP_REL,
+        home / NANOBOT_DATABASE_BACKUP_REL,
         [
             {
                 "_type": "metadata",
@@ -14592,7 +14599,7 @@ def build_nanobot_sqlite(home: Path) -> None:
             {"role": "assistant", "content": "Nothing to do.", "timestamp": "2026-09-28T06:00:04"},
         ],
     )
-    (home / NANOBOT_DB_BACKUP_REL).parent.joinpath("heartbeat.checkpoint.json").write_text(
+    (home / NANOBOT_DATABASE_BACKUP_REL).parent.joinpath("heartbeat.checkpoint.json").write_text(
         "{}", encoding="utf-8"
     )
 
@@ -15070,7 +15077,7 @@ def build_twinny(home: Path) -> None:
     def lit(text):
         return "'" + text.replace("'", "''") + "'"
 
-    _wal_db(
+    _wal_database(
         home / TWINNY_VSCDB_REL,
         VSCDB_SCHEMA,
         [
@@ -15175,7 +15182,7 @@ TWINNY_415_CHANGE = "5f0e9d8c-2222-4000-8000-000000000001"
 TWINNY_415_USER = ".config/Code/User"
 TWINNY_415_REL = TWINNY_415_USER + "/globalStorage/state.vscdb"
 TWINNY_415_WS = TWINNY_415_USER + "/workspaceStorage/ws1"
-TWINNY_415_WS_DB_REL = TWINNY_415_WS + "/state.vscdb"
+TWINNY_415_WORKSPACE_DATABASE_REL = TWINNY_415_WS + "/state.vscdb"
 TWINNY_415_CHANGES_REL = (
     TWINNY_415_WS + "/rjmacarthy.twinny/agent-changes/%s.json" % TWINNY_415_CHANGE
 )
@@ -15303,7 +15310,7 @@ def build_twinny_415(home: Path) -> None:
     """
     _vscdb(home / TWINNY_415_REL, {"rjmacarthy.twinny": twinny_415_records()})
     _vscdb(
-        home / TWINNY_415_WS_DB_REL,
+        home / TWINNY_415_WORKSPACE_DATABASE_REL,
         {
             "rjmacarthy.twinny": {
                 "twinny-workspace-context-reviewOwner": "acme",
@@ -15312,7 +15319,7 @@ def build_twinny_415(home: Path) -> None:
             }
         },
     )
-    for rel in (TWINNY_415_REL, TWINNY_415_WS_DB_REL):
+    for rel in (TWINNY_415_REL, TWINNY_415_WORKSPACE_DATABASE_REL):
         os.utime(home / rel, (TWINNY_415_MTIME, TWINNY_415_MTIME))
     changes = home / TWINNY_415_CHANGES_REL
     changes.parent.mkdir(parents=True, exist_ok=True)
@@ -16334,8 +16341,8 @@ def build_muse_code(home: Path) -> None:
 
 
 OLLAMA_CHAT = "0190a000-0000-7000-8000-00000000c001"
-OLLAMA_DB_REL = "Library/Application Support/Ollama/db.sqlite"
-OLLAMA_WIN_DB_REL = "AppData/Local/Ollama/db.sqlite"
+OLLAMA_DATABASE_REL = "Library/Application Support/Ollama/db.sqlite"
+OLLAMA_WINDOWS_DATABASE_REL = "AppData/Local/Ollama/db.sqlite"
 OLLAMA_USER_NAME = "Alice Example"
 OLLAMA_USER_EMAIL = "alice@example.invalid"
 OLLAMA_ATTACHMENT = b"hello"
@@ -16403,7 +16410,7 @@ def ollama_records(schema_version: int = 19):
 
 def write_ollama_database(path: Path, schema_version: int = 19) -> None:
     settings = OLLAMA_SETTINGS_19 if schema_version >= 19 else OLLAMA_SETTINGS_16
-    _wal_db(path, settings + OLLAMA_SCHEMA, ollama_records(schema_version))
+    _wal_database(path, settings + OLLAMA_SCHEMA, ollama_records(schema_version))
 
 
 OLLAMA_CONFIG = (
@@ -16433,8 +16440,8 @@ OLLAMA_CD_PROFILE = """{
 
 
 def build_ollama(home: Path) -> None:
-    write_ollama_database(home / OLLAMA_DB_REL)
-    write_ollama_database(home / OLLAMA_WIN_DB_REL, schema_version=16)
+    write_ollama_database(home / OLLAMA_DATABASE_REL)
+    write_ollama_database(home / OLLAMA_WINDOWS_DATABASE_REL, schema_version=16)
     ollama = home / ".ollama"
     ollama.mkdir(parents=True, exist_ok=True)
     (ollama / "history").write_text("why is the sky blue\n/set nohistory\n/bye\n", encoding="utf-8")
@@ -16501,8 +16508,8 @@ CD_CODE_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_SESSION)
 # A Code-tab record with the persisted Remote Control state set (bundle
 # serializer keys, research/claude-desktop.md, Record schema; fixture only).
 CD_CODE_REMOTE_CONTROL_SESSION = "local_e3e3e3e3-9999-4aaa-8bbb-cccccccccccc"
-CD_CODE_RC_CLI = "e3e3e3e3-5555-4666-8777-888888888888"
-CD_CODE_RC_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_REMOTE_CONTROL_SESSION)
+CD_CODE_REMOTE_CONTROL_CLI = "e3e3e3e3-5555-4666-8777-888888888888"
+CD_CODE_REMOTE_CONTROL_RECORD_REL = "%s/%s.json" % (CD_CODE_ORG, CD_CODE_REMOTE_CONTROL_SESSION)
 CD_SCHED_REL = "%s/scheduled-tasks.json" % CD_COWORK_ORG
 CD_WORKTREES_REL = "%s/git-worktrees.json" % CD_BASE
 CD_SPACES_REL = "%s/remote-session-spaces.json" % CD_COWORK_ORG
@@ -16833,7 +16840,7 @@ def claude_desktop_code_record():
 def claude_desktop_code_remote_control_record():
     return {
         "sessionId": CD_CODE_REMOTE_CONTROL_SESSION,
-        "cliSessionId": CD_CODE_RC_CLI,
+        "cliSessionId": CD_CODE_REMOTE_CONTROL_CLI,
         "cwd": "/srv/proj",
         "originCwd": "/srv/proj",
         "branch": "main",
@@ -16920,7 +16927,7 @@ def build_claude_desktop(home: Path) -> None:
     code = home / CD_CODE_RECORD_REL
     code.parent.mkdir(parents=True, exist_ok=True)
     code.write_text(json.dumps(claude_desktop_code_record()), encoding="utf-8")
-    (home / CD_CODE_RC_RECORD_REL).write_text(
+    (home / CD_CODE_REMOTE_CONTROL_RECORD_REL).write_text(
         json.dumps(claude_desktop_code_remote_control_record()), encoding="utf-8"
     )
     (home / CD_SCHED_REL).write_text(json.dumps(claude_desktop_scheduled_tasks()), encoding="utf-8")
@@ -17110,7 +17117,7 @@ def build_copilot_cli(home: Path) -> None:
     (home / COPILOT_WORKSPACE_REL).write_text(COPILOT_WORKSPACE_YAML, encoding="utf-8")
     os.utime(home / COPILOT_WORKSPACE_REL, (COPILOT_WORKSPACE_MTIME, COPILOT_WORKSPACE_MTIME))
     _json_file(home / COPILOT_SNAPSHOTS_REL, copilot_snapshot_index())
-    _wal_db(home / COPILOT_STORE_REL, COPILOT_STORE_SCHEMA, COPILOT_STORE_ROWS)
+    _wal_database(home / COPILOT_STORE_REL, COPILOT_STORE_SCHEMA, COPILOT_STORE_ROWS)
     # Newest first; `/model` was typed between the two prompts.
     _json_file(
         home / COPILOT_HISTORY_REL,
@@ -17156,7 +17163,7 @@ def build_copilot_cli(home: Path) -> None:
 # sidecar, as on a host where the app is still running. The four scheduling
 # tables and the deletion intent were empty on the real install: their rows
 # are fixture only.
-COPILOT_DESKTOP_DB_REL = ".copilot/data.db"
+COPILOT_DESKTOP_DATABASE_REL = ".copilot/data.db"
 COPILOT_DESKTOP_CHAT = "5d404e14-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_FORK = "9f9f9f9f-0000-4000-8000-000000000001"
 COPILOT_DESKTOP_WORKTREE = "/home/alice/.copilot/repos/copilot-worktrees/proj/octo-user-happy-otter"
@@ -17312,8 +17319,10 @@ def copilot_desktop_records() -> list[str]:
 
 
 def build_copilot_desktop(home: Path) -> None:
-    _wal_db(home / COPILOT_DESKTOP_DB_REL, COPILOT_DESKTOP_SCHEMA, copilot_desktop_records())
-    database = home / COPILOT_DESKTOP_DB_REL
+    _wal_database(
+        home / COPILOT_DESKTOP_DATABASE_REL, COPILOT_DESKTOP_SCHEMA, copilot_desktop_records()
+    )
+    database = home / COPILOT_DESKTOP_DATABASE_REL
     os.utime(database, (COPILOT_DESKTOP_MTIME, COPILOT_DESKTOP_MTIME))
     # Noise the parser must not want: the WebSocket token and the web view's
     # local storage (research/copilot-desktop.md, Credentials and Other stores).
@@ -17345,7 +17354,7 @@ def build_copilot_desktop(home: Path) -> None:
 # (`pragma table_info`, research/chatgpt-desktop.md, Record schema; the column
 # types other than the REAL times were not recorded) and its
 # hosts table. The rows live only in the -wal sidecar, as on a running app.
-CHATGPT_DESKTOP_DB_REL = ".codex/sqlite/codex-dev.db"
+CHATGPT_DESKTOP_DATABASE_REL = ".codex/sqlite/codex-dev.db"
 CHATGPT_CONVERSATION = "6a0f0e2c-0000-4000-8000-000000000001"
 CHATGPT_TPP_CONVERSATION = "6a0f0e2c-0000-4000-8000-000000000002"
 CHATGPT_HOST = "chatgpt:00000000-0000-4000-8000-0000000000aa:user-FAKEACCOUNT0000"
@@ -17386,7 +17395,9 @@ def chatgpt_desktop_records() -> list[str]:
 
 
 def build_chatgpt_desktop(home: Path) -> None:
-    _wal_db(home / CHATGPT_DESKTOP_DB_REL, CHATGPT_DESKTOP_SCHEMA, chatgpt_desktop_records())
+    _wal_database(
+        home / CHATGPT_DESKTOP_DATABASE_REL, CHATGPT_DESKTOP_SCHEMA, chatgpt_desktop_records()
+    )
     # Noise the parser must not want: the app's preferences, a file the
     # catalog attributes to `chatgpt-desktop` itself, so the agent is detected.
     prefs = home / "Library/Preferences/com.openai.codex.plist"

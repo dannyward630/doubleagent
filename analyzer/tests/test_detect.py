@@ -12,10 +12,10 @@ from pathlib import Path
 from doubleagent import catalog, cli, model
 from doubleagent.inputs import open_input
 from fixtures import (
-    PROJ_REMOTE,
     PROJECT_GIT_CONFIG,
     PROJECT_GIT_HEAD,
     PROJECT_GIT_REMOTES,
+    PROJECT_REMOTE,
     build_home,
     build_image,
 )
@@ -493,7 +493,7 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(project["status"], "collected")
         self.assertEqual(
             (project["remotes"], project["head"], project["recorded_remotes"]),
-            (PROJECT_GIT_REMOTES, "main", [PROJ_REMOTE]),
+            (PROJECT_GIT_REMOTES, "main", [PROJECT_REMOTE]),
         )
 
 

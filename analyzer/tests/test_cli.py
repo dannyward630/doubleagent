@@ -60,7 +60,7 @@ from fixtures import (
     KILO_TASK,
     LETTA_CONV,
     LETTA_LOCAL_AGENT_CONV,
-    NANOBOT_DB_KEY,
+    NANOBOT_DATABASE_KEY,
     NANOBOT_KEY,
     OI_SESSION,
     OPENCLAW_RESET_SESSION,
@@ -69,12 +69,12 @@ from fixtures import (
     OPENCODE_SHARED,
     PI_BUG_SESSION,
     PI_SESSION,
-    PROJ_REMOTE,
     PROJECT_GIT_CONFIG,
     PROJECT_GIT_HEAD,
     PROJECT_GIT_REMOTES,
     PROJECT_MIRROR,
     PROJECT_PUSH_URL,
+    PROJECT_REMOTE,
     PROJECT_UPSTREAM,
     QWEN_ARCHIVED,
     QWEN_DAEMON_SESSION,
@@ -1049,7 +1049,7 @@ class SyncedSessionTests(unittest.TestCase):
             (("qwen-code", QWEN_ARCHIVED), "no"),
             (("hermes", HERMES_SESSION), "no"),
             (("nanobot", NANOBOT_KEY), "yes"),
-            (("nanobot", NANOBOT_DB_KEY), "yes"),
+            (("nanobot", NANOBOT_DATABASE_KEY), "yes"),
             (("nanobot", "unified:default"), "yes"),
             (("nanobot", "websocket:chat-1"), "no"),
             (("openclaw", OPENCLAW_SESSION), "yes"),
@@ -1599,7 +1599,7 @@ class GitRemotesTests(unittest.TestCase):
             [
                 "  remotes: origin %s %s (push %s), upstream %s"
                 % (
-                    PROJ_REMOTE,
+                    PROJECT_REMOTE,
                     PROJECT_MIRROR,
                     PROJECT_PUSH_URL,
                     PROJECT_UPSTREAM,
@@ -1619,7 +1619,7 @@ class GitRemotesTests(unittest.TestCase):
         project, gone, bare = projects["/srv/proj"], projects["/srv/gone"], projects["/srv/bare"]
         self.assertEqual(
             (project["remotes"], project["head"], project["recorded_remotes"]),
-            (PROJECT_GIT_REMOTES, "main", [PROJ_REMOTE]),
+            (PROJECT_GIT_REMOTES, "main", [PROJECT_REMOTE]),
         )
         # A referenced project: no repository files, but the remote the
         # agent recorded survives the directory.

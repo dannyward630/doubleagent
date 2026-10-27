@@ -69,7 +69,7 @@ from fixtures import (
     GEMINI_SUBAGENT,
     GOOSE_LEGACY_REL,
     GOOSE_SESSION,
-    PROJ_REMOTE,
+    PROJECT_REMOTE,
     bad_line_text,
     build_home,
     claude_project_local_settings,
@@ -2499,7 +2499,7 @@ class ClaudeCodeMacTests(ParserBase):
 
 from fixtures import (
     CODEX_BACKUP_STATE_REL,
-    CODEX_FEEDBACK_TS,
+    CODEX_FEEDBACK_TIMESTAMP,
     CODEX_GOAL_EVENT,
     CODEX_MEMORY_SUMMARY_REL,
     build_codex_standing,
@@ -2582,7 +2582,7 @@ class CodexTests(ParserBase):
         # session_meta git.repository_url, at the session_meta time.
         self.assertEqual(
             (remote.turn_type, remote.timestamp_utc, remote.source_line, remote.text),
-            ("system", start.timestamp_utc, 1, "git remote: " + PROJ_REMOTE),
+            ("system", start.timestamp_utc, 1, "git remote: " + PROJECT_REMOTE),
         )
         self.assertEqual(start.model, "")  # model unknown until turn_context
         self.assertEqual(user.model, "gpt-5-codex")
@@ -3140,7 +3140,7 @@ class CodexTests(ParserBase):
                     "2026-10-02T09:00:00.000Z",
                     CODEX_SESSION,
                     "feature/x",
-                    "git remote: " + PROJ_REMOTE,
+                    "git remote: " + PROJECT_REMOTE,
                 ),
                 (
                     "user",
@@ -3395,7 +3395,7 @@ class CodexTests(ParserBase):
             "insert into logs (ts, ts_nanos, level, target, message, thread_id)"
             " values (?,?,?,?,?,?)",
             (
-                CODEX_FEEDBACK_TS,
+                CODEX_FEEDBACK_TIMESTAMP,
                 0,
                 "INFO",
                 "codex_feedback",
@@ -4083,13 +4083,13 @@ class ProjectRoutingTests(unittest.TestCase):
         )
         if not collector.exists() or shutil.which("sh") is None or shutil.which("tar") is None:
             self.skipTest("collector or sh/tar not available")
-        from fixtures import CRUSH_SCHEMA, _wal_db, build_aider, build_image, crush_records
+        from fixtures import CRUSH_SCHEMA, _wal_database, build_aider, build_image, crush_records
 
         root = build_image(self.tmp / "image")
         # Claude Code's history names /srv/proj, so the collector discovers it.
         project = root / "srv/proj"
         build_aider(project)
-        _wal_db(project / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
+        _wal_database(project / ".crush/crush.db", CRUSH_SCHEMA, crush_records())
         (project / "AGENTS.md").write_text("# shared instructions\n", encoding="utf-8")
         out = self.tmp / "out"
         out.mkdir()
@@ -5181,7 +5181,7 @@ from fixtures import (
     QWEN_DAEMON_HASH,
     QWEN_DAEMON_SESSION,
     QWEN_SESSION,
-    QWEN_TMP,
+    QWEN_TEMPORARY,
     QWEN_TRUST_MTIME,
 )
 
@@ -5190,7 +5190,7 @@ class QwenCodeTests(ParserBase):
     """Test the Qwen Code parser."""
 
     REL = ".qwen/projects/-srv-proj/chats/%s.jsonl" % QWEN_SESSION
-    LOGS = ".qwen/tmp/%s/logs.json" % QWEN_TMP
+    LOGS = ".qwen/tmp/%s/logs.json" % QWEN_TEMPORARY
 
     def test_secondary(self):
         # The history file is a secondary source, the transcript is not.
@@ -9066,7 +9066,8 @@ class ZedTests(ParserBase):
         start, remote, user, use, result, _use2, _result2, asst, resume, compaction, draft = rows
         # the snapshot's git_state.remote_url, at the thread-start time
         self.assertEqual(
-            (remote.text, remote.timestamp_utc), ("git remote: " + PROJ_REMOTE, start.timestamp_utc)
+            (remote.text, remote.timestamp_utc),
+            ("git remote: " + PROJECT_REMOTE, start.timestamp_utc),
         )
         # the blob's draft_prompt (source-derived, 9cd14da) follows the messages
         self.assertEqual(draft.text, "unsent draft: and then lint (thread blob, as of updated_at)")
@@ -9102,7 +9103,7 @@ class ZedTests(ParserBase):
         self.assertEqual(row.timestamp_utc, "2026-10-03T10:00:00.000Z")
         self.assertIn("agent=claude-code", row.text)
 
-    def test_db_sqlite_stores(self):
+    def test_database_sqlite_stores(self):
         # Source-derived (zed-industries/zed at 9cd14da): the native sidebar
         # state, project trust, draft prompts, the worktree registry, the
         # archived worktrees and the sidebar terminals of db.sqlite.
@@ -9331,7 +9332,11 @@ class ZedTests(ParserBase):
         snaps.append(
             {
                 "worktree_path": "/srv/proj",
-                "git_state": {"remote_url": PROJ_REMOTE, "head_sha": "d4", "current_branch": "x"},
+                "git_state": {
+                    "remote_url": PROJECT_REMOTE,
+                    "head_sha": "d4",
+                    "current_branch": "x",
+                },
             }
         )
         self._insert("multi", "json", json.dumps(thread).encode("utf-8"))
@@ -10198,13 +10203,13 @@ from fixtures import (
     OPENCODE_DELETED,
     OPENCODE_LEGACY_SESSION,
     OPENCODE_MIGRATED,
-    OPENCODE_NEXT_DB_NAME,
+    OPENCODE_NEXT_DATABASE_NAME,
     OPENCODE_NEXT_ONLY,
     OPENCODE_PINNED_GONE,
     OPENCODE_SESSION,
-    OPENCODE_STATE_DB_NAME,
+    OPENCODE_STATE_DATABASE_NAME,
     OPENCODE_STATE_MTIME,
-    OPENCODE_V2_DB_NAME,
+    OPENCODE_V2_DATABASE_NAME,
     OPENCODE_V2_ONLY,
     OPENCODE_V2_SESSION,
     OPENCODE_WORKTREE,
@@ -10437,8 +10442,8 @@ class OpenCodeTests(ParserBase):
             wanted,
             [
                 ".local/share/opencode/opencode-beta.db",
-                ".local/share/opencode/" + OPENCODE_V2_DB_NAME,
-                ".local/share/opencode/" + OPENCODE_NEXT_DB_NAME,
+                ".local/share/opencode/" + OPENCODE_V2_DATABASE_NAME,
+                ".local/share/opencode/" + OPENCODE_NEXT_DATABASE_NAME,
                 self.DATABASE,
                 self.STORAGE + "message/%s/msg_a.json" % OPENCODE_LEGACY_SESSION,
                 self.STORAGE + "message/%s/msg_b.json" % OPENCODE_LEGACY_SESSION,
@@ -10576,8 +10581,8 @@ class OpenCodeTests(ParserBase):
         self.assertEqual(sessions[KILO_SESSION]["agent"], "kilo-code")
         self.assertEqual({session["project_path"] for session in sessions.values()}, {"/srv/proj"})
 
-    V2_DATABASE = ".local/share/opencode/" + OPENCODE_V2_DB_NAME
-    NEXT_DATABASE = ".local/share/opencode/" + OPENCODE_NEXT_DB_NAME
+    V2_DATABASE = ".local/share/opencode/" + OPENCODE_V2_DATABASE_NAME
+    NEXT_DATABASE = ".local/share/opencode/" + OPENCODE_NEXT_DATABASE_NAME
 
     def test_v2_database(self):
         # A database upgraded to 2.0 is read from `session_v2` and
@@ -10659,7 +10664,7 @@ class OpenCodeTests(ParserBase):
             [("shell", "2026-10-03T11:20:04.000Z"), ("shell", "2026-10-03T11:20:04.500Z")],
         )
 
-    def test_next_db_is_secondary(self):
+    def test_next_database_is_secondary(self):
         # `opencode-next.db` repeats what 2.0 imported from it, so only the
         # session it alone still holds is kept, as recovered.
         import contextlib
@@ -10678,7 +10683,7 @@ class OpenCodeTests(ParserBase):
                 for row in timeline
                 if row["text"] == "start the server"
             ],
-            [(OPENCODE_V2_DB_NAME, "")],
+            [(OPENCODE_V2_DATABASE_NAME, "")],
         )
         self.assertEqual(
             [
@@ -10686,7 +10691,7 @@ class OpenCodeTests(ParserBase):
                 for row in timeline
                 if row["text"] == "only in next"
             ],
-            [(OPENCODE_NEXT_DB_NAME, "yes")],
+            [(OPENCODE_NEXT_DATABASE_NAME, "yes")],
         )
         recovered = {
             row["session_id"]: row["recovered"] for row in read_jsonl(out / "sessions.jsonl")
@@ -10788,16 +10793,16 @@ class OpenCodeTests(ParserBase):
 
     # -- standing state, past use, scratch directories --------------------------------
     STATE = ".local/state/opencode/"
-    STATE_DATABASE = ".local/share/opencode/" + OPENCODE_STATE_DB_NAME
+    STATE_DATABASE = ".local/share/opencode/" + OPENCODE_STATE_DATABASE_NAME
 
     def with_state(self):
         build_opencode_state(self.home)
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
 
-    def test_state_db_rows(self):
+    def test_state_database_rows(self):
         self.with_state()
         rows = self.rows_for(OpenCodeParser(), self.STATE_DATABASE)
-        database_name = OPENCODE_STATE_DB_NAME
+        database_name = OPENCODE_STATE_DATABASE_NAME
         self.assertEqual(
             [(row.session_id, row.project_path, row.timestamp_utc, row.text) for row in rows[1:6]],
             [
@@ -11033,7 +11038,7 @@ class OpenCodeTests(ParserBase):
             self.assertFalse(parser.wants(self.artifact(self.STATE + name)), name)
         # Kilo Code's TUI has no pinned-session file.
         self.assertFalse(
-            KiloCodeParser().pinned_rx.match(".local/state/kilo/session.json"), "kilo pinned"
+            KiloCodeParser().pinned_pattern.match(".local/state/kilo/session.json"), "kilo pinned"
         )
 
     def test_history_pairs_with_the_transcript(self):
@@ -11422,7 +11427,7 @@ class KiloCodeTests(ParserBase):
             ],
         )
 
-    def test_v1_refusal_in_kilo_db(self):
+    def test_v1_refusal_in_kilo_database(self):
         # packages/core/src/v1/permission.ts:7-27 at 87cc35c: the error's
         # message is the part's `state.error` (session/processor.ts:299-312).
         import sqlite3
@@ -11474,7 +11479,7 @@ from fixtures import (
     KILO_SHARE_MTIME,
     KILO_SHARE_REL,
     OPENCODE_PRIVATE,
-    OPENCODE_SHARE_DB_NAME,
+    OPENCODE_SHARE_DATABASE_NAME,
     OPENCODE_SHARE_SECRET,
     OPENCODE_SHARED,
     OPENCODE_UNSHARED,
@@ -11484,7 +11489,7 @@ from fixtures import (
 class OpenCodeSyncTests(ParserBase):
     """Test the share records of an OpenCode database."""
 
-    DATABASE = ".local/share/opencode/" + OPENCODE_SHARE_DB_NAME
+    DATABASE = ".local/share/opencode/" + OPENCODE_SHARE_DATABASE_NAME
 
     @staticmethod
     def sync_rows(rows):
@@ -11497,14 +11502,16 @@ class OpenCodeSyncTests(ParserBase):
     def test_rows(self):
         self.assertTrue(OpenCodeParser.records_sync)
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
-        source = "(from %s event session.updated.1, info.time.updated)" % OPENCODE_SHARE_DB_NAME
+        source = (
+            "(from %s event session.updated.1, info.time.updated)" % OPENCODE_SHARE_DATABASE_NAME
+        )
         self.assertEqual(
             self.sync_rows(rows),
             [
                 (
                     OPENCODE_SHARED,
                     "session synced: share SHARE05 url https://opncd.ai/share/SHARE05 "
-                    "(from %s session_share, time_created)" % OPENCODE_SHARE_DB_NAME,
+                    "(from %s session_share, time_created)" % OPENCODE_SHARE_DATABASE_NAME,
                     "2026-10-03T10:00:02.000Z",
                     1,
                     "/srv/proj",
@@ -11899,7 +11906,7 @@ class ClineTests(ParserBase):
             ],
         )
 
-    def test_sessions_db_only_lists_sessions_without_manifest(self):
+    def test_sessions_database_only_lists_sessions_without_manifest(self):
         rows = self.rows_for(ClineParser(), ".cline/data/db/sessions.db")
         self.assertEqual([row.session_id for row in rows], [CLINE_OLD_SESSION] * 2)
         self.assertEqual(rows[0].timestamp_utc, "2026-10-02T23:00:00.000Z")
@@ -12188,7 +12195,7 @@ class ClineTests(ParserBase):
         self.assertEqual(rows[1].text, "model: claude-sonnet-4-5 provider=anthropic")
         self.assertTrue(ClineParser().records_sync)
 
-    def test_enterprise_blob_upload_from_sessions_db(self):
+    def test_enterprise_blob_upload_from_sessions_database(self):
         self._with_blob_upload()
         # A session whose manifest is gone keeps the key in `metadata_json`;
         # the CLI's form has no `userDistinctId`, so the object is `unknown`.
@@ -17481,11 +17488,11 @@ class OpenInterpreterTests(ParserBase):
 from doubleagent.parsers.nanobot import NanobotParser, decode_stem
 from doubleagent.parsers.openclaw import OpenClawParser
 from fixtures import (
-    NANOBOT_DB_BACKUP_REL,
-    NANOBOT_DB_FROZEN_REL,
-    NANOBOT_DB_KEY,
-    NANOBOT_DB_REL,
-    NANOBOT_DB_WS,
+    NANOBOT_DATABASE_BACKUP_REL,
+    NANOBOT_DATABASE_FROZEN_REL,
+    NANOBOT_DATABASE_KEY,
+    NANOBOT_DATABASE_REL,
+    NANOBOT_DATABASE_WS,
     NANOBOT_HISTORY_REL,
     NANOBOT_KEY,
     NANOBOT_LEGACY_REL,
@@ -17502,7 +17509,7 @@ from fixtures import (
     OPENCLAW_RESET_SESSION,
     OPENCLAW_SESSION,
     OPENCLAW_TOKEN,
-    nanobot_db_insert_message,
+    nanobot_database_insert_message,
     openclaw_legacy_records,
 )
 
@@ -17786,7 +17793,7 @@ class OpenClawTests(ParserBase):
         for artifact in self.col.artifacts:
             if (
                 artifact.agent == "openclaw"
-                and artifact.rel not in (self.DATABASE, self.LEGACY, OPENCLAW_STATE_DB)
+                and artifact.rel not in (self.DATABASE, self.LEGACY, OPENCLAW_STATE_DATABASE)
                 and ".jsonl.deleted." not in artifact.rel
                 and not artifact.rel.endswith((OPENCLAW_CHECKPOINT, OPENCLAW_REPAIR_BAK))
             ):
@@ -17815,7 +17822,7 @@ class OpenClawTests(ParserBase):
 
     def test_credentials_never_emitted(self):
         rows = self.rows_for(OpenClawParser(), self.DATABASE, include_thinking=True)
-        rows += self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
+        rows += self.rows_for(OpenClawParser(), OPENCLAW_STATE_DATABASE)
         self.assertTrue(rows)
         for token in (OPENCLAW_TOKEN, OPENCLAW_SOCKET_TOKEN):
             self.assertFalse(
@@ -18011,7 +18018,7 @@ class OpenClawTests(ParserBase):
     def test_backup_rows(self):
         rows = [
             row
-            for row in self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
+            for row in self.rows_for(OpenClawParser(), OPENCLAW_STATE_DATABASE)
             if row.text.startswith("backup uploaded:")
         ]
         self.assertEqual(
@@ -18036,7 +18043,7 @@ class OpenClawTests(ParserBase):
         self.assertFalse([row for row in rows if row.text.startswith("session synced:")])
 
     def test_bad_manifest_json_is_reported_not_fatal(self):
-        path = self.home / OPENCLAW_STATE_DB
+        path = self.home / OPENCLAW_STATE_DATABASE
         connection = sqlite3.connect(str(path))
         connection.execute(
             "INSERT INTO backup_runs VALUES ('run-99',1790870000000,'/x','ok',?)", (BAD_LINE,)
@@ -18045,7 +18052,7 @@ class OpenClawTests(ParserBase):
         connection.close()
         rows = [
             row
-            for row in self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
+            for row in self.rows_for(OpenClawParser(), OPENCLAW_STATE_DATABASE)
             if row.text.startswith(("backup uploaded:", "parser:"))
         ]
         self.assertEqual(len(rows), 3)
@@ -18055,12 +18062,12 @@ class OpenClawTests(ParserBase):
         )
         self.assertTrue(rows[-1].text.endswith("): " + BAD_LINE))
 
-    def test_state_db_not_sqlite_is_one_row(self):
-        path = self.home / OPENCLAW_STATE_DB
+    def test_state_database_not_sqlite_is_one_row(self):
+        path = self.home / OPENCLAW_STATE_DATABASE
         for side in ("-wal", "-shm"):
             Path(str(path) + side).unlink(missing_ok=True)
         path.write_bytes(b"not a database")
-        rows = self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
+        rows = self.rows_for(OpenClawParser(), OPENCLAW_STATE_DATABASE)
         self.assertEqual(
             [(row.turn_type, row.text) for row in rows],
             [("system", "parser: state/openclaw.sqlite is not a SQLite database")],
@@ -18373,7 +18380,7 @@ class OpenClawTests(ParserBase):
     def test_postgres_anchor_is_one_row(self):
         for rel, label, where in (
             (self.DATABASE, "agent", "transcripts are"),
-            (OPENCLAW_STATE_DB, "state", "the Gateway state is"),
+            (OPENCLAW_STATE_DATABASE, "state", "the Gateway state is"),
         ):
             path = self.home / rel
             for side in ("-wal", "-shm"):
@@ -18403,7 +18410,7 @@ class OpenClawTests(ParserBase):
             )
 
     def test_state_permission_rows(self):
-        rows = self.texts("permission ", rel=OPENCLAW_STATE_DB)
+        rows = self.texts("permission ", rel=OPENCLAW_STATE_DATABASE)
         self.assertEqual(
             [row.text.split(" (from")[0] for row in rows],
             [
@@ -18432,7 +18439,7 @@ class OpenClawTests(ParserBase):
         self.assertTrue(rows[2].text.endswith("exec_approvals_config, updated_at_ms)"))
 
     def test_channel_ingress_row(self):
-        rows = self.texts("channel ingress:", rel=OPENCLAW_STATE_DB)
+        rows = self.texts("channel ingress:", rel=OPENCLAW_STATE_DATABASE)
         self.assertEqual(
             [(row.session_id, row.timestamp_utc, row.text) for row in rows],
             [
@@ -18447,7 +18454,7 @@ class OpenClawTests(ParserBase):
         )
 
     def test_source_host_row(self):
-        rows = self.texts("source host:", rel=OPENCLAW_STATE_DB)
+        rows = self.texts("source host:", rel=OPENCLAW_STATE_DATABASE)
         self.assertEqual(
             [(row.session_id, row.timestamp_utc, row.text) for row in rows],
             [
@@ -18465,24 +18472,32 @@ class OpenClawTests(ParserBase):
     def test_git_remote_row(self):
         # `projects.origin_url` at `created_at_ms`, the project path its
         # `repo_root`; a project without an origin has no row.
-        rows = self.texts("git remote:", rel=OPENCLAW_STATE_DB)
+        rows = self.texts("git remote:", rel=OPENCLAW_STATE_DATABASE)
         self.assertEqual(
             [
                 (row.turn_type, row.session_id, row.project_path, row.timestamp_utc, row.text)
                 for row in rows
             ],
-            [("system", "", "/srv/proj", "2026-10-01T08:58:20.500Z", "git remote: " + PROJ_REMOTE)],
+            [
+                (
+                    "system",
+                    "",
+                    "/srv/proj",
+                    "2026-10-01T08:58:20.500Z",
+                    "git remote: " + PROJECT_REMOTE,
+                )
+            ],
         )
 
     def test_bad_exec_config_withholds_the_text(self):
-        connection = sqlite3.connect(str(self.home / OPENCLAW_STATE_DB))
+        connection = sqlite3.connect(str(self.home / OPENCLAW_STATE_DATABASE))
         connection.execute(
             "UPDATE exec_approvals_config SET raw_json = ?",
             ('{"socket": {"token": "%s"' % OPENCLAW_SOCKET_TOKEN,),
         )
         connection.commit()
         connection.close()
-        rows = self.rows_for(OpenClawParser(), OPENCLAW_STATE_DB)
+        rows = self.rows_for(OpenClawParser(), OPENCLAW_STATE_DATABASE)
         self.assertTrue(rows[-1].text.startswith("parser: exec_approvals_config raw_json"))
         self.assertTrue(
             rows[-1].text.endswith("text withheld, it holds the approvals socket token)")
@@ -18501,7 +18516,7 @@ from fixtures import (
     OPENCLAW_FTS_ONLY,
     OPENCLAW_SHARE_ID,
     OPENCLAW_SOCKET_TOKEN,
-    OPENCLAW_STATE_DB,
+    OPENCLAW_STATE_DATABASE,
 )
 
 
@@ -18789,27 +18804,27 @@ class NanobotTests(ParserBase):
         (
             1,
             "system",
-            NANOBOT_DB_KEY,
+            NANOBOT_DATABASE_KEY,
             "session start: key=discord:555 last_channel=discord:555"
             " updated_at=2026-10-03T11:00:31 workspace=/srv/proj",
         ),
-        (1, "system", NANOBOT_DB_KEY, "session relayed: discord chat 555 (from session key)"),
-        (1, "system", NANOBOT_DB_KEY, "model: smart (preset)"),
-        (1, "user", NANOBOT_DB_KEY, "rotate the api key"),
-        (2, "tool_use", NANOBOT_DB_KEY, "./rotate.sh"),
-        (3, "tool_result", NANOBOT_DB_KEY, "rotated"),
-        (4, "assistant", NANOBOT_DB_KEY, "The key is rotated."),
-        (5, "user", NANOBOT_DB_KEY, "thanks"),
-        (6, "assistant", NANOBOT_DB_KEY, "You're welcome."),
+        (1, "system", NANOBOT_DATABASE_KEY, "session relayed: discord chat 555 (from session key)"),
+        (1, "system", NANOBOT_DATABASE_KEY, "model: smart (preset)"),
+        (1, "user", NANOBOT_DATABASE_KEY, "rotate the api key"),
+        (2, "tool_use", NANOBOT_DATABASE_KEY, "./rotate.sh"),
+        (3, "tool_result", NANOBOT_DATABASE_KEY, "rotated"),
+        (4, "assistant", NANOBOT_DATABASE_KEY, "The key is rotated."),
+        (5, "user", NANOBOT_DATABASE_KEY, "thanks"),
+        (6, "assistant", NANOBOT_DATABASE_KEY, "You're welcome."),
     ]
 
     def test_sqlite_store_rows(self):
         parser = NanobotParser()
-        self.assertTrue(parser.wants(self.artifact(NANOBOT_DB_REL)))
-        self.assertFalse(parser.secondary(self.artifact(NANOBOT_DB_REL)))
-        for rel in (NANOBOT_DB_REL + "-wal", NANOBOT_DB_REL + "-shm"):
+        self.assertTrue(parser.wants(self.artifact(NANOBOT_DATABASE_REL)))
+        self.assertFalse(parser.secondary(self.artifact(NANOBOT_DATABASE_REL)))
+        for rel in (NANOBOT_DATABASE_REL + "-wal", NANOBOT_DATABASE_REL + "-shm"):
             self.assertFalse(parser.wants(rel_only(rel)), rel)
-        rows = self.rows_for(parser, NANOBOT_DB_REL)
+        rows = self.rows_for(parser, NANOBOT_DATABASE_REL)
         self.assertEqual(
             [(row.source_line, row.turn_type, row.session_id, row.text) for row in rows],
             self.DATABASE_ROWS,
@@ -18824,18 +18839,22 @@ class NanobotTests(ParserBase):
             ("exec", "call_rot1"),
         )
         self.assertEqual(by_text["rotated"].tool_use_id, "call_rot1")
-        self.assertEqual({row.model for row in rows if row.session_id == NANOBOT_DB_KEY}, {"smart"})
+        self.assertEqual(
+            {row.model for row in rows if row.session_id == NANOBOT_DATABASE_KEY}, {"smart"}
+        )
 
     def test_sqlite_frozen_jsonl_is_secondary(self):
         parser = NanobotParser()
-        for rel in (NANOBOT_DB_FROZEN_REL, NANOBOT_DB_BACKUP_REL):
+        for rel in (NANOBOT_DATABASE_FROZEN_REL, NANOBOT_DATABASE_BACKUP_REL):
             self.assertTrue(parser.wants(self.artifact(rel)), rel)
             self.assertTrue(parser.secondary(self.artifact(rel)), rel)
         # No database beside it: the session file is still the store of record.
         self.assertFalse(parser.secondary(self.artifact(NANOBOT_REL)))
-        conflict = ".nanobot/sessions/%s/.migration-conflicts/Y2xpOmRpcmVjdA.jsonl" % NANOBOT_DB_WS
+        conflict = (
+            ".nanobot/sessions/%s/.migration-conflicts/Y2xpOmRpcmVjdA.jsonl" % NANOBOT_DATABASE_WS
+        )
         self.assertTrue(parser.wants(rel_only(conflict)))
-        backup = self.rows_for(parser, NANOBOT_DB_BACKUP_REL)
+        backup = self.rows_for(parser, NANOBOT_DATABASE_BACKUP_REL)
         self.assertEqual(
             [(row.turn_type, row.session_id, row.project_path, row.text) for row in backup[1:]],
             [
@@ -18844,21 +18863,23 @@ class NanobotTests(ParserBase):
             ],
         )
         self.assertFalse(
-            parser.wants(rel_only(NANOBOT_DB_BACKUP_REL.replace(".jsonl", ".checkpoint.json")))
+            parser.wants(
+                rel_only(NANOBOT_DATABASE_BACKUP_REL.replace(".jsonl", ".checkpoint.json"))
+            )
         )
 
     def test_sqlite_bad_record(self):
-        database = self.home / NANOBOT_DB_REL
+        database = self.home / NANOBOT_DATABASE_REL
         cut = '{"role": "user", "content": "cut'
-        nanobot_db_insert_message(database, NANOBOT_DB_KEY, 6, cut)
-        nanobot_db_insert_message(database, NANOBOT_DB_KEY, 7, "[1, 2]")
-        nanobot_db_insert_message(
+        nanobot_database_insert_message(database, NANOBOT_DATABASE_KEY, 6, cut)
+        nanobot_database_insert_message(database, NANOBOT_DATABASE_KEY, 7, "[1, 2]")
+        nanobot_database_insert_message(
             database,
-            NANOBOT_DB_KEY,
+            NANOBOT_DATABASE_KEY,
             8,
             '{"role": "user", "content": "after the cut", "timestamp": "2026-10-03T11:01:00"}',
         )
-        rows = self.rows_for(NanobotParser(), NANOBOT_DB_REL)
+        rows = self.rows_for(NanobotParser(), NANOBOT_DATABASE_REL)
         reason = ""
         try:
             json.loads(cut)
@@ -18877,17 +18898,17 @@ class NanobotTests(ParserBase):
         for row in rows[-2:]:
             self.assertEqual(
                 (row.session_id, row.project_path, row.timestamp_utc),
-                (NANOBOT_DB_KEY, "/srv/proj", ""),
+                (NANOBOT_DATABASE_KEY, "/srv/proj", ""),
             )
 
     def test_sqlite_bad_metadata(self):
-        connection = sqlite3.connect(str(self.home / NANOBOT_DB_REL))
+        connection = sqlite3.connect(str(self.home / NANOBOT_DATABASE_REL))
         connection.execute("UPDATE sessions SET metadata = 'not json' WHERE key = 'heartbeat'")
         connection.commit()
         connection.close()
         rows = [
             row
-            for row in self.rows_for(NanobotParser(), NANOBOT_DB_REL)
+            for row in self.rows_for(NanobotParser(), NANOBOT_DATABASE_REL)
             if row.session_id == "heartbeat"
         ]
         reason = ""
@@ -18904,8 +18925,8 @@ class NanobotTests(ParserBase):
         )
 
     def test_sqlite_not_a_database(self):
-        (self.home / NANOBOT_DB_REL).write_bytes(b"not a database")
-        rows = self.rows_for(NanobotParser(), NANOBOT_DB_REL)
+        (self.home / NANOBOT_DATABASE_REL).write_bytes(b"not a database")
+        rows = self.rows_for(NanobotParser(), NANOBOT_DATABASE_REL)
         self.assertEqual(
             [(row.turn_type, row.project_path, row.text) for row in rows],
             [("system", "/srv/proj", "parser: not a SQLite database")],
@@ -19217,8 +19238,8 @@ from fixtures import (
     TWINNY_415_LOG_OLD_REL,
     TWINNY_415_LOG_REL,
     TWINNY_415_REL,
+    TWINNY_415_WORKSPACE_DATABASE_REL,
     TWINNY_415_WS,
-    TWINNY_415_WS_DB_REL,
     TWINNY_ACTIVE,
     TWINNY_API_KEY,
     TWINNY_CONVERSATION,
@@ -20143,7 +20164,7 @@ class TwinnyTests(ParserBase):
 
     def test_workspace_review_repository(self):
         _, arts = self._415()
-        art = arts[TWINNY_415_WS_DB_REL]
+        art = arts[TWINNY_415_WORKSPACE_DATABASE_REL]
         self.assertEqual(art.agent, "vscode")
         rows = list(TwinnyParser().parse(art, Options()))
         self.assertEqual(
@@ -21049,11 +21070,11 @@ from fixtures import (
     OLLAMA_ATTACHMENT,
     OLLAMA_CD_PROFILE_REL,
     OLLAMA_CHAT,
-    OLLAMA_DB_REL,
+    OLLAMA_DATABASE_REL,
     OLLAMA_MANIFEST_REL,
     OLLAMA_USER_EMAIL,
     OLLAMA_USER_NAME,
-    OLLAMA_WIN_DB_REL,
+    OLLAMA_WINDOWS_DATABASE_REL,
 )
 
 
@@ -21078,7 +21099,7 @@ class OllamaTests(ParserBase):
     def test_rows(self):
         rows = [
             row
-            for row in self.rows_for(OllamaParser(), OLLAMA_DB_REL)
+            for row in self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL)
             if not model_or_permission_row(row)
         ]
         self.assertEqual(
@@ -21122,7 +21143,7 @@ class OllamaTests(ParserBase):
 
     def test_model_rows(self):
         for thinking in (False, True):
-            rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL, include_thinking=thinking)
+            rows = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL, include_thinking=thinking)
             state = [row for row in rows if model_or_permission_row(row)]
             self.assertEqual(
                 [
@@ -21145,7 +21166,7 @@ class OllamaTests(ParserBase):
             self.assertEqual(rows[rows.index(state[1]) + 1].text, "Release 2.0 adds X.")
 
     def test_thinking_opt_in(self):
-        rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL, include_thinking=True)
+        rows = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL, include_thinking=True)
         rows = [row for row in rows if not model_or_permission_row(row)]
         self.assertEqual(
             [row.turn_type for row in rows],
@@ -21165,11 +21186,15 @@ class OllamaTests(ParserBase):
             ]
 
         for thinking in (False, True):
-            mac = self.rows_for(OllamaParser(), OLLAMA_DB_REL, include_thinking=thinking)
-            win = self.rows_for(OllamaParser(), OLLAMA_WIN_DB_REL, include_thinking=thinking)
+            mac = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL, include_thinking=thinking)
+            win = self.rows_for(
+                OllamaParser(), OLLAMA_WINDOWS_DATABASE_REL, include_thinking=thinking
+            )
             self.assertTrue(mac)
             self.assertEqual(strip(win), strip(mac))
-            self.assertTrue(all(row.source_file.endswith(OLLAMA_WIN_DB_REL) for row in win))
+            self.assertTrue(
+                all(row.source_file.endswith(OLLAMA_WINDOWS_DATABASE_REL) for row in win)
+            )
 
     def test_account_and_attachment_bytes_never_emitted(self):
         out = self.run_timeline("out", "--include-thinking")
@@ -21235,7 +21260,7 @@ class OllamaTests(ParserBase):
         import sqlite3
 
         chat = OLLAMA_CHAT
-        connection = sqlite3.connect(str(self.home / OLLAMA_DB_REL))
+        connection = sqlite3.connect(str(self.home / OLLAMA_DATABASE_REL))
         connection.executescript(
             "INSERT INTO messages (id, chat_id, role, content, model_name, created_at) VALUES"
             " (5, '%(c)s', 'user', 'search twice', NULL, '2026-03-01 09:01:00-08:00'),"
@@ -21251,7 +21276,7 @@ class OllamaTests(ParserBase):
         )
         connection.commit()
         connection.close()
-        rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL)
+        rows = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL)
         # message 6 switches back to gemma4; the placeholder 10 yields nothing
         self.assertEqual(
             [row.text for row in rows if model_or_permission_row(row)][2:],
@@ -21278,12 +21303,17 @@ class OllamaTests(ParserBase):
 
     def test_other_files_not_wanted(self):
         parser = OllamaParser()
-        wanted = {OLLAMA_DB_REL, OLLAMA_WIN_DB_REL, self.HISTORY_REL, self.CONFIG_REL}
+        wanted = {
+            OLLAMA_DATABASE_REL,
+            OLLAMA_WINDOWS_DATABASE_REL,
+            self.HISTORY_REL,
+            self.CONFIG_REL,
+        }
         rels = {artifact.rel for artifact in self.col.artifacts if artifact.agent == "ollama"}
         for rel in (
             OLLAMA_MANIFEST_REL,
-            OLLAMA_DB_REL + "-wal",
-            OLLAMA_WIN_DB_REL + "-shm",
+            OLLAMA_DATABASE_REL + "-wal",
+            OLLAMA_WINDOWS_DATABASE_REL + "-shm",
             ".ollama/backup/config.json.1772355600",
             ".ollama/onboarding-v1.completed",
             ".ollama/id_ed25519",
@@ -21312,22 +21342,22 @@ class OllamaTests(ParserBase):
         )
 
     def test_not_a_database_is_one_system_row(self):
-        database = self.home / OLLAMA_DB_REL
+        database = self.home / OLLAMA_DATABASE_REL
         for suffix in ("-wal", "-shm"):
             Path(str(database) + suffix).unlink()
         database.write_text("not a database\n", encoding="utf-8")
-        rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL)
+        rows = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL)
         self.assertEqual(
             [(row.turn_type, row.text) for row in rows],
             [("system", "parser: not a SQLite database")],
         )
 
     def test_truncated_database_is_reported_not_fatal(self):
-        database = self.home / OLLAMA_DB_REL
+        database = self.home / OLLAMA_DATABASE_REL
         for suffix in ("-wal", "-shm"):
             Path(str(database) + suffix).unlink()
         database.write_bytes(database.read_bytes()[:200])
-        rows = self.rows_for(OllamaParser(), OLLAMA_DB_REL)
+        rows = self.rows_for(OllamaParser(), OLLAMA_DATABASE_REL)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].turn_type, "system")
         self.assertIn("parser: SQLite error", rows[0].text)
@@ -21460,9 +21490,9 @@ from fixtures import (
     CD_AUDIT_REL,
     CD_CLI_SESSION,
     CD_CODE_CLI,
-    CD_CODE_RC_CLI,
-    CD_CODE_RC_RECORD_REL,
     CD_CODE_RECORD_REL,
+    CD_CODE_REMOTE_CONTROL_CLI,
+    CD_CODE_REMOTE_CONTROL_RECORD_REL,
     CD_COWORK_ORG,
     CD_FALLBACK_CLI,
     CD_FALLBACK_DIR,
@@ -21884,7 +21914,7 @@ class ClaudeDesktopTests(ParserBase):
         )
 
     def test_code_record_remote_control(self):
-        rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_RC_RECORD_REL)
+        rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_REMOTE_CONTROL_RECORD_REL)
         self.assertEqual(
             [
                 (
@@ -21904,7 +21934,7 @@ class ClaudeDesktopTests(ParserBase):
                     "bridges=2 spawned_remotely=true steered_remotely=true "
                     "permission_mode=default effort=-",
                     "2026-09-30T11:00:00.000Z",
-                    CD_CODE_RC_CLI,
+                    CD_CODE_REMOTE_CONTROL_CLI,
                     "/srv/proj",
                     1,
                 ),
@@ -21912,7 +21942,7 @@ class ClaudeDesktopTests(ParserBase):
                     "system",
                     "remote control live at update quit",
                     "2026-09-30T11:08:20.000Z",
-                    CD_CODE_RC_CLI,
+                    CD_CODE_REMOTE_CONTROL_CLI,
                     "/srv/proj",
                     1,
                 ),
@@ -21922,7 +21952,7 @@ class ClaudeDesktopTests(ParserBase):
     def test_code_record_remote_control_edge_values(self):
         # An empty spawn object is not a remote spawn; an update-quit object
         # without a numeric `at` yields no second row.
-        path = self.home / CD_CODE_RC_RECORD_REL
+        path = self.home / CD_CODE_REMOTE_CONTROL_RECORD_REL
         record = json.loads(path.read_text(encoding="utf-8"))
         record.update(
             remoteControlSpawn={},
@@ -21930,7 +21960,7 @@ class ClaudeDesktopTests(ParserBase):
             remoteControlLiveAtUpdateQuit={"accountId": "x", "at": "soon"},
         )
         path.write_text(json.dumps(record), encoding="utf-8")
-        rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_RC_RECORD_REL)
+        rows = self.rows_for(ClaudeDesktopParser(), CD_CODE_REMOTE_CONTROL_RECORD_REL)
         self.assertEqual(
             [row.text for row in rows],
             [
@@ -23073,7 +23103,7 @@ from doubleagent.parsers.copilot_desktop import CopilotDesktopParser
 from fixtures import (
     COPILOT_DESKTOP_BAD_REF_REL,
     COPILOT_DESKTOP_CHAT,
-    COPILOT_DESKTOP_DB_REL,
+    COPILOT_DESKTOP_DATABASE_REL,
     COPILOT_DESKTOP_HEAD_REF_REL,
     COPILOT_DESKTOP_REF_REL,
     COPILOT_DESKTOP_WORKTREE,
@@ -23197,7 +23227,7 @@ class CopilotDesktopTests(ParserBase):
 
     def test_rows(self):
         # The fixture's rows live only in the -wal sidecar.
-        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL)
+        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [(row.timestamp_utc, row.session_id, row.project_path, row.text) for row in rows],
             self.EXPECTED,
@@ -23207,7 +23237,7 @@ class CopilotDesktopTests(ParserBase):
                 (row.host, row.user, row.agent, row.turn_type, row.source_line, row.tool_use_id),
                 ("h1", "alice", "copilot-desktop", "system", 0, ""),
             )
-            self.assertEqual(row.source_file, "/alice/" + COPILOT_DESKTOP_DB_REL)
+            self.assertEqual(row.source_file, "/alice/" + COPILOT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [row.model for row in rows if row.text.startswith(("desktop session", "forked"))],
             ["claude-sonnet-5.5", "gpt-6.1-sol", "gpt-6.1-sol"],
@@ -23216,13 +23246,15 @@ class CopilotDesktopTests(ParserBase):
 
     def test_thinking_opt_in(self):
         # The store holds no reasoning: the option changes nothing.
-        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL, include_thinking=True)
+        rows = self.rows_for(
+            CopilotDesktopParser(), COPILOT_DESKTOP_DATABASE_REL, include_thinking=True
+        )
         self.assertEqual(len(rows), len(self.EXPECTED))
         self.assertFalse(any(row.turn_type == "thinking" for row in rows))
 
     def test_nulls_and_missing_tables(self):
         # Every column may be NULL and a missing table gives no rows.
-        database = self.home / COPILOT_DESKTOP_DB_REL
+        database = self.home / COPILOT_DESKTOP_DATABASE_REL
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.unlink()
@@ -23242,7 +23274,7 @@ class CopilotDesktopTests(ParserBase):
         connection.commit()
         connection.close()
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
-        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL)
+        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [(row.timestamp_utc, row.session_id, row.text) for row in rows],
             [
@@ -23262,7 +23294,7 @@ class CopilotDesktopTests(ParserBase):
         )
 
     def test_secondary_none(self):
-        art = self.artifact(COPILOT_DESKTOP_DB_REL)
+        art = self.artifact(COPILOT_DESKTOP_DATABASE_REL)
         self.assertFalse(CopilotDesktopParser().secondary(art))
         rows, _, problems, dropped = cli.collect_rows(self.col, Options(), ["copilot-desktop"])
         self.assertEqual(
@@ -23292,9 +23324,9 @@ class CopilotDesktopTests(ParserBase):
             ".copilot/session-state/%s/session.db" % COPILOT_SESSION,
         ):
             self.assertFalse(parser.wants(rel_only(rel)), rel)
-        self.assertTrue(parser.wants(rel_only(COPILOT_DESKTOP_DB_REL)))
+        self.assertTrue(parser.wants(rel_only(COPILOT_DESKTOP_DATABASE_REL)))
         # The CLI parser does not read the app's store either.
-        self.assertFalse(CopilotCliParser().wants(self.artifact(COPILOT_DESKTOP_DB_REL)))
+        self.assertFalse(CopilotCliParser().wants(self.artifact(COPILOT_DESKTOP_DATABASE_REL)))
 
     def test_checkpoint_refs(self):
         # One row per loose checkpoint ref, at the file's mtime.
@@ -23365,18 +23397,18 @@ class CopilotDesktopTests(ParserBase):
         self.assertTrue(parser.wants(self.artifact(ref)))
 
     def test_unreadable_database(self):
-        database = self.home / COPILOT_DESKTOP_DB_REL
+        database = self.home / COPILOT_DESKTOP_DATABASE_REL
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.write_text("not sqlite", encoding="utf-8")
-        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL)
+        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [(row.turn_type, row.text, row.agent) for row in rows],
             [("system", "parser: not a SQLite database", "copilot-desktop")],
         )
         # A SQLite header over a corrupt body is one SQLite error row.
         database.write_bytes(b"SQLite format 3\x00" + b"\xff" * 200)
-        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DB_REL)
+        rows = self.rows_for(CopilotDesktopParser(), COPILOT_DESKTOP_DATABASE_REL)
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].text.startswith("parser: SQLite error: "), rows[0].text)
 
@@ -23421,7 +23453,7 @@ class HasSecondaryTests(ParserBase):
 from doubleagent.parsers.chatgpt_desktop import ChatGptDesktopParser
 from fixtures import (
     CHATGPT_CONVERSATION,
-    CHATGPT_DESKTOP_DB_REL,
+    CHATGPT_DESKTOP_DATABASE_REL,
     CHATGPT_HOST,
     CHATGPT_TPP_CONVERSATION,
 )
@@ -23477,7 +23509,7 @@ class ChatGptDesktopTests(ParserBase):
 
     def test_rows(self):
         # The fixture's rows live only in the -wal sidecar.
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [(row.timestamp_utc, row.session_id, row.text) for row in rows], self.EXPECTED
         )
@@ -23490,17 +23522,19 @@ class ChatGptDesktopTests(ParserBase):
                 (row.project_path, row.model, row.git_branch, row.tool_use_id, row.tool_name),
                 ("", "", "", "", ""),
             )
-            self.assertEqual(row.source_file, "/alice/" + CHATGPT_DESKTOP_DB_REL)
+            self.assertEqual(row.source_file, "/alice/" + CHATGPT_DESKTOP_DATABASE_REL)
 
     def test_vscode_rows_skipped(self):
         # The `vscode` row is the app's Codex thread, which its rollout gives.
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertNotIn(CODEX_SESSION, {row.session_id for row in rows})
         self.assertFalse(any("Fix the tests" in row.text for row in rows))
 
     def test_thinking_opt_in(self):
         # The table holds no reasoning: the option changes nothing.
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL, include_thinking=True)
+        rows = self.rows_for(
+            ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL, include_thinking=True
+        )
         self.assertEqual(
             [(row.timestamp_utc, row.session_id, row.text) for row in rows], self.EXPECTED
         )
@@ -23557,7 +23591,7 @@ class ChatGptDesktopTests(ParserBase):
     def test_routing(self):
         # The catalog gives the database to codex-cli; `reads_agents` offers
         # it to this parser too, and the codex-cli parser does not want it.
-        art = self.artifact(CHATGPT_DESKTOP_DB_REL)
+        art = self.artifact(CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual(art.agent, "codex-cli")
         offered = cli.parsers_for(art, by_agent())
         wanting = [type(parser).__name__ for parser in offered if parser.wants(art)]
@@ -23569,8 +23603,8 @@ class ChatGptDesktopTests(ParserBase):
     def test_not_wanted(self):
         parser = ChatGptDesktopParser()
         for rel in (
-            CHATGPT_DESKTOP_DB_REL + "-wal",
-            CHATGPT_DESKTOP_DB_REL + "-shm",
+            CHATGPT_DESKTOP_DATABASE_REL + "-wal",
+            CHATGPT_DESKTOP_DATABASE_REL + "-shm",
             ".codex/config.toml",
             ".codex/state_5.sqlite",
             "Library/Preferences/com.openai.codex.plist",
@@ -23581,26 +23615,26 @@ class ChatGptDesktopTests(ParserBase):
         )
         for rel in ("proj/.codex/sqlite/codex-dev.db", ".openinterpreter/sqlite/codex-dev.db"):
             self.assertFalse(parser.wants(rel_only(rel)), rel)
-        self.assertTrue(parser.wants(rel_only(CHATGPT_DESKTOP_DB_REL)))
+        self.assertTrue(parser.wants(rel_only(CHATGPT_DESKTOP_DATABASE_REL)))
 
     def test_unreadable_database(self):
-        database = self.home / CHATGPT_DESKTOP_DB_REL
+        database = self.home / CHATGPT_DESKTOP_DATABASE_REL
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.write_text("not sqlite", encoding="utf-8")
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [(row.turn_type, row.text, row.agent, row.session_id) for row in rows],
             [("system", "parser: not a SQLite database", "chatgpt-desktop", "")],
         )
         # A SQLite header over a corrupt body is one SQLite error row.
         database.write_bytes(b"SQLite format 3\x00" + b"\xff" * 200)
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual(len(rows), 1)
         self.assertTrue(rows[0].text.startswith("parser: SQLite error: "), rows[0].text)
 
     def test_missing_table_and_nulls(self):
-        database = self.home / CHATGPT_DESKTOP_DB_REL
+        database = self.home / CHATGPT_DESKTOP_DATABASE_REL
         for side in ("-wal", "-shm"):
             Path(str(database) + side).unlink(missing_ok=True)
         database.unlink()
@@ -23608,7 +23642,7 @@ class ChatGptDesktopTests(ParserBase):
         connection.execute("CREATE TABLE automations (id TEXT)")
         connection.commit()
         connection.close()
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual([row.text for row in rows], ["parser: no local_thread_catalog table"])
         # Every column may be NULL but source_kind; a NULL time prints `-`
         # and the row falls back to source_created_at, then to no time.
@@ -23624,7 +23658,7 @@ class ChatGptDesktopTests(ParserBase):
         )
         connection.commit()
         connection.close()
-        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DB_REL)
+        rows = self.rows_for(ChatGptDesktopParser(), CHATGPT_DESKTOP_DATABASE_REL)
         self.assertEqual(
             [
                 (row.timestamp_utc, row.session_id, row.text)

@@ -29,6 +29,7 @@ import re
 import stat
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TypedDict
 
 from .inputs import PROJECT_AGENT, Artifact
 
@@ -38,6 +39,21 @@ HEAD_REL = ".git/HEAD"
 _HEADER_RX = re.compile(r'\[\s*([A-Za-z0-9.-]+)(?:\s+"((?:[^"\\]|\\.)*)")?\s*\]')
 _KEY_RX = re.compile(r"([A-Za-z][A-Za-z0-9-]*)\s*(?:=(.*))?$")
 _ESCAPES = {"\\": "\\", '"': '"', "n": "\n", "t": "\t", "b": "\b"}
+
+
+class Remote(TypedDict):
+    """One remote of a `.git/config`, its values in file order."""
+
+    name: str
+    urls: list[str]
+    pushurls: list[str]
+
+
+class ProjectGit(TypedDict):
+    """A project repository's remotes and checked-out branch or commit."""
+
+    remotes: list[Remote]
+    head: str
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -171,7 +187,7 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
         index += 1
 
 
-def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
+def parse_remotes(text: str, errors: list[str] | None = None) -> list[Remote]:
     """Return the remotes of a `.git/config` text, sorted by name.
 
     One `{"name", "urls", "pushurls"}` per remote section that sets a
@@ -179,7 +195,7 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
     the file says, not git's fallback to `urls`. A rejected value is left out
     and, when `errors` is given, described in it.
     """
-    remotes: dict[str, dict] = {}
+    remotes: dict[str, Remote] = {}
     current: str | None = None
     for key, value in _entries(text, [] if errors is None else errors):
         if key == "[":
@@ -199,7 +215,7 @@ def parse_remotes(text: str, errors: list[str] | None = None) -> list[dict]:
         if current is None or key not in ("url", "pushurl") or not value:
             continue
         remote = remotes.setdefault(current, {"name": current, "urls": [], "pushurls": []})
-        remote[key + "s"].append(value)
+        (remote["urls"] if key == "url" else remote["pushurls"]).append(value)
     return [remote for _, remote in sorted(remotes.items())]
 
 
@@ -219,7 +235,7 @@ def parse_head(text: str) -> str:
 
 def project_git(
     artifacts: Iterable[Artifact], problems: list[str] | None = None
-) -> dict[str, dict]:
+) -> dict[str, ProjectGit]:
     """Return `{"remotes", "head"}` per project directory among the artifacts.
 
     Keys are as `cli.project_agents` keys them; a project without the files is
@@ -243,17 +259,18 @@ def project_git(
         fields = chosen.setdefault(path, {})
         if field not in fields or (exact and fields[field].rel != artifact.rel):
             fields[field] = artifact
-    out: dict[str, dict] = {}
+    out: dict[str, ProjectGit] = {}
     for path, fields in chosen.items():
-        entry = out[path] = {"remotes": [], "head": ""}
+        entry: ProjectGit = {"remotes": [], "head": ""}
+        out[path] = entry
         for field, artifact in fields.items():
             text, error = read_text(artifact.disk_path)
             errors = [error] if error else []
             if not error:
                 if field == "head":
-                    entry[field] = parse_head(text)
+                    entry["head"] = parse_head(text)
                 else:
-                    entry[field] = parse_remotes(text, errors)
+                    entry["remotes"] = parse_remotes(text, errors)
             for message in errors:
                 line = "%s: %s" % (artifact.original, message)
                 if problems is not None and line not in problems:

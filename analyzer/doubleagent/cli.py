@@ -8,7 +8,9 @@ import json
 import re
 import sys
 from collections import Counter, OrderedDict
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any, TypedDict
 
 from . import VERSION, gitmeta
 from . import catalog as catalog_mod
@@ -16,6 +18,7 @@ from . import inventory as inventory_mod
 from .dedup import deduplicate
 from .errors import DoubleAgentError
 from .filters import FORMS_HELP, RowFilter, parse_bound
+from .gitmeta import Remote
 from .inputs import PROJECT_AGENT, Collection, describe_error, error_reason, open_input
 from .model import (
     GIT_REMOTE_PREFIX,
@@ -50,6 +53,84 @@ PROJECT_MARKS = (
     ("origin", "remote", ("remote",), ("remote", "mixed", "local"), ORIGIN_AGENTS),
     ("recovered", "yes", RECOVERED, ("yes", "partial", "no"), SECONDARY_AGENTS),
 )
+
+
+class FileCounts(TypedDict):
+    """The number and total size of an agent's files."""
+
+    files: int
+    bytes: int
+
+
+class DetectRow(TypedDict):
+    """One row of the `detect` table."""
+
+    user: str
+    home: str
+    agent: str
+    files: int
+    bytes: int
+    parser: bool
+    inferred: bool
+
+
+class HomeAgent(TypedDict):
+    """One agent of a home or project in `detect --json` and inventory.json."""
+
+    agent: str
+    files: int
+    bytes: int
+    parser: bool
+
+
+class HomeEntry(TypedDict):
+    """One home of the `homes` array of `detect --json` and inventory.json."""
+
+    user: str
+    home: str
+    inferred: bool
+    agents: list[HomeAgent]
+
+
+class ProjectAgents(TypedDict):
+    """The users and agents of one project directory of the input."""
+
+    users: list[str]
+    agents: dict[str, FileCounts]
+    shared_files: int
+    shared_bytes: int
+
+
+class DetectProject(TypedDict):
+    """One project of the `projects` array of `detect --json`."""
+
+    path: str
+    users: list[str]
+    agents: list[HomeAgent]
+    shared_files: int
+    shared_bytes: int
+    remotes: list[Remote]
+    head: str
+
+
+class DetectObject(TypedDict):
+    """The keys `detect --json` and inventory.json share."""
+
+    input: str
+    kind: str
+    host: str
+    notes: list[str]
+    homes: list[HomeEntry]
+    projects: list[DetectProject]
+
+
+class ProjectFiles(TypedDict):
+    """The collected files and repository of one project path."""
+
+    agents: dict[str, FileCounts]
+    shared_files: int
+    remotes: list[Remote]
+    head: str
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -269,7 +350,7 @@ def cmd_inventory(args: argparse.Namespace) -> int:
 # ---- detect ---------------------------------------------------------------------
 
 
-def detect_table(collection: Collection, include_projects: bool = True) -> list[dict]:
+def detect_table(collection: Collection, include_projects: bool = True) -> list[DetectRow]:
     """Return the rows of the `detect` table: one per user, home and agent.
 
     Each row has `user`, `home`, `agent`, `files`, `bytes` (`artifact_bytes`),
@@ -277,22 +358,24 @@ def detect_table(collection: Collection, include_projects: bool = True) -> list[
     `include_projects`, artifacts in a project directory are left out.
     """
     parsers = by_agent()
-    rows: dict[tuple[str, str, str], dict] = OrderedDict()
+    rows: dict[tuple[str, str, str], DetectRow] = OrderedDict()
     for artifact in collection.artifacts:
         if artifact.home.project and not include_projects:
             continue
         key = (artifact.home.user, artifact.home.original, artifact.agent)
         row = rows.get(key)
         if row is None:
-            row = rows[key] = {
-                "user": artifact.home.user,
-                "home": artifact.home.original or str(artifact.home.disk_path),
-                "agent": artifact.agent,
-                "files": 0,
-                "bytes": 0,
-                "parser": artifact.agent in parsers,
-                "inferred": artifact.home.inferred,
-            }
+            row = rows[key] = DetectRow(
+                {
+                    "user": artifact.home.user,
+                    "home": artifact.home.original or str(artifact.home.disk_path),
+                    "agent": artifact.agent,
+                    "files": 0,
+                    "bytes": 0,
+                    "parser": artifact.agent in parsers,
+                    "inferred": artifact.home.inferred,
+                }
+            )
         row["files"] += 1
         row["bytes"] += artifact_bytes(artifact)
     return list(rows.values())
@@ -308,7 +391,7 @@ def artifact_bytes(artifact) -> int:
         return 0
 
 
-def home_agents(collection: Collection) -> list[dict]:
+def home_agents(collection: Collection) -> list[HomeEntry]:
     """Return the `homes` array of `detect --json` and inventory.json.
 
     One object per home that is not a project, in the order its first row was
@@ -316,7 +399,7 @@ def home_agents(collection: Collection) -> list[dict]:
     there, sorted, its `agent`, `files`, `bytes` and `parser`.
     """
     parsers = by_agent()
-    counts: dict[int, dict[str, dict]] = {}
+    counts: dict[int, dict[str, FileCounts]] = {}
     for artifact in collection.artifacts:
         if artifact.home.project:
             continue
@@ -331,7 +414,12 @@ def home_agents(collection: Collection) -> list[dict]:
             "home": home.original,
             "inferred": home.inferred,
             "agents": [
-                {"agent": agent, **agent_counts, "parser": agent in parsers}
+                {
+                    "agent": agent,
+                    "files": agent_counts["files"],
+                    "bytes": agent_counts["bytes"],
+                    "parser": agent in parsers,
+                }
                 for agent, agent_counts in sorted(counts.get(id(home), {}).items())
             ],
         }
@@ -340,7 +428,7 @@ def home_agents(collection: Collection) -> list[dict]:
     ]
 
 
-def project_agents(collection: Collection) -> dict[str, dict]:
+def project_agents(collection: Collection) -> dict[str, ProjectAgents]:
     """Return the agents used in each project directory of the input, keyed by its path.
 
     The path is `home.original` on the source host (with the image root in
@@ -378,7 +466,7 @@ def project_agents(collection: Collection) -> dict[str, dict]:
     }
 
 
-def detect_object(collection: Collection) -> dict:
+def detect_object(collection: Collection) -> DetectObject:
     """Return the keys `detect --json` and inventory.json share, in order.
 
     The keys are `input`, `kind`, `host`, `notes`, `homes` (`home_agents`) and
@@ -388,18 +476,23 @@ def detect_object(collection: Collection) -> dict:
     """
     parsers = by_agent()
     git = gitmeta.project_git(collection.artifacts, collection.problems)
-    projects = [
+    projects: list[DetectProject] = [
         {
             "path": path,
             "users": project["users"],
             "agents": [
-                {"agent": agent, **counts, "parser": agent in parsers}
+                {
+                    "agent": agent,
+                    "files": counts["files"],
+                    "bytes": counts["bytes"],
+                    "parser": agent in parsers,
+                }
                 for agent, counts in project["agents"].items()
             ],
             "shared_files": project["shared_files"],
             "shared_bytes": project["shared_bytes"],
-            "remotes": git.get(path, {}).get("remotes", []),
-            "head": git.get(path, {}).get("head", ""),
+            "remotes": git[path]["remotes"] if path in git else [],
+            "head": git[path]["head"] if path in git else "",
         }
         for path, project in project_agents(collection).items()
     ]
@@ -413,7 +506,7 @@ def detect_object(collection: Collection) -> dict:
     }
 
 
-def print_project_table(projects: list[dict]) -> None:
+def print_project_table(projects: list[DetectProject]) -> None:
     """Print the project table of `detect`.
 
     Each project gets one line per agent, a `(shared)` line for its shared
@@ -442,7 +535,7 @@ def print_project_table(projects: list[dict]) -> None:
             print("  remotes: " + remotes_text(project["remotes"]))
 
 
-def remotes_text(remotes: list[dict]) -> str:
+def remotes_text(remotes: list[Remote]) -> str:
     """Return the remotes as `<name> <url> ... (push <pushurl> ...)`, joined with `, `."""
     parts = []
     for remote in remotes:
@@ -673,7 +766,7 @@ def project_inventory(
     rows: list[Row],
     sessions: list[SessionSummary],
     collected: list[str] | None = None,
-    files: dict[str, dict] | None = None,
+    files: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> dict[str, dict]:
     """Return the `projects` entries of inventory.json, the empty path included.
 
@@ -892,7 +985,9 @@ def home_scratch_key(key: str, home: str, catalog: catalog_mod.Catalog) -> bool:
     return bool(catalog.claims_home_path(key[len(home_key) :], windows))
 
 
-def project_files(collection: Collection, problems: list[str] | None = None) -> dict[str, dict]:
+def project_files(
+    collection: Collection, problems: list[str] | None = None
+) -> dict[str, ProjectFiles]:
     """Return `project_agents` keyed as `collected_projects` keys its paths.
 
     Directories that map to one path are summed. Each value has `agents`
@@ -902,16 +997,16 @@ def project_files(collection: Collection, problems: list[str] | None = None) -> 
     """
     summary = collection.summary or {}
     git = gitmeta.project_git(collection.artifacts, problems)
-    merged: dict[str, dict] = {}
+    merged: dict[str, ProjectFiles] = {}
     for path, project in project_agents(collection).items():
         key = canonical_project_path(strip_image_root(path, summary))
         merged_entry = merged.setdefault(
             key, {"agents": {}, "shared_files": 0, "remotes": [], "head": ""}
         )
         merged_entry["shared_files"] += project["shared_files"]
-        repository = git.get(path, {})
-        merged_entry["remotes"] = merged_entry["remotes"] or repository.get("remotes", [])
-        merged_entry["head"] = merged_entry["head"] or repository.get("head", "")
+        if path in git:
+            merged_entry["remotes"] = merged_entry["remotes"] or git[path]["remotes"]
+            merged_entry["head"] = merged_entry["head"] or git[path]["head"]
         for agent, counts in project["agents"].items():
             agent_files = merged_entry["agents"].setdefault(agent, {"files": 0, "bytes": 0})
             agent_files["files"] += counts["files"]
@@ -935,7 +1030,7 @@ def strip_image_root(path: str, summary: dict) -> str:
     return path
 
 
-def synced_homes(homes: list[dict], sessions: list[SessionSummary]) -> list[dict]:
+def synced_homes(homes: list[HomeEntry], sessions: list[SessionSummary]) -> list[dict]:
     """Return the `homes` array of inventory.json: `home_agents` with session counts.
 
     Each agent object ends with `synced_sessions`, `relayed_sessions`,

@@ -1963,7 +1963,7 @@ function Add-Note([string]$message) {
 # Takes a string; returns its JSON string body (no surrounding quotes) the
 # way PowerShell 7's ConvertTo-Json writes it: " and \ escaped, every control
 # character below 0x20 escaped (\b \t \n \f \r short, the rest \u00xx), and
-# U+0085, U+2028 and U+2029 as \u escapes; everything else, non-ASCII
+# \u0085, \u2028 and \u2029 as \u escapes; everything else, non-ASCII
 # included, is kept as is and encoded as UTF-8 by the writer, which turns a
 # lone surrogate into U+FFFD as ConvertTo-Json's output does. Windows
 # PowerShell 5.1's ConvertTo-Json also escaped < > ' & as \u003c and so on;
@@ -2044,7 +2044,7 @@ function ConvertTo-TableRegex([string[]]$globs) {
   return (New-Object System.Text.RegularExpressions.Regex($pattern, $options))
 }
 
-# Paths longer than 260 characters (#77). Windows PowerShell 5.1 runs on
+# Paths longer than 260 characters. Windows PowerShell 5.1 runs on
 # .NET Framework, where a plain path past MAX_PATH fails unless the host has
 # LongPathsEnabled set; the extended-length form (\\?\C:\... or
 # \\?\UNC\server\share\...) works without it, under 5.1 and 7. Every file
@@ -2235,7 +2235,7 @@ function Test-IsLink([string]$path) {
 # link or junction, 'file' for a regular file, or for a special file, which
 # is never copied, 'socket', 'fifo', 'device' or 'other'. On Windows, a
 # reparse point whose LinkType is neither SymbolicLink nor Junction (an
-# AF_UNIX socket, #120) is 'other': PowerShell 5.1 exposes no reparse tag to
+# AF_UNIX socket) is 'other': PowerShell 5.1 exposes no reparse tag to
 # name it by. A reparse point whose LinkType cannot be read stays 'symlink'.
 # Elsewhere the first character of UnixMode (PowerShell 7.1 and later) names
 # the kind; without UnixMode every non-link is 'file'.
@@ -2366,14 +2366,11 @@ function Write-ReadErrorRow {
 # ===========================================================================
 # Staging files
 # ===========================================================================
-# PowerShell has no worker programs: the sh collector needs them because
-# find -exec cannot call shell functions, while here Add-CollectedTree calls
+# PowerShell has no worker programs: Add-CollectedTree calls
 # Add-CollectedFile in this process for every file. Each file is read with
-# Get-Item (which does not follow a reparse point) before it is copied, so
-# the row holds the pre-copy times; it is copied with shared access into the
-# staging tree at fs/<original path>, and the staged copy, not the source,
-# is hashed, so the hash matches the archived bytes even when a running
-# agent appends to the source mid-collection.
+# Get-Item (which does not follow a reparse point) before it is copied, and
+# the staged copy, not the source, is hashed, so the hash matches the
+# archived bytes even when a running agent appends to the source.
 
 # Takes a full source path; returns its archive path: fs/ plus the path
 # relative to -Root in image mode, fs/<drive letter>/... for a drive path,
@@ -2391,23 +2388,14 @@ function Get-ArchivePath([string]$full) {
 $script:StagedDirs = New-Object 'System.Collections.Generic.HashSet[string]'
 
 # Takes the source path, the staging path and the source's pre-copy
-# Get-Item from Add-CollectedFile; creates the staging directory when
-# $script:StagedDirs does not have it yet, copies the file and returns a
-# two-item array: the SHA-256 of the staged copy ('' when it cannot be read
-# back) and the number of bytes copied, the length of the staged copy that
-# the hash covers. That count, not the Get-Item length, is the row's size:
-# NTFS updates a directory entry's length only when a handle on the file
-# closes, so for a file a running app holds open and writes the pre-copy
-# length can be stale (#111). Throws when the directory or the copy fails.
-# The source is opened with
-# FileShare.ReadWrite|Delete so files held open by a running editor (SQLite
-# state stores, LevelDB) can still be read.
-# The hash reads the staged file back through the handle that wrote it,
-# before it is closed: reopening a file just written waits for the
-# antivirus scan of it on Windows, which made the hash the slowest step.
-# The copy gets the source's timestamps after the hash has read it. Both
-# paths are opened in the extended form, so neither side is limited to 260
-# characters (#77).
+# Get-Item; creates the staging directory when $script:StagedDirs lacks it,
+# copies the file with FileShare.ReadWrite|Delete (so a file a running editor
+# holds open can be read) and returns @(SHA-256 of the staged copy or '',
+# bytes copied). The byte count is the row's size, since NTFS can report a
+# stale length for a file still open for writing. The hash reads the copy
+# through the handle that wrote it, as reopening waits for the antivirus
+# scan. Throws when the directory or the copy fails. See "Locked files and
+# long paths" in collectors/docs/windows.md.
 function Copy-FileShared([string]$source, [string]$destination, $item) {
   $inStream = $null; $outStream = $null; $sha256 = ''; $copied = [int64]0
   $source = ConvertTo-ExtendedPath $source; $destination = ConvertTo-ExtendedPath $destination
@@ -2445,17 +2433,11 @@ function Copy-FileShared([string]$source, [string]$destination, $item) {
 
 # ---------------------------------------------------------------------------
 # Symlinks are recreated in the staging tree with their target string as
-# stored, as the sh collector does with ln -s, so tar archives the link
-# itself. PowerShell 7 (.NET 6+) has File/Directory.CreateSymbolicLink;
-# Windows PowerShell 5.1 runs cmd.exe's mklink, which keeps the target
-# verbatim, accepts one that does not exist, and works unprivileged in
-# Developer Mode from Windows 10 1703. New-Item -ItemType SymbolicLink is not
-# used: on 5.1 it resolves a relative target against the current directory
-# and refuses a target that does not exist. A zip cannot store links, so the
-# zip path never has them: none are made when zip is the archiver from the
-# start (CAC_ARCHIVER=zip), and they are removed before a fall back to zip.
-# Each staged link keeps its target string, which the PowerShell tar writer
-# stores as it was given to the link API.
+# stored, as the sh collector does with ln -s, through CreateSymbolicLink
+# (PowerShell 7) or cmd.exe's mklink (5.1), never New-Item, which on 5.1
+# resolves a relative target and refuses a missing one. A zip holds no
+# links, so none are staged for one. collectors/docs/windows.md, "Symlinks
+# and reparse points", has the details.
 # ---------------------------------------------------------------------------
 $script:LinkApi = $null
 $script:LinkApiError = ''
@@ -2592,17 +2574,14 @@ function Add-StagedLink($item, [string]$stagePath) {
 }
 
 # Takes the user, home, agent and the file's Get-Item (from an extended path
-# on Windows); stages it and writes its manifest row. A symbolic link or
-# junction is recreated as a link (status symlink); a socket, FIFO, device or
-# other reparse point (skipped_special, typed by Get-ManifestType) is never
-# opened; a secret under -NoSecrets
-# (skipped_secret) and a file over -MaxFileSizeMB (skipped_size) get a row
-# and no copy; anything else is copied and hashed (collected, or error_copy
-# with the exception message). A collected row's size is the byte count
-# Copy-FileShared copied; every other row keeps the pre-copy Get-Item
-# length (#111). Under -Inventory it only feeds Add-InventoryFile.
-# Runs once per file, so Join-PathSafe and Get-Epoch are inlined and nothing
-# here starts a pipeline or another process.
+# on Windows); stages it and writes its manifest row. A link is recreated
+# (symlink); a socket, FIFO, device or other reparse point (skipped_special)
+# is never opened; a secret under -NoSecrets (skipped_secret) and a file over
+# -MaxFileSizeMB (skipped_size) get a row and no copy; anything else is
+# copied and hashed (collected, or error_copy with the exception message),
+# its size the byte count Copy-FileShared copied. Under -Inventory it only
+# feeds Add-InventoryFile. Runs once per file, so Join-PathSafe and Get-Epoch
+# are inlined and nothing here starts a pipeline or another process.
 function Add-CollectedFile([string]$user, [string]$homeDir, [string]$agent, $item) {
   if ($Inventory) {
     # Regular files only: links and special files are neither followed nor counted.
@@ -2883,7 +2862,7 @@ function Add-CollectedPath([string]$user, [string]$homeDir, [string]$agent, [str
 # child gets its skipped_excluded row and is not descended, a directory
 # that is not a reparse point is walked, and everything else is staged. The
 # directory is listed through its extended form, so a tree deeper than 260
-# characters is walked on 5.1 without LongPathsEnabled (#77); a directory
+# characters is walked on 5.1 without LongPathsEnabled; a directory
 # that cannot be listed gets an error_read row, never silence, and counts in
 # $script:WalkErrors.
 function Add-CollectedTree([string]$user, [string]$homeDir, [string]$agent, [string]$dir) {
@@ -3034,15 +3013,10 @@ function Add-UserHomes {
 # ===========================================================================
 # Docker and Podman volumes
 # ===========================================================================
-# Named volumes are enumerated from the filesystem as in the sh collector:
-# <volumes dir>/<name>/_data. A volume whose name matches DOCKER_VOLUMES is
-# collected whole as user "docker" with _data as its home, through the same
-# walk as a catalog match; any other volume gets one skipped_unmatched_volume
-# row with its size. This reaches Linux data roots in an image (or under
-# PowerShell 7 on Linux) and Windows-container volumes under
-# ProgramData\Docker. Docker Desktop keeps Linux volumes inside a WSL
-# virtual disk, which is only noted. Failures are noted in collection.json
-# and the summary and never stop the collection.
+# Volumes are found on disk as in the sh collector: <volumes dir>/<name>/_data,
+# including Linux data roots in an image and Windows-container volumes under
+# ProgramData\Docker. Docker Desktop's WSL virtual disk is only noted.
+# collectors/docs/internals.md, "Docker and Podman volumes", has the flow.
 
 # What the volume step saw, for collection.json and the stdout docker line.
 $script:Docker = @{ seen = $false; found = 0; collected = 0; unreadable = 0; desktop = $false }
@@ -3270,7 +3244,7 @@ function Test-InventorySecret([string]$file) {
 # file, is a credential file under -Inventory, or cannot be read, logging
 # "discovery source unreadable" in the last case. The file is opened with the
 # share mode Copy-FileShared uses, because File.ReadAllText refuses a rollout
-# that a running Codex or ChatGPT desktop app holds open for writing (#114).
+# that a running Codex or ChatGPT desktop app holds open for writing.
 function Read-DiscoverySource([string]$file) {
   if (-not $file -or -not (Test-PathQuiet $file 'Leaf')) { return $null }
   if (Test-InventorySecret $file) { return $null }
@@ -3743,15 +3717,11 @@ function Write-Inventory {
 # ===========================================================================
 # Summary and archive
 # ===========================================================================
-# After the walk: collection.json (written, and rewritten before each
-# fallback archiver), the archive of the staging tree, its .sha256 file,
-# the staging cleanup and the stdout summary.
-#
-# Archivers. tar.exe (the system tar under PowerShell 7 off Windows) is
-# tried first; Windows tar.exe exits 0xC0000005 on any name outside the ANSI
-# code page (#72), so the PowerShell tar writer below follows it, and a zip
-# is the last resort. CAC_ARCHIVER, a test hook, sets the chain: a
-# comma-separated list of tar, writer and zip, default tar,writer,zip.
+# collection.json (rewritten before each fallback archiver), the archive,
+# its .sha256 file, the staging cleanup and the stdout summary. tar.exe is
+# tried first; it crashes on a name outside the ANSI code page, so the
+# PowerShell tar writer follows it, and a zip is the last resort.
+# CAC_ARCHIVER, a test hook, sets the chain (default tar,writer,zip).
 $script:ArchiverLabels = @{ tar = 'tar.exe'; writer = 'PowerShell tar writer'; zip = 'ZipFile' }
 
 # Takes a line; appends it to the run log with no timestamp. Used once the
@@ -3767,7 +3737,7 @@ function Add-LogLine([string]$text) {
 # the stage with / separators, and a directory's name ends in /. A directory
 # comes before its contents. The tree is listed through the extended form
 # of the stage, so every FileSystemInfo.FullName is extended and opens past
-# 260 characters (#77).
+# 260 characters.
 function Get-StageEntries([string]$stageDir) {
   $entries = New-Object System.Collections.ArrayList
   $stack = New-Object System.Collections.Stack
@@ -4449,8 +4419,7 @@ function Resolve-RootArg {
 # create and remove a probe file, so a read-only directory fails here
 # rather than after the walk. Returns '' or the error. New-Item -Force
 # neither throws nor returns an item when the path is a file or lies under
-# one, so the missing item, not only an exception, is the creation error
-# (#108).
+# one, so the missing item, not only an exception, is the creation error.
 function Initialize-OutputDir {
   if (-not (Test-PathQuiet $OutputDir 'Container')) {
     $directory = @{ ItemType = 'Directory'; Path = (ConvertTo-ExtendedPath $OutputDir) }

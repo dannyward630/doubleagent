@@ -430,9 +430,9 @@ class PearAiParser(LegacyTaskParser):
         yield from error_rows(self, artifact, [(0, p, "") for p in problems])
 
     def api_content_rows(
-        self, msg: dict, n: int, base_turn: str, include_thinking: bool
+        self, message: dict, position: int, base_turn: str, include_thinking: bool
     ) -> Iterator[tuple[str, str, str, str]]:
-        content = msg.get("content")
+        content = message.get("content")
         if base_turn == "assistant":
             k = 0
             for turn, text, name, tid in content_rows(content, base_turn, include_thinking):
@@ -442,7 +442,7 @@ class PearAiParser(LegacyTaskParser):
                 for t, body, tool in xml_blocks(text, include_thinking):
                     if t == "tool_use":
                         k += 1
-                        tid = str(n) if k == 1 else "%d.%d" % (n, k)
+                        tid = str(position) if k == 1 else "%d.%d" % (position, k)
                     yield t, body, tool, tid if t == "tool_use" else ""
             return
         if base_turn != "user" or not isinstance(content, list):
@@ -457,9 +457,9 @@ class PearAiParser(LegacyTaskParser):
             # the result, then the permission decision its text records
             if result is None:
                 return []
-            out = [("tool_result", "\n".join(x for x in result if x), name, str(n - 1))]
+            out = [("tool_result", "\n".join(x for x in result if x), name, str(position - 1))]
             if decision:
-                out.append(("system", "permission decision: " + decision, name, str(n - 1)))
+                out.append(("system", "permission decision: " + decision, name, str(position - 1)))
             return out
 
         for b in content:

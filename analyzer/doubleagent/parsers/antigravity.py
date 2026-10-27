@@ -1,217 +1,30 @@
-"""Antigravity CLI (`agy`) and Antigravity desktop app conversations.
+"""Antigravity CLI (`agy`) and desktop app conversations, histories and permissions.
 
-Antigravity stores each conversation as a SQLite database of protobuf blobs.
-There is no public schema, so the message definitions below were taken from
-the protobuf file descriptors embedded in the shipped `agy` binary (Google
-Antigravity CLI, Linux x86-64, October 2026): `third_party/gemini_coder/proto/
-trajectory.proto`, `third_party/jetski/cortex_pb/cortex.proto`,
-`third_party/jetski/codeium_common_pb/codeium_common.proto` and
-`third_party/jetski/jetski_cortex_pb/jetski_cortex.proto`. They were checked
-against a real install. `analyzer/tools/proto_descriptors.py` re-extracts them
-from a binary when a new release changes the format.
+Reads, under each data directory `.gemini/<dir>/` (`antigravity-cli` for the CLI,
+`antigravity` for the desktop app, `antigravity-ide`, `antigravity-backup`): the
+conversation databases `conversations/<id>.db` (SQLite with WAL sidecars, protobuf blobs)
+and `conversation_summaries.db`; the brain mirror `brain/<id>/.system_generated/logs/`
+(`transcript_full.jsonl`, `transcript.jsonl` or their `chunks/`, one copy read per
+conversation; a secondary source); the CLI's `history.jsonl` (a secondary source); and the
+standing permission files `.gemini/config/config.json`, `config/projects/<id>.json`,
+`config/sidecars/<name>/sidecar.json` and `antigravity-cli/settings.json`. It yields
+user, assistant, thinking, tool_use, tool_result and system rows, with model, permission
+grant, permission decision and permission setting rows.
 
-Descriptor drift check (2026-10-13): `exa.cortex_pb.CortexStepType`,
-`CortexStepStatus`, `CortexTrajectorySource`, `gemini_coder.Step` and every
-message in `SCHEMA` were diffed against the descriptors of `agy` 1.2.16
-(macOS arm64) and of the desktop app's `language_server` 2.23.0 (macOS
-arm64). Field numbers, names and types match in both, and `STEP_TYPES` lists
-the same 118 values; nothing drifted from the Linux x86-64 descriptors the
-tables were built from. The diff did find one error in the tables
-themselves: `ActionSpecDeleteFile` keeps its `path` in field 1, and the
-parser had read it with the `ActionSpecCreateFile` layout (field 2); it has
-its own entry since analyzer 0.12.0 (issue 88). The new real data has steps
-with `permissions` (`gemini_coder.Step` field 133, read since analyzer 0.12.0,
-issue 92) and `task_details` (148, not read).
+Fields read: `trajectory_meta` `cascade_id` and `source`; `trajectory_metadata_blob.data`;
+`steps` `idx`, `step_type`, `status`, `metadata`, `step_payload` and `permissions`;
+`gen_metadata.data`; the `conversation_summaries` columns `conversation_id`, `title`,
+`preview`, `step_count`, `last_modified_time`, `workspace_uris`, `status`, `agent_name`,
+`parent_conversation_id`; the brain lines' `type`, `source`, `status`, `created_at`,
+`content`, `thinking`, `tool_calls[]`, `error`, `truncated_fields`; the history's
+`display`, `timestamp`, `workspace`, `conversationId`; and the permission keys
+`standing_entries` names. `SCHEMA` lists every protobuf field read.
 
-The CLI and the desktop app run the same Go backend (the app calls it the
-language server) and write the same stores, each into its own data
-directory under `~/.gemini`:
-
-* `antigravity-cli/`: the CLI's (`trajectory_meta.source` 17, `cli`).
-* `antigravity/`: the desktop app 2.x's (`source` 1, `cascade_client`); the
-  app passes the name to the backend as `--app_data_dir`, and its summaries
-  rows carry it in `app_data_dir`.
-* `antigravity-ide/`: the separately installed Antigravity IDE's, after the
-  app's install wizard migrates pre-2.0 IDE data out of `antigravity/`.
-* `antigravity-backup/`: the backup the app takes during that migration.
-
-Files, relative to the home directory, under each of those directories
-(`<dir>`):
-
-* `.gemini/<dir>/conversations/<conversation id>.db`, with `-wal`
-  and `-shm` sidecars (WAL mode, so the sidecars hold the newest steps):
-  - `trajectory_meta(trajectory_id, cascade_id, trajectory_type, source)`:
-    `cascade_id` is the conversation id; `source` is a
-    `CortexTrajectorySource` (`TRAJECTORY_SOURCES`).
-  - `trajectory_metadata_blob(id, data)`: `exa.cortex_pb.CortexTrajectoryMetadata`
-    with `workspaces[].workspace_folder_absolute_uri` and `branch_name`,
-    `created_at`, `parent_conversation_id`, `project_id`.
-  - `steps(idx, step_type, status, metadata, step_payload, ...)`: one row
-    per step. `step_payload` is a `gemini_coder.Step` whose `metadata`
-    (`exa.cortex_pb.CortexStepMetadata`) carries `created_at`,
-    `completed_at`, `source` and the `tool_call` the step executed
-    (`exa.codeium_common_pb.ChatToolCall`: `id`, `name`, `arguments_json`).
-    The payload oneof names the step kind: `user_input.query`,
-    `planner_response.response` with `thinking` and `tool_calls[]`, and one
-    message per tool (`run_command`, `view_file`, `write_to_file`,
-    `code_action`, `mcp_tool`, `generic`, ...), plus `system_message`
-    (`message`, `event_type`; step type 101) and `error_message`
-    (`error.short_error`, `user_error_message`, `full_error`; step type 17),
-    both seen in the desktop app's real data and yielded as `system` rows.
-  - `gen_metadata(idx, data)`: `exa.cortex_pb.CortexStepGeneratorMetadata`
-    with `step_indices[]` and `chat_model.response_model`, the only place
-    the model name is recorded.
-  - `steps.permissions`: an `exa.cortex_pb.TrajectoryPermissions`, the same
-    message as `gemini_coder.Step` field 133 (read from the payload when the
-    column is empty): `permission_grants[]` (`PermissionGrant`: 1
-    `resource` {1 `action`, 2 `target`}, 2 `allow`, 3 `scope`, 4
-    `user_deny_instruction`, 5 `action`, 6 `target`) and
-    `file_access_permissions[]` (`FileAccessPermission`: 1 `path`, 2
-    `is_directory`, 3 `allow`, 4 `scope`, 5 `from_current_step`); `scope` is
-    an `exa.cortex_pb.PermissionScope` (`PERMISSION_SCOPES`). Proto3 omits a
-    false bool and a zero enum, so a missing `allow` reads `false` and a
-    missing `scope` `unspecified`.
-* `.gemini/<dir>/conversation_summaries.db`, table
-  `conversation_summaries`: one row per conversation with `title`,
-  `preview`, `step_count`, `last_modified_time`, `workspace_uris` (JSON
-  array), `status`, `agent_name`, `parent_conversation_id`, `project_id`.
-  The app's copy also has an FTS5 table `conversations_fts` and
-  `search_schema_version`, which are not read.
-* `.gemini/antigravity-cli/history.jsonl` (CLI only; the app writes none):
-  `{display, timestamp, workspace}` per prompt, `timestamp` in epoch
-  milliseconds; from CLI 1.3.x a line may also carry `conversationId`, the
-  conversation's UUID, which becomes the row's `session_id` (older lines
-  have none and keep it empty). A secondary source: the timeline drops a
-  line whose event a conversation database also records (`dedup.py`).
-* `.gemini/<dir>/brain/<conversation id>/.system_generated/logs/`, the brain
-  mirror (issue 87): one JSON line per step, written by the backend beside
-  the database, in four copies of one transcript: `transcript_full.jsonl`;
-  `transcript.jsonl`, the same lines with long fields shortened and the
-  shortened field names in `truncated_fields`; and each split into chunks
-  of 100 KiB, `chunks/transcript_full/<n>.jsonl` and
-  `chunks/transcript/<n>.jsonl` (`<n>` eight digits from 00000000), cut
-  mid-line at the boundary. One copy is read per conversation, the most
-  complete present: `transcript_full.jsonl`, else its chunks concatenated
-  in order (which makes the cut line whole), else `transcript.jsonl`, else
-  its chunks; the other copies yield nothing. Fields read: `type`
-  (`USER_INPUT`, `PLANNER_RESPONSE`, `GENERIC`, `SYSTEM_MESSAGE`,
-  `ERROR_MESSAGE`), `source` (`USER_EXPLICIT`, `USER_IMPLICIT`, `MODEL`,
-  `SYSTEM`), `status` (`DONE`, `ERROR`, ...), `created_at` (ISO 8601),
-  `content`, `thinking`, `tool_calls[]` (`id`, `name` and the arguments as
-  `arguments_json`, `args` or `arguments`, an object or a JSON string;
-  the element shape is not recorded from a real install, so the parser
-  takes the first of the three it finds), `error` (an object with
-  `short_error`, `user_error_message`, `full_error`, or a string) and
-  `truncated_fields`. The key names are from the real installs
-  (`research/antigravity.md`, Record schema); the value forms of
-  `source`, `status`, `created_at` and `truncated_fields` are from the
-  format description embedded in `agy` 1.3.6 (macOS arm64). Not read:
-  `step_index`, `media`, the token counts, and the brain directory's
-  `steps/<idx>/output.txt`, `steps/<idx>/content.md`,
-  `messages/<uuid>.json` and `tasks/task-<idx>.log`.
-  Rows, rendered as the database reader renders the step of the same
-  kind so the timeline can pair them: `USER_INPUT` a `user` row (`system`
-  when `source` is `USER_IMPLICIT`); `PLANNER_RESPONSE` a `thinking` row
-  (`--include-thinking` only), an `assistant` row when `content` is not
-  empty and one `tool_use` row per `tool_calls[]` entry, its text the
-  argument `tool_args_summary` picks; `GENERIC` a `tool_result` row,
-  `content` as text, with the `tool_name` and `tool_use_id` of the next
-  unused call of the last `PLANNER_RESPONSE` (the line itself names no
-  call; the database runs a planner step's calls as the steps after it,
-  so the n-th `GENERIC` line after it is taken as the n-th call), a
-  `system` row when no call is pending; `SYSTEM_MESSAGE` a `system` row
-  `system_message: <content>`; `ERROR_MESSAGE` a `system` row
-  `error: <error>`; any other type a `tool_result` or `system` row as for
-  `GENERIC`. `GENERIC`, `SYSTEM_MESSAGE`, `ERROR_MESSAGE` and other rows
-  get `[<status>] ` in front when `status` is not `DONE`, as the database
-  rows do. A row whose field is in `truncated_fields` ends with
-  ` [truncated: <field>]`. Every row has the line's `created_at`,
-  `session_id` the `<conversation id>` of the directory (the database's
-  `cascade_id`), `source_line` the line number (in the concatenated chunks
-  for a chunked copy, whose `source_file` is the first chunk), and empty
-  `project_path`, `git_branch` and `model`, which the mirror does not
-  record; no model or permission rows, for the same reason. Each bad line
-  is its own `system` row carrying the line in full, after the others.
-  A secondary source of the conversation database: the timeline drops a
-  row the database also yields. Its time rule: the mirror records only a
-  step's `created_at`, while the database reader stamps `assistant`,
-  `tool_use` and `tool_result` rows with the step's `completed_at`, so the
-  mirror's row comes before the database's by the time the model took to
-  generate the response or the tool took to run. `secondary_tolerance` is
-  therefore 600 seconds; a step that ran longer than ten minutes is shown
-  twice. Known misses, kept as two rows: a `SYSTEM_MESSAGE` whose database
-  step has an `event_type` (the database row reads `<event_type>:
-  <message>`, and the mirror records no event type), a queued prompt
-  (the database row starts `[queued] `), a shortened field of a row
-  without a `tool_use_id` (a shortened tool call or result pairs on its
-  id), and a `GENERIC` line whose `content` differs from the database
-  step's `generic.result.result` with no tool id inferred for it, which
-  no install has compared. A conversation's opening prompt that
-  `history.jsonl` records without `conversationId` is matched once: the
-  history row, matched by workspace, can take the database row first, and
-  the mirror's row then pairs with the history row under the broader
-  scope of `dedup.deduplicate`.
-
-Standing permission files (issue 92), read only for the keys named here;
-every other key in them (`plugins`, `remoteControlHostname`, a project's
-`name`, a sidecar's `args`) is left unread, and `plugin_data/*/token.json`
-and `.gemini/config/mcp_config.json` are never wanted:
-
-* `.gemini/config/config.json` (shared by the CLI and the app):
-  `userSettings.globalPermissionGrants.allow[]` (tool-call patterns, a tool
-  name with its argument in parentheses), `.deny[]` when present (not
-  observed), `userSettings.permissionGrantsV2Migrated`,
-  `userSettings.sandboxEnabledAtV2Migration`, and per automation
-  `sidecars.<name>.enabled` and `sidecars.<name>.resolvedPermissions.accessGrants[]`.
-* `.gemini/config/projects/<id>.json`: `permissionGrants.permissionGrants.allow[]`
-  (and `.deny[]` when present, not observed) and `permissionGrants.v2Migrated`;
-  `project_path` is the first `projectResources.resources[].folderUri`.
-* `.gemini/config/sidecars/<name>/sidecar.json`: `agent_permissions.access_grants[]`.
-* `.gemini/antigravity-cli/settings.json`: `permissions.allow[]` (and
-  `.deny[]` when present, not observed) and `trustedWorkspaces[]`, each
-  trusted workspace a row whose `project_path` is the workspace.
-
-Rows: one `user` row per user_input step (`system` when the source is
-USER_IMPLICIT); for each planner_response step an `assistant` row, one
-`tool_use` row per proposed tool call, and a `thinking` row with
-`--include-thinking`; one `tool_result` row per executed tool step, keyed by
-the planner's call id; `system` rows for the session start, checkpoints,
-system messages, errors and the conversation summary. The session start
-row's text names `source=<trajectory source>` (the number when it is not in
-`TRAJECTORY_SOURCES`) and `data_dir=<the .gemini subdirectory>`, so a CLI
-conversation and a desktop-app one can be told apart. Step timestamps come
-from the step metadata; tool results use `completed_at`.
-
-Permission rows (issue 92), all `system`: after a step's own rows, one
-`permission grant: action=<action> target=<target> allow=<true|false>
-scope=<scope>` row per `permission_grants[]` entry (` deny_instruction=<text>`
-appended when the user gave one) and one `permission grant: path=<path>
-is_directory=<true|false> allow=<true|false> scope=<scope>` row per
-`file_access_permissions[]` entry (` from_current_step=true` appended when
-set), with the step's `tool_name` and `tool_use_id`, the step's index as
-`source_line` and the step's tool-result time. From each standing file, one
-`permission setting: <key>=<value> (from <path relative to the home>, file
-mtime)` row per list entry and per flag, `<key>` the JSON path in the file
-(`trustedWorkspace` for a `trustedWorkspaces[]` entry), timestamped by the
-file's modification time (the manifest's `mtime`, or the file's own when
-there is no manifest), `session_id` empty, `source_line` the entry's
-1-based position among the file's rows.
-
-Model rows (issue 96), `system`: `model: <id>` before the rows of the
-conversation's first step that `gen_metadata` names a model for, and
-`model: <old> -> <new>` before the rows of every later step whose model
-differs, with the step's `created_at`, its index as `source_line` and the
-new id in the `model` column. The id is `chat_model.response_model`, else
-`model_display_name`; the descriptors give no separate switch record, so a
-change is seen only as a different model on a later step.
-
-Per-call rows (issue 97): a `run_command` step with `user_rejected` (field
-14) or an `mcp_tool` step with `user_rejected` (field 7) yields, right
-after its `tool_result` row (which keeps its `[rejected by user]` marker),
-a `system` row `permission decision: user_rejected` with the step's
-`tool_name`, `tool_use_id` and result time. A `run_command` step with
-`ran_in_sandbox` (field 34) gets ` sandbox=true` at the end of its result
-row's text.
+The protobuf messages come from the descriptors embedded in the `agy` binary (Linux
+x86-64), which match those of `agy` 1.2.16 and the desktop app's `language_server` 2.23.0
+(macOS arm64); the brain value forms are from `agy` 1.3.6. The shapes were checked against
+real installs. `analyzer/tools/proto_descriptors.py` re-extracts the descriptors from a new
+release. See `research/antigravity.md`.
 """
 
 from __future__ import annotations
@@ -245,14 +58,14 @@ BASE = ".gemini/antigravity-cli/"
 # CLI's, the desktop app's, the separately installed IDE's and the backup the
 # app takes when it migrates pre-2.0 IDE data. Group 1 is the directory name.
 DATA_DIR = r"^\.gemini/(antigravity(?:-cli|-ide|-backup)?)/"
-CONV_RX = re.compile(DATA_DIR + r"conversations/[^/]+\.db$")
-SUMMARIES_RX = re.compile(DATA_DIR + r"conversation_summaries\.db$")
+CONVERSATION_PATTERN = re.compile(DATA_DIR + r"conversations/[^/]+\.db$")
+SUMMARIES_PATTERN = re.compile(DATA_DIR + r"conversation_summaries\.db$")
 HISTORY_REL = BASE + "history.jsonl"
-# The brain mirror (issue 87): per conversation, the step transcript in its
+# The brain mirror: per conversation, the step transcript in its
 # complete form, its shortened twin, or either split into numbered chunks.
 # Group 2 is the conversation id; group 3 the file form, or groups 4 and 5
 # the chunked form and the chunk number.
-BRAIN_RX = re.compile(
+BRAIN_PATTERN = re.compile(
     DATA_DIR + r"brain/([^/]+)/\.system_generated/logs/"
     r"(?:(transcript(?:_full)?)\.jsonl|chunks/(transcript(?:_full)?)/(\d+)\.jsonl)$"
 )
@@ -262,10 +75,10 @@ SHORT = "transcript"
 # to pair them: the mirror records only `created_at`, the database reader
 # stamps assistant, tool_use and tool_result rows with `completed_at`.
 BRAIN_TOLERANCE_SECONDS = 600.0
-# Standing permission files (issue 92).
+# Standing permission files.
 CONFIG_REL = ".gemini/config/config.json"
-PROJECT_RX = re.compile(r"^\.gemini/config/projects/[^/]+\.json$")
-SIDECAR_RX = re.compile(r"^\.gemini/config/sidecars/[^/]+/sidecar\.json$")
+PROJECT_PATTERN = re.compile(r"^\.gemini/config/projects/[^/]+\.json$")
+SIDECAR_PATTERN = re.compile(r"^\.gemini/config/sidecars/[^/]+/sidecar\.json$")
 CLI_SETTINGS_REL = BASE + "settings.json"
 
 # exa.cortex_pb.PermissionScope, lower-cased without the PERMISSION_SCOPE_
@@ -683,7 +496,7 @@ SCHEMA: Schema = {
 # the permissions that sit beside the step kind.
 PAYLOAD_KINDS = [
     name
-    for num, (name, kind) in SCHEMA["Step"].items()
+    for number, (name, kind) in SCHEMA["Step"].items()
     if kind not in ("int", "CortexStepMetadata", "TrajectoryPermissions")
 ]
 
@@ -708,26 +521,28 @@ ARG_KEYS = (
 
 
 def uri_to_path(uri: str) -> str:
+    """Return the local path of a `file:` URI (a Windows drive path without its slash)."""
     if not uri:
         return ""
     if not uri.startswith("file:"):
         return uri
-    p = unquote(urlparse(uri).path)
-    if re.match(r"^/[A-Za-z]:", p):
-        p = p[1:]
-    return p
+    path = unquote(urlparse(uri).path)
+    if re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    return path
 
 
 def tool_args_summary(arguments_json: str) -> str:
+    """Return the argument that names a tool call's action (`ARG_KEYS`), else the JSON."""
     try:
         args = json.loads(arguments_json) if arguments_json else {}
     except ValueError:
         return arguments_json
     if isinstance(args, dict):
         for k in ARG_KEYS:
-            v = args.get(k)
-            if v not in (None, "", [], {}):
-                return v if isinstance(v, str) else compact_json(v)
+            value = args.get(k)
+            if value not in (None, "", [], {}):
+                return value if isinstance(value, str) else compact_json(value)
     return compact_json(args)
 
 
@@ -739,33 +554,33 @@ def _path_of(scope: dict | None) -> str:
     )
 
 
-def _output(p: dict) -> str:
-    combined = p.get("combined_output") or {}
+def _output(payload: dict) -> str:
+    combined = payload.get("combined_output") or {}
     return (
         combined.get("full")
         or combined.get("truncated")
-        or p.get("combined")
-        or p.get("stdout")
-        or p.get("stderr")
-        or p.get("output")
+        or payload.get("combined")
+        or payload.get("stdout")
+        or payload.get("stderr")
+        or payload.get("output")
         or ""
     )
 
 
 def _join(*parts: str) -> str:
-    return " | ".join(x for x in parts if x)
+    return " | ".join(part for part in parts if part)
 
 
-def _bool(v: object) -> str:
-    return "true" if v else "false"
+def _bool(value: object) -> str:
+    return "true" if value else "false"
 
 
-def _list(v: object) -> list:
-    return v if isinstance(v, list) else []
+def _list(value: object) -> list:
+    return value if isinstance(value, list) else []
 
 
-def _dict(v: object) -> dict:
-    return v if isinstance(v, dict) else {}
+def _dict(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
 
 
 def _read_json(artifact: Artifact) -> object:
@@ -783,20 +598,24 @@ def _regular(path: Path) -> bool:
 
 def _chunks(logs: Path, form: str) -> list[Path]:
     """The chunk files of `form` under `logs/chunks`, in chunk order."""
-    d = logs / "chunks" / form
+    directory = logs / "chunks" / form
     try:
-        names = [p for p in d.iterdir() if p.suffix == ".jsonl" and p.stem.isdigit()]
+        names = [
+            path for path in directory.iterdir() if path.suffix == ".jsonl" and path.stem.isdigit()
+        ]
     except OSError:
         return []
-    return sorted((p for p in names if _regular(p)), key=lambda p: int(p.stem))
+    return sorted((path for path in names if _regular(path)), key=lambda path: int(path.stem))
 
 
 def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
-    """The bytes of the brain transcript that `path` stands for, or None when
-    another copy of the same transcript is the one read. The copies, in order
-    of preference: `transcript_full.jsonl`; its chunks, concatenated (a line
-    cut at a chunk boundary is whole again); the shortened `transcript.jsonl`;
-    its chunks. A chunked form is read through its first chunk present."""
+    """Return the bytes of the brain transcript `path` stands for, or None.
+
+    None means another copy of the same transcript is the one read. The copies, in order
+    of preference: `transcript_full.jsonl`; its chunks, concatenated (a line cut at a
+    chunk boundary is whole again); the shortened `transcript.jsonl`; its chunks. A
+    chunked form is read through its first chunk present.
+    """
     logs = path.parent if form else path.parent.parent.parent
     full = logs / (FULL + ".jsonl")
     if form == FULL:
@@ -812,224 +631,257 @@ def brain_copy(path: Path, form: str, chunk_form: str) -> bytes | None:
         return None
     if chunk_form == SHORT and (_chunks(logs, FULL) or _regular(logs / (SHORT + ".jsonl"))):
         return None
-    return b"".join(p.read_bytes() for p in chunks)
+    return b"".join(chunk.read_bytes() for chunk in chunks)
 
 
-def _brain_args(tc: dict) -> str:
-    """A brain tool call's arguments as a JSON string: `arguments_json` as the
-    database records it, else `args` or `arguments`, an object or a string."""
+def _brain_args(tool_call: dict) -> str:
+    """Return a brain tool call's arguments as a JSON string.
+
+    The arguments are `arguments_json` as the database records it, else `args` or
+    `arguments`, an object or a string.
+    """
     for key in ("arguments_json", "args", "arguments"):
-        v = tc.get(key)
-        if isinstance(v, str) and v:
-            return v
-        if isinstance(v, (dict, list)):
-            return json.dumps(v, ensure_ascii=False)
+        value = tool_call.get(key)
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
     return ""
 
 
-def permission_texts(perms: dict) -> list[str]:
-    """One `permission grant:` text per entry of a TrajectoryPermissions."""
+def permission_texts(permissions: dict) -> list[str]:
+    """Return one `permission grant:` text per entry of a TrajectoryPermissions."""
     out = []
-    for g in perms.get("permission_grants", []):
-        res = g.get("resource") or {}
-        scope = g.get("scope", 0)
+    for grant in permissions.get("permission_grants", []):
+        resource = grant.get("resource") or {}
+        scope = grant.get("scope", 0)
         text = "permission grant: action=%s target=%s allow=%s scope=%s" % (
-            g.get("action") or res.get("action", ""),
-            g.get("target") or res.get("target", ""),
-            _bool(g.get("allow")),
+            grant.get("action") or resource.get("action", ""),
+            grant.get("target") or resource.get("target", ""),
+            _bool(grant.get("allow")),
             PERMISSION_SCOPES.get(scope, str(scope)),
         )
-        if g.get("user_deny_instruction"):
-            text += " deny_instruction=" + g["user_deny_instruction"]
+        if grant.get("user_deny_instruction"):
+            text += " deny_instruction=" + grant["user_deny_instruction"]
         out.append(text)
-    for f in perms.get("file_access_permissions", []):
-        scope = f.get("scope", 0)
+    for file_access in permissions.get("file_access_permissions", []):
+        scope = file_access.get("scope", 0)
         text = "permission grant: path=%s is_directory=%s allow=%s scope=%s" % (
-            uri_to_path(f.get("path", "")),
-            _bool(f.get("is_directory")),
-            _bool(f.get("allow")),
+            uri_to_path(file_access.get("path", "")),
+            _bool(file_access.get("is_directory")),
+            _bool(file_access.get("allow")),
             PERMISSION_SCOPES.get(scope, str(scope)),
         )
-        if f.get("from_current_step"):
+        if file_access.get("from_current_step"):
             text += " from_current_step=true"
         out.append(text)
     return out
 
 
 def standing_entries(rel: str, doc: dict) -> list[tuple[str, object, str]]:
-    """(key, value, project_path) for each permission entry of a standing
-    file, reading only the keys the module docstring names."""
+    """Return (key, value, project_path) for each permission entry of a standing file.
+
+    Only these keys are read: `userSettings.globalPermissionGrants.allow` and `.deny`,
+    `permissionGrantsV2Migrated`, `sandboxEnabledAtV2Migration` and each sidecar's `enabled`
+    and `resolvedPermissions.accessGrants` (config.json); `permissionGrants` and the first
+    `projectResources.resources[].folderUri` (a project); `agent_permissions.access_grants`
+    (a sidecar); `permissions.allow`, `.deny` and `trustedWorkspaces` (settings.json).
+    """
     out: list[tuple[str, object, str]] = []
     if rel == CONFIG_REL:
-        us = _dict(doc.get("userSettings"))
-        grants = _dict(us.get("globalPermissionGrants"))
-        for lst in ("allow", "deny"):
-            for v in _list(grants.get(lst)):
-                out.append(("userSettings.globalPermissionGrants." + lst, v, ""))
+        user_settings = _dict(doc.get("userSettings"))
+        grants = _dict(user_settings.get("globalPermissionGrants"))
+        for list_key in ("allow", "deny"):
+            for value in _list(grants.get(list_key)):
+                out.append(("userSettings.globalPermissionGrants." + list_key, value, ""))
         for k in ("permissionGrantsV2Migrated", "sandboxEnabledAtV2Migration"):
-            if k in us:
-                out.append(("userSettings." + k, us[k], ""))
-        for name, sc in _dict(doc.get("sidecars")).items():
-            sc = _dict(sc)
-            if "enabled" in sc:
-                out.append(("sidecars.%s.enabled" % name, sc["enabled"], ""))
-            for v in _list(_dict(sc.get("resolvedPermissions")).get("accessGrants")):
-                out.append(("sidecars.%s.resolvedPermissions.accessGrants" % name, v, ""))
-    elif PROJECT_RX.match(rel):
+            if k in user_settings:
+                out.append(("userSettings." + k, user_settings[k], ""))
+        for name, sidecar in _dict(doc.get("sidecars")).items():
+            sidecar = _dict(sidecar)
+            if "enabled" in sidecar:
+                out.append(("sidecars.%s.enabled" % name, sidecar["enabled"], ""))
+            for value in _list(_dict(sidecar.get("resolvedPermissions")).get("accessGrants")):
+                out.append(("sidecars.%s.resolvedPermissions.accessGrants" % name, value, ""))
+    elif PROJECT_PATTERN.match(rel):
         folder = ""
-        for r in _list(_dict(doc.get("projectResources")).get("resources")):
-            uri = _dict(r).get("folderUri")
+        for resource in _list(_dict(doc.get("projectResources")).get("resources")):
+            uri = _dict(resource).get("folderUri")
             if isinstance(uri, str) and uri:
                 folder = uri_to_path(uri)
                 break
-        pg = _dict(doc.get("permissionGrants"))
-        inner = _dict(pg.get("permissionGrants"))
-        for lst in ("allow", "deny"):
-            for v in _list(inner.get(lst)):
-                out.append(("permissionGrants.permissionGrants." + lst, v, folder))
-        if "v2Migrated" in pg:
-            out.append(("permissionGrants.v2Migrated", pg["v2Migrated"], folder))
-    elif SIDECAR_RX.match(rel):
-        for v in _list(_dict(doc.get("agent_permissions")).get("access_grants")):
-            out.append(("agent_permissions.access_grants", v, ""))
+        project_grants = _dict(doc.get("permissionGrants"))
+        inner = _dict(project_grants.get("permissionGrants"))
+        for list_key in ("allow", "deny"):
+            for value in _list(inner.get(list_key)):
+                out.append(("permissionGrants.permissionGrants." + list_key, value, folder))
+        if "v2Migrated" in project_grants:
+            out.append(("permissionGrants.v2Migrated", project_grants["v2Migrated"], folder))
+    elif SIDECAR_PATTERN.match(rel):
+        for value in _list(_dict(doc.get("agent_permissions")).get("access_grants")):
+            out.append(("agent_permissions.access_grants", value, ""))
     elif rel == CLI_SETTINGS_REL:
         perms = _dict(doc.get("permissions"))
-        for lst in ("allow", "deny"):
-            for v in _list(perms.get(lst)):
-                out.append(("permissions." + lst, v, ""))
-        for v in _list(doc.get("trustedWorkspaces")):
-            path = uri_to_path(v) if isinstance(v, str) else ""
-            out.append(("trustedWorkspace", path or v, path))
+        for list_key in ("allow", "deny"):
+            for value in _list(perms.get(list_key)):
+                out.append(("permissions." + list_key, value, ""))
+        for value in _list(doc.get("trustedWorkspaces")):
+            path = uri_to_path(value) if isinstance(value, str) else ""
+            out.append(("trustedWorkspace", path or value, path))
     return out
 
 
-def describe_payload(kind: str, p: dict) -> str:
-    """One line describing a tool step's result or a system event."""
+def describe_payload(kind: str, payload: dict) -> str:
+    """Return one line describing a tool step's result or a system event."""
     if kind == "run_command":
         return _join(
-            p.get("command_line") or p.get("command") or "",
-            "[rejected by user]" if p.get("user_rejected") else "",
-            "[timed out]" if p.get("timed_out") else "",
-            "exit=%s" % p["exit_code"] if "exit_code" in p else "",
-            _output(p),
+            payload.get("command_line") or payload.get("command") or "",
+            "[rejected by user]" if payload.get("user_rejected") else "",
+            "[timed out]" if payload.get("timed_out") else "",
+            "exit=%s" % payload["exit_code"] if "exit_code" in payload else "",
+            _output(payload),
         )
     if kind in ("command_status", "shell_exec"):
         return _join(
-            p.get("command", ""),
-            "exit=%s" % p["exit_code"] if "exit_code" in p else "",
-            _output(p) or p.get("error_message", ""),
+            payload.get("command", ""),
+            "exit=%s" % payload["exit_code"] if "exit_code" in payload else "",
+            _output(payload) or payload.get("error_message", ""),
         )
     if kind == "send_command_input":
         return "input to %s: %s%s" % (
-            p.get("command_id", ""),
-            p.get("input", ""),
-            " [terminate]" if p.get("terminate") else "",
+            payload.get("command_id", ""),
+            payload.get("input", ""),
+            " [terminate]" if payload.get("terminate") else "",
         )
     if kind == "view_file":
-        rng = ""
-        if p.get("start_line") or p.get("end_line"):
-            rng = ":%s-%s" % (p.get("start_line", ""), p.get("end_line", ""))
-        return uri_to_path(p.get("absolute_path_uri", "")) + rng
+        line_range = ""
+        if payload.get("start_line") or payload.get("end_line"):
+            line_range = ":%s-%s" % (payload.get("start_line", ""), payload.get("end_line", ""))
+        return uri_to_path(payload.get("absolute_path_uri", "")) + line_range
     if kind == "list_directory":
-        return uri_to_path(p.get("directory_path_uri", ""))
+        return uri_to_path(payload.get("directory_path_uri", ""))
     if kind == "grep_search":
         return _join(
-            p.get("query", ""), uri_to_path(p.get("search_path_uri", "")), p.get("command_run", "")
+            payload.get("query", ""),
+            uri_to_path(payload.get("search_path_uri", "")),
+            payload.get("command_run", ""),
         )
     if kind == "find":
-        return _join(p.get("pattern", ""), p.get("search_directory", ""), p.get("command_run", ""))
+        return _join(
+            payload.get("pattern", ""),
+            payload.get("search_directory", ""),
+            payload.get("command_run", ""),
+        )
     if kind == "write_to_file":
-        return uri_to_path(p.get("target_file_uri", "")) + (
-            " [created]" if p.get("file_created") else ""
+        return uri_to_path(payload.get("target_file_uri", "")) + (
+            " [created]" if payload.get("file_created") else ""
         )
     if kind == "file_change":
-        return _join(uri_to_path(p.get("absolute_path_uri", "")), p.get("instruction", ""))
-    if kind == "code_action":
-        spec = p.get("action_spec") or {}
-        kindname = path = ""
-        for key in ("command", "create_file", "delete_file", "sed"):
-            sub = spec.get(key)
-            if sub:
-                kindname, path = key, _path_of(sub.get("file") or sub.get("path"))
-                break
-        return _join(kindname, path, p.get("description") or p.get("code_instruction", ""))
-    if kind == "read_url_content":
-        return p.get("resolved_url") or p.get("url", "")
-    if kind == "search_web":
-        return p.get("query", "")
-    if kind == "mcp_tool":
-        tc = p.get("tool_call") or {}
         return _join(
-            "%s/%s" % (p.get("server_name", ""), tc.get("name", "")),
-            "[rejected by user]" if p.get("user_rejected") else "",
-            p.get("result_string", ""),
+            uri_to_path(payload.get("absolute_path_uri", "")), payload.get("instruction", "")
+        )
+    if kind == "code_action":
+        spec = payload.get("action_spec") or {}
+        action_kind = path = ""
+        for key in ("command", "create_file", "delete_file", "sed"):
+            action = spec.get(key)
+            if action:
+                action_kind, path = key, _path_of(action.get("file") or action.get("path"))
+                break
+        return _join(
+            action_kind, path, payload.get("description") or payload.get("code_instruction", "")
+        )
+    if kind == "read_url_content":
+        return payload.get("resolved_url") or payload.get("url", "")
+    if kind == "search_web":
+        return payload.get("query", "")
+    if kind == "mcp_tool":
+        tool_call = payload.get("tool_call") or {}
+        return _join(
+            "%s/%s" % (payload.get("server_name", ""), tool_call.get("name", "")),
+            "[rejected by user]" if payload.get("user_rejected") else "",
+            payload.get("result_string", ""),
         )
     if kind == "agency_tool_call":
-        return "%s.%s" % (p.get("agent_name", ""), p.get("function_name", ""))
+        return "%s.%s" % (payload.get("agent_name", ""), payload.get("function_name", ""))
     if kind == "invoke_subagent":
         children = " ".join(
-            r.get("conversation_id", "") for r in p.get("results", []) if r.get("conversation_id")
+            result.get("conversation_id", "")
+            for result in payload.get("results", [])
+            if result.get("conversation_id")
         )
         return _join(
-            p.get("subagent_name", ""),
-            p.get("prompt", ""),
+            payload.get("subagent_name", ""),
+            payload.get("prompt", ""),
             "children: " + children if children else "",
         )
     if kind == "ask_question":
-        qs = []
-        for q in p.get("questions", []):
-            ans = (
-                q.get("write_in_response")
-                or " ".join(q.get("selected_option_ids", []))
-                or ("skipped" if q.get("skipped") else "")
+        answers = []
+        for question in payload.get("questions", []):
+            answer = (
+                question.get("write_in_response")
+                or " ".join(question.get("selected_option_ids", []))
+                or ("skipped" if question.get("skipped") else "")
             )
-            qs.append(q.get("question", "") + (" -> " + ans if ans else ""))
-        return "; ".join(qs)
+            answers.append(question.get("question", "") + (" -> " + answer if answer else ""))
+        return "; ".join(answers)
     if kind == "generic":
-        return (p.get("result") or {}).get("result", "")
+        return (payload.get("result") or {}).get("result", "")
     if kind == "checkpoint":
         return "checkpoint: " + (
-            p.get("conversation_title") or p.get("session_summary") or p.get("user_intent", "")
+            payload.get("conversation_title")
+            or payload.get("session_summary")
+            or payload.get("user_intent", "")
         )
     if kind == "system_message":
-        return "%s: %s" % (p.get("event_type") or "system_message", p.get("message", ""))
+        return "%s: %s" % (
+            payload.get("event_type") or "system_message",
+            payload.get("message", ""),
+        )
     if kind == "ephemeral_message":
-        return "ephemeral: " + p.get("content", "")
+        return "ephemeral: " + payload.get("content", "")
     if kind == "task_boundary":
         return "task %s [%s]: %s" % (
-            p.get("task_name", ""),
-            p.get("task_status", ""),
-            p.get("task_summary", ""),
+            payload.get("task_name", ""),
+            payload.get("task_status", ""),
+            payload.get("task_summary", ""),
         )
     if kind == "notify_user":
-        return "notify user: " + p.get("notification_content", "")
+        return "notify user: " + payload.get("notification_content", "")
     if kind in ("error", "error_message"):
-        e = p.get("error", {}) if kind == "error_message" else p
+        error = payload.get("error", {}) if kind == "error_message" else payload
         return "error: " + (
-            e.get("short_error") or e.get("user_error_message") or e.get("full_error", "")
+            error.get("short_error")
+            or error.get("user_error_message")
+            or error.get("full_error", "")
         )
     if kind == "finish":
-        return "finish: " + p.get("output_string", "")
+        return "finish: " + payload.get("output_string", "")
     if kind == "memory":
-        return "memory %s action=%s" % (p.get("memory_id", ""), p.get("action", ""))
+        return "memory %s action=%s" % (payload.get("memory_id", ""), payload.get("action", ""))
     if kind == "directory_rules":
-        return "directory rules: " + " ".join(uri_to_path(u) for u in p.get("rule_file_uris", []))
+        return "directory rules: " + " ".join(
+            uri_to_path(uri) for uri in payload.get("rule_file_uris", [])
+        )
     if kind == "conversation_history":
-        return "conversation history injected (%d chars)" % len(p.get("content", ""))
-    return compact_json(p)
+        return "conversation history injected (%d chars)" % len(payload.get("content", ""))
+    return compact_json(payload)
 
 
 class AntigravityParser(Parser):
+    """Parse Antigravity conversations, the brain mirror, histories and permission files."""
+
     agent = "antigravity"
     name = "antigravity"
     has_secondary = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a conversation, summaries, brain, history or permission file."""
         return (
             artifact.rel == HISTORY_REL
-            or bool(BRAIN_RX.match(artifact.rel))
-            or bool(SUMMARIES_RX.match(artifact.rel))
-            or bool(CONV_RX.match(artifact.rel))
+            or bool(BRAIN_PATTERN.match(artifact.rel))
+            or bool(SUMMARIES_PATTERN.match(artifact.rel))
+            or bool(CONVERSATION_PATTERN.match(artifact.rel))
             or self._standing(artifact.rel)
         )
 
@@ -1037,26 +889,29 @@ class AntigravityParser(Parser):
     def _standing(rel: str) -> bool:
         return (
             rel in (CONFIG_REL, CLI_SETTINGS_REL)
-            or bool(PROJECT_RX.match(rel))
-            or bool(SIDECAR_RX.match(rel))
+            or bool(PROJECT_PATTERN.match(rel))
+            or bool(SIDECAR_PATTERN.match(rel))
         )
 
     def secondary(self, artifact: Artifact) -> bool:
-        return artifact.rel == HISTORY_REL or bool(BRAIN_RX.match(artifact.rel))
+        """Return True for the CLI history and the brain mirror."""
+        return artifact.rel == HISTORY_REL or bool(BRAIN_PATTERN.match(artifact.rel))
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
-        if BRAIN_RX.match(artifact.rel):
+        """Return the wider brain window: it stamps steps at creation, not completion."""
+        if BRAIN_PATTERN.match(artifact.rel):
             return BRAIN_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one Antigravity file."""
         if artifact.rel == HISTORY_REL:
             yield from self._parse_history(artifact, opts)
-        elif BRAIN_RX.match(artifact.rel):
+        elif BRAIN_PATTERN.match(artifact.rel):
             yield from self._parse_brain(artifact, opts)
         elif self._standing(artifact.rel):
             yield from self._parse_standing(artifact)
-        elif SUMMARIES_RX.match(artifact.rel):
+        elif SUMMARIES_PATTERN.match(artifact.rel):
             yield from self._parse_summaries(artifact, opts)
         else:
             yield from self._parse_conversation(artifact, opts)
@@ -1064,63 +919,65 @@ class AntigravityParser(Parser):
     # -- history.jsonl ------------------------------------------------------------
     def _parse_history(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         errors: list = []
-        for n, rec in iter_jsonl(artifact.disk_path, errors):
+        for line_number, record in iter_jsonl(artifact.disk_path, errors):
             row = self.base_row(artifact)
-            row.source_line = n
-            row.timestamp_utc = to_utc(rec.get("timestamp"))
-            row.project_path = uri_to_path(str(rec.get("workspace") or ""))
-            row.session_id = str(rec.get("conversationId") or "")
+            row.source_line = line_number
+            row.timestamp_utc = to_utc(record.get("timestamp"))
+            row.project_path = uri_to_path(str(record.get("workspace") or ""))
+            row.session_id = str(record.get("conversationId") or "")
             row.turn_type = "user"
-            row.text = compact(rec.get("display"))
+            row.text = compact(record.get("display"))
             yield row
         yield from error_rows(self, artifact, errors)
 
     # -- brain/<uuid>/.system_generated/logs ------------------------------------
     def _parse_brain(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        m = BRAIN_RX.match(artifact.rel)
-        if not m:
+        match = BRAIN_PATTERN.match(artifact.rel)
+        if not match:
             return
-        blob = brain_copy(artifact.disk_path, m.group(3) or "", m.group(4) or "")
+        blob = brain_copy(artifact.disk_path, match.group(3) or "", match.group(4) or "")
         if blob is None:
             return
-        session_id = m.group(2)
+        session_id = match.group(2)
         errors: list = []
         calls: list[dict] = []
-        for n, raw in enumerate(blob.split(b"\n"), 1):
+        for line_number, raw in enumerate(blob.split(b"\n"), 1):
             stripped = raw.strip()
             if not stripped:
                 continue
             try:
-                rec = json.loads(stripped.decode("utf-8", errors="replace"))
-            except ValueError as e:
-                errors.append((n, "unparseable line (%s)" % e, line_text(raw)))
+                record = json.loads(stripped.decode("utf-8", errors="replace"))
+            except ValueError as error:
+                errors.append((line_number, "unparseable line (%s)" % error, line_text(raw)))
                 continue
-            if isinstance(rec, dict):
-                yield from self._brain_rows(artifact, n, rec, session_id, calls, opts)
+            if isinstance(record, dict):
+                yield from self._brain_rows(artifact, line_number, record, session_id, calls, opts)
         yield from error_rows(self, artifact, errors, session_id)
 
     def _brain_rows(
         self,
         artifact: Artifact,
-        n: int,
-        rec: dict,
+        line_number: int,
+        record: dict,
         session_id: str,
         calls: list[dict],
         opts: Options,
     ) -> Iterator[Row]:
-        """The rows of one brain line, rendered as `_step_rows` renders the
-        database step of the same kind. `calls` holds the tool calls of the
-        last PLANNER_RESPONSE not yet matched to a GENERIC line."""
-        kind = str(rec.get("type") or "")
-        status = str(rec.get("status") or "").lower()
-        content = text_of(rec.get("content"))
-        truncated = [str(f) for f in _list(rec.get("truncated_fields"))]
+        """Yield the rows of one brain line as `_step_rows` renders the same step kind.
+
+        `calls` holds the tool calls of the last PLANNER_RESPONSE not yet matched to a
+        GENERIC line.
+        """
+        kind = str(record.get("type") or "")
+        status = str(record.get("status") or "").lower()
+        content = text_of(record.get("content"))
+        truncated = [str(field) for field in _list(record.get("truncated_fields"))]
 
         def base(turn_type: str, text: str, field: str = "content") -> Row:
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = line_number
             row.session_id = session_id
-            row.timestamp_utc = to_utc(rec.get("created_at"))
+            row.timestamp_utc = to_utc(record.get("created_at"))
             row.turn_type = turn_type
             if field in truncated:
                 text += " [truncated: %s]" % field
@@ -1128,32 +985,34 @@ class AntigravityParser(Parser):
             return row
 
         if kind == "USER_INPUT":
-            implicit = rec.get("source") == "USER_IMPLICIT"
+            implicit = record.get("source") == "USER_IMPLICIT"
             calls.clear()
             yield base("system" if implicit else "user", content)
             return
         if kind == "PLANNER_RESPONSE":
-            thinking = text_of(rec.get("thinking"))
+            thinking = text_of(record.get("thinking"))
             if thinking and opts.include_thinking:
                 yield base("thinking", thinking, "thinking")
             if content:
                 yield base("assistant", content)
-            calls[:] = [_dict(tc) for tc in _list(rec.get("tool_calls"))]
-            for tc in calls:
-                row = base("tool_use", tool_args_summary(_brain_args(tc)), "tool_calls")
-                row.tool_name = str(tc.get("name") or "")
-                row.tool_use_id = str(tc.get("id") or "")
+            calls[:] = [_dict(raw_call) for raw_call in _list(record.get("tool_calls"))]
+            for tool_call in calls:
+                row = base("tool_use", tool_args_summary(_brain_args(tool_call)), "tool_calls")
+                row.tool_name = str(tool_call.get("name") or "")
+                row.tool_use_id = str(tool_call.get("id") or "")
                 yield row
             return
         if kind == "SYSTEM_MESSAGE":
             text = "system_message: " + content
         elif kind == "ERROR_MESSAGE":
-            err = rec.get("error")
-            if isinstance(err, dict):
-                err = (
-                    err.get("short_error") or err.get("user_error_message") or err.get("full_error")
+            error = record.get("error")
+            if isinstance(error, dict):
+                error = (
+                    error.get("short_error")
+                    or error.get("user_error_message")
+                    or error.get("full_error")
                 )
-            text = "error: " + (err if isinstance(err, str) and err else content)
+            text = "error: " + (error if isinstance(error, str) and error else content)
         else:
             text = content or "step %s" % kind.lower()
         if status and status != "done":
@@ -1161,10 +1020,10 @@ class AntigravityParser(Parser):
         if kind in ("SYSTEM_MESSAGE", "ERROR_MESSAGE") or not calls:
             yield base("system", text)
             return
-        tc = calls.pop(0)
+        tool_call = calls.pop(0)
         row = base("tool_result", text)
-        row.tool_name = str(tc.get("name") or "")
-        row.tool_use_id = str(tc.get("id") or "")
+        row.tool_name = str(tool_call.get("name") or "")
+        row.tool_use_id = str(tool_call.get("id") or "")
         yield row
 
     # -- standing permission files ----------------------------------------------
@@ -1179,9 +1038,9 @@ class AntigravityParser(Parser):
             row.text = "parser: unreadable %s" % artifact.rel
             yield row
             return
-        for n, (key, value, project) in enumerate(standing_entries(artifact.rel, doc), 1):
+        for position, (key, value, project) in enumerate(standing_entries(artifact.rel, doc), 1):
             row = self.base_row(artifact)
-            row.source_line = n
+            row.source_line = position
             row.timestamp_utc = mtime
             row.project_path = project
             row.turn_type = "system"
@@ -1195,19 +1054,22 @@ class AntigravityParser(Parser):
     def _parse_summaries(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
-        with open_copy(artifact.disk_path) as con:
-            if "conversation_summaries" not in table_names(con):
+        with open_copy(artifact.disk_path) as connection:
+            if "conversation_summaries" not in table_names(connection):
                 return
-            for n, r in enumerate(
-                con.execute("select * from conversation_summaries order by last_modified_time"), 1
+            for position, summary in enumerate(
+                connection.execute(
+                    "select * from conversation_summaries order by last_modified_time"
+                ),
+                1,
             ):
-                r = dict(r)
+                summary = dict(summary)
                 row = self.base_row(artifact)
-                row.source_line = n
-                row.session_id = str(r.get("conversation_id") or "")
-                row.timestamp_utc = to_utc(r.get("last_modified_time"))
+                row.source_line = position
+                row.session_id = str(summary.get("conversation_id") or "")
+                row.timestamp_utc = to_utc(summary.get("last_modified_time"))
                 try:
-                    uris = json.loads(r.get("workspace_uris") or "[]")
+                    uris = json.loads(summary.get("workspace_uris") or "[]")
                 except ValueError:
                     uris = []
                 row.project_path = uri_to_path(uris[0]) if uris else ""
@@ -1215,12 +1077,12 @@ class AntigravityParser(Parser):
                 row.text = compact(
                     _join(
                         "conversation summary",
-                        r.get("title") or r.get("preview") or "",
-                        str(r.get("status") or ""),
-                        "%s steps" % r.get("step_count", 0),
-                        "agent=%s" % r["agent_name"] if r.get("agent_name") else "",
-                        "parent=%s" % r["parent_conversation_id"]
-                        if r.get("parent_conversation_id")
+                        summary.get("title") or summary.get("preview") or "",
+                        str(summary.get("status") or ""),
+                        "%s steps" % summary.get("step_count", 0),
+                        "agent=%s" % summary["agent_name"] if summary.get("agent_name") else "",
+                        "parent=%s" % summary["parent_conversation_id"]
+                        if summary.get("parent_conversation_id")
                         else "",
                     ),
                 )
@@ -1230,33 +1092,37 @@ class AntigravityParser(Parser):
     def _parse_conversation(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
         if not is_sqlite(artifact.disk_path):
             return
-        with open_copy(artifact.disk_path) as con:
-            tables = table_names(con)
+        with open_copy(artifact.disk_path) as connection:
+            tables = table_names(connection)
             if "steps" not in tables:
                 return
             session_id = artifact.disk_path.name[:-3]
             project_path = branch = source = ""
-            m = CONV_RX.match(artifact.rel)
-            data_dir = m.group(1) if m else ""
+            match = CONVERSATION_PATTERN.match(artifact.rel)
+            data_dir = match.group(1) if match else ""
             if "trajectory_meta" in tables:
-                tm = con.execute("select * from trajectory_meta limit 1").fetchone()
-                if tm:
-                    session_id = tm["cascade_id"] or session_id
-                    if tm["source"] is not None:
-                        source = TRAJECTORY_SOURCES.get(tm["source"], str(tm["source"]))
+                trajectory = connection.execute("select * from trajectory_meta limit 1").fetchone()
+                if trajectory:
+                    session_id = trajectory["cascade_id"] or session_id
+                    if trajectory["source"] is not None:
+                        source = TRAJECTORY_SOURCES.get(
+                            trajectory["source"], str(trajectory["source"])
+                        )
             if "trajectory_metadata_blob" in tables:
-                blob = con.execute("select data from trajectory_metadata_blob limit 1").fetchone()
+                blob = connection.execute(
+                    "select data from trajectory_metadata_blob limit 1"
+                ).fetchone()
                 if blob and blob[0]:
                     try:
                         meta = decode(blob[0], "CortexTrajectoryMetadata", SCHEMA)
                     except ValueError:
                         meta = {}
-                    ws = (meta.get("workspaces") or [{}])[0]
+                    workspace = (meta.get("workspaces") or [{}])[0]
                     project_path = uri_to_path(
-                        ws.get("workspace_folder_absolute_uri")
+                        workspace.get("workspace_folder_absolute_uri")
                         or (meta.get("workspace_uris") or [""])[0]
                     )
-                    branch = ws.get("branch_name", "")
+                    branch = workspace.get("branch_name", "")
                     if meta.get("created_at"):
                         row = self._row(artifact, 0, session_id, project_path, branch)
                         row.timestamp_utc = meta["created_at"]
@@ -1277,50 +1143,64 @@ class AntigravityParser(Parser):
                         yield row
             models: dict[int, str] = {}
             if "gen_metadata" in tables:
-                for (data,) in con.execute("select data from gen_metadata"):
+                for (data,) in connection.execute("select data from gen_metadata"):
                     try:
-                        gm = decode(data or b"", "CortexStepGeneratorMetadata", SCHEMA)
+                        generator = decode(data or b"", "CortexStepGeneratorMetadata", SCHEMA)
                     except ValueError:
                         continue
-                    cm = gm.get("chat_model") or {}
-                    model = cm.get("response_model") or cm.get("model_display_name") or ""
-                    for idx in gm.get("step_indices", []):
-                        models[idx] = model
+                    chat_model = generator.get("chat_model") or {}
+                    model = (
+                        chat_model.get("response_model")
+                        or chat_model.get("model_display_name")
+                        or ""
+                    )
+                    for index in generator.get("step_indices", []):
+                        models[index] = model
             seen_models: dict = {}
             bad = 0
-            cols = {r[1] for r in con.execute("pragma table_info(steps)")}
-            perm_col = "permissions" if "permissions" in cols else "NULL AS permissions"
-            for srow in con.execute(
+            columns = {
+                column_info[1] for column_info in connection.execute("pragma table_info(steps)")
+            }
+            permissions_column = (
+                "permissions" if "permissions" in columns else "NULL AS permissions"
+            )
+            for step_row in connection.execute(
                 "select idx, step_type, status, metadata, step_payload, %s from steps order by idx"
-                % perm_col
+                % permissions_column
             ):
-                idx = srow["idx"]
+                index = step_row["idx"]
                 try:
                     step = (
-                        decode(srow["step_payload"], "Step", SCHEMA) if srow["step_payload"] else {}
+                        decode(step_row["step_payload"], "Step", SCHEMA)
+                        if step_row["step_payload"]
+                        else {}
                     )
-                    if "metadata" not in step and srow["metadata"]:
-                        step["metadata"] = decode(srow["metadata"], "CortexStepMetadata", SCHEMA)
+                    if "metadata" not in step and step_row["metadata"]:
+                        step["metadata"] = decode(
+                            step_row["metadata"], "CortexStepMetadata", SCHEMA
+                        )
                 except ValueError:
                     bad += 1
                     continue
-                model = models.get(idx, "")
+                model = models.get(index, "")
                 change = track_change("model", seen_models, session_id, model)
                 if change:
                     # The model at the conversation's first generated step and
-                    # on every change, before that step's own rows (#96).
-                    md = step.get("metadata") or {}
-                    row = self._row(artifact, idx, session_id, project_path, branch)
-                    row.timestamp_utc = md.get("created_at") or md.get("completed_at", "")
+                    # on every change, before that step's own rows.
+                    metadata = step.get("metadata") or {}
+                    row = self._row(artifact, index, session_id, project_path, branch)
+                    row.timestamp_utc = metadata.get("created_at") or metadata.get(
+                        "completed_at", ""
+                    )
                     row.turn_type = "system"
                     row.model = model
                     row.text = change
                     yield row
                 yield from self._step_rows(
                     artifact,
-                    idx,
-                    srow["step_type"],
-                    srow["status"],
+                    index,
+                    step_row["step_type"],
+                    step_row["status"],
                     step,
                     session_id,
                     project_path,
@@ -1329,7 +1209,7 @@ class AntigravityParser(Parser):
                     opts,
                 )
                 yield from self._permission_rows(
-                    artifact, idx, step, srow["permissions"], session_id, project_path, branch
+                    artifact, index, step, step_row["permissions"], session_id, project_path, branch
                 )
             if bad:
                 row = self._row(artifact, 0, session_id, project_path, branch)
@@ -1338,10 +1218,10 @@ class AntigravityParser(Parser):
                 yield row
 
     def _row(
-        self, artifact: Artifact, idx: int, session_id: str, project_path: str, branch: str
+        self, artifact: Artifact, index: int, session_id: str, project_path: str, branch: str
     ) -> Row:
         row = self.base_row(artifact)
-        row.source_line = idx
+        row.source_line = index
         row.session_id = session_id
         row.project_path = project_path
         row.git_branch = branch
@@ -1350,44 +1230,51 @@ class AntigravityParser(Parser):
     def _permission_rows(
         self,
         artifact: Artifact,
-        idx: int,
+        index: int,
         step: dict,
         column: bytes | None,
         session_id: str,
         project_path: str,
         branch: str,
     ) -> Iterator[Row]:
-        """One `system` row per grant in the step's permissions: the
-        `steps.permissions` column, else Step field 133 of the payload."""
-        perms = step.get("permissions") or {}
+        """Yield one `system` row per grant in a step's permissions.
+
+        The permissions are the `steps.permissions` column, else Step field 133 of the
+        payload.
+        """
+        permissions = step.get("permissions") or {}
         if column:
             try:
-                perms = decode(column, "TrajectoryPermissions", SCHEMA)
+                permissions = decode(column, "TrajectoryPermissions", SCHEMA)
             except ValueError:
-                row = self._row(artifact, idx, session_id, project_path, branch)
+                row = self._row(artifact, index, session_id, project_path, branch)
                 row.turn_type = "system"
-                row.text = "parser: the permissions of step %d could not be decoded" % idx
+                row.text = "parser: the permissions of step %d could not be decoded" % index
                 yield row
                 return
-        texts = permission_texts(perms)
+        texts = permission_texts(permissions)
         if not texts:
             return
-        md = step.get("metadata") or {}
-        tc = md.get("tool_call") or {}
-        ts = md.get("completed_at") or md.get("finished_generating_at") or md.get("created_at", "")
+        metadata = step.get("metadata") or {}
+        tool_call = metadata.get("tool_call") or {}
+        timestamp = (
+            metadata.get("completed_at")
+            or metadata.get("finished_generating_at")
+            or metadata.get("created_at", "")
+        )
         for text in texts:
-            row = self._row(artifact, idx, session_id, project_path, branch)
-            row.timestamp_utc = ts
+            row = self._row(artifact, index, session_id, project_path, branch)
+            row.timestamp_utc = timestamp
             row.turn_type = "system"
-            row.tool_name = tc.get("name") or tc.get("original_name", "")
-            row.tool_use_id = tc.get("id", "")
+            row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+            row.tool_use_id = tool_call.get("id", "")
             row.text = compact(text)
             yield row
 
     def _step_rows(
         self,
         artifact: Artifact,
-        idx: int,
+        index: int,
         step_type: int,
         status: int,
         step: dict,
@@ -1397,23 +1284,27 @@ class AntigravityParser(Parser):
         model: str,
         opts: Options,
     ) -> Iterator[Row]:
-        md = step.get("metadata") or {}
-        created = md.get("created_at", "")
-        completed = md.get("completed_at") or md.get("finished_generating_at") or created
+        metadata = step.get("metadata") or {}
+        created = metadata.get("created_at", "")
+        completed = (
+            metadata.get("completed_at") or metadata.get("finished_generating_at") or created
+        )
         kind = next((k for k in PAYLOAD_KINDS if k in step), "")
         payload = step.get(kind) or {}
         status_name = STEP_STATUS.get(status, str(status))
         type_name = STEP_TYPES.get(step_type, str(step_type))
 
-        def base(ts: str) -> Row:
-            row = self._row(artifact, idx, session_id, project_path, branch)
-            row.timestamp_utc = ts
+        def base(timestamp: str) -> Row:
+            row = self._row(artifact, index, session_id, project_path, branch)
+            row.timestamp_utc = timestamp
             row.model = model
             return row
 
         if kind == "user_input":
             row = base(created)
-            row.turn_type = "system" if md.get("source") == STEP_SOURCE_USER_IMPLICIT else "user"
+            row.turn_type = (
+                "system" if metadata.get("source") == STEP_SOURCE_USER_IMPLICIT else "user"
+            )
             text = payload.get("query") or payload.get("user_response") or ""
             if payload.get("is_queued_message"):
                 text = "[queued] " + text
@@ -1434,26 +1325,26 @@ class AntigravityParser(Parser):
                 row.turn_type = "assistant"
                 row.text = compact(text)
                 yield row
-            for tc in payload.get("tool_calls", []):
+            for tool_call in payload.get("tool_calls", []):
                 row = base(completed)
                 row.turn_type = "tool_use"
-                row.tool_name = tc.get("name") or tc.get("original_name", "")
-                row.tool_use_id = tc.get("id", "")
-                row.text = compact(tool_args_summary(tc.get("arguments_json", "")))
+                row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+                row.tool_use_id = tool_call.get("id", "")
+                row.text = compact(tool_args_summary(tool_call.get("arguments_json", "")))
                 yield row
             return
 
-        tc = md.get("tool_call")
+        tool_call = metadata.get("tool_call")
         text = describe_payload(kind, payload) if kind else "step %s" % type_name
         if status_name != "done":
             text = "[%s] %s" % (status_name, text)
         if kind == "run_command" and payload.get("ran_in_sandbox"):
             text += " sandbox=true"
-        if tc:
+        if tool_call:
             row = base(completed)
             row.turn_type = "tool_result"
-            row.tool_name = tc.get("name") or tc.get("original_name", "")
-            row.tool_use_id = tc.get("id", "")
+            row.tool_name = tool_call.get("name") or tool_call.get("original_name", "")
+            row.tool_use_id = tool_call.get("id", "")
         else:
             row = base(created)
             row.turn_type = "system"
@@ -1461,7 +1352,7 @@ class AntigravityParser(Parser):
         yield row
         if kind in ("run_command", "mcp_tool") and payload.get("user_rejected"):
             # The user's rejection of the call as its own row, beside the
-            # result that also carries `[rejected by user]` (#97).
+            # result that also carries `[rejected by user]`.
             decision = base(row.timestamp_utc)
             decision.turn_type = "system"
             decision.tool_name = row.tool_name or (payload.get("tool_call") or {}).get("name", "")

@@ -291,6 +291,7 @@ def load_session(text: str) -> tuple[dict, str]:
 
 class ContinueParser(Parser):
     """Parse Continue's session files, `dev_data` events, CLI state files and CLI logs."""
+
     agent = "continue"
     name = "continue"
 
@@ -878,15 +879,15 @@ class ContinueParser(Parser):
     @staticmethod
     def _post_text(url: str, fields: str | None, status: str, source: str) -> str:
         try:
-            doc = json.loads(fields) if fields else {}
+            document = json.loads(fields) if fields else {}
         except ValueError:
-            doc = {}
-        doc = doc if isinstance(doc, dict) else {}
-        agent = doc.get("agentId")
+            document = {}
+        document = document if isinstance(document, dict) else {}
+        agent = document.get("agentId")
         if not isinstance(agent, str) or not agent:
             match = AGENT_URL_RX.search(url)
             agent = match.group(1) if match else "-"
-        keys = doc.get("metadataKeys")
+        keys = document.get("metadataKeys")
         keys = ",".join(str(key) for key in keys) if isinstance(keys, list) and keys else "-"
         return "agent metadata posted: agent %s keys %s %s (from %s, log line time, host-local)" % (
             agent,

@@ -61,6 +61,7 @@ def _bool(value) -> str:
 
 class CopilotDesktopParser(Parser):
     """Parse Copilot Desktop's `data.db` and its checkpoint refs."""
+
     agent = "copilot-desktop"
     name = "copilot-desktop"
 

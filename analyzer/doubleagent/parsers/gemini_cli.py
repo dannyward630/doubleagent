@@ -184,8 +184,8 @@ def result_text(result) -> str:
 
 def tool_text(call: dict) -> str:
     """Return the `tool_use` text of a tool call, with any distinct display name."""
-    args = call.get("args")
-    arguments_text = compact_json(args) if args not in (None, "") else ""
+    arguments = call.get("args")
+    arguments_text = compact_json(arguments) if arguments not in (None, "") else ""
     label = call.get("displayName")
     if label and label != call.get("name"):
         return "%s: %s" % (label, arguments_text) if arguments_text else str(label)
@@ -326,9 +326,9 @@ def trusted_folder_rows(parser: Parser, artifact: Artifact) -> Iterator[Row]:
     """
     timestamp = file_mtime(artifact)
     try:
-        doc = parse_jsonc(artifact.disk_path.read_bytes())
+        document = parse_jsonc(artifact.disk_path.read_bytes())
     except (OSError, ValueError):
-        doc = None
+        document = None
 
     def row(text: str, project: str = "") -> Row:
         new_row = parser.base_row(artifact)
@@ -339,10 +339,10 @@ def trusted_folder_rows(parser: Parser, artifact: Artifact) -> Iterator[Row]:
         new_row.text = compact(text)
         return new_row
 
-    if not isinstance(doc, dict):
+    if not isinstance(document, dict):
         yield row("parser: %s is not a JSON object" % artifact.rel)
         return
-    for path, value in doc.items():
+    for path, value in document.items():
         yield row(
             "permission setting: trustedFolders.%s=%s (from %s, file mtime)"
             % (path, setting_value(value), artifact.rel),
@@ -350,9 +350,9 @@ def trusted_folder_rows(parser: Parser, artifact: Artifact) -> Iterator[Row]:
         )
 
 
-def _dotted(doc: dict, key: str):
+def _dotted(document: dict, key: str):
     """The value at the dotted `key` of nested objects, or None."""
-    value: object = doc
+    value: object = document
     for part in key.split("."):
         if not isinstance(value, dict):
             return None
@@ -399,7 +399,7 @@ def history_items(text: str, errors: list) -> tuple[list, dict]:
     (`iter_json_array`); a file that is neither form is one error.
     """
     try:
-        doc = json.loads(text)
+        document = json.loads(text)
     except ValueError as error:
         if text.lstrip().startswith("["):
             return kilo_code.iter_json_array(text, errors), {}
@@ -408,10 +408,10 @@ def history_items(text: str, errors: list) -> tuple[list, dict]:
             return kilo_code.iter_json_array(text[match.end() :], errors), {}
         errors.append((1, "unparseable chat history (%s)" % error, ""))
         return [], {}
-    if isinstance(doc, list):
-        return doc, {}
-    if isinstance(doc, dict) and isinstance(doc.get("history"), list):
-        return doc["history"], doc
+    if isinstance(document, list):
+        return document, {}
+    if isinstance(document, dict) and isinstance(document.get("history"), list):
+        return document["history"], document
     errors.append((1, "not a chat history: neither a JSON array nor an object with history", ""))
     return [], {}
 
@@ -421,6 +421,7 @@ def history_items(text: str, errors: list) -> tuple[list, dict]:
 
 class GeminiCliParser(Parser):
     """Parse Gemini CLI's sessions, prompt logs, history copies and standing permission files."""
+
     agent = "gemini-cli"
     name = "gemini-cli"
     has_secondary = True
@@ -486,18 +487,20 @@ class GeminiCliParser(Parser):
         """The file's JSON object, or None and the row saying it is not one."""
         try:
             raw = artifact.disk_path.read_bytes()
-            doc = parse_jsonc(raw) if jsonc else json.loads(raw.decode("utf-8", errors="replace"))
+            document = (
+                parse_jsonc(raw) if jsonc else json.loads(raw.decode("utf-8", errors="replace"))
+            )
         except (OSError, ValueError):
-            doc = None
-        if isinstance(doc, dict):
-            return doc, None
+            document = None
+        if isinstance(document, dict):
+            return document, None
         text = "parser: %s is not a JSON object" % artifact.rel
         return None, self._standing(artifact, file_mtime(artifact), "", text)
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
         # settings.json is read through strip-json-comments (settings.ts).
-        doc, bad = self._json_object(artifact, jsonc=True)
-        if doc is None:
+        document, bad = self._json_object(artifact, jsonc=True)
+        if document is None:
             if bad is not None:
                 yield bad
             return
@@ -510,18 +513,18 @@ class GeminiCliParser(Parser):
             return self._standing(artifact, timestamp, project, text)
 
         for key in SETTING_LISTS:
-            value = _dotted(doc, key)
+            value = _dotted(document, key)
             if isinstance(value, list):
                 for entry in value:
                     yield setting(key, entry)
             elif value is not None:
                 yield setting(key, value)
         for key in SETTING_SCALARS:
-            value = _dotted(doc, key)
+            value = _dotted(document, key)
             if value is not None:
                 yield setting(key, value)
         for key in RETENTION_KEYS:
-            value = _dotted(doc, "general.sessionRetention." + key)
+            value = _dotted(document, "general.sessionRetention." + key)
             if value is not None:
                 text = "session retention: general.sessionRetention.%s=%s %s" % (
                     key,
@@ -540,12 +543,12 @@ class GeminiCliParser(Parser):
             yield self._standing(artifact, timestamp, project, text % artifact.rel)
             return
         try:
-            doc = load_toml(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            document = load_toml(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError) as error:
             text = "parser: unreadable %s: %s" % (artifact.rel, error)
             yield self._standing(artifact, timestamp, project, text)
             return
-        rules = doc.get("rule")
+        rules = document.get("rule")
         if rules is None:
             return
         if not isinstance(rules, list):
@@ -572,15 +575,15 @@ class GeminiCliParser(Parser):
 
     def _parse_project_grants(self, artifact: Artifact) -> Iterator[Row]:
         # Both files are written with JSON.stringify and read with JSON.parse.
-        doc, bad = self._json_object(artifact, jsonc=False)
-        if doc is None:
+        document, bad = self._json_object(artifact, jsonc=False)
+        if document is None:
             if bad is not None:
                 yield bad
             return
         timestamp = file_mtime(artifact)
         source = "(from %s, file mtime)" % artifact.rel
         hooks = bool(HOOKS_RX.match(artifact.rel))
-        for project, value in doc.items():
+        for project, value in document.items():
             if hooks:
                 entries = value if isinstance(value, list) else [value]
                 pairs = [("trustedHooks", hook) for hook in entries]
@@ -622,14 +625,14 @@ class GeminiCliParser(Parser):
         except OSError as error:
             errors.append((0, "unreadable chat history (%s)" % error, ""))
             text = ""
-        items, doc = history_items(text, errors) if text else ([], {})
+        items, document = history_items(text, errors) if text else ([], {})
         if "tag" in match.groupdict():
             header = self._standing(
                 artifact,
                 file_mtime(artifact),
                 project,
                 "chat checkpoint: tag %s authType=%s (from %s, file mtime)"
-                % (unquote(match.group("tag")), doc.get("authType") or "-", artifact.rel),
+                % (unquote(match.group("tag")), document.get("authType") or "-", artifact.rel),
             )
         else:
             header = self._standing(
@@ -767,7 +770,7 @@ class GeminiCliParser(Parser):
         else:
             records, errors = self._jsonl_records(artifact)
 
-        meta: dict = {}
+        metadata: dict = {}
         # id -> [record, line, session_id]
         messages: OrderedDict[str, list] = OrderedDict()
         starts: list[tuple[int, str, str, str]] = []  # (line, ts, session_id, text)
@@ -842,14 +845,14 @@ class GeminiCliParser(Parser):
                         if isinstance(message, dict) and isinstance(message.get("id"), str):
                             latest_ts = max(latest_ts, to_utc(message.get("timestamp")))
                             put(message, line_number)
-                meta.update({key: value for key, value in changes.items() if key != "messages"})
+                metadata.update({key: value for key, value in changes.items() if key != "messages"})
                 if changes.get("summary"):
                     timestamp = to_utc(changes.get("lastUpdated")) or latest_ts
                     events.append(
                         (line_number, timestamp, session_id, "summary: %s" % changes["summary"])
                     )
             elif isinstance(record.get("sessionId"), str):
-                meta.update({key: value for key, value in record.items() if key != "messages"})
+                metadata.update({key: value for key, value in record.items() if key != "messages"})
                 session_id = record["sessionId"] or session_id
                 timestamp = to_utc(record.get("startTime"))
                 latest_ts = max(latest_ts, timestamp)
@@ -865,7 +868,7 @@ class GeminiCliParser(Parser):
                         latest_ts = max(latest_ts, to_utc(message.get("timestamp")))
                         put(message, line_number)
 
-        project = resolve_project(base, slug, str(meta.get("projectHash") or ""))
+        project = resolve_project(base, slug, str(metadata.get("projectHash") or ""))
         # Session start, then the surviving messages in replay order, then
         # summaries, rewinds and removals.
         for line, timestamp, record_session_id, text in starts:

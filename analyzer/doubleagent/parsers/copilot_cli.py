@@ -123,21 +123,21 @@ def _str(value) -> str:
     return value if isinstance(value, str) else compact_json(value)
 
 
-def args_text(args) -> str:
+def args_text(arguments) -> str:
     """Return the `tool_use` text of a call's arguments.
 
     A string argument (a `custom` grammar tool such as `apply_patch`) is kept as it is, else the
     first of `ARG_KEYS` is taken, else compact JSON.
     """
-    if isinstance(args, str):
-        return args
-    if isinstance(args, dict):
+    if isinstance(arguments, str):
+        return arguments
+    if isinstance(arguments, dict):
         for key in ARG_KEYS:
-            value = args.get(key)
+            value = arguments.get(key)
             if value not in (None, ""):
                 return _str(value)
-        return compact_json(args) if args else ""
-    return _str(args)
+        return compact_json(arguments) if arguments else ""
+    return _str(arguments)
 
 
 def result_text(data: dict) -> str:
@@ -255,6 +255,7 @@ def _read_json(path: Path):
 
 class CopilotCliParser(Parser):
     """Parse the Copilot CLI's events, session metadata, stores, grants and logs."""
+
     agent = "copilot-cli"
     name = "copilot-cli"
     has_secondary = True
@@ -345,9 +346,9 @@ class CopilotCliParser(Parser):
                 for path in sorted(directory.glob("*.json")):
                     if path.is_symlink() or not path.is_file():
                         continue
-                    doc = _dict(_read_json(path))
-                    cwd = _str(doc.get("cwd"))
-                    ids = doc.get("sessionIds")
+                    document = _dict(_read_json(path))
+                    cwd = _str(document.get("cwd"))
+                    ids = document.get("sessionIds")
                     if cwd and isinstance(ids, list):
                         for session_id in ids:
                             found.setdefault(_str(session_id), cwd)
@@ -696,41 +697,43 @@ class CopilotCliParser(Parser):
     # -- workspace.yaml -----------------------------------------------------
 
     def _parse_workspace(self, artifact: Artifact, session_id: str) -> Iterator[Row]:
-        meta = read_flat_yaml(artifact.disk_path)
-        session_id = meta.get("id") or session_id
+        metadata = read_flat_yaml(artifact.disk_path)
+        session_id = metadata.get("id") or session_id
         columns = {
-            "timestamp_utc": to_utc(meta.get("created_at")),
+            "timestamp_utc": to_utc(metadata.get("created_at")),
             "session_id": session_id,
-            "project_path": meta.get("cwd") or self._sidebar(artifact).get(session_id, ""),
+            "project_path": metadata.get("cwd") or self._sidebar(artifact).get(session_id, ""),
         }
-        if meta.get("name"):
-            yield self._row(artifact, 1, "system", "session name: %s" % meta.get("name"), **columns)
+        if metadata.get("name"):
+            yield self._row(
+                artifact, 1, "system", "session name: %s" % metadata.get("name"), **columns
+            )
         yield self._row(
             artifact,
             1,
             "system",
             "session metadata: user_named=%s forks=%s compactions=%s client=%s"
             % (
-                meta.get("user_named") or "-",
-                meta.get("fork_count") or "-",
-                meta.get("summary_count") or "-",
-                meta.get("client_name") or "",
+                metadata.get("user_named") or "-",
+                metadata.get("fork_count") or "-",
+                metadata.get("summary_count") or "-",
+                metadata.get("client_name") or "",
             ),
             **columns,
         )
         # A session the app pre-created and never prompted (Copilot
         # Desktop's pool and probe sessions) has no events.jsonl; its cwd
         # is the agent's, not a project.
-        if meta.get("cwd") and not os.path.lexists(artifact.disk_path.parent / "events.jsonl"):
+        if metadata.get("cwd") and not os.path.lexists(artifact.disk_path.parent / "events.jsonl"):
             yield self._row(
                 artifact,
                 1,
                 "system",
                 "%s %s (working directory of a session the app pre-created and never"
-                " prompted: no events.jsonl)" % (SCRATCH_PREFIX, meta.get("cwd")),
+                " prompted: no events.jsonl)" % (SCRATCH_PREFIX, metadata.get("cwd")),
                 **columns,
             )
-        if meta.get("mc_session_id"):
+        if metadata.get("mc_session_id"):
             yield self._row(
                 artifact,
                 1,
@@ -738,7 +741,7 @@ class CopilotCliParser(Parser):
                 "session synced: remote session %s task %s last event %s remote_steerable=%s"
                 " (from workspace.yaml, file mtime)"
                 % tuple(
-                    meta.get(key) or "-"
+                    metadata.get(key) or "-"
                     for key in (
                         "mc_session_id",
                         "mc_task_id",
@@ -752,13 +755,13 @@ class CopilotCliParser(Parser):
     # -- rewind-file-snapshots/index.json -----------------------------------
 
     def _parse_snapshots(self, artifact: Artifact, session_id: str) -> Iterator[Row]:
-        doc = _read_json(artifact.disk_path)
-        if not isinstance(doc, dict):
+        document = _read_json(artifact.disk_path)
+        if not isinstance(document, dict):
             yield self._problem(artifact, "parser: rewind snapshot index is not a JSON object")
             return
         session_dir = artifact.disk_path.parent.parent
         project = self._fallback_project(artifact, session_dir, session_id)
-        for i, snapshot in enumerate(doc.get("snapshots") or [], 1):
+        for i, snapshot in enumerate(document.get("snapshots") or [], 1):
             snapshot = _dict(snapshot)
             columns = {
                 "timestamp_utc": to_utc(snapshot.get("timestamp")),
@@ -922,11 +925,11 @@ class CopilotCliParser(Parser):
     # -- command-history-state.json -----------------------------------------
 
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
-        doc = _read_json(artifact.disk_path)
-        if not isinstance(doc, dict):
+        document = _read_json(artifact.disk_path)
+        if not isinstance(document, dict):
             yield self._problem(artifact, "parser: command history is not a JSON object")
             return
-        for i, entry in enumerate(doc.get("commandHistory") or [], 1):
+        for i, entry in enumerate(document.get("commandHistory") or [], 1):
             if isinstance(entry, str) and entry.strip():
                 yield self._row(artifact, i, "user", entry)
 
@@ -944,13 +947,13 @@ class CopilotCliParser(Parser):
 
     def _parse_permissions(self, artifact: Artifact) -> Iterator[Row]:
         timestamp = file_mtime(artifact)
-        doc = _read_json(artifact.disk_path)
-        if not isinstance(doc, dict):
+        document = _read_json(artifact.disk_path)
+        if not isinstance(document, dict):
             yield self._problem(
                 artifact, "parser: permissions-config.json is not a JSON object", timestamp
             )
             return
-        for path, entry in _dict(doc.get("locations")).items():
+        for path, entry in _dict(document.get("locations")).items():
             entry = _dict(entry)
             for key in ("tool_approvals", "allowed_directories"):
                 items = entry.get(key)
@@ -965,14 +968,14 @@ class CopilotCliParser(Parser):
         timestamp = file_mtime(artifact)
         try:
             raw = artifact.disk_path.read_bytes().decode("utf-8", errors="replace")
-            doc = json.loads(strip_jsonc(raw))
+            document = json.loads(strip_jsonc(raw))
         except (OSError, ValueError):
-            doc = None
-        if not isinstance(doc, dict):
+            document = None
+        if not isinstance(document, dict):
             yield self._problem(artifact, "parser: settings.json is not a JSON object", timestamp)
             return
         for key in ("allowedUrls", "deniedUrls"):
-            items = doc.get(key)
+            items = document.get(key)
             if isinstance(items, list):
                 for item in items:
                     yield self._setting(artifact, timestamp, key, item)

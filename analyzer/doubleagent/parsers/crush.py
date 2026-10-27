@@ -154,13 +154,13 @@ def _relay_text(text: str, message_id: str) -> tuple[str, str]:
     match = CHANNEL_RX.match(text)
     if not match:
         return "", ""
-    attrs = {
+    attributes = {
         attribute: html.unescape(value) for attribute, value in ATTR_RX.findall(match.group(1))
     }
-    key = "session relayed: channel %s" % attrs.get("source", "")
+    key = "session relayed: channel %s" % attributes.get("source", "")
     for name in ("sender", "group"):
-        if attrs.get(name):
-            key += " %s %s" % (name, attrs[name])
+        if attributes.get(name):
+            key += " %s %s" % (name, attributes[name])
     return key + " (from crush.db message %s)" % message_id, key
 
 
@@ -172,6 +172,7 @@ def project_of(original: str) -> str:
 
 class CrushParser(Parser):
     """Parse Crush's databases, project registry and permission settings."""
+
     agent = "crush"
     name = "crush"
     records_relay = True
@@ -259,10 +260,10 @@ class CrushParser(Parser):
         """
         timestamp = file_mtime(artifact)
         try:
-            doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
+            document = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
-            doc = None
-        if not isinstance(doc, dict):
+            document = None
+        if not isinstance(document, dict):
             row = self._system(artifact, "parser: %s is not a JSON object" % artifact.rel, 1)
             row.timestamp_utc = timestamp
             row.project_path = self._config_project(artifact)
@@ -270,15 +271,15 @@ class CrushParser(Parser):
             return
         lists = []
         for section, key in (("permissions", "allowed_tools"), ("options", "disabled_tools")):
-            block = doc.get(section)
+            block = document.get(section)
             if isinstance(block, dict):
                 lists.append(("%s.%s" % (section, key), block.get(key)))
-        mcp = doc.get("mcp")
+        mcp = document.get("mcp")
         for name, server in mcp.items() if isinstance(mcp, dict) else []:
             if isinstance(server, dict):
                 for key in ("disabled_tools", "enabled_tools"):
                     lists.append(("mcp.%s.%s" % (name, key), server.get(key)))
-        hooks = doc.get("hooks")
+        hooks = document.get("hooks")
         for event, entries in hooks.items() if isinstance(hooks, dict) else []:
             lists.append(("hooks.%s" % event, entries))
         for key, entries in lists:

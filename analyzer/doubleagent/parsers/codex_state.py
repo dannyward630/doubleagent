@@ -624,8 +624,8 @@ def _log_rows(connection: sqlite3.Connection) -> list[dict]:
         body,
         where,
     )
-    args = [value for target, mark, _kind in LOG_KINDS for value in (target, mark)]
-    rows = [dict(row) for row in connection.execute(sql, args)]
+    arguments = [value for target, mark, _kind in LOG_KINDS for value in (target, mark)]
+    rows = [dict(row) for row in connection.execute(sql, arguments)]
     for row in rows:
         body = str(row.get("body") or "")
         row["kind"] = next(
@@ -658,9 +658,10 @@ def guardian_calls(home: Path, parent: str, start: str, end: str) -> list[str]:
                     shape[0],
                     shape[0],
                 )
-                args = (GUARDIAN_SPAN_MARK, start_ms // 1000 - 2, end_ms // 1000 + 2)
+                arguments = (GUARDIAN_SPAN_MARK, start_ms // 1000 - 2, end_ms // 1000 + 2)
                 bodies = [
-                    str(row[0] or "") for row in connection.execute(sql + " order by rowid", args)
+                    str(row[0] or "")
+                    for row in connection.execute(sql + " order by rowid", arguments)
                 ]
         except sqlite3.DatabaseError:
             continue
@@ -677,9 +678,13 @@ def _log_time(record: dict) -> str:
     timestamp = record.get("ts")
     if not isinstance(timestamp, (int, float)) or isinstance(timestamp, bool):
         return ""
-    nanos = record.get("ts_nanos")
-    if isinstance(nanos, int) and not isinstance(nanos, bool) and 0 <= nanos < 1_000_000_000:
-        return to_utc(timestamp + nanos / 1e9)
+    nanoseconds = record.get("ts_nanos")
+    if (
+        isinstance(nanoseconds, int)
+        and not isinstance(nanoseconds, bool)
+        and 0 <= nanoseconds < 1_000_000_000
+    ):
+        return to_utc(timestamp + nanoseconds / 1e9)
     return to_utc(timestamp)
 
 
@@ -717,7 +722,7 @@ def _decisions(records: list[dict], errors: list) -> dict[int, tuple[str, str, s
     stands alone: the request rows read are command approvals only.
     """
     out: dict[int, tuple[str, str, str]] = {}
-    execs: list[list] = []  # [ts, decision, paired]
+    exec_approvals: list[list] = []  # [ts, decision, paired]
     for record in records:
         match = _approval_match(record, "exec", errors)
         if not match:
@@ -727,7 +732,7 @@ def _decisions(records: list[dict], errors: list) -> dict[int, tuple[str, str, s
         item, turn, decision = match.group(1), match.group(2) or "-", match.group(3)
         text = "permission decision: %s exec %s turn=%s" % (decision, item, turn)
         out[int(record["_rowid"])] = (session_id, item, text)
-        execs.append([record.get("ts"), decision, False])
+        exec_approvals.append([record.get("ts"), decision, False])
     for record in records:
         match = _approval_match(record, "patch", errors)
         if not match:
@@ -743,7 +748,7 @@ def _decisions(records: list[dict], errors: list) -> dict[int, tuple[str, str, s
         twin = next(
             (
                 candidate
-                for candidate in execs
+                for candidate in exec_approvals
                 if not candidate[2] and _near(candidate[0], record.get("ts"))
             ),
             None,
@@ -895,9 +900,9 @@ def _standing_text(entry: dict, suffix: str) -> str:
     )
 
 
-def _global_state_texts(doc: dict, rel: str) -> Iterator[tuple[str, str]]:
+def _global_state_texts(document: dict, rel: str) -> Iterator[tuple[str, str]]:
     """(session id, text) of each file-mtime `system` row of the global state."""
-    atom = _as_object(doc.get(ATOM_KEY))
+    atom = _as_object(document.get(ATOM_KEY))
 
     def source(key: str) -> str:
         return "(from %s %s, file mtime)" % (rel, key)
@@ -935,17 +940,17 @@ def _global_state_texts(doc: dict, rel: str) -> Iterator[tuple[str, str]]:
         if key.startswith(SELECTION_PREFIX):
             setting = "%s=%s" % (key, setting_value(value))
             yield "", "permission setting: %s (from %s, file mtime)" % (setting, rel)
-    if MOBILE_DEVICE in doc or REMOTE_ENVIRONMENT in doc:
+    if MOBILE_DEVICE in document or REMOTE_ENVIRONMENT in document:
         yield (
             "",
             "remote control: mobile device connected=%s environment=%s %s"
             % (
-                setting_value(doc[MOBILE_DEVICE]) if MOBILE_DEVICE in doc else "-",
-                doc.get(REMOTE_ENVIRONMENT) or "-",
+                setting_value(document[MOBILE_DEVICE]) if MOBILE_DEVICE in document else "-",
+                document.get(REMOTE_ENVIRONMENT) or "-",
                 source(MOBILE_DEVICE),
             ),
         )
-    for session_id, path in _as_object(doc.get(OUTPUT_DIRS)).items():
+    for session_id, path in _as_object(document.get(OUTPUT_DIRS)).items():
         if isinstance(path, str) and path:
             yield (
                 session_id,
@@ -962,17 +967,17 @@ def parse_global_state(parser: RolloutParser, artifact: Artifact) -> Iterator[Ro
     """
     try:
         with open(artifact.disk_path, "rb") as handle:
-            doc = json.loads(handle.read().decode("utf-8", errors="replace"))
+            document = json.loads(handle.read().decode("utf-8", errors="replace"))
     except (OSError, ValueError) as error:
         yield _problem(
             parser, artifact, "parser: unreadable global state: %s" % error_reason(error)
         )
         return
-    if not isinstance(doc, dict):
+    if not isinstance(document, dict):
         yield _problem(parser, artifact, "parser: global state is not a JSON object")
         return
-    roots = _as_object(doc.get(ROOT_HINTS))
-    outputs = _as_object(doc.get(OUTPUT_DIRS))
+    roots = _as_object(document.get(ROOT_HINTS))
+    outputs = _as_object(document.get(OUTPUT_DIRS))
 
     def stamp(session_id: str) -> Row:
         row = _stamp(parser, artifact, None, session_id)
@@ -981,14 +986,14 @@ def parse_global_state(parser: RolloutParser, artifact: Artifact) -> Iterator[Ro
         )
         return row
 
-    for session_id, index, text in _prompt_entries(_as_object(doc.get(ATOM_KEY))):
+    for session_id, index, text in _prompt_entries(_as_object(document.get(ATOM_KEY))):
         row = stamp(session_id)
         row.turn_type = "user"
         row.source_line = index
         row.text = compact(text)
         yield row
     mtime = file_mtime(artifact)
-    for session_id, text in _global_state_texts(doc, artifact.rel):
+    for session_id, text in _global_state_texts(document, artifact.rel):
         row = stamp(session_id)
         row.turn_type = "system"
         row.source_line = 1

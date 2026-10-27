@@ -123,6 +123,7 @@ def _decode_line(line_number: int, raw: bytes, errors: list) -> dict | None:
 
 class TruncatedFrame(Exception):
     """The zstd stream ends inside a frame."""
+
     pass
 
 
@@ -244,8 +245,8 @@ def user_parts(payload: dict) -> list[tuple[str, str]]:
     if not isinstance(content, list):
         text = text_of(content)
         return [("", text)] if text else []
-    meta = payload.get("internal_chat_message_metadata_passthrough")
-    kinds = meta.get("content_item_kinds") if isinstance(meta, dict) else None
+    metadata = payload.get("internal_chat_message_metadata_passthrough")
+    kinds = metadata.get("content_item_kinds") if isinstance(metadata, dict) else None
     use_kinds = isinstance(kinds, list) and len(kinds) == len(content)
     parts: list[tuple[str, str]] = []
     for i, block in enumerate(content):
@@ -264,29 +265,34 @@ def user_parts(payload: dict) -> list[tuple[str, str]]:
     return parts
 
 
-def _parent_of(meta: dict) -> str:
+def _parent_of(metadata: dict) -> str:
     """Return the parent thread of a subagent's `session_meta`, or "".
 
     It is `parent_thread_id`, else `source.subagent.thread_spawn.parent_thread_id`, else a root
     `session_id` that differs from `id` when the thread is not a fork.
     """
-    parent = meta.get("parent_thread_id")
+    parent = metadata.get("parent_thread_id")
     if parent:
         return str(parent)
-    source = meta.get("source")
+    source = metadata.get("source")
     subagent = source.get("subagent") if isinstance(source, dict) else None
     spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
     if isinstance(spawn, dict) and spawn.get("parent_thread_id"):
         return str(spawn["parent_thread_id"])
-    root = meta.get("session_id")
-    if root and meta.get("id") and root != meta.get("id") and not meta.get("forked_from_id"):
+    root = metadata.get("session_id")
+    if (
+        root
+        and metadata.get("id")
+        and root != metadata.get("id")
+        and not metadata.get("forked_from_id")
+    ):
         return str(root)
     return ""
 
 
-def _is_subagent(meta: dict) -> bool:
-    source = meta.get("source")
-    return meta.get("thread_source") == "subagent" or (
+def _is_subagent(metadata: dict) -> bool:
+    source = metadata.get("source")
+    return metadata.get("thread_source") == "subagent" or (
         isinstance(source, dict) and "subagent" in source
     )
 
@@ -410,15 +416,15 @@ def guardian_text(verdict: dict, call: str, reviewer: str) -> str:
     )
 
 
-def _is_guardian(meta: dict) -> bool:
+def _is_guardian(metadata: dict) -> bool:
     """Return whether a `session_meta` is a guardian review thread's.
 
     A guardian review thread has `thread_source` `guardian_review`, or a `source.subagent.other`
     of `guardian`.
     """
-    if meta.get("thread_source") == "guardian_review":
+    if metadata.get("thread_source") == "guardian_review":
         return True
-    source = meta.get("source")
+    source = metadata.get("source")
     subagent = source.get("subagent") if isinstance(source, dict) else None
     return isinstance(subagent, dict) and subagent.get("other") == "guardian"
 
@@ -682,7 +688,7 @@ def scan_toml(text: str) -> dict:
                     node = child if isinstance(child, dict) else {}
                 table = node
             continue
-        key, sep, raw = stripped.partition("=")
+        key, separator, raw = stripped.partition("=")
         raw = raw.strip()
         quote = raw[:3]
         if quote in ('"""', "'''"):
@@ -693,7 +699,7 @@ def scan_toml(text: str) -> dict:
                     break
                 body += "\n" + more
             continue
-        parts = _toml_dotted(key.strip()) if sep else None
+        parts = _toml_dotted(key.strip()) if separator else None
         if not parts:
             continue
         try:
@@ -802,8 +808,8 @@ CONFIG_PERMISSION_PATHS = (
 )
 
 
-def config_settings(doc: dict) -> list[tuple[list[str], object]]:
-    """Return (key parts, value) of every `CONFIG_PERMISSION_PATHS` entry `doc` holds.
+def config_settings(document: dict) -> list[tuple[list[str], object]]:
+    """Return (key parts, value) of every `CONFIG_PERMISSION_PATHS` entry `document` holds.
 
     The entries come path by path in that order, tables in file order.
     """
@@ -823,7 +829,7 @@ def config_settings(doc: dict) -> list[tuple[list[str], object]]:
             walk(node[path[0]], path[1:], [*parts, path[0]])
 
     for path in CONFIG_PERMISSION_PATHS:
-        walk(doc, path, [])
+        walk(document, path, [])
     return found
 
 
@@ -838,8 +844,8 @@ def memory_summary(text: str) -> tuple[dict[str, str], str]:
     for i, line in enumerate(lines):
         if not line.strip():
             return header, "\n".join(lines[i + 1 :])
-        key, sep, value = line.partition(":")
-        if not sep or key.strip() not in MEMORY_HEADER_KEYS:
+        key, separator, value = line.partition(":")
+        if not separator or key.strip() not in MEMORY_HEADER_KEYS:
             return header, "\n".join(lines[i:])
         header[key.strip()] = value.strip()
     return header, ""
@@ -972,7 +978,7 @@ class RolloutParser(Parser):
     def _parse_automation(self, artifact: Artifact) -> Iterator[Row]:
         try:
             with open(artifact.disk_path, "rb") as handle:
-                doc = load_toml(handle.read().decode("utf-8", errors="replace"))
+                document = load_toml(handle.read().decode("utf-8", errors="replace"))
         except (OSError, ValueError) as error:
             yield self._system(
                 artifact, "parser: unreadable automation.toml: %s" % error_reason(error)
@@ -980,7 +986,7 @@ class RolloutParser(Parser):
             return
 
         def field(key: str) -> str:
-            value = doc.get(key)
+            value = document.get(key)
             return "" if value is None else str(value)
 
         row = self._system(artifact, "", field("target_thread_id"), 1)
@@ -995,8 +1001,8 @@ class RolloutParser(Parser):
                 field("status"),
                 field("rrule"),
                 field("target_thread_id"),
-                to_utc(doc.get("created_at")),
-                to_utc(doc.get("updated_at")),
+                to_utc(document.get("created_at")),
+                to_utc(document.get("updated_at")),
                 artifact.rel,
                 field("prompt"),
             )
@@ -1019,12 +1025,12 @@ class RolloutParser(Parser):
         """
         try:
             with open(artifact.disk_path, "rb") as handle:
-                doc = load_config_toml(handle.read().decode("utf-8", errors="replace"))
+                document = load_config_toml(handle.read().decode("utf-8", errors="replace"))
         except (OSError, ValueError) as error:
             yield self._system(artifact, "parser: unreadable config.toml: %s" % error_reason(error))
             return
         base = artifact.home.original if artifact.home.project else ""
-        for parts, value in config_settings(doc):
+        for parts, value in config_settings(document):
             project = parts[1] if parts[0] == "projects" else base
             text = "%s=%s" % (".".join(parts), setting_value(value))
             yield self._setting(artifact, text, 0, project)
@@ -1197,8 +1203,8 @@ class RolloutParser(Parser):
                     if text:
                         yield self._fill(base(), text, opts)
             elif record_type == "response_item":
-                meta = record.get("metadata")
-                if isinstance(meta, dict) and meta.get("inherited_user_message"):
+                metadata = record.get("metadata")
+                if isinstance(metadata, dict) and metadata.get("inherited_user_message"):
                     continue  # copied from the parent thread, which records it itself
                 payload_type = payload.get("type")
                 if payload_type == "message":
@@ -1402,6 +1408,7 @@ class RolloutParser(Parser):
 
 class CodexParser(RolloutParser):
     """Parse the Codex CLI and the Codex Desktop app under `~/.codex`."""
+
     agent = "codex-cli"
     name = "codex-cli"
     home_prefix = ".codex"

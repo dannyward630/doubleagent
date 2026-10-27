@@ -267,20 +267,22 @@ def _select(connection: sqlite3.Connection, table: str, wanted: tuple[str, ...])
     return [dict(row) for row in connection.execute(sql)]
 
 
-def _project(*docs: dict) -> tuple[str, str]:
+def _project(*documents: dict) -> tuple[str, str]:
     """Return (project_path, git_branch) of a composer from its header value and `composerData`.
 
     The documents are tried in the order given.
     """
     path = ""
-    for doc in docs:
-        path = str(_object(_object(doc.get("workspaceIdentifier")).get("uri")).get("fsPath") or "")
+    for document in documents:
+        path = str(
+            _object(_object(document.get("workspaceIdentifier")).get("uri")).get("fsPath") or ""
+        )
         if path:
             break
     repos = [
         tracked
-        for doc in docs
-        for tracked in doc.get("trackedGitRepos") or []
+        for document in documents
+        for tracked in document.get("trackedGitRepos") or []
         if isinstance(tracked, dict)
     ]
     if not path and repos:
@@ -310,9 +312,9 @@ class _Composer:
         return _project(self.head, self.data or {})
 
     def created(self):
-        for doc in (self.data or {}, self.head, self.header or {}):
-            if doc.get("createdAt") not in (None, ""):
-                return doc.get("createdAt")
+        for document in (self.data or {}, self.head, self.header or {}):
+            if document.get("createdAt") not in (None, ""):
+                return document.get("createdAt")
         return None
 
     def header_updated(self):
@@ -496,6 +498,7 @@ def cloud_cached_ids(state: Path) -> set[str]:
 
 class CursorParser(Parser):
     """Parse the Cursor IDE's stores, transcripts and settings files."""
+
     agent = "cursor"
     name = "cursor"
     records_origin = True
@@ -947,10 +950,10 @@ class CursorParser(Parser):
         ).fetchone()
         if found is None:
             return
-        doc = _decode(int(found[0]), MCP_AUTH_KEY, found[1], errors)
+        document = _decode(int(found[0]), MCP_AUTH_KEY, found[1], errors)
         known = {str(agent["bcId"]): agent for _rowid, agent in agents}
         mtime = file_mtime(artifact)
-        for resolution in doc if isinstance(doc, list) else [doc]:
+        for resolution in document if isinstance(document, list) else [document]:
             if not isinstance(resolution, dict):
                 continue
             agent_id, call_id = (
@@ -1157,24 +1160,24 @@ class CursorParser(Parser):
         rel = artifact.rel
         try:
             with open(artifact.disk_path, "rb") as handle:
-                doc = json.loads(handle.read().decode("utf-8", errors="replace"))
+                document = json.loads(handle.read().decode("utf-8", errors="replace"))
         except (OSError, ValueError) as error:
             yield self._row(
                 artifact, "system", "parser: unreadable %s: %s" % (rel, error_reason(error))
             )
             return
-        if not isinstance(doc, dict):
+        if not isinstance(document, dict):
             yield self._row(artifact, "system", "parser: %s is not a JSON object" % rel)
             return
         match = ATTEMPT_RX.match(rel)
         source = "mcp-oauth-attempts/" + (match.group(1) if match else "")
-        created = doc.get("createdAtMs")
+        created = document.get("createdAtMs")
         if created in (None, ""):
             created, source = file_mtime(artifact), source + ", file mtime"
         text = "mcp oauth attempt: server=%s client_id=%s workspace=%s (from %s)" % (
-            _field(doc.get("serverUrl")),
-            _field(_object(doc.get("clientInformation")).get("client_id")),
-            _field(_object(doc.get("owner")).get("workspaceId")),
+            _field(document.get("serverUrl")),
+            _field(_object(document.get("clientInformation")).get("client_id")),
+            _field(_object(document.get("owner")).get("workspaceId")),
             source,
         )
         yield self._row(artifact, "system", text, created, 1)
@@ -1185,19 +1188,19 @@ class CursorParser(Parser):
         rel = artifact.rel
         try:
             with open(artifact.disk_path, "rb") as handle:
-                doc = json.loads(handle.read().decode("utf-8", errors="replace"))
+                document = json.loads(handle.read().decode("utf-8", errors="replace"))
         except (OSError, ValueError) as error:
             yield self._row(
                 artifact, "system", "parser: unreadable %s: %s" % (rel, error_reason(error))
             )
             return
-        if not isinstance(doc, dict):
+        if not isinstance(document, dict):
             yield self._row(artifact, "system", "parser: %s is not a JSON object" % rel)
             return
         if CLI_CONFIG_RX.match(rel):
-            settings = cli_config_settings(doc)
+            settings = cli_config_settings(document)
         else:
-            settings = permissions_settings(doc)
+            settings = permissions_settings(document)
         mtime = file_mtime(artifact)
         project = artifact.home.original if artifact.home.project else ""
         for setting in settings:
@@ -1410,29 +1413,29 @@ def _entries(value) -> list:
     return value if isinstance(value, list) else []
 
 
-def cli_config_settings(doc: dict) -> Iterator[str]:
+def cli_config_settings(document: dict) -> Iterator[str]:
     """Yield `<key>=<value>` per setting of `.cursor/cli-config.json` that governs permissions."""
-    if "approvalMode" in doc:
-        yield "approvalMode=%s" % setting_value(doc["approvalMode"])
-    permissions = _object(doc.get("permissions"))
+    if "approvalMode" in document:
+        yield "approvalMode=%s" % setting_value(document["approvalMode"])
+    permissions = _object(document.get("permissions"))
     for key in ("allow", "deny"):
         for entry in _entries(permissions.get(key)):
             yield "permissions.%s=%s" % (key, setting_value(entry))
-    sandbox = _object(doc.get("sandbox"))
+    sandbox = _object(document.get("sandbox"))
     if "mode" in sandbox:
         yield "sandbox.mode=%s" % setting_value(sandbox["mode"])
 
 
-def permissions_settings(doc: dict) -> Iterator[str]:
+def permissions_settings(document: dict) -> Iterator[str]:
     """`<key>=<value>` per entry of a `permissions.json`."""
-    allowlists = _object(doc.get("allowlists"))
+    allowlists = _object(document.get("allowlists"))
     for key in ("mcp", "terminal"):
         for entry in _entries(allowlists.get(key)):
             yield "allowlists.%s=%s" % (key, setting_value(entry))
-    if "approvalMode" in doc:
-        yield "approvalMode=%s" % setting_value(doc["approvalMode"])
+    if "approvalMode" in document:
+        yield "approvalMode=%s" % setting_value(document["approvalMode"])
     for key in ("allowInstructions", "blockInstructions"):
-        for entry in _entries(doc.get(key)):
+        for entry in _entries(document.get(key)):
             yield "%s=%s" % (key, setting_value(entry))
 
 

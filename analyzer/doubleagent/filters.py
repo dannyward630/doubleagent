@@ -62,7 +62,15 @@ _UNIT = {
 
 
 class BoundError(DoubleAgentError):
-    """A --since or --until value that is not one of the accepted forms."""
+    """A --since or --until value that is not one of the accepted forms.
+
+    Every message ends with the accepted forms, whatever the reason, so the
+    reason is given alone.
+    """
+
+    def __init__(self, reason: str) -> None:
+        """Build the message from the reason and the accepted forms."""
+        super().__init__("%s; %s" % (reason, FORMS_HELP))
 
 
 def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> str:
@@ -89,8 +97,9 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
     match = _RELATIVE_PATTERN.match(text_value)
     if match:
         amounts = {unit: 0 for unit in _UNIT.values()}
-        amounts[_UNIT[match.group(2).lower()]] = int(match.group(1))
         try:
+            # int() refuses a string past Python's digit limit with ValueError.
+            amounts[_UNIT[match.group(2).lower()]] = int(match.group(1))
             ago = relativedelta(
                 years=amounts["years"],
                 months=amounts["months"],
@@ -115,7 +124,7 @@ def parse_bound(text: str, end: bool = False, now: datetime | None = None) -> st
         moment = isoparse(text_value)
     except (ValueError, OverflowError) as error:
         reason = " (%s)" % error if _RANGE_MESSAGE_PATTERN.search(str(error)) else ""
-        raise BoundError("cannot read %r as a time%s; %s" % (text, reason, FORMS_HELP)) from None
+        raise BoundError("cannot read %r as a time%s" % (text, reason)) from None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     moment = moment.astimezone(timezone.utc)

@@ -5,8 +5,6 @@ import subprocess
 import unittest
 from pathlib import Path
 
-import pytest
-
 from doubleagent import catalog
 from doubleagent.parsers import NO_TRANSCRIPTS, by_agent
 
@@ -117,48 +115,48 @@ def _heading(section):
     raise KeyError(section)
 
 
-@pytest.mark.parametrize(
-    ("home_comment", "project_comment", "docker_comment"),
-    [
-        ("# excluded by the vendor's installer, see the research document", "", ""),
-        ("# project artifacts the vendor documents", "", ""),
-        ("# credential files are kept in the keychain", "", ""),
-        ("# docker volumes are not created by this tool", "", ""),
-        ("", "# home artifacts moved with the config directory", ""),
-        ("", "", "# Home Artifacts (agent|glob relative to home)"),
-    ],
-)
-def test_comment_starting_with_heading_words_keeps_section(
-    home_comment, project_comment, docker_comment
-):
+LOOKALIKE_COMMENTS = [
+    ("# excluded by the vendor's installer, see the research document", "", ""),
+    ("# project artifacts the vendor documents", "", ""),
+    ("# credential files are kept in the keychain", "", ""),
+    ("# docker volumes are not created by this tool", "", ""),
+    ("", "# home artifacts moved with the config directory", ""),
+    ("", "", "# Home Artifacts (agent|glob relative to home)"),
+]
+
+
+def test_comment_starting_with_heading_words_keeps_section():
     """A comment opening with a heading's words, or differing from one in case, is ignored."""
-    text = "\n".join(
-        [
-            _heading("home"),
-            "first-agent|.first",
-            home_comment,
-            "second-agent|.second",
-            _heading("project"),
-            "first-agent|.first-project",
-            project_comment,
-            "second-agent|.second-project",
-            _heading("exclude"),
-            ".first/cache",
-            _heading("docker"),
-            "first-agent|*first_data",
-            docker_comment,
-            "second-agent|*second_data",
-        ]
-    )
-    parsed = catalog.parse(text)
-    assert [entry.glob for entry in parsed.entries] == [".first", ".second"]
-    assert [entry.glob for entry in parsed.project_entries] == [
-        ".first-project",
-        ".second-project",
-    ]
-    assert parsed.excludes == [".first/cache"]
-    assert parsed.secrets == []
-    assert [entry.glob for entry in parsed.docker_volumes] == ["*first_data", "*second_data"]
+    for home_comment, project_comment, docker_comment in LOOKALIKE_COMMENTS:
+        text = "\n".join(
+            [
+                _heading("home"),
+                "first-agent|.first",
+                home_comment,
+                "second-agent|.second",
+                _heading("project"),
+                "first-agent|.first-project",
+                project_comment,
+                "second-agent|.second-project",
+                _heading("exclude"),
+                ".first/cache",
+                _heading("docker"),
+                "first-agent|*first_data",
+                docker_comment,
+                "second-agent|*second_data",
+            ]
+        )
+        parsed = catalog.parse(text)
+        comment = home_comment or project_comment or docker_comment
+        assert [entry.glob for entry in parsed.entries] == [".first", ".second"], comment
+        assert [entry.glob for entry in parsed.project_entries] == [
+            ".first-project",
+            ".second-project",
+        ], comment
+        assert parsed.excludes == [".first/cache"], comment
+        assert parsed.secrets == [], comment
+        volumes = [entry.glob for entry in parsed.docker_volumes]
+        assert volumes == ["*first_data", "*second_data"], comment
 
 
 def test_each_exact_heading_switches_section():

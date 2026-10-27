@@ -1,198 +1,33 @@
-"""OpenCode sessions.
+"""Parse OpenCode sessions from its database, its JSON trees and its terminal UI state.
 
-Validated against source, sst/opencode at 907b3bc for 1.x and
-anomalyco/opencode at cb07c55 (CLI 2.0.32, the `dev` branch) for 2.0 (see
-`research/opencode.md`), with a synthetic fixture; no real install
-was used, and the 2.0 layout is source-derived only. The same storage model is used by Kilo Code's CLI, which is an
-OpenCode fork, so `KiloCodeParser` subclasses this one with its own paths.
+Follows `research/opencode.md`. Validated against source, sst/opencode at 907b3bc
+(1.x) and anomalyco/opencode at cb07c55 (CLI 2.0.32: the 2.0 tables, refusals,
+archives, permission rules, worktrees and the terminal UI state), with a
+synthetic fixture; no real install. Kilo Code's CLI is an OpenCode fork, so
+`KiloCodeParser` subclasses this one with its own paths. Files read:
 
-Files, relative to the home directory (XDG paths on every OS):
+- `.local/share/opencode/opencode[-<channel>].db`, through
+  `sqlite_util.open_copy`: `session_v2` and `session` (`id`, `project_id`,
+  `parent_id`, `directory`, `title`, `agent`, `permission`, `time_*`),
+  `project(id, worktree)`, the V1 `message` and `part` tables and the V2
+  `session_message` (`data` JSON with a `type`), `session_share` (never its
+  `secret`), `session.updated.1` rows of `event`, `worktree` or
+  `project_directory`, and `permission`. In a 2.0 database `session_message`
+  is the transcript and the 1.x rows are read, marked recovered, only for a
+  session it lacks; in a 1.x one the reverse.
+- `opencode-next.db`, a pre-release 2.0 database, a secondary source (a file
+  repeating events the main database holds).
+- The legacy `storage/` and per-project `project/<slug>/storage/session/`
+  JSON trees of session, message and part files.
+- `.local/state/opencode`: `prompt-history.jsonl` (secondary),
+  `prompt-stash.jsonl` and `session.json` (pinned ids, secondary).
 
-* `.local/share/opencode/opencode.db`, or `opencode-<channel>.db`, with
-  `-wal` and `-shm` sidecars (WAL mode, so the sidecar holds the newest
-  rows). Opened through `sqlite_util.open_copy`. Tables read:
-  - `session_v2` (OpenCode 2.0) and `session(id, project_id, parent_id,
-    slug, directory, title, version, agent, time_created)`, the same
-    columns; `session_v2` adds `fork_session_id`. `directory` is the cwd.
-    A database created by 2.0 has only `session_v2`; one upgraded to 2.0
-    keeps the 1.x `session`, `message` and `part` tables beside it, and a
-    session deleted in 2.0 is left only there.
-  - `project(id, worktree)`: repository root; `/` for the `global` project.
-  - `message(id, session_id, time_created, data)`: `data` JSON is the V1
-    message without `id` and `sessionID`: `role`, `time.created`, `agent`,
-    user `model.{providerID, modelID}`, assistant `providerID`, `modelID`,
-    `path.cwd`, `error.{name, data.message}`.
-  - `part(id, message_id, session_id, time_created, data)`: `data` JSON has
-    a `type` discriminator: `text` (`text`, `synthetic`, `time.start`),
-    `reasoning` (`text`, `time.start`), `tool` (`callID`, `tool`,
-    `state.{status, input, output, error, title, time.{start, end}}`, the
-    call and its result in one part), `step-start`, `step-finish` (`reason`,
-    `cost`, `tokens`), `subtask` (`agent`, `description`, `prompt`),
-    `compaction`, `file` (`filename`, `url`), `agent` (`name`), `retry`
-    (`attempt`, `error`), `patch` (`files`), `snapshot`.
-  - `session_message(id, session_id, type, seq, time_created, data)`: the
-    V2 transcript, `data` without `id` and `type`. In a 1.x database it is
-    a projection that was wiped once by a migration, so it is read only
-    for sessions that have no V1 `message` rows. In a database with
-    `session_v2` it is the transcript of every session, the upgrade having
-    copied each 1.x session into it, so the 1.x `message` and `part` rows
-    are read only for a session it does not hold, and those rows other
-    than `system` are marked `recovered` "yes" (the parser's own pairing,
-    exact on the session id, since both copies are in one file). `data`
-    for `user` (`text`), `synthetic` and `system` (`text`), `shell` (1.x
-    `callID`, `command`, `output`; 2.0 `shellID`, `command`, `status`,
-    `exit`, `output.output`, `time.completed`), `compaction` (`reason`,
-    `status`, `summary`, `error`), `model-switched` (`model.{id,
-    providerID}`), `agent-switched` (`agent`), `assistant` (`agent`,
-    `model.{id or modelID, providerID}`, `content[]` of `text`,
-    `reasoning` and `tool` items with `id`, `name`, `state.{status, input,
-    content[], error.{type, message}}`, `time.{created, completed}`) and,
-    since 2.0, `location-switched` (`location.{directory, workspaceID}`,
-    `previous.location.directory`, `subpath`), `skill` (`name`, `text`)
-    and `idle` (`outcome`, `error`).
-  - `session_share(session_id, id, secret, url, time_created)`: one row
-    per session published to OpenCode's share service. `secret`, the
-    credential for the public copy, is never read.
-  - `event(rowid, aggregate_id, seq, type, data)`: only `type`
-    `session.updated.1`, whose `data` is `{sessionID, info}` with the
-    session's `info.share.url` while it is shared and `info.time.updated`
-    (ms). The table was emptied once by the reset migration.
-  The `credential` and `account` tables are not read.
-* `.local/share/opencode/opencode-next.db`: a database of a pre-release
-  2.0 build (`project`, `session`, `session_message`) that 2.0 imports into
-  `opencode.db` and leaves in place. Read as above and returned by
-  `secondary()`, so `dedup.deduplicate` drops what the database it was
-  imported into repeats and keeps a session deleted after the import.
-* Legacy JSON tree `.local/share/opencode/storage/`: `session/<projectID>/
-  <sessionID>.json` (`id`, `projectID`, `parentID`, `directory`, `title`,
-  `version`, `time.created`), `message/<sessionID>/<messageID>.json` (the V1
-  message with `id` and `sessionID` inline), `part/<messageID>/<partID>.json`
-  and `project/<projectID>.json` (`worktree`).
-* Older per-project tree `.local/share/opencode/project/<slug>/storage/
-  session/`: `info/<sessionID>.json`, `message/<sessionID>/<messageID>.json`,
-  `part/<sessionID>/<messageID>/<partID>.json`. The project root comes from
-  the assistant message's `path.root`.
-
-Rows. A session header (database row or session JSON file) becomes one
-`system` row. A user message becomes one `user` row with its non-synthetic
-text parts joined; every other part becomes its own row: assistant `text` is
-`assistant`, `reasoning` is `thinking` (with `--include-thinking`), `tool` is
-a `tool_use` row plus a `tool_result` row once the status is `completed` or
-`error`, `step-finish`, `subtask`, `compaction`, `file`, `agent`, `retry`,
-`patch` and synthetic text are `system`; `step-start` and `snapshot` carry
-nothing but a snapshot hash and are skipped. A message-level `error` is a
-`system` row. The model column is `providerID/modelID`. A `session_message`
-record is one row per kind: `user` is `user`; assistant content as for V1
-parts; `shell` a `tool_use` row (tool `shell`, id `callID` or `shellID`)
-and, once it has output or has ended, a `tool_result` row whose text
-starts `[timeout]`, `[killed]` or `[exit <code>]` when it did not exit 0;
-`location-switched` is `location switched: <old> -> <new>` (the
-`project_path` stays the session's `directory`), `skill` is `skill <name>:
-<text>`, `idle` is `idle: <outcome>`, all `system`. A session that a 2.0
-database holds only in the 1.x `session` table gets `(only in the 1.x
-session table)` at the end of its session-start row.
-
-Model and mode rows, per session: the first message that names a model
-(a user message's `model` or an assistant's `providerID`/`modelID`; a V2
-assistant's `model`) is preceded by a `system` row `model: <modelID>
-provider=<providerID>`, and every later message or V2 `model-switched`
-record whose model differs by `model: <old> -> <new> provider=<providerID>`.
-The message's `agent` (V1 user and assistant, V2 assistant, V2
-`agent-switched`) is tracked the same way as `permission mode:
-agent=<name>` and `permission mode: agent=<old> -> agent=<new>`: an
-OpenCode agent is a mode with its own permission ruleset. Both rows take
-the message's timestamp and `source_line` and sit before its other rows.
-In the JSON trees, where a file holds one message, the starting value is
-the message file before it in the same session directory. The session's
-`permission` rules are read (see below); the project's `sandboxes` are
-not. Timestamps come from the
-part's `time.start` (tool results: `state.time.end`), else the part row's
-`time_created`, else the message's `time.created`; user text parts carry no
-time of their own and inherit the message's. `project_path` is the
-session's `directory` (the cwd, as in the other parsers), else the project
-`worktree` unless it is `/`, else the message's `path.cwd`. No git branch is
-recorded. `source_line` is the SQLite `rowid` of the record for databases
-and 1 for the one-record JSON files.
-
-Sync rows (issue 153), `system`, after the session-start rows, so
-`records_sync` is set: one per `session_share` row, at its `time_created`,
-`session synced: share <id> url <url> (from <database> session_share,
-time_created)`. A session with no `session_share` row whose
-`session.updated.1` events carry `info.share.url` (shared and then
-unshared, which deletes the share row but not the events) gets
-`session synced: share url <url> (from <database> event
-session.updated.1, info.time.updated)` at the first such event's
-`info.time.updated`, and `session unshared (from <database> event
-session.updated.1, info.time.updated)` at the first later event without
-`share`; a later re-share is not reported again. `<database>` is the
-file name (`opencode.db`, `opencode-<channel>.db`, `kilo.db`). An absent
-value prints `-`. The legacy JSON trees have no share record, so their
-sessions have no sync row. Kilo Code's fork writes the same tables (see
-`kilo_code.py`).
-
-Permission, deletion and scratch rows (issue 194), source-derived; not
-observed on any real install (anomalyco/opencode at cb07c55; the 1.x texts
-at 907b3bc). All `system`:
-
-* A refused tool call: after its `tool_result` row, on its `tool_name` and
-  `tool_use_id` and at its time, `permission decision: rejected` (1.x
-  `state.error` "The user rejected permission to use this specific tool
-  call.", or 2.0 `error.type` `aborted` with "The user declined this tool
-  call"), `permission decision: rejected with feedback` (1.x "... with the
-  following feedback: <text>"), `permission decision: denied by rule` (1.x
-  "The user has specified a rule which prevents you ...") or `permission
-  decision: rejected (permission.rejected)` (2.0 `error.type`
-  `permission.rejected`, a deny rule or a rejection with feedback, which the
-  message does not tell apart). An approval leaves no record.
-* After the session-start and sync rows: per session with `time_archived`
-  set, `session archived (from <database> <table>, time_archived)` at that
-  time; per rule of the session's `permission` column (a JSON array of 2.0
-  `{action, resource, effect}` or 1.x `{permission, pattern, action}`),
-  `permission setting: session <permission> <pattern>=<effect> (from
-  <database> <table>.permission, time_updated)` at `time_updated`, a value
-  that is not a JSON array being `parser: unparseable record <rowid>
-  (<table>.permission: not a JSON array): <value>`; per row of the 2.0
-  `worktree(project_id, directory, strategy, time_created)` table, else of
-  the deprecated `project_directory` with `type` `git_worktree`, `scratch
-  directory: <directory> (git worktree of <project worktree> strategy=
-  <strategy>) (from <database> <table>, time_created)` with `project_path`
-  the directory and no session; per row of the `permission(id, project_id,
-  action, resource, time_created)` table of saved "always" grants,
-  `permission setting: <action> <resource>=allow (from <database>
-  permission, time_created)` with `project_path` the project's worktree.
-
-Terminal UI state (issue 194), source-derived; not observed on any real
-install, under `.local/state/opencode` (Kilo Code: `.local/state/kilo`):
-
-* `prompt-history.jsonl`, secondary (`secondary()`): the last 50 prompts,
-  2.0 `{text, files, agents, skills, pasted, mode?}`, 1.x and Kilo Code
-  `{input, parts, mode?}`, no session, project or time. One row per line
-  with an empty `timestamp_utc`: a `user` row, or for `mode` `shell` a
-  `tool_use` row with tool `shell` and no id, which pairs on text with the
-  transcript's command.
-* `prompt-stash.jsonl`: prompts set aside unsent, 2.0 `{prompt: {text},
-  timestamp}`, 1.x and Kilo Code `{input, parts, timestamp}` (epoch ms);
-  one `system` row per line at `timestamp`, `prompt stashed (unsent):
-  <text> (from <file>, timestamp)`.
-* `session.json` (OpenCode only), secondary: `{pinned: [<session id>]}`;
-  one `system` row per id, `session pinned: <id> (from <file> pinned, file
-  mtime)`, with that `session_id`, at the file's modification time. The id
-  outlives a deleted session. A file that is not a JSON object is one
-  `parser:` row.
-
-Bad lines in both JSONL files are `parser: unparseable line` rows
-(`error_rows`).
-
-Bad records (issue 139): each `message`, `part`, `session_message` or
-`event` row whose `data` is not a JSON object is its own `system` row
-`parser: unparseable record <rowid> (<table>.data: <reason>): <data>`,
-the stored value in full, with the session id and project of its row, an
-empty timestamp and `source_line` the rowid; a part row's follows its
-message's rows, the others end the database's rows. A part file of the
-JSON trees that does not decode is `parser: unparseable part <partID>
-(<reason>): <file text>`, `source_file` the part file, after its message's
-rows. A message or session file that does not decode is one `parser:`
-row for the whole file.
+Model and agent (an OpenCode agent is a mode with its own permission rules)
+are tracked per session as `model:` and `permission mode:` rows. Shares give
+`session synced:` rows, so `records_sync` is set. `project_path` is the
+session's `directory`, else the project `worktree` unless `/`, else the
+message's `path.cwd`; no git branch is recorded. `source_line` is the SQLite
+`rowid`, or 1 for a JSON file.
 """
 
 from __future__ import annotations
@@ -236,7 +71,7 @@ TOOL_KEYS = (
 
 
 def tool_summary(value) -> str:
-    """The most identifying argument of a tool input, else the input as JSON."""
+    """Return the most identifying argument of a tool input, else the input as JSON."""
     if isinstance(value, str):
         return value
     if isinstance(value, dict):
@@ -252,6 +87,7 @@ def tool_summary(value) -> str:
 
 
 def model_name(provider, model) -> str:
+    """Return `<provider>/<model>`, or whichever of the two is set."""
     provider = provider if isinstance(provider, str) else ""
     model = model if isinstance(model, str) else ""
     if provider and model:
@@ -260,8 +96,11 @@ def model_name(provider, model) -> str:
 
 
 def message_ref(msg: dict) -> tuple[object, object]:
-    """(providerID, model id) of a V1 message: the assistant's own
-    `providerID`/`modelID`, else the user message's `model` object."""
+    """Return (providerID, model id) of a V1 message.
+
+    That is the assistant's own `providerID`/`modelID`, else the user
+    message's `model` object.
+    """
     if msg.get("role") == "assistant":
         return msg.get("providerID"), msg.get("modelID")
     model = msg.get("model")
@@ -271,14 +110,17 @@ def message_ref(msg: dict) -> tuple[object, object]:
 
 
 def message_model(msg: dict) -> str:
+    """Return a V1 message's model as `<provider>/<model>`."""
     return model_name(*message_ref(msg))
 
 
 def model_row_text(seen: dict, key, provider, model_id) -> str:
-    """The `model:` row text for a model reference, through `track_change`:
-    `model: <id> provider=<provider>` for the first model of a session and
-    `model: <old id> -> <new id> provider=<provider>` when the id or the
-    provider changes; "" when it is unchanged or names no model id."""
+    """Return the `model:` row text of a model reference, through `track_change`.
+
+    That is `model: <id> provider=<provider>` for the first model of a
+    session and `model: <old id> -> <new id> provider=<provider>` when the id
+    or the provider changes; "" when it is unchanged or names no model id.
+    """
     provider = provider if isinstance(provider, str) else ""
     model_id = model_id if isinstance(model_id, str) else ""
     if not model_id:
@@ -291,9 +133,11 @@ def model_row_text(seen: dict, key, provider, model_id) -> str:
 
 
 def agent_row_text(seen: dict, key, agent) -> str:
-    """The `permission mode: agent=<name>` row text when a session's agent is
-    new or changed. An OpenCode agent (`build`, `plan`, a custom one) is a
-    mode with its own permission set, so it is tracked as the mode."""
+    """Return the `permission mode: agent=<name>` text when a session's agent is new or changed.
+
+    An OpenCode agent (`build`, `plan`, a custom one) is a mode with its own
+    permission set, so it is tracked as the mode.
+    """
     if not isinstance(agent, str) or not agent:
         return ""
     return track_change("permission mode", seen, key, "agent=" + agent)
@@ -316,10 +160,12 @@ def _loads(value) -> dict | None:
 
 
 def _decode(value) -> tuple[dict | None, str, str]:
-    """(record, reason, raw text) of a stored JSON value: the record when it
-    decodes to an object, else None with the reason and the value as text
-    (bytes decoded UTF-8 with `errors="replace"`), for an error row that
-    carries it in full (issue 139)."""
+    """Return (record, reason, raw text) of a stored JSON value.
+
+    The record is the value when it decodes to an object, else None with the
+    reason and the value as text (bytes decoded UTF-8 with
+    `errors="replace"`), for an error row that carries it in full.
+    """
     if value is None:
         return None, "no data", ""
     if isinstance(value, bytes):
@@ -338,8 +184,7 @@ def _decode(value) -> tuple[dict | None, str, str]:
 
 
 def _read_part(path: Path) -> tuple[dict | None, str, str]:
-    """`_decode` of a part file's bytes; an unreadable file gives the
-    reason and no text."""
+    """Return `_decode` of a part file's bytes; an unreadable file gives the reason, no text."""
     try:
         with open(path, "rb") as handle:
             return _decode(handle.read())
@@ -383,10 +228,12 @@ V2_DECLINED = "The user declined this tool call"
 
 
 def decision_text(err) -> str:
-    """The `permission decision:` row text for a tool error that records a
-    refusal, else "". The 2.0 `permission.rejected` type covers both a deny
-    rule and a rejection with feedback, which its message does not tell
-    apart, so it keeps the agent's own term."""
+    """Return the `permission decision:` text of a tool error that records a refusal, else "".
+
+    The 2.0 `permission.rejected` type covers both a deny rule and a
+    rejection with feedback, which its message does not tell apart, so it
+    keeps the agent's own term.
+    """
     if isinstance(err, str):
         etype, msg = "", err
     elif isinstance(err, dict):
@@ -409,10 +256,12 @@ def decision_text(err) -> str:
 
 
 def session_rules(value) -> list[tuple[str, str, str]] | None:
-    """(permission, pattern, effect) per rule of a session's `permission`
-    column: a JSON array of 2.0 `{action, resource, effect}` or 1.x and
-    Kilo Code `{permission, pattern, action}` objects. None when the value
-    is not a JSON array; entries that are neither shape are skipped."""
+    """Return (permission, pattern, effect) per rule of a session's `permission` column.
+
+    The column is a JSON array of 2.0 `{action, resource, effect}` or 1.x
+    and Kilo Code `{permission, pattern, action}` objects. None when the
+    value is not a JSON array; entries that are neither shape are skipped.
+    """
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     try:
@@ -449,6 +298,8 @@ class _Ctx:
 
 
 class OpenCodeParser(Parser):
+    """Parse OpenCode's databases, legacy JSON trees and terminal UI state files."""
+
     agent = "opencode"
     name = "opencode"
     records_sync = True
@@ -464,6 +315,7 @@ class OpenCodeParser(Parser):
     pinned_sessions = True
 
     def __init__(self) -> None:
+        """Compile the path patterns from the class's data and state directories."""
         data_dir = re.escape(self.data_dir)
         state_dir = re.escape(self.state_dir)
         self.history_rx = re.compile(r"^%s/prompt-history\.jsonl$" % state_dir)
@@ -483,6 +335,7 @@ class OpenCodeParser(Parser):
         )
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a database, a JSON tree file or a terminal UI state file."""
         rel = artifact.rel
         return any(
             pattern.match(rel)
@@ -499,12 +352,14 @@ class OpenCodeParser(Parser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the prompt history, the pinned sessions or `opencode-next.db`."""
         rel = artifact.rel
         if self.history_rx.match(rel) or self.pinned_rx.match(rel):
             return True
         return bool(self.db_rx.match(rel)) and self.db_label(artifact) == self.next_db
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one OpenCode file."""
         rel = artifact.rel
         if self.history_rx.match(rel):
             yield from self._parse_history(artifact)
@@ -581,11 +436,14 @@ class OpenCodeParser(Parser):
         opts: Options,
         errors: list,
     ) -> Iterator[Row]:
-        """Rows for one V1 message and its parts. `msg_src` and each part
-        entry carry (source_file, source_line, fallback time). A part whose
-        data could not be decoded is in `errors` instead, as (line, message,
-        raw, source_file), and becomes its own `parser:` row after the
-        message's rows; `source_file` "" means the artifact."""
+        """Yield the rows of one V1 message and its parts.
+
+        `msg_src` and each part entry carry (source_file, source_line,
+        fallback time). A part whose data could not be decoded is in `errors`
+        instead, as (line, message, raw, source_file), and becomes its own
+        `parser:` row after the message's rows; `source_file` "" means the
+        artifact.
+        """
         role = msg.get("role")
         model = message_model(msg)
         msg_file, msg_line, msg_time = msg_src
@@ -714,7 +572,7 @@ class OpenCodeParser(Parser):
 
     @staticmethod
     def _tool_rows(make_row, data: dict) -> None:
-        """Append a tool_use row, and a tool_result row once finished, via `mk`."""
+        """Append a tool_use row, and a tool_result row once finished, via `make_row`."""
         state = _dict_or_empty(data.get("state"))
         times = _dict_or_empty(state.get("time"))
         name = str(data.get("tool") or "")
@@ -822,7 +680,7 @@ class OpenCodeParser(Parser):
 
     @staticmethod
     def _session_message_ids(con: sqlite3.Connection, tables: set) -> set[str]:
-        """The ids of the sessions that have a `session_message` row."""
+        """Return the ids of the sessions that have a `session_message` row."""
         if "session_message" not in tables:
             return set()
         return {
@@ -841,12 +699,14 @@ class OpenCodeParser(Parser):
         opts: Options,
         recovered: bool = False,
     ) -> Generator[Row, None, set[str]]:
-        """Rows of the V1 `message` and `part` tables for every session not
-        in `skip`. An undecodable `message` row is appended to `errors` as
-        (rowid, message, raw, session id); an undecodable `part` row becomes
-        a `parser:` row after its message's rows. With `recovered`, every
-        row other than `system` is marked `recovered` "yes". Returns the ids
-        of the sessions that have a `message` row."""
+        """Yield the rows of the V1 `message` and `part` tables for every session not in `skip`.
+
+        An undecodable `message` row is appended to `errors` as (rowid,
+        message, raw, session id); an undecodable `part` row becomes a
+        `parser:` row after its message's rows. With `recovered`, every row
+        other than `system` is marked `recovered` "yes". Returns the ids of
+        the sessions that have a `message` row.
+        """
         covered: set[str] = set()
         if "message" not in tables:
             return covered
@@ -901,9 +761,11 @@ class OpenCodeParser(Parser):
         errors: list,
         opts: Options,
     ) -> Iterator[Row]:
-        """Rows of `session_message` for every session not in `skip`; an
-        undecodable row is appended to `errors` as (rowid, message, raw,
-        session id)."""
+        """Yield the rows of `session_message` for every session not in `skip`.
+
+        An undecodable row is appended to `errors` as (rowid, message, raw,
+        session id).
+        """
         if "session_message" not in tables:
             return
         for message_row in con.execute(
@@ -934,11 +796,13 @@ class OpenCodeParser(Parser):
     def _share_rows(
         self, con: sqlite3.Connection, tables: set, artifact: Artifact, ctx_for, errors: list
     ) -> Iterator[Row]:
-        """The sync rows of the database: one per `session_share` row, then,
-        for a session with no such row, the share URL and the unshare that
-        its `session.updated.1` events record. An event row whose `data`
-        does not decode is appended to `errors` as (rowid, message, raw,
-        session id). `secret` is never selected."""
+        """Yield the database's sync rows, one per `session_share` row, then the event shares.
+
+        A session with no share row gets the share URL and the unshare its
+        `session.updated.1` events record. An event row whose `data` does not
+        decode is appended to `errors` as (rowid, message, raw, session id).
+        `secret` is never selected.
+        """
         database = self.db_label(artifact)
         shared: set[str] = set()
         if "session_share" in tables:
@@ -1000,14 +864,16 @@ class OpenCodeParser(Parser):
         ctx_for,
         errors: list,
     ) -> Iterator[Row]:
-        """The database's standing state, all `system` rows: per session a
-        `session archived` row at `time_archived` and one `permission
-        setting: session ...` row per rule of its `permission` column at
-        `time_updated`; one `scratch directory:` row per worktree OpenCode
-        made (`worktree`, else `project_directory` of type `git_worktree`);
-        one `permission setting:` row per saved grant of the `permission`
-        table. A `permission` value that is not a JSON array is appended to
-        `errors` as (rowid, message, raw, session id)."""
+        """Yield the database's standing state as `system` rows.
+
+        Per session a `session archived` row at `time_archived` and one
+        `permission setting: session ...` row per rule of its `permission`
+        column at `time_updated`; one `scratch directory:` row per worktree
+        OpenCode made (`worktree`, else `project_directory` of type
+        `git_worktree`); one `permission setting:` row per saved grant of the
+        `permission` table. A `permission` value that is not a JSON array is
+        appended to `errors` as (rowid, message, raw, session id).
+        """
         database = self.db_label(artifact)
 
         def make_row(ctx: _Ctx, line: int, when, text: str, project: str | None = None) -> Row:
@@ -1097,8 +963,7 @@ class OpenCodeParser(Parser):
 
     @staticmethod
     def db_label(artifact: Artifact) -> str:
-        """The database's file name for row text (`opencode.db`, `kilo.db`,
-        `opencode-<channel>.db`)."""
+        """Return the database's file name for row text (`opencode.db`, `kilo.db`, ...)."""
         return artifact.rel.rsplit("/", 1)[-1]
 
     def _v2_rows(
@@ -1243,11 +1108,13 @@ class OpenCodeParser(Parser):
 
     @staticmethod
     def _shell_rows(make_row, data: dict) -> Iterator[Row]:
-        """A `shell` record's tool_use row and, once it has output or has
-        ended, its tool_result row. 1.x: `callID`, `output` a string. 2.0:
-        `shellID`, `status` (`running`, `exited`, `timeout`, `killed`),
-        `exit` and `output.output`; a result that did not exit 0 starts
-        `[<status>]` or `[exit <code>]`."""
+        """Yield a `shell` record's tool_use row and, once it has output or has ended, its result.
+
+        1.x records `callID` and `output` as a string; 2.0 `shellID`, `status`
+        (`running`, `exited`, `timeout`, `killed`), `exit` and
+        `output.output`. A result that did not exit 0 starts `[<status>]` or
+        `[exit <code>]`.
+        """
         call_id = str(data.get("callID") or data.get("shellID") or "")
         times = _dict_or_empty(data.get("time"))
         use = make_row("tool_use", data.get("command") or "")
@@ -1268,12 +1135,14 @@ class OpenCodeParser(Parser):
 
     # -- terminal UI state ----------------------------------------------------------
     def _parse_history(self, artifact: Artifact) -> Iterator[Row]:
-        """`prompt-history.jsonl`, the last 50 prompts typed into the terminal
-        UI: one row per line with an empty `timestamp_utc`, `session_id` and
+        """Yield one row per prompt of `prompt-history.jsonl`, the terminal UI's last 50.
+
+        The rows have an empty `timestamp_utc`, `session_id` and
         `project_path`, since the line records none. A prompt is a `user`
         row; a shell command (`mode` `shell`) a `tool_use` row with tool
         `shell` and no id, which pairs on text with the transcript's command.
-        2.0 writes the prompt as `text`, 1.x and Kilo Code as `input`."""
+        2.0 writes the prompt as `text`, 1.x and Kilo Code as `input`.
+        """
         errors: list = []
         for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             text = rec.get("text") if isinstance(rec.get("text"), str) else rec.get("input")
@@ -1289,11 +1158,12 @@ class OpenCodeParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_stash(self, artifact: Artifact) -> Iterator[Row]:
-        """`prompt-stash.jsonl`, prompts the user set aside unsent: one
-        `system` row per line at its `timestamp` (epoch ms), `prompt stashed
-        (unsent): <text> (from <file>, timestamp)`. 2.0 writes `{prompt:
-        {text, ...}, timestamp}`, 1.x and Kilo Code `{input, parts,
-        timestamp}`."""
+        """Yield one `prompt stashed (unsent):` row per prompt set aside in `prompt-stash.jsonl`.
+
+        Each row is at the line's `timestamp` (epoch ms). 2.0 writes
+        `{prompt: {text, ...}, timestamp}`, 1.x and Kilo Code `{input, parts,
+        timestamp}`.
+        """
         errors: list = []
         for line_number, rec in iter_jsonl(artifact.disk_path, errors):
             prompt = rec.get("prompt")
@@ -1311,12 +1181,12 @@ class OpenCodeParser(Parser):
         yield from error_rows(self, artifact, errors)
 
     def _parse_pinned(self, artifact: Artifact) -> Iterator[Row]:
-        """`session.json`, `{pinned: [<session id>...]}`: one `system` row per
-        pinned id, `session pinned: <id> (from <file> pinned, file mtime)`,
-        with that `session_id`, at the file's modification time. The id stays
-        after the session is deleted, so a pinned session with no other row
-        is a trace of a deleted one. A file that is not a JSON object is one
-        `parser:` row."""
+        """Yield one `session pinned:` row per id of `session.json` `pinned`, at the file's mtime.
+
+        The id stays after the session is deleted, so a pinned session with
+        no other row is a trace of a deleted one. A file that is not a JSON
+        object is one `parser:` row.
+        """
         doc = _read_json(artifact.disk_path)
         timestamp = file_mtime(artifact)
         if doc is None:
@@ -1337,9 +1207,11 @@ class OpenCodeParser(Parser):
     # -- legacy JSON tree -----------------------------------------------------------
     @staticmethod
     def _orig_root(artifact: Artifact, depth: int) -> tuple[str, str, Path]:
-        """(original root, separator, disk root) for the directory `depth`
-        levels above the artifact file. The original path is cut by the length
-        of the relative tail, which is the same whatever the separator."""
+        """Return (original root, separator, disk root) of the directory `depth` levels up.
+
+        The original path is cut by the length of the relative tail, which is
+        the same whatever the separator.
+        """
         tail = "/".join(artifact.rel.split("/")[-depth:])
         orig = artifact.original
         sep = "\\" if orig.count("\\") > orig.count("/") else "/"

@@ -6,6 +6,7 @@ import contextlib
 import importlib.util
 import io
 import itertools
+import stat
 import sys
 from pathlib import Path
 
@@ -87,11 +88,50 @@ def test_every_marker_fault_fails_and_writes_nothing(tmp_path):
 
 
 def test_unreadable_document_exits_2(tmp_path):
-    cases = {"missing": tmp_path / "absent.md", "not UTF-8": tmp_path / "latin1.md"}
+    text = examples.DOCUMENT.read_bytes()
+    cases = {
+        "missing": tmp_path / "absent.md",
+        "not UTF-8": tmp_path / "latin1.md",
+        "lone CR": tmp_path / "cr.md",
+        "CRLF": tmp_path / "crlf.md",
+    }
     cases["not UTF-8"].write_bytes(b"caf\xe9\n")
+    cases["lone CR"].write_bytes(text.replace(b"Its keys, in order:", b"Its keys,\rin order:", 1))
+    cases["CRLF"].write_bytes(text.replace(b"\n", b"\r\n"))
+    before = {case: path.read_bytes() for case, path in cases.items() if path.exists()}
     for case, document in cases.items():
         for mode in ([], ["--check"]):
             status, stdout, stderr = run_main(*mode, "--document", str(document))
             assert (status, stdout) == (2, ""), (case, mode)
             assert stderr.startswith("error: "), (case, mode)
-    assert cases["not UTF-8"].read_bytes() == b"caf\xe9\n"
+    for case, data in before.items():
+        assert cases[case].read_bytes() == data, case
+    assert not cases["missing"].exists()
+
+
+def test_failed_run_exits_2_and_writes_nothing(tmp_path, monkeypatch):
+    document = tmp_path / "output.md"
+    document.write_bytes(examples.DOCUMENT.read_bytes())
+
+    def exits_3(argv):
+        return 3
+
+    def raises(argv):
+        raise ValueError("parser fault")
+
+    for case, fake in {"exit 3": exits_3, "raises": raises}.items():
+        monkeypatch.setattr(examples.cli, "main", fake)
+        for mode in ([], ["--check"]):
+            status, stdout, stderr = run_main(*mode, "--document", str(document))
+            assert (status, stdout) == (2, ""), (case, mode)
+            assert stderr.startswith("error: "), (case, mode)
+            assert document.read_bytes() == examples.DOCUMENT.read_bytes(), (case, mode)
+
+
+def test_rewrite_keeps_the_file_mode(tmp_path):
+    document = tmp_path / "output.md"
+    document.write_bytes(examples.DOCUMENT.read_bytes())
+    document.chmod(0o640)
+    assert run_main("--document", str(document))[0] == 0
+    assert stat.S_IMODE(document.stat().st_mode) == 0o640
+    assert [path.name for path in tmp_path.iterdir()] == ["output.md"], "temporary file left"

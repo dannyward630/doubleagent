@@ -18,7 +18,8 @@ analyzer/docs/development.md documents the collection and the options.
 
 Exit status: 0 when the document is current or was rewritten, 1 when `--check` found a
 stale block, 2 when the marker lines are not each block's begin and end, in order, the
-document cannot be read as UTF-8, or a run fails.
+document cannot be read or is not UTF-8 with LF line ends, or a run fails. Only the text
+between the markers changes, and the file is replaced in one rename.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -57,6 +59,10 @@ CLAUDE_LOOSE_SESSION = "99999999-8888-4777-8666-555555555555"
 
 class MarkerError(DoubleAgentError):
     """The marker lines are not each block's begin and end, in order."""
+
+
+class DocumentError(DoubleAgentError):
+    """The document is not UTF-8 text with LF line ends, so a rewrite could change other text."""
 
 
 class RunError(DoubleAgentError):
@@ -229,8 +235,12 @@ def build_collection(root: Path) -> Path:
 
 def _run(argv: list[str]) -> str:
     stdout, stderr = io.StringIO(), io.StringIO()
-    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        status = cli.main(argv)
+    try:
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            status = cli.main(argv)
+    except Exception as error:
+        # Whatever a parser raises, the run produced no example; exit 1 would read as stale.
+        raise RunError("%s raised %r" % (argv[0], error)) from error
     if status != 0:
         raise RunError("%s exited %s: %s" % (argv[0], status, stderr.getvalue().strip()))
     return stdout.getvalue()
@@ -303,14 +313,44 @@ def render(text: str, blocks: dict[str, str]) -> str:
     return text
 
 
+def _read(document: Path) -> str:
+    """Return `document` as text, exactly as stored.
+
+    Raises:
+        DocumentError: It is not UTF-8 or holds a carriage return.
+    """
+    try:
+        text = document.read_bytes().decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise DocumentError("%s is not UTF-8: %s" % (document, error)) from error
+    if "\r" in text:
+        raise DocumentError("%s holds a carriage return; only LF line ends are kept" % document)
+    return text
+
+
+def _write(document: Path, text: str) -> None:
+    """Replace `document` with `text` in one rename, keeping its mode; a failure leaves it whole."""
+    mode = stat.S_IMODE(document.stat().st_mode)
+    descriptor, name = tempfile.mkstemp(dir=document.parent, prefix=document.name + ".")
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(text.encode("utf-8"))
+        os.chmod(name, mode)
+        os.replace(name, document)
+    except BaseException:
+        os.unlink(name)
+        raise
+
+
 def check(document: Path = DOCUMENT) -> list[str]:
     """Return a unified diff per stale block of `document`, empty when every block is current.
 
     Raises:
         MarkerError: The marker lines are not each block's begin and end, in order.
+        DocumentError: The document is not UTF-8 or holds a carriage return.
         RunError: The `detect` or `timeline` run failed.
     """
-    text = document.read_text(encoding="utf-8")
+    text = _read(document)
     spans = _spans(text)
     blocks = generate()
     diffs = []
@@ -332,11 +372,11 @@ def regenerate(document: Path = DOCUMENT) -> None:
 
     Raises:
         MarkerError: The marker lines are not each block's begin and end, in order.
+        DocumentError: The document is not UTF-8 or holds a carriage return.
         RunError: The `detect` or `timeline` run failed.
     """
-    text = render(document.read_text(encoding="utf-8"), generate())
-    with open(document, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    text = render(_read(document), generate())
+    _write(document, text)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -350,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
             regenerate(args.document)
             return 0
         diffs = check(args.document)
-    except (MarkerError, RunError, OSError, UnicodeDecodeError) as error:
+    except (MarkerError, DocumentError, RunError, OSError) as error:
         print("error: %s" % error, file=sys.stderr)
         return 2
     for diff in diffs:

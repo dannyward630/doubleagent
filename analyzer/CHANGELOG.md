@@ -196,6 +196,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `logs.json` or legacy Gemini CLI session file, so the failure sits in
   the timeline beside the file's other rows; before, the error left the
   parser and the command reported it as a `problem:` line ([#282]).
+- The `codex-cli`, `continue`, `copilot-cli`, `goose` and `hermes`
+  parsers end a line of the YAML, Starlark, Markdown and log files they
+  read, and on Python 3.10 the TOML files (3.11 and later read TOML with
+  the standard library), at LF or CRLF only and trim only the whitespace
+  the format defines, so a value holding a Unicode line or paragraph
+  separator (U+2028, U+2029, U+0085) or a form feed is no longer split
+  across lines, and one with a no-break space or another Unicode space at
+  its edge is no longer trimmed. On Python 3.10, where the analyzer reads
+  TOML itself, `automation.toml` keeps the spaces before a multi-line
+  basic string's first line end. It also keeps a line ending in an
+  escaped backslash (two backslashes) instead of joining the next line.
+  On 3.10 the Codex TOML readers also reject what the standard library's
+  reader on 3.11 and later rejects: an unquoted value padded with a
+  Unicode space, an integer with a leading zero, a non-ASCII digit or a
+  misplaced underscore, and a backslash before a lone space in a string.
+  Such a value gives one `parser:` row for `automation.toml`; on 3.10
+  `config.toml` leaves the entry out of its `permission setting:` rows
+  with no `parser:` row ([#281]).
 
 ## [0.20.1] - 2026-10-21
 
@@ -2097,6 +2115,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 [#285]: https://github.com/seanthegeek/doubleagent/issues/285
 [#283]: https://github.com/seanthegeek/doubleagent/issues/283
 [#282]: https://github.com/seanthegeek/doubleagent/issues/282
+[#281]: https://github.com/seanthegeek/doubleagent/issues/281
 [#280]: https://github.com/seanthegeek/doubleagent/issues/280
 [#277]: https://github.com/seanthegeek/doubleagent/issues/277
 [#256]: https://github.com/seanthegeek/doubleagent/issues/256

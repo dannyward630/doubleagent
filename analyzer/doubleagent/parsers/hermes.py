@@ -39,6 +39,7 @@ from ..dedup import TOLERANCE_SECONDS
 from ..inputs import Artifact
 from ..model import Row, compact
 from ..sqlite_util import is_sqlite, open_copy, table_names
+from ..textlines import SPACE_OR_TAB, split_lines
 from ..timeutil import to_utc
 from .aider import read_input_history
 from .base import (
@@ -283,7 +284,7 @@ def yaml_scalar(value: str) -> str | None:
                 break
             else:
                 i += 1
-        rest = value[i + 1 :].strip()
+        rest = value[i + 1 :].strip(SPACE_OR_TAB)
         if i >= len(value) or (rest and not rest.startswith("#")):
             return None
         if quote == "'":
@@ -293,7 +294,7 @@ def yaml_scalar(value: str) -> str | None:
         except ValueError:
             return None
         return out if isinstance(out, str) else None
-    plain = value.split(" #", 1)[0].rstrip()
+    plain = value.split(" #", 1)[0].rstrip(SPACE_OR_TAB)
     if not plain or plain[0] in "[]{}&*!|>%@`#," or ": " in plain or plain.endswith(":"):
         return None
     return plain
@@ -311,7 +312,7 @@ def read_flat_list(lines: list[str], key: str) -> tuple[list[tuple[int, str]], s
     for line_number, line in enumerate(lines, 1):
         if line.startswith(key + ":"):
             start = line_number
-            rest = line[len(key) + 1 :].split(" #", 1)[0].strip()
+            rest = line[len(key) + 1 :].split(" #", 1)[0].strip(SPACE_OR_TAB)
             if rest not in ("", "[]", "null", "~"):
                 return [], "line %d: %s is not a block list" % (line_number, key)
             break
@@ -319,12 +320,13 @@ def read_flat_list(lines: list[str], key: str) -> tuple[list[tuple[int, str]], s
         return [], ""
     for line_number in range(start + 1, len(lines) + 1):
         line = lines[line_number - 1]
-        stripped = line.strip()
+        stripped = line.strip(SPACE_OR_TAB)
         if not stripped or stripped.startswith("#"):
             continue
-        if not line[0].isspace() and not stripped.startswith("-"):
+        if line[0] not in SPACE_OR_TAB and not stripped.startswith("-"):
             break  # the next top-level key
-        value = yaml_scalar(stripped[2:].strip()) if stripped.startswith("- ") else None
+        item = stripped[2:].strip(SPACE_OR_TAB)
+        value = yaml_scalar(item) if stripped.startswith("- ") else None
         if value is None:
             return entries, "line %d: not a string item of %s" % (line_number, key)
         entries.append((line_number, value))
@@ -982,7 +984,7 @@ class HermesParser(Parser):
         except OSError as error:
             errors.append((0, "config.yaml could not be read (%s)" % error, ""))
             text = ""
-        entries, problem = read_flat_list(text.splitlines(), "command_allowlist")
+        entries, problem = read_flat_list(split_lines(text), "command_allowlist")
         timestamp = file_mtime(artifact) if entries else ""
         for line_number, pattern in entries:
             yield self._setting(

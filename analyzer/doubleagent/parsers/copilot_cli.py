@@ -42,6 +42,7 @@ from pathlib import Path
 from ..inputs import Artifact
 from ..model import SCRATCH_PREFIX, Row, compact
 from ..sqlite_util import is_sqlite, open_copy, table_names
+from ..textlines import SPACE_OR_TAB, split_lines
 from ..timeutil import to_utc
 from .base import (
     Options,
@@ -108,9 +109,9 @@ CHECKPOINT_COLUMNS = (
     "important_files",
     "next_steps",
 )
-SIGNED_IN_PATTERN = re.compile(r"Signed in to (\S+) as (.+?)\.?\s*$")
+SIGNED_IN_PATTERN = re.compile(r"Signed in to (\S+) as (.+?)\.?[ \t]*$")
 WORKSPACE_LINE_PATTERN = re.compile(r"Workspace initialized: ([0-9a-f-]{36})")
-LOG_TIME_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}T\S+Z)\s")
+LOG_TIME_PATTERN = re.compile(r"^(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)[ \t]")
 
 
 def _dict(value) -> dict:
@@ -224,25 +225,25 @@ def read_flat_yaml(path: Path) -> dict[str, str | None]:
     """
     out: dict[str, str | None] = {}
     try:
-        lines = path.read_bytes().decode("utf-8", errors="replace").splitlines()
+        lines = split_lines(path.read_bytes().decode("utf-8", errors="replace"))
     except OSError:
         return out
     for line in lines:
         if not line or line[0] in " \t#-" or ":" not in line:
             continue
         key, _, value = line.partition(":")
-        value = value.strip()
+        key, value = key.rstrip(SPACE_OR_TAB), value.strip(SPACE_OR_TAB)
         if value in ("", "null", "~"):
-            out[key.strip()] = None
+            out[key] = None
         elif value.startswith('"'):
             try:
-                out[key.strip()] = str(json.loads(value))
+                out[key] = str(json.loads(value))
             except ValueError:
-                out[key.strip()] = value.strip('"')
+                out[key] = value.strip('"')
         elif value.startswith("'") and value.endswith("'") and len(value) > 1:
-            out[key.strip()] = value[1:-1].replace("''", "'")
+            out[key] = value[1:-1].replace("''", "'")
         else:
-            out[key.strip()] = value
+            out[key] = value
     return out
 
 
@@ -986,7 +987,7 @@ class CopilotCliParser(Parser):
 
     def _parse_log(self, artifact: Artifact) -> Iterator[Row]:
         try:
-            lines = artifact.disk_path.read_bytes().decode("utf-8", errors="replace").splitlines()
+            lines = split_lines(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except OSError:
             return
         sessions = {

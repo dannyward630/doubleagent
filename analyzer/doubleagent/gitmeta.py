@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from .inputs import PROJECT_AGENT, Artifact
+from .textlines import ASCII_SPACE, split_lines
 
 CONFIG_REL = ".git/config"
 HEAD_REL = ".git/HEAD"
@@ -73,23 +74,11 @@ def read_text(path: Path) -> tuple[str, str]:
     return data.decode("utf-8", errors="replace"), ""
 
 
-# The whitespace git trims around a value and a ref: ASCII only, since
-# `str.strip()` would also take U+00A0 and its kind, which git keeps.
-_ASCII_SPACE = " \t\r\f\v"
-
-
 def _physical_lines(text: str) -> list[str]:
-    """Split text at LF or CRLF only, as git does, dropping a leading byte-order mark.
-
-    `str.splitlines()` would also split at the Unicode line separators and
-    the ASCII separators, cutting a path that holds one.
-    """
-    if text.startswith("﻿"):
+    """Split text at LF or CRLF only, as git does, dropping a leading byte-order mark."""
+    if text.startswith("\ufeff"):
         text = text[1:]
-    lines = text.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    return [line[:-1] if line.endswith("\r") else line for line in lines]
+    return split_lines(text)
 
 
 def _parse_value(lines: list[str], index: int, text: str) -> tuple[str, int, str]:
@@ -135,9 +124,9 @@ def _parse_value(lines: list[str], index: int, text: str) -> tuple[str, int, str
         # One pass from each end, since the file is untrusted and a value
         # padded with kilobytes of spaces must not cost a pop(0) per space.
         first, last = 0, len(out)
-        while first < last and out[first][0] in _ASCII_SPACE and not out[first][1]:
+        while first < last and out[first][0] in ASCII_SPACE and not out[first][1]:
             first += 1
-        while last > first and out[last - 1][0] in _ASCII_SPACE and not out[last - 1][1]:
+        while last > first and out[last - 1][0] in ASCII_SPACE and not out[last - 1][1]:
             last -= 1
         value = "".join(character for character, _ in out[first:last])
         # A quote still open at the end is a value the file ends inside: git
@@ -158,15 +147,15 @@ def _entries(text: str, errors: list[str]) -> Iterable[tuple[str, str | None]]:
         # Only leading whitespace is dropped here: a value's trailing
         # whitespace is _parse_value's to judge, since `\ ` at the end of a
         # line is an escaped space, not a continuation.
-        line = lines[index].lstrip(_ASCII_SPACE)
+        line = lines[index].lstrip(ASCII_SPACE)
         if line.startswith("["):
             match = _HEADER_PATTERN.match(line)
             if match is None:
-                yield "[", line.rstrip(_ASCII_SPACE)  # unterminated or malformed
+                yield "[", line.rstrip(ASCII_SPACE)  # unterminated or malformed
                 index += 1
                 continue
             yield "[", match.group(0)
-            line = line[match.end() :].lstrip(_ASCII_SPACE)
+            line = line[match.end() :].lstrip(ASCII_SPACE)
         if not line or line[0] in "#;":
             index += 1
             continue
@@ -225,10 +214,10 @@ def parse_head(text: str) -> str:
     An empty text gives `""`. Only ASCII whitespace is trimmed, since a ref
     may hold other whitespace.
     """
-    lines = [line.strip(_ASCII_SPACE) for line in _physical_lines(text)]
+    lines = [line.strip(ASCII_SPACE) for line in _physical_lines(text)]
     first = next((line for line in lines if line), "")
     if first.startswith("ref:"):
-        ref = first[len("ref:") :].strip(_ASCII_SPACE)
+        ref = first[len("ref:") :].strip(ASCII_SPACE)
         return ref[len("refs/heads/") :] if ref.startswith("refs/heads/") else ref
     return first
 

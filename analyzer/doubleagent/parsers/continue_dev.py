@@ -35,6 +35,7 @@ from collections.abc import Iterator
 
 from ..inputs import Artifact, error_reason
 from ..model import Row, compact
+from ..textlines import SPACE_OR_TAB, split_lines
 from ..timeutil import to_utc
 from .base import (
     Options,
@@ -172,10 +173,10 @@ def read_permissions(text: str) -> tuple[list[tuple[int, str, str]], str]:
     """
     entries: list[tuple[int, str, str]] = []
     current = ""
-    for line_number, line in enumerate(text.splitlines(), 1):
-        if line_number == 1 and line.startswith("﻿"):
+    for line_number, line in enumerate(split_lines(text), 1):
+        if line_number == 1 and line.startswith("\ufeff"):
             line = line[1:]
-        stripped = line.strip()
+        stripped = line.strip(SPACE_OR_TAB)
         if not stripped or stripped.startswith("#") or stripped == "---":
             continue
         key = YAML_KEY_PATTERN.match(line)

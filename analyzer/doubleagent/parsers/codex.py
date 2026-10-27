@@ -43,6 +43,7 @@ import zstandard
 from ..errors import DoubleAgentError
 from ..inputs import Artifact, error_reason
 from ..model import GIT_REMOTE_PREFIX, Row, compact
+from ..textlines import ASCII_SPACE, SPACE_OR_TAB, split_lines
 from ..timeutil import to_utc
 from .base import (
     Options,
@@ -557,20 +558,27 @@ def item_rows(item: dict, payload: dict) -> list[tuple[str, object, dict, str]]:
     return [("system", completed, {}, "item %s: %s" % (item_type, compact_json(rest)))]
 
 
-TOML_KEY_PATTERN = re.compile(r"([A-Za-z0-9_-]+)\s*=\s*(.*)")
+TOML_KEY_PATTERN = re.compile(r"([A-Za-z0-9_-]+)[ \t]*=[ \t]*(.*)")
 TOML_BASIC_PATTERN = re.compile(r'"((?:[^"\\]|\\.)*)"')
-TOML_ESCAPE_PATTERN = re.compile(r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)", re.S)
+# One escape of a basic string, the line-ending backslash with the spaces,
+# tabs and LF or CRLF line ends it removes included, so a backslash that an
+# earlier backslash escapes is never read as one.
+TOML_ESCAPE_PATTERN = re.compile(
+    r"\\(u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|[ \t]*(?:\r?\n[ \t]*)+|.)", re.S
+)
+TOML_INTEGER_PATTERN = re.compile(r"[+-]?(?:0|[1-9](?:_?[0-9])*)")
 TOML_ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
 
 
 def _toml_unescape(body: str) -> str:
     """The escapes of a TOML basic string; a line-ending backslash joins lines."""
-    body = re.sub(r"\\[ \t]*\r?\n\s*", "", body)
 
     def one(match: re.Match) -> str:
         escape = match.group(1)
         if escape[0] in "uU" and len(escape) > 1:
             return chr(int(escape[1:], 16))
+        if "\n" in escape:
+            return ""
         if escape not in TOML_ESCAPES:
             raise ValueError("bad escape \\%s" % escape)
         return TOML_ESCAPES[escape]
@@ -594,9 +602,12 @@ def _toml_value(raw: str) -> object:
         if end < 0:
             raise ValueError("unterminated string")
         return raw[1:end]
-    word = raw.split("#", 1)[0].strip()
+    word = raw.split("#", 1)[0].strip(SPACE_OR_TAB)
     if word in ("true", "false"):
         return word == "true"
+    # int() alone would also take Unicode whitespace, non-ASCII digits and leading zeros.
+    if not TOML_INTEGER_PATTERN.fullmatch(word):
+        raise ValueError("not a TOML value: %r" % word)
     return int(word.replace("_", ""))
 
 
@@ -609,21 +620,22 @@ def flat_toml(text: str) -> dict:
         ValueError: a line cannot be read.
     """
     out: dict = {}
-    lines = iter(text.splitlines())
+    lines = iter(split_lines(text))
     for line in lines:
-        stripped = line.strip()
+        stripped = line.strip(SPACE_OR_TAB)
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("["):
             break
-        match = TOML_KEY_PATTERN.fullmatch(stripped)
+        match = TOML_KEY_PATTERN.fullmatch(line.lstrip(SPACE_OR_TAB))
         if not match:
             raise ValueError("not a key = value line")
-        key, raw = match.group(1), match.group(2).strip()
+        key, raw = match.group(1), match.group(2)
         quote = raw[:3]
         if quote not in ('"""', "'''"):
-            out[key] = _toml_value(raw)
+            out[key] = _toml_value(raw.rstrip(SPACE_OR_TAB))
             continue
+        # The whitespace before the first line's end is the string's.
         body = raw[3:]
         while quote not in body:
             more = next(lines, None)
@@ -636,7 +648,7 @@ def flat_toml(text: str) -> dict:
     return out
 
 
-TOML_PART_PATTERN = re.compile(r"""\s*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)\s*""")
+TOML_PART_PATTERN = re.compile(r"""[ \t]*("(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)[ \t]*""")
 
 
 def _toml_dotted(text: str) -> list[str] | None:
@@ -673,9 +685,9 @@ def scan_toml(text: str) -> dict:
     """
     out: dict = {}
     table = out
-    lines = iter(text.splitlines())
+    lines = iter(split_lines(text))
     for line in lines:
-        stripped = line.strip()
+        stripped = line.strip(SPACE_OR_TAB)
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("["):
@@ -690,7 +702,7 @@ def scan_toml(text: str) -> dict:
                 table = node
             continue
         key, separator, raw = stripped.partition("=")
-        raw = raw.strip()
+        raw = raw.strip(SPACE_OR_TAB)
         quote = raw[:3]
         if quote in ('"""', "'''"):
             body = raw[3:]
@@ -700,7 +712,7 @@ def scan_toml(text: str) -> dict:
                     break
                 body += "\n" + more
             continue
-        parts = _toml_dotted(key.strip()) if separator else None
+        parts = _toml_dotted(key.strip(SPACE_OR_TAB)) if separator else None
         if not parts:
             continue
         try:
@@ -758,7 +770,7 @@ def rule_statements(text: str, errors: list) -> list[tuple[int, str]]:
     start = 0
     parts: list[str] = []
     raw: list[str] = []
-    for line_number, line in enumerate(text.splitlines(), 1):
+    for line_number, line in enumerate(split_lines(text), 1):
         kept = ""
         i = 0
         while i < len(line):
@@ -780,10 +792,10 @@ def rule_statements(text: str, errors: list) -> list[tuple[int, str]]:
                 depth -= 1
             kept += character
             i += 1
-        if kept.strip() or parts:
+        if kept.strip(ASCII_SPACE) or parts:
             if not parts:
                 start = line_number
-            parts.append(kept.strip())
+            parts.append(kept.strip(ASCII_SPACE))
             raw.append(line)
         if parts and depth <= 0 and not quote:
             out.append((start, " ".join(part for part in parts if part)))
@@ -841,14 +853,15 @@ def memory_summary(text: str) -> tuple[dict[str, str], str]:
     the first blank line.
     """
     header: dict[str, str] = {}
-    lines = text.splitlines()
+    lines = split_lines(text)
     for i, line in enumerate(lines):
-        if not line.strip():
+        if not line.strip(ASCII_SPACE):
             return header, "\n".join(lines[i + 1 :])
         key, separator, value = line.partition(":")
-        if not separator or key.strip() not in MEMORY_HEADER_KEYS:
+        key = key.strip(ASCII_SPACE)
+        if not separator or key not in MEMORY_HEADER_KEYS:
             return header, "\n".join(lines[i:])
-        header[key.strip()] = value.strip()
+        header[key] = value.strip(ASCII_SPACE)
     return header, ""
 
 

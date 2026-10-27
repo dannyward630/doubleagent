@@ -1,301 +1,32 @@
-"""OpenClaw (formerly Clawdbot and Moltbot) agent transcripts.
+"""Parse OpenClaw (formerly Clawdbot and Moltbot) agent transcripts and Gateway state.
 
-Validated against source, openclaw/openclaw at 3b16db7 and, for the
-relay, permission, model-override, past-use, deletion and PostgreSQL
-anchor rows (issue 206), at 146284a (see `research/openclaw.md`), with
-a synthetic fixture; no real install was checked, so every row named
-below rests on source alone. The state directory is `.openclaw`, a profile's
-`.openclaw-<profile>`, or the legacy `.clawdbot` / `.moltbot`. Files:
+Follows `research/openclaw.md`. Validated against source, openclaw/openclaw at
+3b16db7 and 146284a (relay, permission, model-override, past-use, deletion,
+source-host and PostgreSQL anchor rows), with a synthetic fixture; no real
+install. The state directory is `.openclaw`, `.openclaw-<profile>`, `.clawdbot`
+or `.moltbot` (`STATE`). Files read:
 
-* `agents/<agentId>/agent/openclaw-agent.sqlite` (WAL, opened through
-  `sqlite_util`), the live store since mid-2026:
-  - `transcript_events(session_id, seq, event_json, event_zstd,
-    created_at)`: one entry per row. Rows of 1 KiB to 4 MiB may hold the
-    entry as one zstd frame in `event_zstd` with `event_json` NULL, decoded
-    with the `zstandard` package; a frame that does not decode becomes one
-    `system` row. `created_at` is epoch ms.
-  - `session_windows(session_id, session_key, previous_session_id, reason,
-    channel, account_id, chat_type, model_provider, model, started_at,
-    parent_session_key, spawned_by, display_name)`: one row per transcript
-    generation, read for the session-start row.
-  - `session_transcript_archives(session_id, session_key, reason, encoding,
-    archive_blob, archive_name, created_at)`: reset or deleted
-    generations as JSONL (zstd when `encoding` is `zstd`), every one parsed,
-    whether or not `published_at` says it was also written to the sessions
-    directory. The schema calls this table the
-    canonical owner of a reclaimed generation, from which the
-    `.jsonl.reset.*` / `.jsonl.deleted.*` file is derived and may be
-    recreated (`openclaw-agent-schema.sql:606-607`), so the blob is the
-    primary copy and the file the secondary one.
-  - `session_transcript_cold_archives(session_id, archive_name, storage,
-    archive_blob)` with `storage` `sqlite`: a zstd JSONL envelope of
-    `{"kind":"event","row":{"seq","event_json","created_at"}}` records
-    (`src/config/sessions/session-cold-storage-codec.ts:48-100`, not in the
-    research document). `storage` `file` means
-    `agents/<id>/sessions/cold/<sha256>.jsonl.zst`, parsed as a file.
-  - `session_nodes(rowid, session_key, current_session_id, entry_json)`:
-    the session-metadata entry of each session key. Its `publicShare`
-    `{id, sessionId, createdAt}` (a 48-hex grant id, the transcript
-    generation it publishes, epoch ms; absent on a session never
-    published, removed when access is turned off) marks a session whose
-    user messages and final answers anyone with the public URL can read,
-    served by the Gateway: one `session synced: public share <id>
-    generation <sessionId> (from openclaw-agent.sqlite
-    session_nodes.entry_json, publicShare.createdAt)` row after that
-    generation's session-start row, at `createdAt`, `session_id` the
-    generation (`records_sync`). A grant whose generation has no
-    transcript rows in the database still yields its row, after the
-    others. An `entry_json` that does not decode is its own `parser:` row
-    carrying the column in full. The share URL's token is not stored.
-    Fixture only: no real install has shown the key.
-    The same `entry_json` gives, attached after the start row of the
-    session's current generation (`current_session_id`) and timestamped
-    by `session_nodes.updated_at` unless stated: `model: <modelOverride>
-    provider=<providerOverride> source=<modelOverrideSource>[
-    fallback_from=<modelOverrideFallbackOriginProvider>/<...Model>] (from
-    openclaw-agent.sqlite session_nodes.entry_json modelOverride,
-    updated_at)`, the model column set to `modelOverride`
-    (`src/config/sessions/types.ts:502-516`; the entry keeps only the
-    current override, so the row names no previous model); one
-    `permission setting: <key>=<value> (from openclaw-agent.sqlite
-    session_nodes.entry_json, updated_at)` per `elevatedLevel`, `execHost`,
-    `execNode`, `execCwd`, `toolOverrides` (compact JSON) and `sendPolicy`
-    (`types.ts:481-500`, `532`); `session archived: <archiveReason> by
-    <archivedBy.type>:<archivedBy.id> (from openclaw-agent.sqlite
-    session_nodes.entry_json, archivedAt)` at `archivedAt`
-    (`types.ts:300-305`); and, when no conversation or window below gave
-    the generation a relay row, `session relayed: <route.channel> account
-    <route.accountId or origin.accountId> <origin.chatType> from
-    <origin.from> to <origin.to> (from openclaw-agent.sqlite
-    session_nodes.entry_json delivery, updated_at)` for a `delivery` of
-    kind `external` (`types.ts:60-83`).
-  - Relay (`records_relay`), attached after a generation's start row:
-    `session relayed: <channel> account <account_id> <kind> peer
-    <peer_id> thread <thread_id> role <role> (from openclaw-agent.sqlite
-    session_conversations and conversations, first_seen_at)` per
-    `session_conversations` link to a `conversations` row; else
-    `session relayed: <channel> account <account_id> <chat_type> (from
-    openclaw-agent.sqlite session_windows, started_at)` from
-    `session_windows`; and `session relayed: gmail hook (from
-    openclaw-agent.sqlite session_windows hook_external_content_source,
-    started_at)` for a session a Gmail hook started. The Control UI
-    channel `webchat` and the internal wake channels (`heartbeat`, `cron`,
-    `webhook`, `voice`, `sessions_send`;
-    `src/utils/message-channel-constants.ts:3`, `14-20`) are no platform.
-  - `session_transcript_archives` rows with `reason` `deleted` add
-    `session deleted: <session_id> archive <archive_name> (from
-    openclaw-agent.sqlite session_transcript_archives reason deleted,
-    created_at)` after the archive's rows.
-  - `session_pending_inputs(seq, input_id, session_id, run_id,
-    message_json, state, accepted_at, consumed_event_id)`, each accepted
-    prompt (`message_json` a user message, `content`): a row never
-    consumed (`consumed_event_id` NULL; a cancelled or interrupted prompt
-    never reaches the transcript) yields a `user` row and `pending input:
-    <state>, not consumed by the transcript (input <input_id> run
-    <run_id>; from openclaw-agent.sqlite session_pending_inputs,
-    accepted_at)`, at `accepted_at`, `source_line` the `seq`; a consumed
-    one yields its `user` row, marked `recovered`, only when the
-    transcript entry `consumed_event_id` names is not in the database. A
-    `message_json` that does not decode is its own `parser:` row.
-  - `session_transcript_fts`, the FTS5 index behind session search, read
-    from its content table `session_transcript_fts_content` (`c0` text,
-    `c1` session_id, `c2` message_id, `c3` role, `c4` timestamp) as a
-    plain table: a `user` or `assistant` row (else `system`, `<role>:
-    <text>`) per indexed entry whose `(session_id, message_id)` no
-    transcript row of the database carries, marked `recovered`.
-  - `conversation_deliveries` joined to `conversations`: `channel
-    delivery: <operation_kind> <status> channel <channel> conversation
-    <conversation_id> platform message <platform_message_id>[
-    error=<rejection_error>] (from openclaw-agent.sqlite
-    conversation_deliveries, created_at)` and, when a platform message
-    replied to it, `channel delivery reply: <reply_text> (reply message
-    <reply_message_id>; from openclaw-agent.sqlite
-    conversation_deliveries, reply_timestamp)`; `session_id` is the
-    current generation of `source_session_key`.
-  - `memory_session_tombstones`: `session forgotten from memory:
-    <session_id> agent <agent_id> reason=<reason> (from
-    openclaw-agent.sqlite memory_session_tombstones, created_at)`.
-  The full-text index and the pending inputs repeat transcript entries
-  inside the primary database, where `secondary()` cannot mark them, so
-  the parser joins them itself on the entry id and keeps only what the
-  transcript lost. Rows read after the transcripts carry the `cwd` of
-  their generation's header when the database has one.
-  - `auth_profile_store`, `auth_profile_state` and `session_suggestions`
-    hold credentials and are never read.
-  - With the PostgreSQL engine the file is an anchor holding only
-    `openclaw_engine_anchor(store_id, engine, schema)`
-    (`src/infra/database-engine/open.ts:149`): one whole-file row
-    `parser: agent database is a PostgreSQL anchor (store <store_id>,
-    schema <schema>): transcripts are on the database server`.
-* `state/openclaw.sqlite` (WAL, opened through `sqlite_util`), the
-  Gateway's state database, table `backup_runs(id, created_at,
-  archive_path, status, manifest_json)`, one row per `openclaw backup`
-  attempt (`src/state/openclaw-state-schema.sql:1843-1849`), with
-  `manifest_json` `{kind, target, namespace, pushFailed, bytes, location
-  {name, provider, locationId, key, namespace, ...}}`
-  (`src/state/backup-run-records.contract.ts:98-124`). A backup uploads
-  the whole state directory, every agent database included, so the row is
-  host-wide, not per session: one `system` row with an empty `session_id`
-  per run with `status` `ok` and either a `location` (an upload to a
-  storage location) or a Git `target` (the commit sha) without
-  `pushFailed`, at `created_at`: `backup uploaded: <kind> to
-  <location.name or archive_path> key <location.key or target> namespace
-  <location.namespace or namespace or -> (from state/openclaw.sqlite
-  backup_runs, created_at)`. A Git backup run without `--push` records
-  the same manifest as a pushed one (`src/commands/backup-git.ts:140-151`),
-  so a Git row says a commit was made and, unless the push failed, may
-  have been pushed. A `manifest_json` that does not decode is its own
-  `parser:` row carrying the column in full; a file that is not SQLite or
-  does not open is one `parser:` row; a PostgreSQL anchor is one row
-  `parser: state database is a PostgreSQL anchor (store <store_id>,
-  schema <schema>): the Gateway state is on the database server`. Also
-  read (`src/state/openclaw-state-schema.sql:356-475`, `512-529`,
-  `794-801`, `1273-1294` at 146284a):
-  - `operator_approvals(approval_id, kind, status, decision,
-    terminal_reason, resolver_kind, source_session_id,
-    source_tool_call_id, source_tool_name, created_at_ms,
-    resolved_at_ms)`: `permission decision: <decision, else status>
-    status=<status> kind=<kind> resolver=<resolver_kind>
-    reason=<terminal_reason> approval <approval_id> (from
-    state/openclaw.sqlite operator_approvals, <resolved_at_ms or
-    created_at_ms>)` at that time, `session_id` `source_session_id`,
-    `tool_name` `source_tool_name` and `tool_use_id`
-    `source_tool_call_id`, so it joins the call it governed.
-  - `exec_approvals_config(raw_json, updated_at_ms)`, the migrated
-    `exec-approvals.json`: one `permission setting: <scope>.<setting>
-    (from state/openclaw.sqlite exec_approvals_config, updated_at_ms)`
-    per `security`, `ask`, `askFallback` and `autoAllowSkills`
-    (`<key>=<value>`), allowlist entry (`allowlist=<pattern>[
-    argPattern=<argPattern>] source=<source>`) and MCP tool grant
-    (`mcpTools=<server>/<tool> source=<source>`) of `defaults` and of
-    each `agents.<id>`. `socket` holds the approvals socket token and is
-    never read; a `raw_json` that does not decode is one `parser:` row
-    without the text, for the same reason.
-  - `operator_approval_standing_grants`: `permission setting: standing
-    grant <grant_id> allow-always cron job <cron_job_id> agent <agent_id>
-    binding <operation_binding> approval <minted_by_approval_id>
-    expires=<expires_at_ms> revoked=<revoked_at_ms> uses=<use_count> (from
-    state/openclaw.sqlite operator_approval_standing_grants,
-    created_at_ms)`.
-  - `channel_pairing_allow_entries`: `permission setting: channel
-    <channel_key> account <account_id> allowFrom=<entry> (from
-    state/openclaw.sqlite channel_pairing_allow_entries, updated_at)`.
-  - `channel_ingress_events`: `channel ingress: <channel_id> account
-    <account_id> status <status>: <payload_json> (from
-    state/openclaw.sqlite channel_ingress_events, received_at)`, the
-    payload whole, since its shape per channel is not in the research;
-    no session id.
-  - `github_publication_requests`, `github_personal_publication_requests`
-    and `github_repository_publication_requests` (lines 2093-2140,
-    2410-2482, 2488-2531), one row per push or pull request the Gateway
-    made on GitHub for a session: `source host: github account
-    <identity_login> id <identity_account_id> identity <identity_source>;
-    publication <status> repository <repository> branch <branch> pull
-    request <pull_request_url> (from state/openclaw.sqlite <table>,
-    created_at_ms)`, `session_id` the session. The OAuth token
-    (`secret_store_entries`, name `github-oauth-<32 hex>`) is never read.
-  - `projects(repo_root, origin_url, created_at_ms)` (lines 1901-1909),
-    one row per repository registered with or cloned by the Gateway: a
-    `git remote: <origin_url>` row at `created_at_ms` for a row whose
-    `origin_url` is set, `project_path` the `repo_root`, no `session_id`
-    (issue 253).
-  Its other tables are not read. Fixture only.
-* `agents/<agentId>/sessions/<sessionId>.jsonl` (and `sessions/` at the
-  state root, the older single-agent layout): legacy transcripts not yet
-  imported by `openclaw doctor`. The sibling legacy `sessions.json`,
-  `{<sessionKey>: {"sessionId", ...}}`
-  (`src/infra/state-migrations.legacy-session-store.ts:202-205`), gives the
-  session key.
-* Copies of a transcript in the same `sessions/` directory, each a
-  secondary source (`secondary()`), in the same entry format and read the
-  same way; their rows carry the entries' own timestamps, ids and header
-  `cwd`, so they pair exactly with the primary store's rows for the same
-  entries:
-  - `<sessionId>.jsonl.reset.<ts>[.<gen>][.zst]` and `.jsonl.deleted.<...>`:
-    the published file of a `session_transcript_archives` blob, one zstd
-    frame when `.zst`. Kept after the database is lost or excluded; the
-    blob outlives the file otherwise, since retention deletes the row
-    only once the file is gone (`session-history-archive-pruning.worker.ts:105-114`).
-  - `<sessionId>.checkpoint.<uuid>.jsonl`: a pre-compaction snapshot,
-    `fs.copyFile` of the session file before compaction (written by
-    releases before openclaw/openclaw c59635a,
-    `src/gateway/session-compaction-checkpoints.ts:383-389` at 6814525; no
-    release at 3b16db7 writes new ones, `legacy-compaction-history.ts:3-7`).
-    It holds the entries the compaction later summarised.
-  - `<sessionId>.jsonl.pre-doctor-(branch|openai-codex)-repair-<ts>.bak`:
-    `fs.copyFile` of a legacy transcript before `openclaw doctor` rewrote
-    it (`src/commands/doctor-session-transcripts.ts:258-261`, `285-288` at
-    6559e3f, before 4273ca9 removed the file-era runtime). A branch repair
-    keeps only the active branch, so the copy holds the abandoned branches
-    too, which no other store has.
-  The session id of every JSONL file, the legacy transcript and its
-  copies alike, is its header `id`, else the name before the suffix, so a
-  copy carries the id the database and the legacy file carry: a session
-  forked from a checkpoint was written as `<ts>_<sessionId>.jsonl` (line
-  323 at 6814525), its own checkpoints named after that file, and an
-  archive of an id over 96 bytes is named `session-<sha256>`
-  (`session-accessor.sqlite-archive-artifact.ts:24-29`). The session-start
-  row of a copy names it (`archive=<reason>.<ts>`, `copy=<suffix>`), so it
-  never pairs and each copy shows one row of its own.
-  Not read: `*.trajectory.jsonl`, the trajectory flight recorder, whose
-  runtime events are a different schema (`openclaw-trajectory`,
-  `docs/tools/trajectory.md:76-102`); `*.migrated[.N]`, whose transcript
-  writer is not in the source at 3b16db7 or 6559e3f (the suffix is used
-  there for other migrated files, cron logs and pairing stores); and the
-  `.jsonl.bak.<ts>` legacy compact backups (`artifacts.ts:43-50`), whose
-  content is not recorded.
+- `agents/<id>/agent/openclaw-agent.sqlite`, through `sqlite_util`: the
+  entries of `transcript_events` (`event_json`, or a zstd frame in
+  `event_zstd`), the generations of `session_windows`, the reset and deleted
+  generations of `session_transcript_archives` and the `sqlite`-stored
+  `session_transcript_cold_archives`, and `session_nodes.entry_json`
+  (`publicShare`, `delivery`, `modelOverride`, `SESSION_PERMISSION_KEYS`,
+  `archivedAt`). Also `session_conversations` with `conversations`,
+  `session_pending_inputs` and the `session_transcript_fts_content` index
+  (joined on the entry id, keeping only what the transcript lost),
+  `conversation_deliveries` and `memory_session_tombstones`.
+- `state/openclaw.sqlite`, the Gateway's state: the `STATE_QUERIES` tables.
+- `[agents/<id>/]sessions/<id>.jsonl` legacy transcripts, with the session
+  key from the sibling `sessions.json`, and `sessions/cold/<sha256>.jsonl.zst`.
+- Secondary sources (files repeating the store's entries): the published
+  `.jsonl.reset.*` and `.jsonl.deleted.*` archives, `.checkpoint.<uuid>.jsonl`
+  snapshots and `.pre-doctor-*-repair-*.bak` copies. Not read:
+  `*.trajectory.jsonl`, `*.migrated` and `.jsonl.bak.<ts>`.
 
-Entry fields: header `{type:"session", version, id, timestamp, cwd,
-parentSession}`; then `type`, `id`, `parentId`, `timestamp` (ISO 8601) and
-per type `message` (`message`), `model_change` (`provider`, `modelId`),
-`thinking_level_change` (`thinkingLevel`), `compaction` (`summary`,
-`tokensBefore`, `tokensAfter`), `reset` (`reason`), `branch_summary`
-(`summary`), `custom` (`customType`, `data`), `custom_message`
-(`customType`, `content`), `label` (`label`, `targetId`), `session_info`
-(`name`). `message.role`: `user` (`content`, `runtimeContext`,
-`runtimeContextCarrier`), `assistant` (`content` blocks `text`, `thinking`
-{`thinking`, `redacted`}, `toolCall` {`id`, `name`, `arguments`}, `image`;
-`model`, `responseModel`, `stopReason`, `errorMessage`), `toolResult`
-(`toolCallId`, `toolName`, `content`, `isError`), `bashExecution`
-(`command`, `output`, `exitCode`, `cancelled`), `custom`, `branchSummary`,
-`compactionSummary` (`summary`); `message.timestamp` is epoch ms.
-
-Rows: one `system` row per session carrying the session key
-(`agent:<agentId>:<channel>:<accountId>:direct:<peerId>` names the external
-sender), channel, account, chat type and parent; `session_id` is the
-transcript id (`transcript_events.session_id`, the header `id`), and
-`project_path` the header `cwd`. User messages flagged `runtimeContext` are
-injected context, not human input, and become `system` rows. A
-`bashExecution` (a `!` command the operator ran) becomes a `tool_use` row
-named `bash` and a `tool_result` row, joined on the entry `id`. An assistant
-message that ended with `stopReason` `error` or `aborted`, or carries an
-`errorMessage`, adds a `system` row. Model rows: `model: <id>
-provider=<provider>` at the first model a session names (the
-`session_windows` `model` and `model_provider`, at the session-start time,
-else a `model_change` `modelId` or an assistant `responseModel`, else
-`model`) and `model: <old> -> <new> provider=<provider>` on every later
-entry whose model differs, with ` requested=<model>` when an assistant
-`responseModel` differs from its `model` (`pi.model_text`). A
-`model_change` entry naming the model already in force still yields the
-plain `model: <id> provider=<provider>` row (`pi.switch_text`).
-`audit_events` is not read: its `kind` and `action` values are not in
-the research. Timestamps are the entry `timestamp`,
-else the message's ms timestamp, else the row's `created_at`. `source_line`
-is the `transcript_events` (or archive table) rowid, or the JSONL line. No
-git branch is recorded.
-
-A line that does not decode is its own `system` row (issue 136, `error_rows`
-in `base.py`), carrying the line in full after `parser: unparseable line
-(<reason>): `, with the session's id and `cwd`; a line that decodes to a
-JSON value other than an object is the same row with the reason `not a
-JSON object` (issue 177). A legacy `sessions.json` that cannot be read,
-does not decode or is not a JSON object is one whole-file row in each
-transcript beside it, `parser: sessions.json unreadable (<reason>)`,
-`parser: sessions.json unparseable (<reason>)` or `parser: sessions.json
-is not a JSON object`, with `source_line` 0, after the line rows;
-the transcript's other rows are still yielded, without the key. For a line inside an archive
-blob the text is `parser: archive <name> line <n>: unparseable line
-(<reason>): <line>` (or `cold archive`) and `source_line` is the archive row's rowid, as for the blob's other rows.
+Entries share pi's format and model rows (`pi.model_text`, `pi.switch_text`).
+A PostgreSQL anchor database is one `parser:` row; credential tables are never
+read.
 """
 
 from __future__ import annotations
@@ -350,7 +81,7 @@ SESSION_PERMISSION_KEYS = (
 )
 # The GitHub publication requests of `state/openclaw.sqlite`, each naming the
 # GitHub account that pushed or opened the pull request
-# (`src/state/openclaw-state-schema.sql:2093-2140`, `2410-2482`, `2488-2531`).
+# (`src/state/openclaw-state-schema.sql`; the lines are cited in research/openclaw.md).
 GITHUB_PUBLICATION_TABLES = (
     "github_publication_requests",
     "github_personal_publication_requests",
@@ -407,6 +138,7 @@ STATE_QUERIES = (
 
 
 def tool_args_text(args) -> str:
+    """Return a tool call's `command`, `path` or `url` argument, else its arguments as JSON."""
     if isinstance(args, str):
         try:
             args = json.loads(args)
@@ -422,7 +154,7 @@ def tool_args_text(args) -> str:
 
 
 def _maybe_zstd(blob: bytes) -> tuple[bytes | None, str]:
-    """(data, error): zstd frames are decompressed, anything else returned."""
+    """Return (data, error): a zstd frame decompressed, anything else as it is."""
     blob = bytes(blob)
     if not blob.startswith(ZSTD_MAGIC):
         return blob, ""
@@ -433,11 +165,13 @@ def _maybe_zstd(blob: bytes) -> tuple[bytes | None, str]:
 
 
 def _iter_lines(data: bytes, errors: list) -> Iterator[tuple[int, dict]]:
-    """(line number, record) for each JSON object line of `data`; a line that
-    does not decode, or decodes to a value other than an object (an array, a
-    string, a number, `null`), is appended to `errors` as (line, message,
-    line text), the message `unparseable line (not a JSON object)` for the
-    second kind, so `error_rows` reports it in full (issue 177)."""
+    """Yield (line number, record) for each JSON object line of `data`.
+
+    A line that does not decode, or decodes to a value other than an object
+    (an array, a string, a number, `null`), is appended to `errors` as (line,
+    message, line text), the message `unparseable line (not a JSON object)`
+    for the second kind, so `error_rows` reports it in full.
+    """
     for line_number, raw in enumerate(data.split(b"\n"), 1):
         stripped = raw.strip()
         if not stripped:
@@ -454,15 +188,17 @@ def _iter_lines(data: bytes, errors: list) -> Iterator[tuple[int, dict]]:
 
 
 def _platform(channel) -> bool:
-    """True for a channel id that names a messaging platform."""
+    """Return True for a channel id that names a messaging platform."""
     return isinstance(channel, str) and bool(channel) and channel not in NOT_PLATFORMS
 
 
 def _delivery_relay(delivery) -> str:
-    """The `session relayed:` text of an `entry_json.delivery` of kind
-    `external` whose `route.channel` is a platform, else `""`
+    """Return the `session relayed:` text of an external `entry_json.delivery`, else "".
+
+    The delivery's `kind` is `external` and its `route.channel` a platform
     (`src/config/sessions/types.ts:60-83`; `route` is a `ChannelRouteRef`,
-    `src/plugin-sdk/channel-route.ts:18-25`)."""
+    `src/plugin-sdk/channel-route.ts:18-25`).
+    """
     if not isinstance(delivery, dict) or delivery.get("kind") != "external":
         return ""
     route = delivery.get("route")
@@ -486,8 +222,7 @@ def _delivery_relay(delivery) -> str:
 
 
 def _override_text(entry: dict) -> str:
-    """The `model:` text of a session's `modelOverride`
-    (`src/config/sessions/types.ts:502-516`)."""
+    """Return the `model:` text of a session's `modelOverride` (`types.ts:502-516`)."""
     origin = "/".join(
         str(entry[k])
         for k in ("modelOverrideFallbackOriginProvider", "modelOverrideFallbackOriginModel")
@@ -506,9 +241,11 @@ def _override_text(entry: dict) -> str:
 
 
 def _policy_settings(policy) -> list[str]:
-    """`<key>=<value>` for each policy field, allowlist entry and MCP tool
-    grant of one `defaults` or `agents.<id>` object of an exec approvals
-    file (`packages/gateway-protocol/src/schema/exec-approvals.ts:15-75`)."""
+    """Return `<key>=<value>` per policy field, allowlist entry and MCP tool grant.
+
+    The policy is one `defaults` or `agents.<id>` object of an exec approvals
+    file (`packages/gateway-protocol/src/schema/exec-approvals.ts:15-75`).
+    """
     if not isinstance(policy, dict):
         return []
     out = []
@@ -534,8 +271,10 @@ def _policy_settings(policy) -> list[str]:
 
 
 def _grant_text(row: dict) -> str:
-    """The `permission setting:` text of an `operator_approval_standing_grants`
-    row, the grant an `allow-always` decision on a cron job mints."""
+    """Return the `permission setting:` text of an `operator_approval_standing_grants` row.
+
+    That is the grant an `allow-always` decision on a cron job mints.
+    """
     return (
         "permission setting: standing grant %s allow-always cron job %s agent %s binding %s"
         " approval %s expires=%s revoked=%s uses=%s (from state/openclaw.sqlite"
@@ -554,8 +293,11 @@ def _grant_text(row: dict) -> str:
 
 
 def _publication_text(table: str, row: dict) -> str:
-    """The `source host:` text of a GitHub publication request: the account
-    the Gateway pushed or opened the pull request as, and what it published."""
+    """Return the `source host:` text of a GitHub publication request.
+
+    The text names the account the Gateway pushed or opened the pull request
+    as, and what it published.
+    """
     return (
         "source host: github account %s id %s identity %s; publication %s repository %s"
         " branch %s pull request %s (from state/openclaw.sqlite %s, created_at_ms)"
@@ -573,10 +315,12 @@ def _publication_text(table: str, row: dict) -> str:
 
 
 class _Db:
-    """What one agent database's passes share: the rows to attach after a
-    generation's session-start row, the transcript entry ids already
-    yielded (for the exact joins of the full-text index and the pending
-    inputs) and each generation's `cwd`."""
+    """Hold what one agent database's passes share.
+
+    That is the rows to attach after a generation's session-start row, the
+    transcript entry ids already yielded (for the exact joins of the
+    full-text index and the pending inputs) and each generation's `cwd`.
+    """
 
     def __init__(self) -> None:
         # {generation: [(source_line, timestamp, text, model)]}
@@ -614,6 +358,8 @@ class _Session:
 
 
 class OpenClawParser(Parser):
+    """Parse OpenClaw's agent databases, Gateway state database and JSONL transcripts."""
+
     agent = "openclaw"
     name = "openclaw"
     has_secondary = True
@@ -621,6 +367,7 @@ class OpenClawParser(Parser):
     records_relay = True
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for an agent or state database, a cold archive or a transcript file."""
         rel = artifact.rel
         if DB_RX.match(rel) or COLD_RX.match(rel) or STATE_DB_RX.match(rel):
             return True
@@ -628,12 +375,15 @@ class OpenClawParser(Parser):
         return bool(match) and not SKIP_NAME_RX.search(match.group("name"))
 
     def secondary(self, artifact: Artifact) -> bool:
-        """The published archive files and the checkpoint and pre-doctor
-        copies; the database and the plain legacy `.jsonl` are primary."""
+        """Return True for a published archive, checkpoint or pre-doctor copy.
+
+        The database and the plain legacy `.jsonl` are primary.
+        """
         match = JSONL_RX.match(artifact.rel)
         return bool(match) and bool(match.group("archive") or match.group("copy"))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one OpenClaw file."""
         if DB_RX.match(artifact.rel):
             if is_sqlite(artifact.disk_path):
                 yield from self._parse_db(artifact, opts)
@@ -677,8 +427,7 @@ class OpenClawParser(Parser):
         header: dict | None,
         opts: Options,
     ) -> Iterator[Row]:
-        """The session-start row, then a `model:` row when the session
-        window names the model the session started with."""
+        """Yield the session-start row, then a `model:` row when the window names the model."""
         session.started = True
         header = header or {}
         if header.get("id") and (session.header_id or not session.session_id):
@@ -977,10 +726,12 @@ class OpenClawParser(Parser):
     def _blob_errors(
         self, artifact: Artifact, session: _Session, rowid: int, label: str, errors: list
     ) -> Iterator[Row]:
-        """`error_rows` for the bad lines of an archive blob: `source_line` the
-        archive row's rowid and the message prefixed with `label` and the
-        line's number in the blob (`archive <name> line 3: unparseable line
-        (<reason>)`)."""
+        """Yield `error_rows` for the bad lines of an archive blob.
+
+        `source_line` is the archive row's rowid and the message is prefixed
+        with `label` and the line's number in the blob (`archive <name> line
+        3: unparseable line (<reason>)`).
+        """
         located = [
             (rowid, "%s line %d: %s" % (label, line_number, msg), raw)
             for line_number, msg, raw in errors
@@ -990,8 +741,10 @@ class OpenClawParser(Parser):
     def _records(
         self, artifact: Artifact, session: _Session, records, opts: Options, fixed_line: int = 0
     ) -> Iterator[Row]:
-        """Rows from (line, record) pairs of a JSONL transcript or a cold
-        archive envelope; `fixed_line` overrides the line for blobs."""
+        """Yield the rows of (line, record) pairs of a JSONL transcript or a cold archive.
+
+        `fixed_line` overrides the line for blobs.
+        """
         for line_number, rec in records:
             line = fixed_line or line_number
             if "kind" in rec and "type" not in rec:
@@ -1050,12 +803,14 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _legacy_key(artifact: Artifact, session_id: str) -> tuple[str, str]:
-        """(session key, error) for `session_id` from the sibling legacy
-        `sessions.json`. A missing file is no error; a file that cannot be
-        read, does not decode or is not a JSON object returns the whole-file
-        message (`sessions.json unreadable (<reason>)`, `sessions.json
-        unparseable (<reason>)`, `sessions.json is not a JSON object`) for a
-        `parser:` row of the transcript that looked the key up (issue 177)."""
+        """Return (session key, error) for `session_id` from the sibling legacy `sessions.json`.
+
+        A missing file is no error; a file that cannot be read, does not
+        decode or is not a JSON object returns the whole-file message
+        (`sessions.json unreadable (<reason>)`, `sessions.json unparseable
+        (<reason>)`, `sessions.json is not a JSON object`) for a `parser:` row
+        of the transcript that looked the key up.
+        """
         store = artifact.disk_path.parent / "sessions.json"
         if store.is_symlink() or not store.is_file():
             return "", ""
@@ -1117,10 +872,12 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _anchor_error(con, label: str) -> tuple[int, str, str]:
-        """The whole-file error of a PostgreSQL engine anchor: the
-        `openclaw_engine_anchor (store_id, engine, schema)` table that
-        replaces the store when `database.engine` is `postgres`
-        (`src/infra/database-engine/open.ts:149`)."""
+        """Return the whole-file error of a PostgreSQL engine anchor.
+
+        The anchor is the `openclaw_engine_anchor (store_id, engine, schema)`
+        table that replaces the store when `database.engine` is `postgres`
+        (`src/infra/database-engine/open.ts:149`).
+        """
         try:
             row = con.execute("select store_id, schema from openclaw_engine_anchor").fetchone()
         except sqlite3.DatabaseError:
@@ -1136,8 +893,10 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _db_nodes(con, errors: list) -> list[dict]:
-        """The `session_nodes` rows with `entry_json` decoded into `entry`;
-        an `entry_json` that does not decode is appended to `errors`."""
+        """Return the `session_nodes` rows with `entry_json` decoded into `entry`.
+
+        An `entry_json` that does not decode is appended to `errors`.
+        """
         nodes: list[dict] = []
         for row in con.execute(
             "select rowid as _rowid, session_key, current_session_id, entry_json, updated_at"
@@ -1158,11 +917,13 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _attach_nodes(nodes: list[dict], relayed: set, ctx: _Db) -> None:
-        """Rows of each session's metadata entry, attached to its current
-        generation: the public share (to the generation it publishes), the
+        """Attach the rows of each session's metadata entry to its current generation.
+
+        The rows are the public share (to the generation it publishes), the
         external delivery route when no conversation or window recorded the
         relay, the model override, the per-session permission settings and
-        the archive marker."""
+        the archive marker.
+        """
         for node in nodes:
             entry, line = node["entry"], node["_rowid"]
             sid = str(node["current_session_id"] or "")
@@ -1213,12 +974,14 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _db_relays(con, tables: set, windows: dict[str, dict], ctx: _Db) -> set:
-        """Attach a `session relayed:` row per platform conversation linked to
-        a generation (`session_conversations` joined to `conversations`),
-        else one per generation whose window names a platform channel, and
-        one per generation a Gmail hook started; returns the generations that
-        got one. The Control UI and the internal wake channels are not
-        platforms (`_platform`)."""
+        """Attach the `session relayed:` rows and return the generations that got one.
+
+        One per platform conversation linked to a generation
+        (`session_conversations` joined to `conversations`), else one per
+        generation whose window names a platform channel, and one per
+        generation a Gmail hook started. The Control UI and the internal
+        wake channels are not platforms (`_platform`).
+        """
         relayed: set = set()
         if "session_conversations" in tables and "conversations" in tables:
             for row in con.execute(
@@ -1284,20 +1047,21 @@ class OpenClawParser(Parser):
         turn_type: str,
         text: str,
     ) -> Row:
-        """A row of a table read after the transcripts, with the `cwd` the
-        generation's header gave."""
+        """Return a row of a table read after the transcripts, with its generation's `cwd`."""
         session = _Session(sid)
         session.cwd = ctx.cwds.get(sid, "")
         return self._row(artifact, session, line, timestamp, turn_type, text, Options())
 
     def _db_pending(self, artifact: Artifact, con, ctx: _Db, errors: list) -> Iterator[Row]:
-        """Prompts in `session_pending_inputs`: one never consumed (`queued`,
-        `interrupted` or `cancelled` with `consumed_event_id` NULL) never
-        reached the transcript and yields its `user` row and a `pending
-        input:` row; a consumed one yields its `user` row, marked recovered,
-        only when the transcript entry that consumed it is not in the
-        database. A `message_json` that does not decode is appended to
-        `errors`."""
+        """Yield the prompts of `session_pending_inputs` the transcript lacks.
+
+        One never consumed (`queued`, `interrupted` or `cancelled` with
+        `consumed_event_id` NULL) never reached the transcript and yields its
+        `user` row and a `pending input:` row; a consumed one yields its
+        `user` row, marked recovered, only when the transcript entry that
+        consumed it is not in the database. A `message_json` that does not
+        decode is appended to `errors`.
+        """
         for record in con.execute(
             "select seq, input_id, session_id, run_id, message_json, state, accepted_at,"
             " consumed_event_id from session_pending_inputs order by seq"
@@ -1341,11 +1105,12 @@ class OpenClawParser(Parser):
             )
 
     def _db_fts(self, artifact: Artifact, con, ctx: _Db) -> Iterator[Row]:
-        """Rows of the full-text index `session_transcript_fts`, read from its
-        FTS5 content table (`c0` text, `c1` session_id, `c2` message_id,
-        `c3` role, `c4` timestamp) as a plain table, for the entries whose
-        `(session_id, message_id)` the transcript no longer holds; each is
-        marked recovered."""
+        """Yield the full-text index's entries the transcript no longer holds, marked recovered.
+
+        The index `session_transcript_fts` is read from its FTS5 content table
+        (`c0` text, `c1` session_id, `c2` message_id, `c3` role, `c4`
+        timestamp) as a plain table, matched on `(session_id, message_id)`.
+        """
         have = {
             record[1] for record in con.execute("pragma table_info(session_transcript_fts_content)")
         }
@@ -1371,10 +1136,12 @@ class OpenClawParser(Parser):
     def _db_deliveries(
         self, artifact: Artifact, con, ctx: _Db, current: dict[str, str]
     ) -> Iterator[Row]:
-        """One `channel delivery:` row per `conversation_deliveries` row, a
-        send or turn to a platform conversation, and a `channel delivery
-        reply:` row for the platform message that replied to it; the session
-        is the current generation of `source_session_key`."""
+        """Yield one `channel delivery:` row per send or turn to a platform conversation.
+
+        A `channel delivery reply:` row follows for the platform message that
+        replied to it; the session is the current generation of
+        `source_session_key`.
+        """
         for row in con.execute(
             "select d.rowid as _rowid, d.*, c.channel from conversation_deliveries d"
             " join conversations c using (conversation_id) order by d.created_at, d.rowid"
@@ -1412,8 +1179,7 @@ class OpenClawParser(Parser):
                 )
 
     def _db_tombstones(self, artifact: Artifact, con, ctx: _Db) -> Iterator[Row]:
-        """One row per session `openclaw memory forget` removed from the
-        memory index (`memory_session_tombstones`)."""
+        """Yield one row per session `openclaw memory forget` removed from the memory index."""
         for row in con.execute(
             "select rowid as _rowid, session_id, agent_id, reason, created_at"
             " from memory_session_tombstones order by created_at, rowid"
@@ -1433,12 +1199,14 @@ class OpenClawParser(Parser):
 
     # -- state/openclaw.sqlite ----------------------------------------------------------
     def _parse_state_db(self, artifact: Artifact) -> Iterator[Row]:
-        """Rows from `state/openclaw.sqlite`: `backup uploaded:` from
-        `backup_runs`, the permission rows of `operator_approvals`,
-        `exec_approvals_config`, `operator_approval_standing_grants` and
-        `channel_pairing_allow_entries`, `channel ingress:` from
-        `channel_ingress_events`, `source host:` from the GitHub
-        publication tables, and `git remote:` from `projects`."""
+        """Yield the rows of `state/openclaw.sqlite`.
+
+        `backup uploaded:` from `backup_runs`, the permission rows of
+        `operator_approvals`, `exec_approvals_config`,
+        `operator_approval_standing_grants` and `channel_pairing_allow_entries`,
+        `channel ingress:` from `channel_ingress_events`, `source host:` from
+        the GitHub publication tables, and `git remote:` from `projects`.
+        """
         if not is_sqlite(artifact.disk_path):
             yield from error_rows(
                 self, artifact, [(0, "state/openclaw.sqlite is not a SQLite database", "")]
@@ -1540,9 +1308,12 @@ class OpenClawParser(Parser):
                 yield self._state_row(artifact, run["_rowid"], to_utc(run.get("created_at")), text)
 
     def _approval_row(self, artifact: Artifact, record: dict) -> Row:
-        """The `permission decision:` row of one `operator_approvals` row, at
-        `resolved_at_ms` (`created_at_ms` while pending), joined to the call
-        it governed on `source_session_id` and `source_tool_call_id`."""
+        """Return the `permission decision:` row of one `operator_approvals` row.
+
+        The row is at `resolved_at_ms` (`created_at_ms` while pending), joined
+        to the call it governed on `source_session_id` and
+        `source_tool_call_id`.
+        """
         field = "resolved_at_ms" if record.get("resolved_at_ms") is not None else "created_at_ms"
         row = self._state_row(
             artifact,
@@ -1566,11 +1337,13 @@ class OpenClawParser(Parser):
         return row
 
     def _exec_config_rows(self, artifact: Artifact, row: dict, errors: list) -> Iterator[Row]:
-        """One `permission setting:` row per default and per-agent policy
-        field, allowlist entry and MCP tool grant of `raw_json`, the
-        migrated `exec-approvals.json`. `socket` holds the approvals
-        socket's token and is never read; a `raw_json` that does not decode
-        is reported without its text for the same reason."""
+        """Yield one `permission setting:` row per policy setting of the migrated exec approvals.
+
+        `raw_json` is the migrated `exec-approvals.json`; each default and
+        per-agent policy field, allowlist entry and MCP tool grant gives a
+        row. `socket` holds the approvals socket's token and is never read; a
+        `raw_json` that does not decode is reported without its text.
+        """
         try:
             doc = json.loads(row["raw_json"] if isinstance(row.get("raw_json"), str) else "")
         except ValueError as error:
@@ -1603,8 +1376,10 @@ class OpenClawParser(Parser):
 
     @staticmethod
     def _backup_text(run: dict, manifest: dict) -> str:
-        """The `backup uploaded:` text of a successful upload or Git backup;
-        `""` for a failed run, a local archive or a Git push that failed."""
+        """Return the `backup uploaded:` text of a successful upload or Git backup, else "".
+
+        A failed run, a local archive or a Git push that failed gives "".
+        """
         if run.get("status") != "ok":
             return ""
         location = manifest.get("location")

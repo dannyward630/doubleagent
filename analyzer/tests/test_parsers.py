@@ -1,3 +1,12 @@
+"""Tests of the parsers and of the helpers they share.
+
+Most classes build the synthetic home of `fixtures.build_home` through
+`ParserBase`, open it as an input and check the rows one parser yields: their
+columns, the thinking opt-in, the history files, the files the parser must not
+want and the rows of a bad line. The fixtures follow the record shapes in the
+Parsing part of each `research/<agent>.md`.
+"""
+
 import io
 import json
 import shutil
@@ -75,6 +84,8 @@ from fixtures import (
 
 
 class TimeTests(unittest.TestCase):
+    """Test `to_utc` on the timestamp forms the stores write."""
+
     def test_formats(self):
         self.assertEqual(to_utc("2026-10-01T10:00:00.000Z"), "2026-10-01T10:00:00.000Z")
         self.assertEqual(to_utc("2026-10-01T12:00:00+02:00"), "2026-10-01T10:00:00.000Z")
@@ -95,6 +106,8 @@ def read_jsonl(path: Path) -> list[dict]:
 
 
 class JsonlOutputTests(unittest.TestCase):
+    """Test the text compaction and the one-line JSONL records."""
+
     def test_text_keeps_inner_whitespace(self):
         self.assertEqual(compact("  line one\n    indented\n"), "line one\n    indented")
         self.assertEqual(compact(None), "")
@@ -108,6 +121,8 @@ class JsonlOutputTests(unittest.TestCase):
 
 
 class ParserBase(unittest.TestCase):
+    """Build the fixture home and open it as an input for each test."""
+
     def setUp(self):
         self.cat = catalog.load()
         self.tmp = Path(tempfile.mkdtemp(prefix="cac-analyzer-test-"))
@@ -125,10 +140,12 @@ class ParserBase(unittest.TestCase):
 
 
 class ClaudeCodeTests(ParserBase):
+    """Test the Claude Code parser on the fixture transcript and history."""
+
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_SESSION
     SUB = ".claude/projects/-srv-proj/%s/subagents/agent-abc.jsonl" % CLAUDE_SESSION
     FORK = ".claude/projects/-srv-proj/%s/subagents/agent-fork1.jsonl" % CLAUDE_SESSION
-    # A user line written after the bad line (issue 136).
+    # A user line written after the bad line.
     AFTER_CUT: ClassVar[dict] = {
         "type": "user",
         "sessionId": CLAUDE_SESSION,
@@ -195,7 +212,7 @@ class ClaudeCodeTests(ParserBase):
     ]
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = ClaudeCodeParser()
         self.assertTrue(parser.secondary(self.artifact(".claude/history.jsonl")))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
@@ -301,7 +318,7 @@ class ClaudeCodeTests(ParserBase):
         self.assertTrue(all(row.turn_type == "user" for row in rows))
 
     def test_history_reports_truncated_line_and_keeps_valid_rows(self):
-        # A bad history line is a system row, not silence (issue 134).
+        # A bad history line is a system row, not silence.
         (self.home / ".claude/history.jsonl").write_text(
             '{"display":"keep before","sessionId":"s1"}\n'
             '{"display":\n'
@@ -405,7 +422,7 @@ class ClaudeCodeTests(ParserBase):
         self.assertEqual(tool_summary("Unknown", "raw"), '"raw"')
 
     def test_truncated_last_line_is_reported_not_fatal(self):
-        # Issue 136: the bad line is its own row, in full; the rows before
+        # The bad line is its own row, in full; the rows before
         # it and a line written after it survive.
         write_bad_line(self.home / self.REL)
         with open(self.home / self.REL, "a", encoding="utf-8") as handle:
@@ -424,8 +441,11 @@ class ClaudeCodeTests(ParserBase):
 
 
 class ClaudeCode295Tests(ParserBase):
-    """Claude Code 2.1.295: permission decisions, the state lines that
-    version writes, and the per-process registry `sessions/<pid>.json`."""
+    """Test the records Claude Code 2.1.295 writes.
+
+    Permission decisions, the state lines that version writes and the per-process
+    registry `sessions/<pid>.json`.
+    """
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_295_SESSION
     REG = ".claude/sessions/4242.json"
@@ -521,7 +541,7 @@ class ClaudeCode295Tests(ParserBase):
             handle.write(json.dumps(rec) + "\n")
 
     def test_denial_kind_and_feedback(self):
-        # Issue 97: `toolDenialKind` and `userFeedback` on the same line are
+        # `toolDenialKind` and `userFeedback` on the same line are
         # appended to the decision row, printed as recorded (no value set is
         # in the research; these values are fixture only).
         self._append_result(
@@ -654,7 +674,7 @@ class ClaudeCode295Tests(ParserBase):
             )
 
     def test_truncated_line_is_reported_not_fatal(self):
-        # Issue 136: the bad line is its own row, in full; the rows before
+        # The bad line is its own row, in full; the rows before
         # it and a line written after it survive.
         write_bad_line(self.home / self.REL)
         after = dict(ClaudeCodeTests.AFTER_CUT, sessionId=CLAUDE_295_SESSION)
@@ -672,9 +692,10 @@ class ClaudeCode295Tests(ParserBase):
 
 
 class ClaudeCode296Tests(ParserBase):
-    """Permission mode and model as events, and the standing permission
-    settings in settings.json, settings.local.json and .claude.json (issue
-    93)."""
+    """Test the permission mode and model events and the standing permission settings.
+
+    The settings come from settings.json, settings.local.json and .claude.json.
+    """
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_296_SESSION
     SETTINGS_TS = "2026-10-01T09:00:00.000Z"
@@ -774,7 +795,7 @@ class ClaudeCode296Tests(ParserBase):
         self.assertEqual(len(rows), len(self.EXPECTED))
 
     def test_truncated_line_is_reported_not_fatal(self):
-        # Issue 136: the bad line is its own row, in full; the rows before
+        # The bad line is its own row, in full; the rows before
         # it and a line written after it survive.
         write_bad_line(self.home / self.REL)
         after = dict(ClaudeCodeTests.AFTER_CUT, sessionId=CLAUDE_296_SESSION)
@@ -873,7 +894,7 @@ class ClaudeCode296Tests(ParserBase):
         self.assertIn(ClaudeCodeParser, [type(parser) for parser in cli.parsers_for(art, {})])
         self.assertTrue(ClaudeCodeParser().wants(art))
         rows = list(ClaudeCodeParser().parse(art, Options()))
-        # A collector from 1.12.0 names the agent; the rows are the same.
+        # A collector that names the agent gives the same rows.
         own = Artifact(path, "/srv/proj/" + rel, rel, "claude-code", home)
         self.assertIn(
             ClaudeCodeParser, [type(parser) for parser in cli.parsers_for(own, by_agent())]
@@ -946,9 +967,11 @@ from fixtures import (
 
 
 class ClaudeCode309Tests(ParserBase):
-    """Claude Code 2.1.309, the Windows round (issue 256): the surface, the
-    prompt trigger, the scratchpad, the daemon handover, Remote Control as
-    sync, `grantScope`/`reasonCode` and the persisted output's path key."""
+    """Test the records Claude Code 2.1.309 writes on Windows.
+
+    The surface, the prompt trigger, the scratchpad, the daemon handover, Remote
+    Control as sync, `grantScope`/`reasonCode` and the persisted output's path key.
+    """
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_309_SESSION
     SCRATCH_TEXT = (
@@ -1331,10 +1354,12 @@ from fixtures import (
 
 
 class ClaudeCode310Tests(ParserBase):
-    """Claude Code 2.1.310, the Linux round (issue 256): the rule-miss
-    `reasonCode`, a compaction's re-emitted state records, a detached head,
-    the extension's `queue-operation` without `content`, the retention
-    setting and the GitHub connection cache in `.claude.json`."""
+    """Test the records Claude Code 2.1.310 writes on Linux.
+
+    The rule-miss `reasonCode`, a compaction's re-emitted state records, a detached
+    head, the extension's `queue-operation` without `content`, the retention setting
+    and the GitHub connection cache in `.claude.json`.
+    """
 
     REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_310_SESSION
     VSCODE_REL = ".claude/projects/-srv-proj/%s.jsonl" % CLAUDE_310_VSCODE_SESSION
@@ -1608,12 +1633,14 @@ from fixtures import (
 
 
 class ClaudeCodeMacTests(ParserBase):
-    """Claude Code 2.1.310, the macOS round (issue 256): denials recorded
-    as an interrupt with no decision, history lines that match their
-    transcript records across the command and paste forms, the origin rows
-    of a Remote Control spawn, a teleported cloud session and the VS Code
-    extension, `ccr-tip.json` and `bridge-pointer.json`, the `.claude.json`
-    Remote Control and cloud keys, and the scheduled-task firing."""
+    """Test the records Claude Code 2.1.310 writes on macOS.
+
+    Denials recorded as an interrupt with no decision, history lines that match
+    their transcript records across the command and paste forms, the origin rows of
+    a Remote Control spawn, a teleported cloud session and the VS Code extension,
+    `ccr-tip.json` and `bridge-pointer.json`, the `.claude.json` Remote Control and
+    cloud keys, and the scheduled-task firing.
+    """
 
     PROJ = ".claude/projects/-srv-proj/"
     REL = PROJ + "%s.jsonl" % CLAUDE_MAC_SESSION
@@ -1688,7 +1715,7 @@ class ClaudeCodeMacTests(ParserBase):
             "            <command-args></command-args>",
         ),
     ]
-    # The history lines no transcript record matches (rows 27a and 27b).
+    # The history lines no transcript record matches.
     HISTORY_ONLY: ClassVar[list[str]] = ["/clear", "/logout", "/exit"]
 
     def _write(self, rel, records):
@@ -1771,7 +1798,7 @@ class ClaudeCodeMacTests(ParserBase):
     def test_history_paste_cache_unreadable_is_reported(self):
         # A cache file that is there but cannot be read is evidence, not an
         # absent entry: the history line keeps its placeholder and a
-        # `parser:` row names the file (issue 136).
+        # `parser:` row names the file.
         cache = self.home / ".claude/paste-cache"
         cache.mkdir(parents=True, exist_ok=True)
         paste_file = cache / ("%s.txt" % CLAUDE_MAC_PASTE_HASH)
@@ -1801,10 +1828,10 @@ class ClaudeCodeMacTests(ParserBase):
         )
 
     def test_history_matches_transcript_commands_and_pastes(self):
-        # Rows 27a and 27b of the round: every history line but the three
-        # history-only ones is the same event as a transcript record; the
-        # two `/model` lines pair with their own command records, the
-        # second recorded 27 s after it was typed.
+        # Every history line but the three history-only ones is the same
+        # event as a transcript record; the two `/model` lines pair with
+        # their own command records, the second recorded 27 s after it was
+        # typed.
         primary = self._primary()
         rows, dropped = deduplicate(primary, [(row, 2.0) for row in self._history()])
         kept = rows[len(primary) :]
@@ -2305,8 +2332,7 @@ class ClaudeCodeMacTests(ParserBase):
 
     def test_case_variant_local_scratchpad_stays_scratch(self):
         # A local slug spelled in another case than the project directory
-        # (issue 112) is still this host's: the attachment follows the
-        # replayed block.
+        # is still this host's: the attachment follows the replayed block.
         records = claude_mac_teleport_records()
         k = next(
             i
@@ -2483,6 +2509,8 @@ from fixtures import (
 
 
 class CodexTests(ParserBase):
+    """Test the Codex parser on the fixture rollouts, history and state database."""
+
     REL = ".codex/sessions/2026/10/02/rollout-2026-10-02T09-00-00-%s.jsonl" % CODEX_SESSION
     TYPES: ClassVar[list[str]] = [
         "system",  # session start
@@ -2517,13 +2545,13 @@ class CodexTests(ParserBase):
     )
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = CodexParser()
         self.assertTrue(parser.secondary(self.artifact(".codex/history.jsonl")))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
         # The SQLite projections of the rollouts are read always, as
         # secondary sources; the log database is read for its `/feedback`
-        # rows, which repeat nothing (#153).
+        # rows, which repeat nothing.
         for rel in (self.STATE_REL, self.THREAD_HISTORY_REL):
             self.assertTrue(parser.wants(self.artifact(rel)), rel)
             self.assertTrue(parser.secondary(self.artifact(rel)), rel)
@@ -2549,7 +2577,7 @@ class CodexTests(ParserBase):
         start, remote, _, _, _started, dev, ctx, user, shell, shout, web_search, wsout = rows[:12]
         patch, patchout, asst, done = rows[12:16]
         self.assertIn("session start: codex-tui 0.160.0", start.text)
-        # session_meta git.repository_url, at the session_meta time (issue 253).
+        # session_meta git.repository_url, at the session_meta time.
         self.assertEqual(
             (remote.turn_type, remote.timestamp_utc, remote.source_line, remote.text),
             ("system", start.timestamp_utc, 1, "git remote: " + PROJ_REMOTE),
@@ -2732,7 +2760,7 @@ class CodexTests(ParserBase):
         self.assertEqual(rows[0].timestamp_utc, "2026-10-02T09:00:02.000Z")
         self.assertEqual(rows[0].session_id, CODEX_SESSION)
 
-    # The standing grants, memories and backups (#200), source-derived.
+    # The standing grants, memories and backups, source-derived.
     STANDING = "(from %s, file mtime)"
     MTIME = "2026-10-19T08:53:20.000Z"
 
@@ -2913,10 +2941,14 @@ class CodexTests(ParserBase):
 
     @staticmethod
     def check_bad_line(case: ParserBase, parser_cls, rel: str, after: int):
-        """Put `BAD_LINE` after line `after` of `rel` and check that every
-        row the clean file gave still comes out, the later ones one line
-        down, followed by one row for the bad line carrying it in full.
-        Returns that row for the caller's session and project checks."""
+        """Append `BAD_LINE` after line `after` of `rel` and check the rows.
+
+        Every row the clean file gave still comes out, the later ones one line down,
+        followed by one row for the bad line carrying it in full.
+
+        Returns:
+            The bad line's row, for the caller's session and project checks.
+        """
         clean = case.rows_for(parser_cls(), rel)
         path = case.home / rel
         lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
@@ -2952,7 +2984,6 @@ class CodexTests(ParserBase):
         self.assertEqual(row.session_id, CODEX_SESSION)
 
     def test_truncated_history_line(self):
-        # The history reader used to drop its bad lines unreported (issue 125).
         rel = ".codex/history.jsonl"
         with open(self.home / rel, "a", encoding="utf-8") as handle:
             handle.write(BAD_LINE + "\n")
@@ -3099,7 +3130,7 @@ class CodexTests(ParserBase):
                     " rollout=%s branch=feature/x model=gpt-5.5-codex"
                     % (CODEX_SESSION, live % CODEX_SESSION),
                 ),
-                # git_origin_url, at the thread's creation time (issue 253).
+                # git_origin_url, at the thread's creation time.
                 (
                     "system",
                     "2026-10-02T09:00:00.000Z",
@@ -3317,7 +3348,7 @@ class CodexTests(ParserBase):
 
     def test_feedback_report_rows(self):
         # A sent `/feedback` report is the one record that a thread left the
-        # host (#153); the attachment failure and the diagnostics line are not.
+        # host; the attachment failure and the diagnostics line are not.
         rows = self.rows_for(CodexParser(), self.LOGS_REL)
         self.assertEqual(
             [
@@ -3395,9 +3426,11 @@ class CodexTests(ParserBase):
         self.assertEqual([row.text for row in rows], ["parser: not a SQLite database"])
 
     def test_thread_history_bad_items_are_one_row_each(self):
-        """Issue 184: each `thread_items` row whose `item_json` does not
-        decode to an object is its own row with the stored value in full,
-        under its own thread, and the items before and after still come out."""
+        """Report each `thread_items` row whose `item_json` is not an object.
+
+        Each is its own row with the stored value in full, under its own thread, and the
+        items before and after still come out.
+        """
         con = sqlite3.connect(str(self.home / self.THREAD_HISTORY_REL))
         con.execute("update thread_items set item_json = '[1, 2]' where item_id = 'u9'")
         broken = '{"type": "agentMessage", "id": "a9", "text": "Removed bu'
@@ -3468,9 +3501,11 @@ from fixtures import (
 
 
 class CodexDesktopTests(ParserBase):
-    """Codex threads of the ChatGPT desktop app (#160): settings events,
-    turn triggers, approval decisions, the guardian review, remote control
-    and `.codex-global-state.json`."""
+    """Test the Codex threads of the ChatGPT desktop app.
+
+    Settings events, turn triggers, approval decisions, the guardian review, remote
+    control and `.codex-global-state.json`.
+    """
 
     DESKTOP = CODEX_DESKTOP_ROLLOUT % CODEX_DESKTOP
     GUARDIAN = CODEX_DESKTOP_ROLLOUT % CODEX_GUARDIAN
@@ -3844,8 +3879,8 @@ class CodexDesktopTests(ParserBase):
                     "remote control: mobile device connected=true environment=env_e_0123abcd "
                     + src % "codex-mobile-has-connected-device",
                 ),
-                # The projectless output directory is a scratch directory
-                # (issue 149); the row names it in its own project_path.
+                # The projectless output directory is a scratch directory; the
+                # row names it in its own project_path.
                 (
                     "system",
                     mtime,
@@ -3902,6 +3937,8 @@ class CodexDesktopTests(ParserBase):
 
 
 class TimelineTests(ParserBase):
+    """Test the timeline command's outputs over the fixture home."""
+
     def test_cli_timeline_outputs(self):
         out = self.tmp / "out"
         buf = io.StringIO()
@@ -4018,12 +4055,14 @@ class TimelineTests(ParserBase):
 
 
 class ProjectRoutingTests(unittest.TestCase):
-    """Round trip through the sh collector: files the collector finds inside a
-    discovered repository have the project directory as their home, which
-    is marked `project`. Their agent is the one the project catalog names
-    (re-attributed by the analyzer for a collection that says `project`),
-    so Crush and Aider rows come out of them; a shared file such as
-    `AGENTS.md` keeps agent `project`."""
+    """Test project attribution through a round trip of the sh collector.
+
+    Files the collector finds inside a discovered repository have the project
+    directory as their home, marked `project`. Their agent is the one the project
+    catalog names (re-attributed by the analyzer for a collection that says
+    `project`), so Crush and Aider rows come out of them; a shared file such as
+    `AGENTS.md` keeps agent `project`.
+    """
 
     def setUp(self):
         self.cat = catalog.load()
@@ -4136,6 +4175,8 @@ if __name__ == "__main__":
 
 
 class ProtobufTests(unittest.TestCase):
+    """Test the protobuf encoder and decoder against a small schema."""
+
     SCHEMA: ClassVar[dict] = {
         "M": {
             1: ("a", "str"),
@@ -4179,6 +4220,8 @@ class ProtobufTests(unittest.TestCase):
 
 
 class SqliteUtilTests(unittest.TestCase):
+    """Test that SQLite evidence is read from a copy, its WAL sidecar included."""
+
     def test_copy_leaves_original_untouched_and_reads_wal(self):
         import sqlite3
 
@@ -4207,10 +4250,12 @@ class SqliteUtilTests(unittest.TestCase):
 
 
 class AntigravityTests(ParserBase):
+    """Test the Antigravity CLI parser."""
+
     REL = ".gemini/antigravity-cli/conversations/%s.db" % AGY_CONVERSATION
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = AntigravityParser()
         self.assertTrue(parser.secondary(self.artifact(".gemini/antigravity-cli/history.jsonl")))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
@@ -4234,7 +4279,7 @@ class AntigravityTests(ParserBase):
                 "system",
                 "assistant",
                 "system",
-                # The steps added for #96 and #97, checked in their own tests.
+                # The model and decision steps, checked in their own tests.
                 "system",
                 "tool_use",
                 "tool_result",
@@ -4286,7 +4331,7 @@ class AntigravityTests(ParserBase):
 
     def test_model_rows(self):
         # gen_metadata names gemini-3.8-flash for steps 1-8 and
-        # gemini-3.8-pro from step 10 (#96): a start row before the first
+        # gemini-3.8-pro from step 10: a start row before the first
         # planner step's rows and a change row before step 10's, each with
         # the step's created_at and the new id in the model column.
         rows = self.rows_for(AntigravityParser(), self.REL)
@@ -4320,7 +4365,7 @@ class AntigravityTests(ParserBase):
         self.assertEqual(rows[3].text, "I will read the README first.")
 
     def test_rejection_decision_rows(self):
-        # run_command.user_rejected and mcp_tool.user_rejected (#97): a
+        # run_command.user_rejected and mcp_tool.user_rejected: a
         # `permission decision:` row right after the tool_result, which
         # keeps its [rejected by user] marker.
         rows = self.rows_for(AntigravityParser(), self.REL)
@@ -4348,7 +4393,7 @@ class AntigravityTests(ParserBase):
             self.assertEqual(dec.source_line, res.source_line)
 
     def test_sandbox_flag_on_result(self):
-        # run_command.ran_in_sandbox (#97) is appended to the result text;
+        # run_command.ran_in_sandbox is appended to the result text;
         # it is not a decision, so no row of its own.
         rows = self.rows_for(AntigravityParser(), self.REL)
         res = rows[-1]
@@ -4383,13 +4428,13 @@ class AntigravityTests(ParserBase):
         )
 
     def test_history_conversation_id(self):
-        # CLI 1.3.x writes conversationId on some history lines (#89).
+        # CLI 1.3.x writes conversationId on some history lines.
         rows = self.rows_for(AntigravityParser(), ".gemini/antigravity-cli/history.jsonl")
         self.assertEqual([row.session_id for row in rows], ["", AGY_CONVERSATION])
         self.assertEqual(rows[1].text, "now the tests")
 
     def test_history_reports_truncated_line_and_keeps_valid_rows(self):
-        # A bad history line is a system row, not silence (issue 134).
+        # A bad history line is a system row, not silence.
         rel = ".gemini/antigravity-cli/history.jsonl"
         (self.home / rel).write_text(
             '{"display":"keep before","conversationId":"c1"}\n'
@@ -4430,7 +4475,7 @@ class AntigravityTests(ParserBase):
 
 
 class AntigravityAppTests(ParserBase):
-    """The desktop app's conversations under ~/.gemini/antigravity (#83)."""
+    """Test the desktop app's conversations under ~/.gemini/antigravity."""
 
     BASE = ".gemini/antigravity/"
     REL = BASE + "conversations/%s.db" % AGY_APP_CONVERSATION
@@ -4476,7 +4521,7 @@ class AntigravityAppTests(ParserBase):
             del_use,
             del_res,
         ) = rows
-        # One model for the whole conversation: a start row only (#96).
+        # One model for the whole conversation: a start row only.
         self.assertEqual(
             (model.text, model.timestamp_utc, model.model),
             ("model: gemini-3.8-pro", "2026-10-01T11:00:01.000Z", "gemini-3.8-pro"),
@@ -4505,7 +4550,7 @@ class AntigravityAppTests(ParserBase):
             (final.text, final.model), ("One package is outdated: node.", "gemini-3.8-pro")
         )
         # A delete_file code action: the path is in ActionSpecDeleteFile
-        # field 1 (#88).
+        # field 1.
         self.assertEqual(
             (del_use.tool_name, del_use.tool_use_id, del_use.text),
             ("delete_file", "call_8", "/home/u/proj/old.log"),
@@ -4517,7 +4562,7 @@ class AntigravityAppTests(ParserBase):
         self.assertEqual([row.source_line for row in rows], [0, 0, 1, 1, 1, 2, 2, 2, 3, 4, 5, 6, 7])
 
     def test_permission_grant_rows(self):
-        # steps.permissions on the run_command step (#92): one row per
+        # steps.permissions on the run_command step: one row per
         # permission_grants entry and per file_access_permissions entry,
         # after the step's tool_result, keyed to its call.
         rows = self.rows_for(AntigravityParser(), self.REL)
@@ -4613,7 +4658,7 @@ class AntigravityAppTests(ParserBase):
     def test_delete_file_path_is_field_1(self):
         # The fixture is encoded with the parser's own SCHEMA, so check the
         # wire layout from the descriptors by hand: ActionSpec field 4 is
-        # ActionSpecDeleteFile, whose field 1 is the PathScopeItem (#88).
+        # ActionSpecDeleteFile, whose field 1 is the PathScopeItem.
         uri = b"file:///home/u/proj/old.log"
         scope = b"\x2a" + bytes([len(uri)]) + uri  # PathScopeItem 5 absolute_uri
         delete = b"\x0a" + bytes([len(scope)]) + scope  # ActionSpecDeleteFile 1 path
@@ -4663,14 +4708,14 @@ class AntigravityAppTests(ParserBase):
             ".gemini/antigravity/history.jsonl",  # the app writes none; CLI only
             ".gemini/antigravity-other/conversations/x.db",
             ".gemini/antigravity/conversations/x.db-wal",
-            # The CLI's settings only; the app's directory has none (#92).
+            # The CLI's settings only; the app's directory has none.
             ".gemini/antigravity/settings.json",
         ):
             self.assertFalse(parser.wants(art(rel)), rel)
 
     def test_token_not_wanted(self):
         # The plugin's OAuth token is never read; the brain transcript beside
-        # it is, since issue 87 (AntigravityBrainTests).
+        # it is (AntigravityBrainTests).
         parser = AntigravityParser()
         rels = {artifact.rel: artifact for artifact in self.col.artifacts}
         token = self.BASE + "plugin_data/gdocs/token.json"
@@ -4705,8 +4750,10 @@ from fixtures import AGY_ORPHAN
 
 
 class AntigravityBrainTests(ParserBase):
-    """The brain mirror, `brain/<uuid>/.system_generated/logs/` (#87): a
-    secondary source of the conversation database (#122)."""
+    """Test the brain mirror, a secondary source of the conversation database.
+
+    The mirror is `brain/<uuid>/.system_generated/logs/`.
+    """
 
     LOGS = ".gemini/antigravity-cli/brain/%s/.system_generated/logs/"
     FULL = LOGS % AGY_CONVERSATION + "transcript_full.jsonl"
@@ -4937,7 +4984,7 @@ class AntigravityBrainTests(ParserBase):
                     self.assertTrue(0 <= gap <= 2000, (row.text, gap))
 
     def test_truncated_line(self):
-        # Issue 136: the bad line is its own row, in full; the rows before
+        # The bad line is its own row, in full; the rows before
         # it and a line written after it survive.
         before = self.rows_for(AntigravityParser(), self.ORPHAN0)
         write_bad_line(self.home / self.ORPHAN1)
@@ -5009,7 +5056,7 @@ from fixtures import AGY_CONFIG_MTIME, AGY_SIDECAR
 
 
 class AntigravityPermissionSettingsTests(ParserBase):
-    """Standing permission files under ~/.gemini (#92)."""
+    """Test the standing permission files under ~/.gemini."""
 
     MTIME = "2026-10-01T12:00:00.000Z"  # AGY_CONFIG_MTIME
     CONFIG = ".gemini/config/config.json"
@@ -5136,11 +5183,13 @@ from fixtures import (
 
 
 class QwenCodeTests(ParserBase):
+    """Test the Qwen Code parser."""
+
     REL = ".qwen/projects/-srv-proj/chats/%s.jsonl" % QWEN_SESSION
     LOGS = ".qwen/tmp/%s/logs.json" % QWEN_TMP
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = QwenCodeParser()
         self.assertTrue(parser.secondary(self.artifact(self.LOGS)))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
@@ -5328,7 +5377,7 @@ class QwenCodeTests(ParserBase):
         )
 
     def test_truncated_last_line_is_reported_not_fatal(self):
-        # Issue 136: the bad line is its own row, in full; the rows before
+        # The bad line is its own row, in full; the rows before
         # it and a line written after it survive.
         from fixtures import qwen_session_records
 
@@ -5358,8 +5407,8 @@ class QwenCodeTests(ParserBase):
         )
 
     def test_truncated_logs_keep_earlier_entries(self):
-        # Issue 136: the broken element is carried from where its decode
-        # started to the end of the file; the entries before it survive.
+        # The broken element is carried from where its decode started to
+        # the end of the file; the entries before it survive.
         path = self.home / self.LOGS
         data = path.read_text(encoding="utf-8")
         cut = data[: data.index('"model_switch"')]
@@ -5394,8 +5443,11 @@ class QwenCodeTests(ParserBase):
         self.assertEqual(args_summary(None), "")
 
     def permission_rows(self, rel):
-        """Rows of `rel` after building the permission, approval-mode and
-        usage fixture (#187) and reopening the collection."""
+        """Return the rows of `rel` from the permission fixture.
+
+        The fixture holds the permission, approval-mode and usage records; the
+        collection is reopened after it is built.
+        """
         from fixtures import build_qwen_permissions
 
         build_qwen_permissions(self.home)
@@ -5404,7 +5456,7 @@ class QwenCodeTests(ParserBase):
 
     def test_execution_context_and_decision_rows(self):
         # executionContext model and approval mode on change, the daemon's
-        # session_approval_mode record, and the ui_telemetry decision (#187).
+        # session_approval_mode record, and the ui_telemetry decision.
         from fixtures import QWEN_PERM_REL, QWEN_PERM_SESSION
 
         rows = self.permission_rows(QWEN_PERM_REL)
@@ -5440,7 +5492,7 @@ class QwenCodeTests(ParserBase):
 
     def test_decision_row_bare_event_name(self):
         # The ToolCallEvent class's bare default name `tool_call` is matched
-        # as well as `qwen-code.tool_call` (#187).
+        # as well as `qwen-code.tool_call`.
         from fixtures import QWEN_BARE_REL, QWEN_BARE_SESSION
 
         rows = self.permission_rows(QWEN_BARE_REL)
@@ -5460,7 +5512,7 @@ class QwenCodeTests(ParserBase):
 
     def test_settings_permission_rows(self):
         # Standing rules and the approval mode of settings.json, read as
-        # JSONC; nothing else in the file is read (#187).
+        # JSONC; nothing else in the file is read.
         from fixtures import QWEN_SETTINGS_MTIME
 
         rel = ".qwen/settings.json"
@@ -5505,7 +5557,7 @@ class QwenCodeTests(ParserBase):
 
     def test_usage_record(self):
         # usage_record.jsonl is a secondary source that keeps a deleted
-        # session's summary (#187).
+        # session's summary.
         from fixtures import QWEN_DELETED_SESSION, QWEN_USAGE_REL
 
         rows = self.permission_rows(QWEN_USAGE_REL)
@@ -5537,8 +5589,8 @@ class QwenCodeTests(ParserBase):
         )
 
     def test_usage_record_truncated_line(self):
-        # Issue 136: the cut line is its own row; the lines before and after
-        # it are still read.
+        # The cut line is its own row; the lines before and after it are
+        # still read.
         from fixtures import QWEN_USAGE_REL, qwen_usage_records
 
         self.permission_rows(QWEN_USAGE_REL)
@@ -5573,7 +5625,7 @@ class QwenCodeTests(ParserBase):
     ROUTES = ".qwen/channels/daemon/%s/routes.json" % QWEN_DAEMON_HASH
 
     def test_channel_routes(self):
-        # A session driven from a messaging platform is relayed there (#153).
+        # A session driven from a messaging platform is relayed there.
         parser = QwenCodeParser()
         rows = self.rows_for(parser, self.CHANNELS) + self.rows_for(parser, self.ROUTES)
         self.assertEqual(
@@ -5642,9 +5694,9 @@ class QwenCodeTests(ParserBase):
         )
 
     def test_trusted_folders_jsonc(self):
-        # Issue 173: a byte-order mark, comments and trailing commas, which
-        # Qwen Code's parseJsoncObject accepts, decode; a comma inside a
-        # string is kept. A file still undecodable is the whole-file row.
+        # A byte-order mark, comments and trailing commas, which Qwen Code's
+        # parseJsoncObject accepts, decode; a comma inside a string is kept. A
+        # file still undecodable is the whole-file row.
         from fixtures import TRUST_JSONC
 
         rel = ".qwen/trustedFolders.json"
@@ -5682,9 +5734,11 @@ class QwenCodeTests(ParserBase):
         )
 
     def injected_rows(self, bad_line=False):
-        """Rows of the injected-records session (#172), after building it and
-        reopening the collection; with `bad_line`, a cut line and a cron
-        record written after it."""
+        """Return the rows of the injected-records session.
+
+        The session is built and the collection reopened; with `bad_line`, a cut line
+        and a cron record are written after it.
+        """
         from fixtures import QWEN_INJECTED_REL, build_qwen_injected, qwen_injected_records
 
         build_qwen_injected(self.home)
@@ -5701,7 +5755,7 @@ class QwenCodeTests(ParserBase):
     def test_injected_user_records_are_system_rows(self):
         # Cron and notification records (provenance system) and another
         # agent's message or mention (provenance external_agent) are not
-        # prompts the user typed (#172); the user's own mention is.
+        # prompts the user typed; the user's own mention is.
         from fixtures import QWEN_INJECTED_SESSION
 
         rows = self.injected_rows()
@@ -5756,8 +5810,8 @@ class QwenCodeTests(ParserBase):
         )
 
     def test_injected_records_truncated_line(self):
-        # Issue 136: the cut line is its own row in full; the records before
-        # it and the one written after it still come out.
+        # The cut line is its own row in full; the records before it and
+        # the one written after it still come out.
         from fixtures import QWEN_INJECTED_SESSION
 
         rows = self.injected_rows(bad_line=True)
@@ -5794,6 +5848,8 @@ from fixtures import (
 
 
 class KiroTests(ParserBase):
+    """Test the Kiro parser."""
+
     DATABASE = ".local/share/amazon-q/data.sqlite3"
     EXPORT = ".aws/amazonq/exports/issue-chat.json"
 
@@ -5967,7 +6023,7 @@ class KiroTests(ParserBase):
         self.assertTrue(err)
         self.assertEqual(salvage("garbage")[0], None)
 
-    # -- 2026-10-21, issue 212: source-derived rows ----------------------------
+    # -- source-derived rows ---------------------------------------------------
     DENIALS = ".aws/amazonq/exports/denials.json"
     HISTORY = ".aws/amazonq/.cli_bash_history"
     AGENT = ".aws/amazonq/cli-agents/dev.json"
@@ -6213,11 +6269,13 @@ from fixtures import (
 
 
 class GeminiCliTests(ParserBase):
+    """Test the Gemini CLI parser."""
+
     REL = GEMINI_REL
     LEGACY = ".gemini/tmp/%s/chats/session-2026-09-30T08-00-b2c3d4e5.json" % GEMINI_HASH
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = GeminiCliParser()
         self.assertTrue(parser.secondary(self.artifact(".gemini/tmp/proj/logs.json")))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
@@ -6481,8 +6539,8 @@ class GeminiCliTests(ParserBase):
             self.assertFalse(parser.wants(art), rel)
 
     def test_truncated_last_line_is_reported_not_fatal(self):
-        # Issue 136: the bad line is its own row, in full, with the session
-        # and project; the rows before it and a line written after it survive.
+        # The bad line is its own row, in full, with the session and
+        # project; the rows before it and a line written after it survive.
         before = self.rows_for(GeminiCliParser(), self.REL)
         self.assertEqual(len(before), 18)
         write_bad_line(self.home / self.REL)
@@ -6538,9 +6596,9 @@ class GeminiCliTests(ParserBase):
         )
 
     def test_trusted_folders_jsonc(self):
-        # Issue 173: a byte-order mark, comments and trailing commas, which
-        # Qwen Code's parseJsoncObject accepts, decode; a comma inside a
-        # string is kept. A file still undecodable is the whole-file row.
+        # A byte-order mark, comments and trailing commas, which Qwen Code's
+        # parseJsoncObject accepts, decode; a comma inside a string is kept. A
+        # file still undecodable is the whole-file row.
         rel = ".gemini/trustedFolders.json"
         path = self.home / rel
         path.write_bytes(TRUST_JSONC)
@@ -6575,7 +6633,7 @@ class GeminiCliTests(ParserBase):
             [("system", "parser: .gemini/trustedFolders.json is not a JSON object", 1)],
         )
 
-    # -- standing permission files and past-use copies (#155, #186) --
+    # -- standing permission files and past-use copies --
 
     def sources(self):
         """Write the permission files and history copies and reopen the input."""
@@ -6894,6 +6952,8 @@ class GeminiCliTests(ParserBase):
 
 
 class CrushTests(ParserBase):
+    """Test the Crush parser."""
+
     REL = ".crush/crush.db"
 
     def test_rows(self):
@@ -7041,8 +7101,8 @@ class CrushTests(ParserBase):
         con.close()
 
     def test_bad_parts_carries_the_value_in_full(self):
-        # Issue 166: the stored parts value is the row's text, unshortened,
-        # and the messages before and after it are still yielded.
+        # The stored parts value is the row's text, unshortened, and the
+        # messages before and after it are still yielded.
         bad = '[{"type":"text","data":{"text":"cut' + " tail" * 60
         insert = (
             "INSERT INTO messages(id,session_id,role,parts,model,provider,created_at,updated_at) "
@@ -7080,7 +7140,7 @@ class CrushTests(ParserBase):
         self.assertEqual((rows[-1].source_line, rows[-1].timestamp_utc), (7, ""))
 
     def test_hyper_prism_model_rows(self):
-        # Issue 167: prism_model_id is the served model, model the request.
+        # prism_model_id is the served model, model the request.
         from fixtures import CRUSH_HYPER_SESSION, crush_hyper_records
 
         self._insert(crush_hyper_records())
@@ -7120,7 +7180,7 @@ class CrushTests(ParserBase):
         return self.rows_for(CrushParser(), self.REL)
 
     def test_permission_decisions(self):
-        # Issue 195: a user denial and hook decisions follow their result.
+        # A user denial and hook decisions follow their result.
         rows = self._perm_rows()
         pairs = [
             (rows[i - 1].text, row.text, row.tool_use_id, row.tool_name, row.timestamp_utc)
@@ -7346,16 +7406,18 @@ from fixtures import (
 
 
 class GooseTests(ParserBase):
+    """Test the Goose parser."""
+
     REL = ".local/share/goose/sessions/sessions.db"
     HISTORY = ".local/state/goose/history.txt"
 
     def test_secondary(self):
-        # The CLI history is a secondary source, the database is not (#122).
+        # The CLI history is a secondary source, the database is not.
         parser = GooseParser()
         self.assertTrue(parser.secondary(self.artifact(self.HISTORY)))
         self.assertFalse(parser.secondary(self.artifact(self.REL)))
         self.assertFalse(parser.secondary(self.artifact(GOOSE_LEGACY_REL)))
-        # The request logs repeat the database's messages (#126), with a
+        # The request logs repeat the database's messages, with a
         # wider window; the history keeps the default.
         log = self.artifact(".local/state/goose/logs/llm_request.0.jsonl")
         self.assertTrue(parser.secondary(log))
@@ -7529,7 +7591,7 @@ class GooseTests(ParserBase):
             [row.turn_type for row in rows],
             ["system", "user", "tool_use", "tool_result", "assistant", "system"],
         )
-        # The stored value in full (issue 183), not a summary of it.
+        # The stored value in full, not a summary of it.
         self.assertEqual(
             rows[-1].text,
             "parser: unparseable record 5 (messages.content_json: Unterminated string"
@@ -7584,7 +7646,7 @@ class GooseTests(ParserBase):
                 [row for row in self.rows_for(GooseParser(), rel) if model_or_permission_row(row)]
             )
 
-    # -- relayed gateway sessions (issue 153) -----------------------------------
+    # -- relayed gateway sessions -----------------------------------------------
 
     def _gateway_rows(self, display="alice"):
         import sqlite3
@@ -7629,7 +7691,7 @@ class GooseTests(ParserBase):
         rows = self.rows_for(GooseParser(), self.REL)
         self.assertFalse([row for row in rows if row.text.startswith("session relayed:")])
 
-    # -- bad stored JSON in sessions.db (issue 183) ------------------------------
+    # -- bad stored JSON in sessions.db -----------------------------------------
 
     def _bad_json_rows(self):
         import sqlite3
@@ -7730,7 +7792,7 @@ class GooseTests(ParserBase):
         )
         self.assertEqual(rows[-1].session_id, GOOSE_SESSION)
 
-    # -- tool confirmations and standing permissions (issue 209) --------------
+    # -- tool confirmations and standing permissions ---------------------------
 
     def _permission_rows(self):
         import sqlite3
@@ -7926,7 +7988,7 @@ class GooseTests(ParserBase):
         self.assertTrue(rows[1].text.startswith("scheduled task: weekly "))
         self.assertEqual(rows[2].text, 'parser: unparseable record 2 (not a JSON object): "oops"')
 
-    # -- request logs as a secondary source (issue 126) ------------------------
+    # -- request logs as a secondary source -------------------------------------
 
     LOG = ".local/state/goose/logs/llm_request.0.jsonl"
 
@@ -7996,6 +8058,8 @@ from fixtures import CONTINUE_SESSION, build_aider, continue_index, continue_ind
 
 
 class ContinueTests(ParserBase):
+    """Test the Continue parser."""
+
     REL = ".continue/sessions/%s.json" % CONTINUE_SESSION
 
     def test_rows(self):
@@ -8030,7 +8094,7 @@ class ContinueTests(ParserBase):
         self.assertEqual(
             (model.text, model.model, model.source_line), ("model: GPT-4o", "GPT-4o", 0)
         )
-        # the session's mode is a permission mode (#198)
+        # the session's mode is a permission mode
         self.assertEqual((mode.text, mode.source_line), ("permission mode: agent", 0))
         self.assertEqual(
             (switch.text, switch.model, switch.source_line),
@@ -8050,7 +8114,7 @@ class ContinueTests(ParserBase):
             (res2.tool_use_id, res2.text), ("call_2", "[canceled] Permission denied by user")
         )
         # the canceled state is a per-call decision, after its result row,
-        # with the CLI's denial reason (#198)
+        # with the CLI's denial reason
         self.assertEqual(
             (canceled.text, canceled.tool_use_id, canceled.tool_name, canceled.timestamp_utc),
             (
@@ -8063,8 +8127,11 @@ class ContinueTests(ParserBase):
         self.assertEqual([row.source_line for row in rows], [0, 0, 0, 1, 3, 4, 5, 5, 5, 5, 5])
 
     def _write_session(self, sid: str, workspace: str, states: list, mode: str = "") -> str:
-        """A one-item session file `sid` in `workspace` whose assistant item
-        has `states`, the input reopened so the parser is offered it."""
+        """Write a one-item session file `sid` in `workspace`.
+
+        Its assistant item has `states`; the input is reopened so the parser is offered
+        it.
+        """
         calls = [state["toolCall"] for state in states]
         sess = {
             "sessionId": sid,
@@ -8091,7 +8158,7 @@ class ContinueTests(ParserBase):
         return {"toolCallId": call_id, "toolCall": call, "status": status, "output": output}
 
     def test_policy_decisions_in_states(self):
-        # #198: the CLI's policy refusal and the extension's Security Policy
+        # The CLI's policy refusal and the extension's Security Policy
         # Violation; an errored call without that item is no decision.
         violation = {"name": "Security Policy Violation", "content": "disabled"}
         rel = self._write_session(
@@ -8123,7 +8190,7 @@ class ContinueTests(ParserBase):
         self.assertFalse([row for row in rows if row.text.startswith("scratch directory:")])
 
     def test_cn_review_worktree_is_scratch(self):
-        # #198: `cn review` runs in <tmp>/cn-review-<ms>-<n>; a CLI session
+        # `cn review` runs in <tmp>/cn-review-<ms>-<n>; a CLI session
         # has no mode, so no permission mode row.
         path = "/tmp/cn-review-1790935200000-0"
         rel = self._write_session("6f6f", path, [])
@@ -8142,7 +8209,7 @@ class ContinueTests(ParserBase):
     PERMS = ".continue/permissions.yaml"
 
     def test_permissions_yaml(self):
-        # #198: one standing-grant row per rule, at the file's mtime.
+        # One standing-grant row per rule, at the file's mtime.
         rows = self.rows_for(ContinueParser(), self.PERMS)
         mtime = to_utc((self.home / self.PERMS).stat().st_mtime)
         self.assertEqual(
@@ -8200,7 +8267,7 @@ class ContinueTests(ParserBase):
     HISTORY = ".continue/input_history.json"
 
     def test_input_history(self):
-        # #198: the CLI's prompt history is a secondary source, newest first.
+        # The CLI's prompt history is a secondary source, newest first.
         parser = ContinueParser()
         rows = self.rows_for(parser, self.HISTORY)
         self.assertEqual(
@@ -8350,7 +8417,7 @@ class ContinueTests(ParserBase):
             self.assertEqual((rows[-1].source_line, rows[-1].text), (2, bad_line_text()), event)
 
     def test_cn_log_policy_rule(self):
-        # #198: a "don't ask again" answer logs the rule it added.
+        # A "don't ask again" answer logs the rule it added.
         path = self.home / ".continue/logs/cn.log"
         path.write_text(
             "2026-10-07 11:00:00.000 [a1b2c3d4] [info]: Added policy rule to permissions.yaml:"
@@ -8415,7 +8482,7 @@ class ContinueTests(ParserBase):
         parser = ContinueParser()
         art = self.artifact(".continue/config.yaml")
         self.assertFalse(parser.wants(art))
-        # the index is wanted only for the rows that say what it lost (#170)
+        # the index is wanted only for the rows that say what it lost
         self.assertEqual(self.rows_for(parser, ".continue/sessions/sessions.json"), [])
 
     def test_truncated_session_keeps_earlier_turns(self):
@@ -8458,7 +8525,7 @@ class ContinueTests(ParserBase):
     )
 
     def test_cn_log_rows(self):
-        # `cn serve --id` posts and the skipped storage upload (#153); a
+        # `cn serve --id` posts and the skipped storage upload; a
         # result line settles the oldest post of its process and URL, and the
         # request body and diagnostics are not events.
         rows = self.rows_for(ContinueParser(), ".continue/logs/cn.log")
@@ -8528,7 +8595,7 @@ class ContinueTests(ParserBase):
         return {row.timestamp_utc for row in self.rows_for(parser, self.REL)}
 
     def test_index_cut_mid_write_is_reported(self):
-        # #170: the entries before the cut still time their sessions, and
+        # The entries before the cut still time their sessions, and
         # the broken entry is one row carrying it to the end of the file.
         text, tail = continue_index_cut(continue_index())
         (self.home / self.INDEX).write_text(text, encoding="utf-8")
@@ -8596,21 +8663,25 @@ class ContinueTests(ParserBase):
 
 
 class AiderTests(ParserBase):
+    """Test the Aider parser."""
+
     CHAT = ".aider.chat.history.md"
     SESSION1 = "/alice/.aider.chat.history.md#2026-10-02 12:00:00"
     SESSION2 = "/alice/.aider.chat.history.md#2026-10-02 13:00:00"
 
     def test_secondary(self):
         # The input and LLM histories are secondary sources, the chat history
-        # is the primary store (#122).
+        # is the primary store.
         parser = AiderParser()
         self.assertFalse(parser.secondary(self.artifact(self.CHAT)))
         self.assertTrue(parser.secondary(self.artifact(".aider.input.history")))
         self.assertTrue(parser.secondary(self.artifact(".aider.llm.history")))
 
     def test_deduplicated(self):
-        """The input-history rows the chat history timed are dropped; the one
-        whose chat line is gone and the LLM rows are kept."""
+        """Drop the input-history rows the chat history timed.
+
+        The one whose chat line is gone and the LLM rows are kept.
+        """
         rows, _, problems, deduplicated = cli.collect_rows(self.col, Options(), ["aider"])
         self.assertEqual(problems, [])
         self.assertEqual(deduplicated, {"aider": 2})
@@ -8698,8 +8769,7 @@ class AiderTests(ParserBase):
         )
 
     def test_model_rows(self):
-        """The announcement lines give a `model:` row at a session's first
-        announcement and on each change, per role (#203)."""
+        """Give a `model:` row per role at the first announcement and on each change."""
         rows = [
             row for row in self.rows_for(AiderParser(), self.CHAT) if row.text.startswith("model: ")
         ]
@@ -8758,8 +8828,10 @@ class AiderTests(ParserBase):
         self.assertEqual(sum(row.text.startswith("model: ") for row in rows), 6)
 
     def test_permission_rows(self):
-        """Each confirm_ask line is a `permission decision:` row after its
-        `tool_result` row; a y or n answer may come from --yes-always (#203)."""
+        """Give each confirm_ask line a `permission decision:` row after its result.
+
+        A y or n answer may come from --yes-always.
+        """
         rows = self.rows_for(AiderParser(), self.CHAT)
         idx = [i for i, row in enumerate(rows) if row.text.startswith("permission decision: ")]
         self.assertEqual(
@@ -8837,8 +8909,10 @@ class AiderTests(ParserBase):
         )
 
     def test_project_artifacts_from_manifest(self):
-        """The collector attributes repository files to agent `project` with
-        the project as the home; the rows still say aider."""
+        """Keep agent aider on repository files the collector attributes to `project`.
+
+        The collector gives those files the project as the home.
+        """
         import json as _json
 
         root = self.tmp / "collected"
@@ -8932,7 +9006,7 @@ def rel_only(rel: str) -> Artifact:
 
 
 def model_or_permission_row(row) -> bool:
-    """A `model:` or `permission ...:` system row (issues 96 and 97)."""
+    """Return whether `row` is a `model:` or `permission ...:` system row."""
     return row.turn_type == "system" and row.text.startswith(("model: ", "permission "))
 
 
@@ -8940,6 +9014,8 @@ from fixtures import zed_thread_record
 
 
 class ZedTests(ParserBase):
+    """Test the Zed parser."""
+
     REL = ".local/share/zed/threads/threads.db"
     SIDEBAR = ".local/share/zed/db/0-stable/db.sqlite"
 
@@ -8984,7 +9060,7 @@ class ZedTests(ParserBase):
             )
             self.assertEqual(row.source_line, 1)
         start, remote, user, use, result, _use2, _result2, asst, resume, compaction, draft = rows
-        # the snapshot's git_state.remote_url, at the thread-start time (issue 253)
+        # the snapshot's git_state.remote_url, at the thread-start time
         self.assertEqual(
             (remote.text, remote.timestamp_utc), ("git remote: " + PROJ_REMOTE, start.timestamp_utc)
         )
@@ -9244,7 +9320,7 @@ class ZedTests(ParserBase):
     def test_git_remote_is_the_projects_own(self):
         # A multi-folder thread whose project (folder_paths /srv/other) has
         # no remote while another folder does: no `git remote:` row, never
-        # the other repository's URL (issue 253, pull request 254 review).
+        # the other repository's URL.
         thread = zed_thread_record("/srv/other")
         snaps = thread["initial_project_snapshot"]["worktree_snapshots"]
         snaps[0]["git_state"]["remote_url"] = None
@@ -9314,7 +9390,7 @@ class ZedTests(ParserBase):
             (bad[0].turn_type, bad[0].project_path, bad[0].source_line, bad[0].timestamp_utc),
             ("system", "/srv/other", 2, ""),
         )
-        # issue 168: a full-record parser: row, the stored blob as hex
+        # a full-record parser: row, the stored blob as hex
         self.assertEqual(
             bad[0].text,
             "parser: unparseable record 2 (JSONDecodeError: Expecting value: line 1 column 1"
@@ -9410,7 +9486,7 @@ class ZedTests(ParserBase):
         self.assertEqual([row.text for row in rows], ["thread start: extra version=0.3.0"])
 
     def test_not_sqlite_is_one_parser_row(self):
-        # issue 168: a threads.db or db.sqlite that is not SQLite yields one
+        # a threads.db or db.sqlite that is not SQLite yields one
         # whole-file row instead of nothing
         for rel in (self.REL, self.SIDEBAR):
             (self.home / rel).write_bytes(b"not a database\n")
@@ -9422,7 +9498,7 @@ class ZedTests(ParserBase):
             )
 
     def test_bad_json_blob_is_carried_in_full(self):
-        # issue 168: a `json` row that is not a JSON object, and one cut
+        # a `json` row that is not a JSON object, and one cut
         # mid-record, each carry their stored text; the fixture thread
         # before them still yields every row
         self._insert("list-thread", "json", b'["not", "an", "object"]')
@@ -9500,6 +9576,8 @@ class ZedTests(ParserBase):
 
 
 class VsCodeTests(ParserBase):
+    """Test the VS Code (Copilot Chat) parser."""
+
     REL = VSCODE_WS + "/chatSessions/%s.jsonl" % VSCODE_SESSION
     LEGACY = (
         ".vscode-server/data/User/globalStorage/emptyWindowChatSessions/%s.json"
@@ -9548,7 +9626,7 @@ class VsCodeTests(ParserBase):
             (mode.text, mode.timestamp_utc),
             ("permission mode: agent", "2026-10-03T11:00:01.000Z"),
         )
-        # modeInfo.permissionLevel (issue 210), source-derived.
+        # modeInfo.permissionLevel, source-derived.
         self.assertEqual(
             (level.text, level.timestamp_utc),
             ("permission level: default", "2026-10-03T11:00:01.000Z"),
@@ -9575,7 +9653,7 @@ class VsCodeTests(ParserBase):
         self.assertEqual(
             (model2.text, model2.model, model2.timestamp_utc),
             (
-                # modelConfiguration rides with the model (issue 210).
+                # modelConfiguration rides with the model.
                 "model: copilot/gpt-4.1 -> copilot/claude-sonnet-4 reasoningEffort=high",
                 "copilot/claude-sonnet-4",
                 "2026-10-03T11:00:20.000Z",
@@ -9738,7 +9816,7 @@ class VsCodeTests(ParserBase):
         self.col = open_input(self.tmp / "home", self.cat, host="h1")
 
     def test_agents_window_project_is_working_directory(self):
-        # Issue 185: the Agents window's workspace file is never the project.
+        # The Agents window's workspace file is never the project.
         self._reopen_with_agents_window()
         rel = VSCODE_AGENTS_WS + "/chatSessions/%s.jsonl" % VSCODE_SESSION
         rows = self.rows_for(VsCodeParser(), rel)
@@ -9811,7 +9889,7 @@ from fixtures import (
 
 
 class VsCodeSyncTests(ParserBase):
-    """Copilot Chat's session sync and cloud agent records (issue 153)."""
+    """Test Copilot Chat's session sync and cloud agent records."""
 
     SRC = "(from User/globalStorage/github.copilot-chat/cloudSessions.json, file mtime)"
     TASKS = (
@@ -9888,8 +9966,8 @@ class VsCodeSyncTests(ParserBase):
         self.assertEqual([row for row in rows if "gho_not_real" in row.text], [])
 
     def test_profile_state_grants_and_source_host(self):
-        # Issue 210, source-derived: the Copilot Chat repository selection,
-        # the GitHub account's usage records and the profile-scope grants.
+        # Source-derived: the Copilot Chat repository selection, the
+        # GitHub account's usage records and the profile-scope grants.
         rows = self.rows_for(VsCodeParser(), VSCODE_STATE_REL)
         rest = [row for row in rows if not row.text.startswith("session ")]
         timestamp = to_utc(VSCODE_GRANTS_MTIME)
@@ -10132,7 +10210,7 @@ from fixtures import (
 
 
 def json_reason(raw: str) -> str:
-    """The decoder's message for `raw`, which must not decode."""
+    """Return the decoder's message for `raw`, which must not decode."""
     try:
         json.loads(raw)
     except ValueError as error:
@@ -10141,6 +10219,8 @@ def json_reason(raw: str) -> str:
 
 
 class OpenCodeTests(ParserBase):
+    """Test the OpenCode parser."""
+
     DATABASE = ".local/share/opencode/opencode.db"
     STORAGE = ".local/share/opencode/storage/"
 
@@ -10363,7 +10443,7 @@ class OpenCodeTests(ParserBase):
         )
 
     def test_truncated_part_is_reported_not_fatal(self):
-        # Issue 139: the part file is carried in full, not counted.
+        # The part file is carried in full, not counted.
         part = self.home / self.STORAGE / "part/msg_b/prt_b2.json"
         write_bad_line(part)
         raw = part.read_text(encoding="utf-8")
@@ -10398,7 +10478,7 @@ class OpenCodeTests(ParserBase):
         self.assertIn("could not be decoded", rows[0].text)
 
     def test_bad_data_column_is_reported_not_fatal(self):
-        # Issue 139: one row per record, carrying the stored value in full.
+        # One row per record, carrying the stored value in full.
         import sqlite3
 
         con = sqlite3.connect(str(self.home / self.DATABASE))
@@ -10496,7 +10576,7 @@ class OpenCodeTests(ParserBase):
     NEXT_DB = ".local/share/opencode/" + OPENCODE_NEXT_DB_NAME
 
     def test_v2_database(self):
-        # Issue 165: a database upgraded to 2.0 is read from `session_v2` and
+        # A database upgraded to 2.0 is read from `session_v2` and
         # `session_message`; the 1.x rows of a migrated session are not
         # repeated, and a session deleted in 2.0 is recovered from them.
         parser = OpenCodeParser()
@@ -10576,8 +10656,8 @@ class OpenCodeTests(ParserBase):
         )
 
     def test_next_db_is_secondary(self):
-        # Issue 165: `opencode-next.db` repeats what 2.0 imported from it, so
-        # only the session it alone still holds is kept, as recovered.
+        # `opencode-next.db` repeats what 2.0 imported from it, so only the
+        # session it alone still holds is kept, as recovered.
         import contextlib
 
         parser = OpenCodeParser()
@@ -10621,8 +10701,8 @@ class OpenCodeTests(ParserBase):
         )
 
     def test_v2_bad_session_message_record(self):
-        # Issue 139 for the 2.0 transcript: the record is carried in full and
-        # the records before and after it are still read.
+        # For the 2.0 transcript: the record is carried in full and the
+        # records before and after it are still read.
         import sqlite3
 
         con = sqlite3.connect(str(self.home / self.V2_DB))
@@ -10702,7 +10782,7 @@ class OpenCodeTests(ParserBase):
             ["parser: unparseable record %d (message.data: not a JSON object): [1]" % rowid],
         )
 
-    # -- standing state, past use, scratch directories (issue 194) -------------------
+    # -- standing state, past use, scratch directories --------------------------------
     STATE = ".local/state/opencode/"
     STATE_DB = ".local/share/opencode/" + OPENCODE_STATE_DB_NAME
 
@@ -10973,6 +11053,8 @@ class OpenCodeTests(ParserBase):
 
 
 class KiloCodeTests(ParserBase):
+    """Test the Kilo Code parser."""
+
     DATABASE = ".local/share/kilo/kilo.db"
     TASK = (
         ".config/Code/User/globalStorage/kilocode.kilo-code/tasks/%s/api_conversation_history.json"
@@ -11138,7 +11220,7 @@ class KiloCodeTests(ParserBase):
         self.assertEqual(run('{"a":1}'), ([], [(1, "not a JSON array", "")]))
         self.assertEqual(run("[1] x"), ([1], [(2, "unexpected data after the array", "")]))
 
-    # -- standing state, past use, remote control, retention (issues 192, 221) -------
+    # -- standing state, past use, remote control, retention ------------------------
     LOG = ".local/share/kilo/log/" + KILO_LOG_NAME
     CONFIG = ".config/kilo/kilo.jsonc"
     POLICY = ".local/state/kilo-sandbox-policy/%s/%s.json" % (
@@ -11391,7 +11473,7 @@ from fixtures import (
 
 
 class OpenCodeSyncTests(ParserBase):
-    """The share records of an OpenCode database (issue 153)."""
+    """Test the share records of an OpenCode database."""
 
     DATABASE = ".local/share/opencode/" + OPENCODE_SHARE_DB_NAME
 
@@ -11464,7 +11546,7 @@ class OpenCodeSyncTests(ParserBase):
         con.close()
         rows = self.rows_for(OpenCodeParser(), self.DATABASE)
         self.assertEqual(len(self.sync_rows(rows)), 3)
-        # Issue 139: the event is carried in full, under its session.
+        # The event is carried in full, under its session.
         last = rows[-1]
         self.assertEqual(
             last.text,
@@ -11496,7 +11578,7 @@ class OpenCodeSyncTests(ParserBase):
 
 
 class KiloCodeSyncTests(ParserBase):
-    """Kilo's cloud session marker (issue 153)."""
+    """Test Kilo's cloud session marker."""
 
     def test_rows(self):
         self.assertTrue(KiloCodeParser.records_sync)
@@ -11591,6 +11673,8 @@ ROO_GS = ".config/Code/User/globalStorage/rooveterinaryinc.roo-cline/"
 
 
 class ClineTests(ParserBase):
+    """Test the Cline parser."""
+
     UI_MESSAGES = CLINE_GS + "tasks/%s/ui_messages.json" % CLINE_TASK
     SDK = ".cline/data/sessions/%s/%s" % (CLINE_SESSION, CLINE_SESSION)
 
@@ -12074,7 +12158,7 @@ class ClineTests(ParserBase):
     def test_enterprise_blob_upload_from_manifest(self):
         self._with_blob_upload()
         # `enterprise.blobUpload` marks a transcript uploaded to the
-        # organisation's bucket (#153): one row after the model row.
+        # organisation's bucket: one row after the model row.
         rows = self.rows_for(ClineParser(), self.BLOB_REL)
         self.assertEqual(
             [(row.timestamp_utc, row.session_id, row.project_path, row.text) for row in rows[2:]],
@@ -12142,7 +12226,7 @@ class ClineTests(ParserBase):
 
     def test_sync_queue(self):
         # The extension's upload queue names each task file it uploaded or
-        # failed to (#153); the file content in `data` is never printed.
+        # failed to; the file content in `data` is never printed.
         self.assertFalse(
             [artifact for artifact in self.col.artifacts if artifact.rel == CLINE_SYNC_QUEUE]
         )
@@ -12214,7 +12298,7 @@ class ClineTests(ParserBase):
             ["parser: sync-queue item x is not a JSON object"],
         )
 
-    # -- source review of 2026-10-21 (#190), source-derived
+    # -- source-derived rows
 
     def _reopen(self, *builders) -> None:
         for build in builders:
@@ -12536,6 +12620,8 @@ class ClineTests(ParserBase):
 
 
 class RooCodeTests(ParserBase):
+    """Test the Roo Code parser."""
+
     UI_MESSAGES = ROO_GS + "tasks/%s/ui_messages.json" % ROO_TASK
     CLI_API = ".vscode-mock/global-storage/tasks/%s/api_conversation_history.json" % ROO_CLI_TASK
 
@@ -12916,9 +13002,11 @@ TABBY_SOURCE_REPO = (
 
 
 class TabbyTests(ParserBase):
+    """Test the Tabby parser."""
+
     def test_secondary(self):
         # The backups and the event log are secondary sources, the live
-        # database is not (#122).
+        # database is not.
         parser = TabbyParser()
         for rel in (
             TABBY_BACKUP_REL,
@@ -12950,7 +13038,7 @@ class TabbyTests(ParserBase):
             self.assertTrue(row.source_file.endswith(TABBY_REL), row.source_file)
         start, user, asst = rows[:3]
         select = rows[-3]
-        # The user_events copy of the event log's completion line (#122).
+        # The user_events copy of the event log's completion line.
         app = "https://github.com/acme/app"
         self.assertEqual(
             [(row.session_id, row.project_path, row.timestamp_utc, row.text) for row in rows[7:10]],
@@ -13140,7 +13228,7 @@ class TabbyTests(ParserBase):
         )
 
     def test_secondary_copies_dropped(self):
-        # Every source is parsed and the copies are dropped (#122): the event
+        # Every source is parsed and the copies are dropped: the event
         # log's prompt and choice (user_events has them, within a second), the
         # later backup's thread 7 (the live database has it) and one of the
         # two backup copies of ephemeral thread 3. The event log's system rows
@@ -13195,7 +13283,7 @@ class TabbyTests(ParserBase):
 
     def test_no_new_secret_reaches_rows(self):
         # The model api_key, the client token and the VS Code endpoint token
-        # (#211) sit beside what the parser now reads.
+        # sit beside what the parser reads.
         rows, _, _, _ = cli.collect_rows(self.col, Options(), ["tabby"])
         for row in rows:
             for value in row.as_dict().values():
@@ -13203,7 +13291,7 @@ class TabbyTests(ParserBase):
                     self.assertNotIn(secret, str(value))
 
     def test_pages(self):
-        # AI-written pages outlive their thread (#211; page.rs:92-150).
+        # AI-written pages outlive their thread (page.rs:92-150).
         rows = [
             row for row in self.rows_for(TabbyParser(), TABBY_REL) if row.session_id == "page:4"
         ]
@@ -13254,7 +13342,7 @@ class TabbyTests(ParserBase):
         )
 
     def test_config_model_rows(self):
-        # config.rs:259-342: one row per configured model, at the file mtime (#211).
+        # config.rs:259-342: one row per configured model, at the file mtime.
         rows = self.rows_for(TabbyParser(), TABBY_CONFIG_REL)
         mtime = to_utc((self.home / TABBY_CONFIG_REL).stat().st_mtime)
         self.assertTrue(all(row.timestamp_utc == mtime for row in rows))
@@ -13286,7 +13374,7 @@ class TabbyTests(ParserBase):
         self.assertNotIn("sk-tabby-test", rows[0].text)
 
     def test_intellij_command_history(self):
-        # CommandHistory.kt:5-31: newest first, no times (#211).
+        # CommandHistory.kt:5-31: newest first, no times.
         rows = self.rows_for(TabbyParser(), TABBY_INTELLIJ_REL)
         self.assertEqual(
             [
@@ -13316,7 +13404,7 @@ class TabbyTests(ParserBase):
 
     def test_vscode_command_history(self):
         # Config.ts:139-145 and quickPick.ts:322-351, read from the editor's
-        # state.vscdb through reads_agents (#211).
+        # state.vscdb through reads_agents.
         parser = TabbyParser()
         self.assertIn("vscode", parser.reads_agents)
         art = self.artifact(TABBY_VSCDB_REL)
@@ -13355,9 +13443,11 @@ class TabbyTests(ParserBase):
         self.assertFalse(parser.wants(self.artifact(".tabby-client/agent/config.toml")))
 
     def test_volume_root(self):
-        """A Tabby server root collected from a Docker named volume has its
-        files at the base's root (#124); the parser reads them as it reads
-        a home's `.tabby`."""
+        """Read a Tabby server root collected from a Docker named volume.
+
+        Its files sit at the base's root; the parser reads them as it reads a home's
+        `.tabby`.
+        """
         from fixtures import TABBY_VOLUME_HOME, build_tabby_volume
 
         parser = TabbyParser()
@@ -13432,6 +13522,8 @@ from fixtures import (
 
 
 class OpenHandsTests(ParserBase):
+    """Test the OpenHands parser."""
+
     CANVAS = ".openhands/agent-canvas/dev_conversations/%s/events/" % OPENHANDS_CONV
     CLI = ".openhands/conversations/%s/events/" % OPENHANDS_CLI_CONV
 
@@ -13572,7 +13664,6 @@ class OpenHandsTests(ParserBase):
         self.fail("cut file still decodes")
 
     def test_undecodable_meta_json_is_reported(self):
-        # Issue 176: a cut meta.json gave no row and lost the title silently.
         reason = self._cut(
             ".openhands/agent-canvas/dev_conversations/%s/meta.json" % OPENHANDS_CONV
         )
@@ -13770,6 +13861,8 @@ class OpenHandsTests(ParserBase):
 
 
 class ShellGptTests(ParserBase):
+    """Test the ShellGPT parser."""
+
     CHAT = "AppData/Local/Temp/chat_cache/" + SHELLGPT_CHAT
     LEGACY = "AppData/Local/Temp/shell_gpt/chat_cache/" + SHELLGPT_LEGACY_CHAT
 
@@ -13974,6 +14067,8 @@ from fixtures import (
 
 
 class PiTests(ParserBase):
+    """Test the Pi parser."""
+
     REL = PI_DIR + PI_FILE
     FORK = PI_DIR + PI_FORK_FILE
     LITTLE_CODER = PI_DIR + LC_FILE
@@ -14191,7 +14286,7 @@ class PiTests(ParserBase):
         self.assertIn("is not a JSON object", rows[0].text)
 
     def test_default_project_trust_row(self):
-        # Since 1.3.0 (issue 201): the one key of settings.json read.
+        # The one key of settings.json the parser reads.
         rows = self.rows_for(PiParser(), PI_SETTINGS)
         self.assertEqual(
             [
@@ -14216,7 +14311,7 @@ class PiTests(ParserBase):
 
     def test_permission_gate_refusal(self):
         # little-coder's gate blocks the edit; pi records an error toolResult
-        # with the gate's reason, followed by the decision row (issue 201).
+        # with the gate's reason, followed by the decision row.
         rows = self.rows_for(PiParser(), self.LITTLE_CODER)
         i = next(
             index for index, row in enumerate(rows) if row.text.startswith("permission decision:")
@@ -14382,6 +14477,8 @@ class PiTests(ParserBase):
 
 
 class LittleCoderTests(ParserBase):
+    """Test the little-coder parser."""
+
     HISTORY = ".pi/agent/little-coder-prompt-history.json"
     CHECKPOINTS = ".little-coder/checkpoints/%s/" % LC_FILE
 
@@ -14468,7 +14565,7 @@ class LittleCoderTests(ParserBase):
         self.assertTrue(rows[-1].text.startswith("parser: unparseable record 2 ("), rows[-1].text)
         self.assertTrue(rows[-1].text.endswith("): " + cut), rows[-1].text)
 
-    # ---- the v0.0.x layout under ~/.little-coder (issue 157) ----------------
+    # ---- the v0.0.x layout under ~/.little-coder ------------------------------
 
     LEGACY_TYPES: ClassVar[list] = [
         "system",
@@ -14640,6 +14737,8 @@ class LittleCoderTests(ParserBase):
 
 
 class LettaTests(ParserBase):
+    """Test the Letta Code parser."""
+
     TRANSCRIPT = ".letta/transcripts/%s/%s/transcript.jsonl" % (LETTA_AGENT, LETTA_CONV)
     TWIN = ".letta/transcripts/%s/%s/transcript.jsonl" % (LETTA_AGENT, LETTA_LOCAL_CONV)
     LOCAL = ".letta/lc-local-backend/conversations/%s/messages.jsonl" % LETTA_LOCAL_DIR
@@ -14722,7 +14821,7 @@ class LettaTests(ParserBase):
             self.assertFalse(parser.secondary(self.artifact(rel)), rel)
 
     def test_transcript_read_beside_local_backend(self):
-        # Read always, not only when messages.jsonl is missing (issue 122).
+        # Read always, not only when messages.jsonl is missing.
         rows = self.rows_for(LettaParser(), self.TWIN)
         # The fixture's agent id has no `agent-local-` prefix, so the twin
         # also gets the server-conversation sync row (LettaSyncTests).
@@ -14766,8 +14865,8 @@ class LettaTests(ParserBase):
         self.assertEqual(dropped["letta"], 1)
 
     def test_sessions_history(self):
-        # One exit line per CLI session (issue 158), each followed by the
-        # session's model row.
+        # One exit line per CLI session, each followed by the session's
+        # model row.
         rows = self.rows_for(LettaParser(), ".letta/sessions.jsonl")
         self.assertEqual(
             [(row.turn_type, row.session_id, row.project_path) for row in rows],
@@ -15017,7 +15116,7 @@ from fixtures import (
 
 
 class PiSyncTests(ParserBase):
-    """The `pi.bug-report` entry `/bug` appends (issue 153)."""
+    """Test the `pi.bug-report` entry that `/bug` appends."""
 
     REL = PI_DIR + PI_BUG_FILE
     SRC = "(from session entry pi.bug-report, entry timestamp)"
@@ -15089,7 +15188,7 @@ class PiSyncTests(ParserBase):
 
 
 class LettaSyncTests(ParserBase):
-    """The server-side session markers of Letta Code (issue 153)."""
+    """Test the server-side session markers of Letta Code."""
 
     TRANSCRIPT = ".letta/transcripts/%s/%s/transcript.jsonl" % (LETTA_AGENT, LETTA_CONV)
     LOCAL_TRANSCRIPT = ".letta/transcripts/%s/%s/transcript.jsonl" % (
@@ -15180,7 +15279,7 @@ class LettaSyncTests(ParserBase):
                     "session synced: last session on localhost:8283 agent agent-selfhost "
                     "conversation conv-sh1 (from .letta/settings.local.json, file mtime)",
                 ),
-                # The project's standing rule (issue 202).
+                # The project's standing rule.
                 (
                     "",
                     "/srv/proj",
@@ -15241,6 +15340,8 @@ from fixtures import (
 
 
 class HermesTests(ParserBase):
+    """Test the Hermes parser."""
+
     REL = ".hermes/state.db"
 
     def test_rows(self):
@@ -15396,7 +15497,6 @@ class HermesTests(ParserBase):
             "AppData/Local/hermes/profiles/x/sessions/abc.jsonl",
             ".hermes/state-snapshots/1/state.db",
             "AppData/Local/hermes/profiles/x/state-snapshots/20261001-120000/state.db",
-            # issue 208
             ".hermes/config.yaml",
             ".hermes/profiles/work/config.yaml",
             ".hermes/pairing/telegram-approved.json",
@@ -15597,7 +15697,7 @@ class HermesTests(ParserBase):
             [(HERMES_SESSION, "2026-10-01T12:00:06.000Z")],
         )
 
-    # -- debug report uploads (issue 153) ---------------------------------------
+    # -- debug report uploads ---------------------------------------------------
 
     PASTE_TEXT = "debug report uploaded: %s (from pastes/pending.json, expire_at minus 6 hours)"
 
@@ -15660,7 +15760,7 @@ class HermesTests(ParserBase):
             (3, 'parser: unparseable record 3 (not an object with a url): {"expire_at":1}'),
         )
 
-    # -- model-switch markers and malformed tool_calls (issues 180, 182) ------------------
+    # -- model-switch markers and malformed tool_calls --------------------------
 
     def switch_rows(self):
         from fixtures import build_hermes_switch
@@ -15714,8 +15814,10 @@ class HermesTests(ParserBase):
         )
 
     def test_model_switch_without_usage_or_earlier_marker(self):
-        """The marker names only the new model; with no earlier marker and
-        no usage row before it the row is `model: <new>`."""
+        """Give `model: <new>` for a marker with no earlier marker or usage row.
+
+        The marker names only the new model.
+        """
         from fixtures import HERMES_SWITCH_MARKER, HERMES_SWITCH_SCHEMA
 
         database = self.tmp / "switch1" / "state.db"
@@ -15787,8 +15889,10 @@ class HermesTests(ParserBase):
         self.assertLess(texts.index(bad[2].text), texts.index("after the switches"))
 
     def test_malformed_tool_calls_in_divert_line(self):
-        """A divert line's tool_calls is a list already; a value of another
-        type is reported with the value, beside the bad-line rows."""
+        """Report a divert line's tool_calls of a type other than a list, with the value.
+
+        The report sits beside the bad-line rows.
+        """
         path = self.home / HERMES_DIVERTED_REL
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(
@@ -15811,9 +15915,11 @@ class HermesTests(ParserBase):
         self.assertEqual({row.session_id for row in rows}, {HERMES_DIVERTED})
 
     def test_volume_home(self):
-        """A Hermes home collected from a Docker named volume has its files
-        at the base's root (issue 181); the parser reads them as it reads a
-        home's `.hermes`."""
+        """Read a Hermes home collected from a Docker named volume.
+
+        Its files sit at the base's root; the parser reads them as it reads a home's
+        `.hermes`.
+        """
         from fixtures import HERMES_VOLUME_HOME, build_hermes_volume
 
         parser = HermesParser()
@@ -15883,12 +15989,14 @@ class HermesTests(ParserBase):
             all(artifact.home.original == HERMES_VOLUME_HOME for artifact in col.artifacts)
         )
 
-    # -- issue 208: relay, permissions, deletion, past use, origin, scratch ---------------
+    # -- relay, permissions, deletion, past use, origin, scratch ----------------
     # Source-derived from hermes-agent 86fa9e6; no real install has shown these.
 
     def hermes_art(self, rel, path, project=""):
-        """An artifact for the file at `path` with `rel` as its path, in a
-        project base `project` when given."""
+        """Return an artifact for the file at `path` with `rel` as its path.
+
+        The artifact sits in a project base `project` when one is given.
+        """
         art = dc_replace(self.artifact(self.REL), disk_path=path, rel=rel, original=str(path))
         if project:
             art = dc_replace(art, home=dc_replace(art.home, project=True, original=project))
@@ -16302,6 +16410,8 @@ class HermesTests(ParserBase):
 
 
 class AgentZeroTests(ParserBase):
+    """Test the Agent Zero parser."""
+
     REL = AGENT_ZERO_REL
 
     def test_rows(self):
@@ -16522,7 +16632,7 @@ class AgentZeroTests(ParserBase):
         self.assertEqual(rows[4].text, "a.txt")
         self.assertEqual(recover_logs('{"logs": [{"no": 0}, {"no": 1'), [{"no": 0}])
 
-    # -- remote copies (issue 153) ---------------------------------------------
+    # -- remote copies ----------------------------------------------------------
 
     def _relayed_rows(self, chat=None):
         path = self.home / AGENT_ZERO_TG_REL
@@ -16597,7 +16707,7 @@ class AgentZeroTests(ParserBase):
         )
         self.assertFalse([row for row in rows if row.text.startswith("session synced:")])
 
-    # -- permissions, models, past use, origin (issue 204) -----------------------
+    # -- permissions, models, past use, origin ----------------------------------
 
     def _extras(self):
         from fixtures import build_agent_zero_extras
@@ -16907,7 +17017,7 @@ class AgentZeroTests(ParserBase):
         self.assertFalse(parser.wants(noise))
         self.assertTrue(parser.wants(self.artifact(AGENT_ZERO_TOGGLE_REL)))
 
-    # -- Docker volume layout (issue 175) --------------------------------------
+    # -- Docker volume layout ---------------------------------------------------
 
     def _volume(self):
         from fixtures import build_agent_zero_volume
@@ -17035,8 +17145,10 @@ def _rollout_bytes(records) -> bytes:
 
 
 class CodexArchiveAndZstdTests(ParserBase):
-    """Codex `archived_sessions/` and `.jsonl.zst` rollouts, which the shared
-    RolloutParser reads for Codex and its forks alike."""
+    """Test Codex `archived_sessions/` and `.jsonl.zst` rollouts.
+
+    The shared RolloutParser reads them for Codex and its forks alike.
+    """
 
     ARCHIVED = (
         ".codex/archived_sessions/2026/10/02/rollout-2026-10-02T09-00-00-%s.jsonl" % CODEX_SESSION
@@ -17122,10 +17234,12 @@ class CodexArchiveAndZstdTests(ParserBase):
 
 
 class OpenInterpreterTests(ParserBase):
+    """Test the Open Interpreter parser."""
+
     LEDGER = ".openinterpreter/external_agent_session_imports.json"
 
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = OpenInterpreterParser()
         self.assertTrue(parser.secondary(self.artifact(".openinterpreter/history.jsonl")))
         self.assertFalse(parser.secondary(self.artifact(OI_ROLLOUT)))
@@ -17300,7 +17414,7 @@ class OpenInterpreterTests(ParserBase):
         ):
             self.assertEqual(arts[rel].agent, "open-interpreter")
             self.assertFalse(parser.wants(arts[rel]), rel)
-        # config.toml is read for its standing permission keys (#200); the
+        # config.toml is read for its standing permission keys; the
         # fixture's names none, so it gives no rows.
         config = arts[".openinterpreter/config.toml"]
         self.assertTrue(parser.wants(config))
@@ -17383,14 +17497,18 @@ from fixtures import (
 
 
 class OpenClawTests(ParserBase):
+    """Test the OpenClaw parser."""
+
     DATABASE = OPENCLAW_AGENT + "/agent/openclaw-agent.sqlite"
     LEGACY = OPENCLAW_AGENT + "/sessions/%s.jsonl" % OPENCLAW_LEGACY
 
     def transcript(self, sid):
-        """The database rows of generation `sid` that come from its
-        transcript: not the rows of the session metadata and side tables
-        (which name their table in the text), the pending prompts or the
-        rows recovered from the full-text index."""
+        """Return the database rows of generation `sid` that come from its transcript.
+
+        This leaves out the rows of the session metadata and side tables (which name
+        their table in the text), the pending prompts and the rows recovered from the
+        full-text index.
+        """
         return [
             row
             for row in self.rows_for(OpenClawParser(), self.DATABASE)
@@ -17781,8 +17899,7 @@ class OpenClawTests(ParserBase):
 
     def test_null_event_row_is_reported_not_fatal(self):
         # A row whose event_json is valid JSON but not an object (here
-        # `null`) is reported as "not a JSON object"; it used to raise
-        # NameError because the parse-error message was never bound.
+        # `null`) is reported as "not a JSON object".
         con = sqlite3.connect(str(self.home / self.DATABASE))
         con.execute(
             "INSERT INTO transcript_events VALUES (?,?,?,?,NULL,NULL,NULL)",
@@ -17795,7 +17912,7 @@ class OpenClawTests(ParserBase):
         self.assertEqual(rows[-1].turn_type, "system")
         self.assertIn("event seq 9 unreadable: not a JSON object", rows[-1].text)
 
-    # -- session sync (issue 153) ---------------------------------------------
+    # -- session sync -----------------------------------------------------------
 
     SHARE_TEXT = (
         "session synced: public share %s generation %s (from openclaw-agent.sqlite"
@@ -17937,8 +18054,8 @@ class OpenClawTests(ParserBase):
         )
 
     def test_bad_legacy_sessions_json_is_one_row(self):
-        # Issue 177: a legacy sessions.json that does not decode or is not an
-        # object is a whole-file row; the transcript's rows still come out.
+        # A legacy sessions.json that does not decode or is not an object
+        # is a whole-file row; the transcript's rows still come out.
         clean = [(row.turn_type, row.text) for row in self.rows_for(OpenClawParser(), self.LEGACY)]
         store = self.home / OPENCLAW_AGENT / "sessions/sessions.json"
         cut = '{"%s": {"sessionId": "%s"' % (OPENCLAW_KEY, OPENCLAW_LEGACY)
@@ -17966,8 +18083,8 @@ class OpenClawTests(ParserBase):
             self.assertEqual((rows[-1].timestamp_utc, rows[-1].text), ("", message))
 
     def test_non_object_line_is_reported_not_fatal(self):
-        # Issue 177: a line that is valid JSON but not an object is its own
-        # row carrying the line; the lines before and after still come out.
+        # A line that is valid JSON but not an object is its own row
+        # carrying the line; the lines before and after still come out.
         clean = [(row.turn_type, row.text) for row in self.rows_for(OpenClawParser(), self.LEGACY)]
         path = self.home / self.LEGACY
         lines = path.read_bytes().split(b"\n")
@@ -18020,7 +18137,7 @@ class OpenClawTests(ParserBase):
             (rowid, "parser: archive %s line 2: unparseable line (not a JSON object): 42" % name),
         )
 
-    # -- issue 206: relay, permission, model, past-use and deletion rows ---------
+    # -- relay, permission, model, past-use and deletion rows -------------------
 
     def connect_database(self):
         return sqlite3.connect(str(self.home / self.DATABASE))
@@ -18333,8 +18450,8 @@ class OpenClawTests(ParserBase):
         )
 
     def test_git_remote_row(self):
-        # issue 253: `projects.origin_url` at `created_at_ms`, the project
-        # path its `repo_root`; a project without an origin has no row.
+        # `projects.origin_url` at `created_at_ms`, the project path its
+        # `repo_root`; a project without an origin has no row.
         rows = self.texts("git remote:", rel=OPENCLAW_STATE_DB)
         self.assertEqual(
             [
@@ -18376,6 +18493,8 @@ from fixtures import (
 
 
 class NanobotTests(ParserBase):
+    """Test the nanobot parser."""
+
     def test_rows(self):
         rows = self.rows_for(NanobotParser(), NANOBOT_REL)
         self.assertEqual(
@@ -18391,8 +18510,8 @@ class NanobotTests(ParserBase):
         start, relayed, hidden, user, use, result, asst = rows
         self.assertIn("last_channel=telegram:123456789", start.text)
         self.assertEqual(start.timestamp_utc, "2026-10-01T10:15:00.000Z")
-        # Issue 207: the session key names a messaging platform; the
-        # metadata's last_channel is the same route, so one row.
+        # The session key names a messaging platform; the metadata's
+        # last_channel is the same route, so one row.
         self.assertEqual(
             (relayed.text, relayed.timestamp_utc, relayed.source_line),
             ("session relayed: telegram chat 123456789 (from session key)", start.timestamp_utc, 1),
@@ -18640,12 +18759,11 @@ class NanobotTests(ParserBase):
         self.assertEqual(by_text["list the old logs"], ["000001.jsonl"])
         self.assertEqual(by_text["first line\nsecond line"], ["cli_history"])
         inv = json.loads((out / "inventory.json").read_text(encoding="utf-8"))
-        # Six more: the frozen discord:555 JSONL's relay row (issue 207),
-        # model row and four message rows, which sessions.sqlite3 also holds
-        # (issue 178).
+        # Six more: the frozen discord:555 JSONL's relay row, model row and
+        # four message rows, which sessions.sqlite3 also holds.
         self.assertEqual(inv["deduplicated"], {"nanobot": 11})
 
-    # -- sessions.sqlite3 (issue 178) -----------------------------------------------------
+    # -- sessions.sqlite3 --------------------------------------------------------
     DB_ROWS: ClassVar[list[tuple[int, str, str, str]]] = [
         (
             2,
@@ -18800,7 +18918,7 @@ class NanobotTests(ParserBase):
         # What only the jsonl-backup/ copy still holds is recovered from it.
         self.assertEqual(by_text["old heartbeat prompt"], [("heartbeat.jsonl", "yes")])
 
-    # -- CLI history under an instance home (issue 179) --------------------------------------
+    # -- CLI history under an instance home -------------------------------------
     def test_cli_history_under_instance_home(self):
         rel = ".nanobot-work/history/cli_history"
         path = self.home / rel
@@ -18818,7 +18936,7 @@ class NanobotTests(ParserBase):
         self.assertFalse(parser.wants(rel_only(".nanobot-work/history/cli_history.bak")))
         self.assertFalse(parser.wants(rel_only("work/.nanobot/history/cli_history")))
 
-    # -- issue 207: relay, model switches, permission state, run records, sidebar -------
+    # -- relay, model switches, permission state, run records, sidebar ---------
     def test_relay_from_last_channel(self):
         rows = self.rows_for(NanobotParser(), NANOBOT_SWEEP_RELS["unified"])
         self.assertEqual(
@@ -19103,9 +19221,11 @@ from fixtures import (
 
 
 class ReadsAgentsRoutingTests(ParserBase):
-    """`reads_agents` offers a `vscode` state.vscdb to the Cody, Twinny,
-    Roo Code and Tabby parsers as well as to the VS Code parser, and nothing
-    else to them."""
+    """Test the routing of a `vscode` state.vscdb through `reads_agents`.
+
+    The file goes to the Cody, Twinny, Roo Code and Tabby parsers as well as to the
+    VS Code parser, and nothing else goes to them.
+    """
 
     def test_state_vscdb_offered_to_extension_parsers(self):
         parsers = by_agent()
@@ -19116,14 +19236,14 @@ class ReadsAgentsRoutingTests(ParserBase):
             {parser.agent for parser in offered}, {"vscode", "cody", "twinny", "roo-code", "tabby"}
         )
         self.assertEqual(len(offered), len(set(map(id, offered))))
-        # The VS Code parser reads the Copilot Chat row of the same database
-        # (issue 153), which Cody's has none of.
+        # The VS Code parser reads the Copilot Chat row of the same database,
+        # which Cody's has none of.
         vscode = [parser for parser in offered if parser.agent == "vscode"]
         self.assertTrue(all(parser.wants(art) for parser in vscode))
         self.assertEqual([row for parser in vscode for row in parser.parse(art, Options())], [])
         # A codex-cli file is offered to its own parser and, through
-        # ChatGPT Desktop's `reads_agents` (issue 49), to that one, never to
-        # the extension parsers.
+        # ChatGPT Desktop's `reads_agents`, to that one, never to the
+        # extension parsers.
         other = next(artifact for artifact in self.col.artifacts if artifact.agent == "codex-cli")
         self.assertEqual(
             {parser.agent for parser in cli.parsers_for(other, parsers)},
@@ -19140,10 +19260,10 @@ class ReadsAgentsRoutingTests(ParserBase):
         from_vscdb = {
             row.agent for row in rows if row.source_file.endswith("/User/globalStorage/state.vscdb")
         }
-        # `vscode` rows come from the Copilot Chat cloud agent tasks (issue 153),
-        # `cursor` rows from Cursor's own state.vscdb (issue 51), `pearai`
-        # rows from PearAI's (issue 193), `roo-code` permission settings
-        # (issue 191) and `tabby` inline-edit command history (issue 211).
+        # `vscode` rows come from the Copilot Chat cloud agent tasks,
+        # `cursor` rows from Cursor's own state.vscdb, `pearai` rows from
+        # PearAI's, `roo-code` permission settings and `tabby` inline-edit
+        # command history.
         self.assertEqual(
             from_vscdb, {"cody", "cursor", "pearai", "roo-code", "tabby", "twinny", "vscode"}
         )
@@ -19168,6 +19288,8 @@ class ReadsAgentsRoutingTests(ParserBase):
 
 
 class CodyTests(ParserBase):
+    """Test the Cody parser."""
+
     def test_rows(self):
         rows = self.rows_for(CodyParser(), CODY_JB_REL)
         self.assertEqual(
@@ -19351,7 +19473,7 @@ class CodyTests(ParserBase):
         return self.rows_for(CodyParser(), CODY_DEEP_REL)
 
     def test_rejected_confirmation_says_command_rejected(self):
-        # Issue 169: a refusal is saved as state error, error.message "Command rejected".
+        # A refusal is saved as state error, error.message "Command rejected".
         from fixtures import CODY_DEEP_CHAT, CODY_REJECTED_STEP
 
         rows = self.deep_rows()
@@ -19377,7 +19499,7 @@ class CodyTests(ParserBase):
         self.assertEqual(rows[-1].text, "Only README.md changed.")
 
     def test_pending_confirmation_is_not_called_an_approval(self):
-        # Issue 169: an approval never completes the step, so pending is either.
+        # An approval never completes the step, so pending is either.
         from fixtures import CODY_PENDING_STEP
 
         pending = self.deep_rows()[3]
@@ -19403,7 +19525,7 @@ class CodyTests(ParserBase):
             " title=Run terminal command\npytest -q\nAllow Cody to run this command?",
         )
 
-    # ---- issue 197: settings, model preferences, legacy JetBrains history ----
+    # ---- settings, model preferences, legacy JetBrains history ----
 
     def settings_col(self):
         from fixtures import build_cody_settings
@@ -19632,6 +19754,8 @@ class CodyTests(ParserBase):
 
 
 class TwinnyTests(ParserBase):
+    """Test the Twinny parser."""
+
     def test_rows(self):
         # The rows live only in the -wal sidecar: read through sqlite_util.
         self.assertTrue((self.home / (TWINNY_VSCDB_REL + "-wal")).is_file())
@@ -19776,8 +19900,8 @@ class TwinnyTests(ParserBase):
         return list(TwinnyParser().parse(art, Options()))
 
     def test_said_step_is_user_row(self):
-        # Issue 171: since 4.3.5 a message the user sends mid-reply is a
-        # `said: true` tool step; it is a user row in its place, not a tool call.
+        # Since 4.3.5 a message the user sends mid-reply is a `said: true`
+        # tool step; it is a user row in its place, not a tool call.
         home = self.tmp / "said-home"
         build_twinny_said(home)
         rows = self._said_rows(home)
@@ -19826,7 +19950,7 @@ class TwinnyTests(ParserBase):
             )
         )
 
-    # ---- 4.3.15 records beside the conversations (#154, #199, #215) --------
+    # ---- 4.3.15 records beside the conversations -------------------------
 
     def _415(self):
         home = self.tmp / "twinny-415"
@@ -20034,6 +20158,8 @@ from fixtures import PEARAI_LOG_REL, pearai_log_completion, pearai_log_settings
 
 
 class PearAiTests(ParserBase):
+    """Test the PearAI parser."""
+
     SESSION = ".pearai/sessions/%s.json" % PEARAI_SESSION
     API = PEARAI_ROO + "tasks/%s/api_conversation_history.json" % PEARAI_TASK
     UI_API = PEARAI_ROO + "tasks/%s/api_conversation_history.json" % PEARAI_UI_TASK
@@ -20381,7 +20507,7 @@ class PearAiTests(ParserBase):
             art = next(artifact for artifact in self.col.artifacts if artifact.rel == rel)
             self.assertEqual(art.agent, "pearai")
             self.assertFalse(PearAiParser().wants(art), rel)
-        # the index is wanted only for the rows that say what it lost (#170)
+        # the index is wanted only for the rows that say what it lost
         self.assertEqual(self.rows_for(PearAiParser(), ".pearai/sessions/sessions.json"), [])
 
     def test_truncated_line_is_reported_not_fatal(self):
@@ -20453,8 +20579,8 @@ class PearAiTests(ParserBase):
         )
 
     def test_index_cut_mid_write_is_reported(self):
-        # #170, through the Continue parser's index reader: the entry before
-        # the cut still times its session, the cut one is lost, and the index
+        # Through the Continue parser's index reader: the entry before the
+        # cut still times its session, the cut one is lost, and the index
         # yields one pearai row carrying the broken entry to the end.
         from fixtures import continue_index_cut, pearai_index
 
@@ -20512,8 +20638,10 @@ from fixtures import (
 
 
 class MuseCodeTests(ParserBase):
+    """Test the Muse Code parser."""
+
     def test_secondary(self):
-        # The history file is a secondary source, the transcript is not (#122).
+        # The history file is a secondary source, the transcript is not.
         parser = MuseCodeParser()
         self.assertTrue(parser.secondary(self.artifact(MUSE_HISTORY_REL)))
         self.assertFalse(parser.secondary(self.artifact(MUSE_REL)))
@@ -20917,6 +21045,8 @@ from fixtures import (
 
 
 class OllamaTests(ParserBase):
+    """Test the Ollama parser."""
+
     HISTORY_REL = ".ollama/history"
     CONFIG_REL = ".ollama/config.json"
     CALL_ID = OLLAMA_CHAT + ":1"
@@ -21191,7 +21321,7 @@ class OllamaTests(ParserBase):
 
     def test_truncated_history_line_still_yields_earlier_lines(self):
         # A last line cut inside a UTF-8 sequence is reported as read, not
-        # yielded as a user row with a replacement character (issue 174).
+        # yielded as a user row with a replacement character.
         with open(self.home / self.HISTORY_REL, "ab") as handle:
             handle.write(b"half a pro\xe2")
         rows = self.rows_for(OllamaParser(), self.HISTORY_REL)
@@ -21211,9 +21341,9 @@ class OllamaTests(ParserBase):
         )
 
     def test_undecodable_history_line_is_its_own_parser_row(self):
-        # Issue 174: each line that is not valid UTF-8 becomes one system
-        # row carrying the line in full; the lines before and after it are
-        # still yielded, and so is a second bad line.
+        # Each line that is not valid UTF-8 becomes one system row carrying
+        # the line in full; the lines before and after it are still
+        # yielded, and so is a second bad line.
         (self.home / self.HISTORY_REL).write_bytes(
             b"before\n  caf\xe9 \xff au lait \r\n\n/bye\n\xc3after\nlast\n"
         )
@@ -21246,8 +21376,8 @@ class OllamaTests(ParserBase):
         self.assertFalse([row for row in rows if row.turn_type == "user" and "\ufffd" in row.text])
 
     def test_auto_mode_permission_settings(self):
-        # Issue 188: the launcher's automode key and the autoModeEnabled key
-        # it writes into Claude Desktop's profile, at each file's mtime.
+        # The launcher's automode key and the autoModeEnabled key it
+        # writes into Claude Desktop's profile, at each file's mtime.
         rows = self.rows_for(OllamaParser(), self.CONFIG_REL)
         self.assertEqual(
             [(row.turn_type, row.text) for row in rows],
@@ -21337,6 +21467,8 @@ from fixtures import (
 
 
 class ClaudeDesktopTests(ParserBase):
+    """Test the Claude Desktop parser."""
+
     def test_transcript_rows(self):
         arts = {artifact.rel: artifact for artifact in self.col.artifacts}
         self.assertEqual(arts[CD_TRANSCRIPT_REL].agent, "claude-desktop")
@@ -21385,9 +21517,8 @@ class ClaudeDesktopTests(ParserBase):
         self.assertEqual({row.agent for row in rows}, {"claude-desktop"})
 
     def test_secondary(self):
-        # Issue 122: the audit log and the session records are secondary
-        # sources of the transcript; the transcript and the index files are
-        # primary.
+        # The audit log and the session records are secondary sources of
+        # the transcript; the transcript and the index files are primary.
         parser = ClaudeDesktopParser()
         for rel in (CD_AUDIT_REL, CD_FALLBACK_REL, CD_RECORD_REL, CD_CODE_RECORD_REL):
             self.assertTrue(parser.secondary(self.artifact(rel)), rel)
@@ -21422,8 +21553,8 @@ class ClaudeDesktopTests(ParserBase):
         self.assertEqual([row.source_file.endswith("audit.jsonl") for row in prompts], [True])
 
     def test_audit_with_transcript(self):
-        # Every line is read although the transcript exists (issue 122);
-        # dedup drops the rows the transcript repeats (next test).
+        # Every line is read although the transcript exists; dedup drops
+        # the rows the transcript repeats (next test).
         rows = self.rows_for(ClaudeDesktopParser(), CD_AUDIT_REL)
         self.assertEqual(
             [
@@ -21565,7 +21696,7 @@ class ClaudeDesktopTests(ParserBase):
         rows = self.rows_for(ClaudeDesktopParser(), CD_RECORD_REL)
         # The session row, the grant rows (test_cowork_record_grants), then
         # initialMessage, yielded whether or not the transcript and the
-        # audit log exist, with no time of its own (issue 122).
+        # audit log exist, with no time of its own.
         self.assertEqual(
             [
                 (row.source_line, row.turn_type, row.timestamp_utc, row.text)
@@ -21590,8 +21721,8 @@ class ClaudeDesktopTests(ParserBase):
         )
 
     def test_cowork_record_grants(self):
-        # Issue 97: one row per list entry and object member of the Cowork
-        # tool, network and folder grants, at lastActivityAt; an empty list
+        # One row per list entry and object member of the Cowork tool,
+        # network and folder grants, at lastActivityAt; an empty list
         # (fileDeleteApprovedMounts) yields nothing.
         rows = self.rows_for(ClaudeDesktopParser(), CD_RECORD_REL)[1:]
         rows = [row for row in rows if row.turn_type == "system"]
@@ -21816,8 +21947,8 @@ class ClaudeDesktopTests(ParserBase):
 
     def test_empty_index_files_yield_nothing(self):
         # A fresh install writes the markers before any task or worktree
-        # exists (observed on Windows: `{"schemaVersion": 2}`); only a
-        # non-object file is reported.
+        # exists (`{"schemaVersion": 2}`); only a non-object file is
+        # reported.
         (self.home / CD_WORKTREES_REL).write_text('{"schemaVersion": 2}', encoding="utf-8")
         (self.home / CD_SCHED_REL).write_text('{"recordedSkips": {}}', encoding="utf-8")
         self.assertEqual(self.rows_for(ClaudeDesktopParser(), CD_WORKTREES_REL), [])
@@ -21883,8 +22014,8 @@ class ClaudeDesktopTests(ParserBase):
         )
 
     def test_remote_session_spaces(self):
-        # Issue 97: one standing row per granted folder, at the file mtime,
-        # with the folder as project_path and no session id.
+        # One standing row per granted folder, at the file mtime, with the
+        # folder as project_path and no session id.
         rows = self.rows_for(ClaudeDesktopParser(), CD_SPACES_REL)
         key = "entries.%s.folders" % CD_REMOTE_SESSION
         self.assertEqual(
@@ -21985,8 +22116,8 @@ class ClaudeDesktopTests(ParserBase):
         )
 
     def test_truncated_line_is_reported_not_fatal(self):
-        # Issue 136: each bad line is its own row, in full, with the
-        # session and project; the rows before it and a line after survive.
+        # Each bad line is its own row, in full, with the session and
+        # project; the rows before it and a line after survive.
         before = self.rows_for(ClaudeDesktopParser(), CD_AUDIT_REL)
         self.assertEqual(len(before), 9)
         write_bad_line(self.home / CD_AUDIT_REL)
@@ -22053,6 +22184,8 @@ from fixtures import (
 
 
 class CopilotCliTests(ParserBase):
+    """Test the Copilot CLI parser."""
+
     # (source_line, turn_type, text) for every row of the fixture log
     # without thinking (research/copilot-cli.md, Parser plan, expected rows).
     EXPECTED: ClassVar[list[tuple[int, str, str]]] = [
@@ -22417,7 +22550,7 @@ class CopilotCliTests(ParserBase):
             [("system", "rewind snapshot: 1 files +1 -1: /srv/proj/date.test.js")],
         )
         # The typed `/model` is in no other source: its history line stays,
-        # undated (issue 133).
+        # undated.
         history = "/alice/" + COPILOT_HISTORY_REL
         kept_history = [
             (row.turn_type, row.text, row.timestamp_utc)
@@ -22588,9 +22721,9 @@ class CopilotCliTests(ParserBase):
     )
 
     def test_workspace_synced(self):
-        # The `mc_` keys a resumed, synced session carries (issue 151): one
-        # row at the file's mtime; an empty key prints `-`, and a null or
-        # absent `mc_session_id` (a session that is not synced) gives none.
+        # The `mc_` keys a resumed, synced session carries: one row at the
+        # file's mtime; an empty key prints `-`, and a null or absent
+        # `mc_session_id` (a session that is not synced) gives none.
         path = self.home / COPILOT_WORKSPACE_REL
         yaml = path.read_text(encoding="utf-8")
         rows = self.rows_for(CopilotCliParser(), COPILOT_WORKSPACE_REL)
@@ -22626,7 +22759,7 @@ class CopilotCliTests(ParserBase):
     )
 
     def test_workspace_scratch_directory(self):
-        # A session with an events.jsonl gives no scratch row (issue 149).
+        # A session with an events.jsonl gives no scratch row.
         rows = self.rows_for(CopilotCliParser(), COPILOT_WORKSPACE_REL)
         self.assertEqual([row for row in rows if row.text.startswith("scratch directory:")], [])
         # A pool session: workspace.yaml and no events.jsonl. The row follows
@@ -22652,8 +22785,8 @@ class CopilotCliTests(ParserBase):
         self.assertEqual([row for row in rows if row.text.startswith("scratch directory:")], [])
 
     def test_workspace_client(self):
-        # The desktop app's sessions say `github/autopilot` (issue 147); a
-        # file without the key gives an empty value.
+        # The desktop app's sessions say `github/autopilot`; a file
+        # without the key gives an empty value.
         path = self.home / COPILOT_WORKSPACE_REL
         yaml = path.read_text(encoding="utf-8")
         for value, line in (
@@ -22668,8 +22801,8 @@ class CopilotCliTests(ParserBase):
             )
 
     def test_desktop_app_events(self):
-        # The Copilot Desktop app's bundled CLI (issue 147): the allowAll*
-        # form of session.permissions_changed and hook.start/hook.end pairs.
+        # The Copilot Desktop app's bundled CLI: the allowAll* form of
+        # session.permissions_changed and hook.start/hook.end pairs.
         def event(second, etype, data):
             return {
                 "id": "d%03d" % second,
@@ -22935,6 +23068,8 @@ from fixtures import (
 
 
 class CopilotDesktopTests(ParserBase):
+    """Test the Copilot Desktop parser."""
+
     # (timestamp_utc, session_id, project_path, text) for every row of the
     # fixture data.db (research/copilot-desktop.md, Parser plan).
     EXPECTED: ClassVar[list[tuple[str, str, str, str]]] = [
@@ -23149,7 +23284,7 @@ class CopilotDesktopTests(ParserBase):
         self.assertFalse(CopilotCliParser().wants(self.artifact(COPILOT_DESKTOP_DB_REL)))
 
     def test_checkpoint_refs(self):
-        # One row per loose checkpoint ref, at the file's mtime (issue 147).
+        # One row per loose checkpoint ref, at the file's mtime.
         parser = CopilotDesktopParser()
         rows = self.rows_for(parser, COPILOT_DESKTOP_REF_REL) + self.rows_for(
             parser, COPILOT_DESKTOP_BAD_REF_REL
@@ -23234,10 +23369,12 @@ class CopilotDesktopTests(ParserBase):
 
 
 class HasSecondaryTests(ParserBase):
-    """`Parser.has_secondary` agrees with `secondary()` over the fixture:
-    `sessions.jsonl` `recovered` reads "no" rather than "" only for the
-    agents it names, so a parser whose `secondary()` can return True needs
-    it set, and one whose never does must not set it."""
+    """Test that `Parser.has_secondary` agrees with `secondary()` over the fixture.
+
+    `sessions.jsonl` `recovered` reads "no" rather than "" only for the agents it
+    names, so a parser whose `secondary()` can return True needs it set, and one
+    whose never does must not set it.
+    """
 
     def test_has_secondary_matches_fixture(self):
         from doubleagent.parsers import ALL
@@ -23278,8 +23415,10 @@ from fixtures import (
 
 
 class ChatGptDesktopTests(ParserBase):
-    """The account conversation list in `.codex/sqlite/codex-dev.db`
-    `local_thread_catalog` (issue 49, research/chatgpt-desktop.md, Parser plan)."""
+    """Test the conversation list in `.codex/sqlite/codex-dev.db` `local_thread_catalog`.
+
+    The shapes follow the Parser plan of research/chatgpt-desktop.md.
+    """
 
     SOURCE = "(from .codex/sqlite/codex-dev.db local_thread_catalog)"
     # (timestamp_utc, session_id, text) for every row of the fixture; the
@@ -23533,7 +23672,10 @@ from fixtures import (
 
 
 class CursorTests(ParserBase):
-    """Cursor IDE conversations (issue 51, research/cursor.md, Parser plan)."""
+    """Test the Cursor IDE conversations.
+
+    The shapes follow the Parser plan of research/cursor.md.
+    """
 
     COMPOSER = "(from state.vscdb composerState, file mtime, written late by the app)"
     REASON = "reason=Not in allowlist: curl, head"
@@ -23551,9 +23693,9 @@ class CursorTests(ParserBase):
         % (CURSOR_CLOUD, CURSOR_MCP_CALL)
     )
     PLUGINS_SOURCE = "(from state.vscdb cursor.plugins.installedIds, file mtime)"
-    # The MCP server and plugin rows of state.vscdb (Windows 3.26.13, issue
-    # 236): scopes in name order, the attempt scope skipped; the plugin
-    # lists in key order.
+    # The MCP server and plugin rows of state.vscdb (Cursor 3.26.13 on
+    # Windows): scopes in name order, the attempt scope skipped; the
+    # plugin lists in key order.
     MCP_ROWS: ClassVar[list[tuple[str, str, str, str]]] = [
         (
             "2026-10-01T14:00:00.000Z",
@@ -23935,8 +24077,10 @@ class CursorTests(ParserBase):
         self.assertEqual(run_mode({"autoRun": False, "fullAutoRun": True}, True), "Run Everything")
 
     def test_github_repository(self):
-        """The repository is read from a parsed host, not from a string
-        prefix, so only a URL whose host is github.com names one."""
+        """Read the repository from a parsed host, not from a string prefix.
+
+        Only a URL whose host is github.com names one.
+        """
         self.assertEqual(github_repository("github.com/owner/demo"), "owner/demo")
         self.assertEqual(github_repository("https://github.com/owner/demo"), "owner/demo")
         self.assertEqual(github_repository("https://github.com/owner/demo/"), "owner/demo")
@@ -24162,9 +24306,12 @@ class CursorTests(ParserBase):
             self.assertTrue(parser.wants(rel_only(rel)), rel)
 
     def test_pending_prompt_and_editor_allowlist(self):
-        """A prompt still open when the store was copied is not a decision;
-        the editor window's allow-list add (`selectedOption` `run`) is an
-        allow-always decision by its `appliedAllowlistOptionIds` (issue 237)."""
+        """Tell a prompt still open from the editor window's allow-list add.
+
+        A prompt still open when the store was copied is not a decision; the allow-list
+        add (`selectedOption` `run`) is an allow-always decision by its
+        `appliedAllowlistOptionIds`.
+        """
         con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
@@ -24211,9 +24358,10 @@ class CursorTests(ParserBase):
         )
 
     def test_source_host_and_remote_agent_host(self):
-        """The editor's GitHub sign-in names the account in a key, its time
-        is the latest usage; the remote agent host enrolment is at the file
-        time; no `secret://` value reaches any row (issue 236)."""
+        """Name the GitHub account from its key and the remote agent host at file time.
+
+        The sign-in's time is the latest usage; no `secret://` value reaches any row.
+        """
         rows = self.state_rows()
         hosts = [
             row
@@ -24301,9 +24449,12 @@ class CursorTests(ParserBase):
         )
 
     def test_cloud_agents(self):
-        """A cloud agent is a remote-origin session from its list entry and
-        its cached conversation; the cached body is one system row in full,
-        never a user or assistant row (Windows 3.26.13, issue 236)."""
+        """Read a cloud agent as a remote-origin session.
+
+        Its list entry and its cached conversation give the session; the cached body is
+        one system row in full, never a user or assistant row, as Cursor 3.26.13 on
+        Windows writes it.
+        """
         rows, _, problems, _ = cli.collect_rows(self.col, Options(), ["cursor"])
         self.assertEqual(problems, [])
         cloud = [row for row in rows if row.session_id == CURSOR_CLOUD]
@@ -24339,10 +24490,12 @@ class CursorTests(ParserBase):
             self.assertNotIn("serverPinnedBcIds", row.text)
 
     def test_cloud_agents_without_search_or_list(self):
-        """Without conversation-search.db the state database yields the
-        origin row of every listed agent; a list value that is not a JSON
-        list is skipped, a cut one is a bad record; no fts content, no
-        cached text row."""
+        """Read the origin rows from the state database alone.
+
+        Without conversation-search.db every listed agent gets its origin row; a list
+        value that is not a JSON list is skipped, a cut one is a bad record; no fts
+        content, no cached text row.
+        """
         (self.home / CURSOR_SEARCH_REL).unlink()
         rows = [row for row in self.state_rows() if row.session_id == CURSOR_CLOUD]
         self.assertEqual(rows[0].text, self.CLOUD_ORIGIN)
@@ -24377,9 +24530,11 @@ class CursorTests(ParserBase):
         self.assertFalse([row for row in self.state_rows() if "cloud" in row.text])
 
     def test_mcp_servers_and_plugins(self):
-        """MCP OAuth scopes come from the key names alone, a secret key's
-        value is never read; the plugin lists give one row per entry, a
-        folder scope is the project path (Windows 3.26.13, issue 236)."""
+        """Read MCP OAuth scopes from key names and one row per plugin list entry.
+
+        A secret key's value is never read; a folder scope is the project path. The
+        shapes are those Cursor 3.26.13 on Windows writes.
+        """
         rows = self.state_rows()
         got = [
             (row.timestamp_utc, row.session_id, row.turn_type, row.text)
@@ -24421,9 +24576,11 @@ class CursorTests(ParserBase):
         self.assertTrue(bad[0].endswith('): [{"id": "1"'), bad[0])
 
     def test_mcp_oauth_attempt(self):
-        """The attempt file is one row at its `createdAtMs`; without it the
-        file time, said in the text; a file that is not JSON is one
-        `parser:` row."""
+        """Give the attempt file one row at its `createdAtMs`.
+
+        Without it the row takes the file time and says so; a file that is not JSON is
+        one `parser:` row.
+        """
         parser = CursorParser()
         self.assertTrue(parser.wants(self.artifact(CURSOR_ATTEMPT_REL)))
         self.assertFalse(parser.secondary(self.artifact(CURSOR_ATTEMPT_REL)))
@@ -24473,8 +24630,7 @@ class CursorTests(ParserBase):
         )
 
     def test_mcp_auth_resolution(self):
-        """The cloud agent's MCP auth answer is a decision in the agent's
-        session, joined on its tool call id."""
+        """Join the cloud agent's MCP auth answer to its tool call as a decision."""
         rows = [
             row for row in self.state_rows() if row.text.startswith("permission decision: accepted")
         ]
@@ -24487,9 +24643,11 @@ class CursorTests(ParserBase):
         )
 
     def test_stopped_turn(self):
-        """A call in flight when the user stopped the turn is a decision,
-        not a pending prompt; a queued, cancelled call has no permission
-        row (Windows 3.26.13)."""
+        """Count a call in flight when the user stopped the turn as a decision.
+
+        It is not a pending prompt; a queued, cancelled call has no permission row
+        (Cursor 3.26.13 on Windows).
+        """
         con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
@@ -24523,9 +24681,11 @@ class CursorTests(ParserBase):
         self.assertFalse([row for row in rows if "pending" in row.text])
 
     def test_mcp_tool_bubble(self):
-        """An MCP tool call approved under Allowlist is a tool_use and a
-        tool_result with no permission row: the bubble records no decision
-        (Windows 3.26.13); `toolCallBinary` is not read."""
+        """Give an MCP call approved under Allowlist no permission row.
+
+        It is a tool_use and a tool_result, since the bubble records no decision (Cursor
+        3.26.13 on Windows); `toolCallBinary` is not read.
+        """
         con = sqlite3.connect(str(self.home / CURSOR_STATE_REL))
         key = "composerData:" + CURSOR_LIVE
         data = json.loads(
@@ -24578,8 +24738,10 @@ class CursorTests(ParserBase):
         self.assertIn(self.CLOUD_ORIGIN, texts)
 
     def test_deleted_header_not_archived(self):
-        """A deleted header that is not archived (kept by its location
-        history) gives the deleted row without the isArchived clause."""
+        """Give a deleted header that is not archived the row without the isArchived clause.
+
+        The header is kept by its location history.
+        """
         self.write_state(
             "UPDATE composerHeaders SET isArchived = 0, value = json_set(value, '$.isArchived',"
             " json('false')) WHERE composerId = ?",

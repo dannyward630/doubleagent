@@ -1,120 +1,32 @@
-"""pi coding agent sessions.
+"""Parse pi coding agent sessions, trust settings, debug snapshots and crash records.
 
-Validated against source, earendil-works/pi at 20038712 (coding-agent
-1.0.2, October 2026; v0.83.0 at 845d6ff1 where the schema differs), with a
-synthetic fixture; see `research/pi.md`. The `defaultProjectTrust` row, the
-little-coder permission-gate rows, `pi-debug.log` and `crashes.json` were
-added from source at 5c1736f8 (coding-agent 1.3.0, October 2026) and are
-source-derived; no real install has shown them. Files:
+Follows `research/pi.md`. Validated against source, earendil-works/pi at
+20038712 (coding-agent 1.0.2; v0.83.0 at 845d6ff1 where the schema differs)
+and 5c1736f8 (coding-agent 1.3.0: `defaultProjectTrust`, little-coder's
+permission gate, `pi-debug.log`, `crashes.json`), with a synthetic fixture;
+no real install. Files read:
 
-* `~/.pi/agent/sessions/--<encoded cwd>--/<ISO time>_<session id>.jsonl`,
-  and legacy `~/.pi/agent/*.jsonl`. One JSON object per line, append-only:
-  - line 1, the header: `type: "session"`, `version` (3; absent in v1),
-    `id` (session id), `timestamp` (ISO 8601 Z), `cwd`, optional
-    `parentSession` (absolute path of the file this one was forked or
-    branched from). Files whose first record is not a header are skipped.
-  - entries: `type`, `id`, `parentId`, `timestamp` (ISO). Types:
-    `message` (`message.role` below), `model_change` (`provider`,
-    `modelId`), `thinking_level_change` (`thinkingLevel`), `compaction`
-    (`summary`, `tokensBefore`), `branch_summary` (`summary`, `fromId`),
-    `custom_message` (`customType`, `content`), `context_edit`
-    (`targetId`, `replacement.content`), `session_info` (`name`) become
-    system rows; `custom`, `label` and `usage` are extension or UI state
-    and are skipped, as are unknown types, except the `custom` entry
-    with `customType` `pi.bug-report` below.
-  - `message.role`, each with `timestamp` in Unix ms (the fallback when
-    the entry has none): `user` (`content` string or text/image parts);
-    `assistant` (`content[]` of `text`, `thinking` (`thinking`,
-    `redacted`), `toolCall` (`id`, `name`, `arguments`); `provider`,
-    `model`, `responseModel`, `stopReason`, `errorMessage`); `toolResult` (`toolCallId`,
-    `toolName`, `content[]`, `isError`); `bashExecution` (a user
-    `!command`: `command`, `output`, `exitCode`, `cancelled`), emitted as a
-    tool_use and a tool_result joined on the entry `id`; `system`
-    (`content`, the system prompt), `custom` (`customType`, `content`),
-    `branchSummary` and `compactionSummary` (`summary`) as system rows.
-  The file holds every branch of the `id`/`parentId` tree; rows follow
-  file order, not the active branch.
-  Model rows: `model: <id> provider=<provider>` at the first entry that
-  names a model (a `model_change` `modelId` or an assistant
-  `responseModel`, else `model`) and `model: <old> -> <new>
-  provider=<provider>` on every later entry whose model differs, with
-  ` requested=<model>` when an assistant `responseModel` (the concrete
-  model the provider reported) differs from its `model` (the one asked
-  for). A `model_change` entry is the user's own switch, so one that
-  names the model already in force still yields `model: <id>
-  provider=<provider>`; an assistant message that repeats it yields
-  nothing. The `model` column is `responseModel`, else `model`. No entry type
-  records a per-call permission decision; an extension that blocks a call
-  leaves an error `toolResult` whose text is its reason. little-coder's
-  permission gate refuses with `edit cancelled by user`, `command
-  cancelled by user` or a text starting `shell whitelist:`, so an error
-  `toolResult` with one of those texts is followed by `permission
-  decision: denied (<the text>)` with the call's `tool_name` and
-  `tool_use_id`.
-* Sync rows (issue 153), so `records_sync` is set: `/bug` (not at
-  v0.83.0) appends `{type: "custom", customType: "pi.bug-report", data:
-  {id, createdAt, hint, sessionIncluded, summaryIncluded, delivery,
-  path?}}` once a report is uploaded or exported. `delivery` `upload`
-  gives `session synced: bug report <id> uploaded to radius.pi.dev
-  transcript=<sessionIncluded> summary=<summaryIncluded> (from session
-  entry pi.bug-report, entry timestamp)`, and `zip` gives `bug report
-  exported: <id> path=<path> (from session entry pi.bug-report, entry
-  timestamp)`, both at the entry's `timestamp` with the session's id;
-  an absent value prints `-`. `/share` leaves no local record. `hint`,
-  the user's description, is not printed.
-* Forks: pi copies every parent entry into the child file verbatim, ids
-  and timestamps included. When the header's `parentSession` resolves to a
-  file present in the same collected home, child entries whose `id` and
-  `timestamp` match a parent entry are dropped and one system row says how
-  many, so a fork does not double the timeline.
-* little-coder (a pi launcher) writes into pi's own directory and the
-  header names no producer. A session with a `custom_message` whose
-  `customType` starts `lc-`, an assistant `provider` of `llamacpp`, or a
-  `~/.little-coder/checkpoints/<this file name>/` directory gets one
-  system row saying so; its rows stay agent `pi`, as the manifest says.
-* `~/.pi/agent/trust.json` (in the directory little-coder shares; pi
-  v0.83.0, which little-coder pins, writes it too): an object whose keys
-  are absolute project paths and whose values are `true` (trusted) or
-  `false`. One `permission setting: <path>=<value> (from
-  .pi/agent/trust.json, file mtime)` row per key, `project_path` the key,
-  `session_id` empty, timestamped by the file's modification time, which
-  is not the time of the decision. A file that is not a JSON object is
-  one `system` row.
-* `~/.pi/agent/settings.json`: only the global `defaultProjectTrust`
-  (`ask`, `always`, `never`; since 1.3.0), which decides a project
-  `trust.json` has no entry for, is read: `permission setting:
-  defaultProjectTrust=<value> (from .pi/agent/settings.json, file mtime)`
-  at the file's modification time; no row when the key is absent (the
-  default, `ask`). No other key is read.
-* `~/.pi/agent/pi-debug.log`, rewritten by each `/debug` (v0.83.0 too): a
-  `Debug output at <ISO time>` line, the rendered screen, then `=== Agent
-  messages (JSONL) ===` and the open session's messages, one
-  `message`-shaped object per line, with no session id or cwd. A
-  secondary source (`secondary()`): one `debug snapshot:` system row at
-  the first line's time, then the messages through the session reader
-  with an empty `session_id` and `project_path`, each at the message's
-  own `timestamp` (ms). The session file stamps an entry when the message
-  ends and an assistant message's own `timestamp` is when its stream
-  started, so `secondary_tolerance()` is one hour. Bad lines after the
-  marker are reported; the screen lines before it are not JSON and are
-  not read.
-* `~/.pi/agent/crashes.json` (not at v0.83.0): a JSON array of up to five
-  recent crashes, `{timestamp, version, kind, message, stack,
-  sessionFile, cwd, notified}`. One `crash: <kind> <message>
-  version=<version> sessionFile=<sessionFile> (from .pi/agent/crashes.json,
-  record timestamp)` system row per record at its `timestamp`, the stack
-  on the lines after it, `project_path` the `cwd` and `session_id` taken
-  from the `sessionFile` name; `-` for an absent value. It repeats no
-  session event, so it is not a secondary source.
-* `~/.pi/agent/experimental/sessions/<id>/meta.json` (`PI_EXPERIMENTAL=1`,
-  not at v0.83.0): `{createdAt (ms), cwd}`, one system row per session.
-  The transcript beside it, `session.sqlite`, is not parsed: its `record`
-  JSON shape was not determined by the research. The experimental server
-  that wrote these was removed by coding-agent 1.3.0 (5c1736f8), so the
-  reader serves only installs where an older build ran.
+- `.pi/agent/sessions/--<cwd>--/<time>_<id>.jsonl` and legacy
+  `.pi/agent/*.jsonl`: a `type: "session"` header (`version`, `id`,
+  `timestamp`, `cwd`, `parentSession`), then entries with `type`, `id`,
+  `parentId`, `timestamp`; `message` entries carry `message.role`,
+  `content`, `provider`, `model`, `responseModel`, `stopReason`,
+  `errorMessage`, `toolCallId`, `toolName`, `isError` and the
+  `bashExecution` fields. Rows follow file order, not the active branch. A
+  fork's entries copied from a parent file in the same home are dropped.
+- `.pi/agent/trust.json` and the `defaultProjectTrust` key of
+  `.pi/agent/settings.json`: `permission setting:` rows at the file's time.
+- `.pi/agent/pi-debug.log`, a secondary source (a file repeating the open
+  session's messages, with no session id) after `DEBUG_MARKER`.
+- `.pi/agent/crashes.json`: one `crash:` row per record.
+- `.pi/agent/experimental/sessions/<id>/meta.json`: one row per session;
+  its `session.sqlite` transcript is not parsed.
 
-The session reader (`read_session`, `entry_rows`) is shared with
-`letta.py`, whose local backend writes the same format.
+A `pi.bug-report` custom entry gives `session synced:` (an upload) or
+`bug report exported:` (a zip), so `records_sync` is set; its `hint` is
+never printed. An error `toolResult` with one of little-coder's refusal
+texts gets a `permission decision: denied` row. The session reader
+(`read_session`, `entry_rows`) is shared with `letta.py` and `little_coder.py`.
 """
 
 from __future__ import annotations
@@ -165,10 +77,14 @@ BUG_REPORT = "pi.bug-report"
 
 
 class SessionFile:
-    """One pi-format session file: the header (empty when line 1 is not
-    one), the entries after it as (line, record), and unparseable lines."""
+    """Hold one pi-format session file's header, entries and unparseable lines.
+
+    The header is empty when line 1 is not one; the entries after it are
+    (line, record) pairs.
+    """
 
     def __init__(self) -> None:
+        """Start an empty session file."""
         self.header: dict = {}
         self.header_line = 0
         self.entries: list[tuple[int, dict]] = []
@@ -176,6 +92,7 @@ class SessionFile:
 
 
 def read_session(path) -> SessionFile:
+    """Read a pi-format session file into its header, entries and bad lines."""
     session = SessionFile()
     first = True
     for line_number, rec in iter_jsonl(path, session.errors):
@@ -189,7 +106,7 @@ def read_session(path) -> SessionFile:
 
 
 def entry_keys(path) -> set[tuple[str, str]]:
-    """(id, timestamp) of every entry, for fork deduplication."""
+    """Return the (id, timestamp) of every entry, for fork deduplication."""
     out: set[tuple[str, str]] = set()
     for _, rec in read_session(path).entries:
         if rec.get("id"):
@@ -198,7 +115,7 @@ def entry_keys(path) -> set[tuple[str, str]]:
 
 
 def args_summary(args) -> str:
-    """The most identifying tool argument, else the arguments as JSON."""
+    """Return the most identifying tool argument, else the arguments as JSON."""
     if isinstance(args, dict):
         for k in ARG_KEYS:
             value = args.get(k)
@@ -215,9 +132,12 @@ def _label(prefix: str, text: str) -> str:
 
 
 def model_text(seen: dict, key: str, model: str, provider: str, requested: str = "") -> str:
-    """The `model:` row text when `model` is new or changed for `key`, with
-    ` provider=` and, when the provider reported a concrete model other than
-    the one asked for, ` requested=<model asked for>`; empty otherwise."""
+    """Return the `model:` row text when `model` is new or changed for `key`, else "".
+
+    The text ends with ` provider=<provider>` and, when the provider reported
+    a concrete model other than the one asked for, ` requested=<model asked
+    for>`.
+    """
     text = track_change("model", seen, key, model)
     if text and provider:
         text += " provider=%s" % provider
@@ -227,9 +147,12 @@ def model_text(seen: dict, key: str, model: str, provider: str, requested: str =
 
 
 def switch_text(seen: dict, key: str, model: str, provider: str) -> str:
-    """The row text for a `model_change` entry, the user's own switch: the
-    `model_text` row, or, when it names the model already in force, the
-    plain `model: <id> provider=<provider>` row, so the switch keeps a row."""
+    """Return the row text of a `model_change` entry, the user's own switch.
+
+    That is the `model_text` row, or, when the entry names the model already
+    in force, the plain `model: <id> provider=<provider>` row, so the switch
+    keeps a row.
+    """
     text = model_text(seen, key, model, provider)
     if not text and model:
         text = "model: %s" % model + (" provider=%s" % provider if provider else "")
@@ -245,8 +168,11 @@ def entry_rows(
     project_path: str = "",
     skip: set[tuple[str, str]] | None = None,
 ) -> Iterator[Row]:
-    """Timeline rows for the entries of a pi-format session. `skip` holds
-    (id, timestamp) keys to drop (entries a fork copied from its parent)."""
+    """Yield the timeline rows of a pi-format session's entries.
+
+    `skip` holds the (id, timestamp) keys to drop: the entries a fork copied
+    from its parent.
+    """
     skip = skip or set()
     seen: dict = {}  # the model in use, for the `model:` rows
     for line_number, rec in session.entries:
@@ -328,9 +254,11 @@ def entry_rows(
 
 
 def bug_report_text(data) -> str:
-    """The row text for a `pi.bug-report` entry's `data`: `session synced:`
-    for an upload, `bug report exported:` for a zip, empty for any other
-    `delivery`. `hint` is not printed."""
+    """Return the row text of a `pi.bug-report` entry's `data`.
+
+    That is `session synced:` for an upload, `bug report exported:` for a
+    zip and "" for any other `delivery`. `hint` is not printed.
+    """
     if not isinstance(data, dict):
         return ""
 
@@ -444,10 +372,12 @@ def _message_rows(
 
 
 def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
-    """The collected copy of `original` (a path on the source host) inside
-    the artifact's home, or None. Tried relative to the home's original path,
-    then from the last `marker` segment (loose input whose home path is not
-    the host's). Symlinks are never followed."""
+    """Return the collected copy of `original`, a path on the source host, or None.
+
+    The copy is looked for inside the artifact's home, relative to the
+    home's original path, then from the last `marker` segment (loose input
+    whose home path is not the host's). Symlinks are never followed.
+    """
     path = original.replace("\\", "/")
     rels = []
     home = artifact.home.original.replace("\\", "/").rstrip("/")
@@ -474,28 +404,35 @@ def home_file(artifact: Artifact, original: str, marker: str) -> Path | None:
 
 
 class PiParser(Parser):
+    """Parse pi's session files, trust settings, debug log, crashes and session metadata."""
+
     agent = "pi"
     name = "pi"
     records_sync = True
     has_secondary = True
 
     def __init__(self) -> None:
+        """Start with an empty cache of parent sessions' entry keys."""
         self._parent_cache: dict[Path, set[tuple[str, str]]] = {}
 
     def wants(self, artifact: Artifact) -> bool:
+        """Return True for a session, trust, settings, debug, crash or metadata file."""
         return artifact.rel in (TRUST_REL, SETTINGS_REL, DEBUG_REL, CRASHES_REL) or bool(
             SESSION_RX.match(artifact.rel) or META_RX.match(artifact.rel)
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the debug log, which repeats the open session's messages."""
         return artifact.rel == DEBUG_REL
 
     def secondary_tolerance(self, artifact: Artifact) -> float:
+        """Return the debug log's wider match window, `DEBUG_TOLERANCE_SECONDS`."""
         if artifact.rel == DEBUG_REL:
             return DEBUG_TOLERANCE_SECONDS
         return super().secondary_tolerance(artifact)
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one pi file."""
         if artifact.rel == TRUST_REL:
             yield from self._parse_trust(artifact)
             return
@@ -572,8 +509,7 @@ class PiParser(Parser):
         yield from error_rows(self, artifact, session.errors, sid, cwd)
 
     def _parse_trust(self, artifact: Artifact) -> Iterator[Row]:
-        """`trust.json`: one standing row per project path, `true` or
-        `false`, timestamped by the file's modification time."""
+        """Yield one standing row per project path of `trust.json`, at the file's mtime."""
         try:
             doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
@@ -596,8 +532,7 @@ class PiParser(Parser):
             yield row
 
     def _parse_settings(self, artifact: Artifact) -> Iterator[Row]:
-        """`settings.json`: the global `defaultProjectTrust` alone, one
-        standing row timestamped by the file's modification time."""
+        """Yield the `defaultProjectTrust` standing row of `settings.json`, at the file's mtime."""
         try:
             doc = json.loads(artifact.disk_path.read_bytes().decode("utf-8", errors="replace"))
         except (OSError, ValueError):
@@ -614,8 +549,10 @@ class PiParser(Parser):
         yield row
 
     def _parse_debug_log(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
-        """`pi-debug.log`: the messages after the JSONL marker, with no
-        session id; the screen lines before it are not read."""
+        """Yield the messages after the JSONL marker of `pi-debug.log`, with no session id.
+
+        The screen lines before the marker are not read.
+        """
         session = SessionFile()
         written = ""
         in_messages = False
@@ -651,7 +588,7 @@ class PiParser(Parser):
         yield from error_rows(self, artifact, session.errors)
 
     def _parse_crashes(self, artifact: Artifact) -> Iterator[Row]:
-        """`crashes.json`: one row per crash record, at its own time."""
+        """Yield one row per crash record of `crashes.json`, at its own time."""
         errors: list = []
         for index, rec in iter_json_array(artifact.disk_path, errors):
             if not isinstance(rec, dict):
@@ -698,12 +635,12 @@ class PiParser(Parser):
 
 
 def _dash(value) -> str:
-    """A record value as row text, `-` when it is absent or empty."""
+    """Return a record value as row text, `-` when it is absent or empty."""
     return "-" if value in (None, "") else setting_value(value)
 
 
 def little_coder_markers(artifact: Artifact, session: SessionFile) -> list[str]:
-    """Why a pi session looks driven by little-coder, empty when it does not."""
+    """Return why a pi session looks driven by little-coder, empty when it does not."""
     types: dict[str, None] = {}
     llamacpp = False
     for _, rec in session.entries:

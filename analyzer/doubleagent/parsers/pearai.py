@@ -1,145 +1,32 @@
-"""PearAI chat sessions (Continue fork) and agent tasks (Roo Code fork).
+"""Parse PearAI chat sessions (a Continue fork) and agent tasks (a Roo Code fork).
 
-Validated against source, trypear/pearai-submodule at 51eceef6 and
-trypear/PearAI-Roo-Code at 0b6df736 (see `research/pearai.md`),
-with a synthetic fixture; no real install was checked. Both forks are older
-snapshots of their upstreams, so the shapes differ from `continue_dev.py`
-and `roo_code.py`.
+Follows `research/pearai.md`. Validated against source, trypear/pearai-submodule
+at 51eceef6, trypear/PearAI-Roo-Code at 0b6df736 (Roo Code 3.15) and
+trypear/pearai-app at d930f023, with a synthetic fixture; no real install. Both
+forks are older snapshots of their upstreams, so the shapes differ from
+`continue_dev.py` and `roo_code.py`. Files read:
 
-Chat sessions, `.pearai/sessions/` (the Continue fork's global dir):
+- `.pearai/sessions/<sessionId>.json`: `sessionId`, `title`,
+  `workspaceDirectory`, `history[]` and `perplexityHistory[]`, each item's
+  `message` (`role`, `content`), `contextItems[]`, `citations[]` and
+  `promptLogs[].completionOptions.model`. Every row takes the index's
+  `dateCreated`; `source_line` is the item's position across both lists.
+- `.pearai/sessions/sessions.json`, the index, read through
+  `continue_dev.read_index`; it yields rows only for what it loses.
+- `User/globalStorage/pearai.pearai-roo-cline/tasks/<taskId>/` task files,
+  read by the shared mapping of `cline_legacy.py`; tool calls are XML tags in
+  the assistant text (`xml_blocks`) and have no id, so `tool_use_id` is the
+  message's position. Results that open with a `PERMISSION_TEXTS` prefix give
+  `permission decision:` rows.
+- `User/globalStorage/state.vscdb`, row `pearai.pearai-roo-cline`:
+  `taskHistory[]` (one row per task, so a task whose directory is gone still
+  shows) and the `STANDING_KEYS` as `permission setting:` rows.
+- The `PearAI` output channel log and `.pearai/dev_data/chat.jsonl`,
+  secondary sources (files repeating the sessions' prompts and replies) with
+  no time; `.pearai/dev_data/tokens_generated.jsonl`, one `tokens generated:`
+  row per request.
 
-* `<sessionId>.json`: `sessionId`, `title`, `workspaceDirectory`,
-  `history[]` and `perplexityHistory[]` ("PearAI Search" turns). Items:
-  `message` (`role` user, assistant or system; `content` a string or
-  `{type: "text", text}` / `{type: "imageUrl"}` parts), `contextItems[]`
-  (`name`, `description`), `promptLogs[].completionOptions.model`,
-  `citations[]` (`url`, `title`). There are no tool calls, tool messages or
-  thinking in this fork.
-* `sessions.json`: the index, `{sessionId, title, dateCreated (ms epoch as
-  a string), workspaceDirectory, integrationType}`; read for the time
-  through `continue_dev.read_index`, and yields rows only for what it
-  loses (issue 170), with the same texts as the Continue parser: `parser:
-  unreadable session index: <reason>`, `parser: not a JSON array`,
-  `parser: unparseable record <N> (<reason>): <the text from that element
-  to the end of the file>`, `parser: array cut off after record <N>`,
-  `parser: unparseable record <N> (not an object with a sessionId):
-  <the element as JSON>` and `parser: unparseable data after the JSON
-  array`. A session the index lost has an empty `timestamp_utc`.
-
-Every row of a session inherits `dateCreated` (no per-message time).
-`history[]` rows come first, then `perplexityHistory[]`; `source_line` is
-the 1-based item position, continuing from `history[]` into
-`perplexityHistory[]`, and 0 for the session row. User rows list the
-context items (`description`, else `name`); assistant rows list citation
-URLs. A truncated session file keeps the `history[]` items decoded before
-the cut (via `continue_dev.load_session`) plus one `system` row;
-`perplexityHistory[]` is not recovered from a damaged file. The first
-item whose `promptLogs[].completionOptions.model` names a model yields
-`model: <model>` ahead of the item's rows, and a later item naming a
-different one yields `model: <old> -> <new>`. The format has no switch
-record, so a change is only seen as a different value between items. The
-chat surface has no tools and records no permission state.
-
-Agent tasks, `<editor User dir>/globalStorage/pearai.pearai-roo-cline/tasks/
-<taskId>/` (Roo Code 3.15): `ui_messages.json`, `api_conversation_history.json`
-and `task_metadata.json`, read by the shared mapping in `cline_legacy.py`
-exactly as for Roo Code, so `ui_messages.json` is preferred and the API
-history is parsed only when it is absent. The task's project is
-`taskHistory[].workspace` from the `pearai.pearai-roo-cline` row of the
-`state.vscdb` beside the extension directory, when it was collected.
-
-API history records carry `ts` (ms) and Anthropic content blocks, but tool
-calls are XML inside assistant text: `<execute_command><command>npm
-test</command></execute_command>`, tool names from `toolNames` in
-`src/schemas/index.ts`. Each such tag becomes a `tool_use` row whose text
-is the parameter values joined with ` | `; `<thinking>` blocks become
-`thinking` rows (opt-in); the remaining text is an `assistant` row. Results
-come back in the next user message as a text block
-`[<tool> for '<arg>'] Result:` followed by the output blocks, or a
-`Skipping tool [...]` / `Tool [...] was not executed` notice; each becomes a
-`tool_result` row. Tool calls have no id, so `tool_use_id` is the
-assistant message's position in the array (with `.2`, `.3` for further
-tags in the same message) and a result takes the position of the message
-before it; Roo runs one tool per message and the API history alternates
-roles. `<environment_details>` blocks become `system` rows, and the
-`<task>` wrapper of the first prompt is removed. No model or git branch is
-recorded.
-
-The items below are source-derived (pearai-submodule at 51eceef6,
-PearAI-Roo-Code at 0b6df736, pearai-app at d930f023) and not observed on
-any real install.
-
-Permission decisions (Roo Code 3.15.3 texts, `src/core/prompts/responses.ts`
-of the fork): a tool result block that starts `The user denied this
-operation.` is followed by `permission decision: denied`, one that starts
-`The user denied this operation and provided the following feedback:` by
-`permission decision: denied with feedback`, and one that starts `The user
-approved this operation and provided the following context:` by
-`permission decision: approved with feedback`, each a `system` row with the
-call's `tool_name` and `tool_use_id` at the API message's `ts`. An approval
-with no note, by the user or by auto-approve, leaves no mark. When
-`ui_messages.json` is present the API history is still read, for these rows
-only (and its bad records): the `tool_use_id` is then the `ts` of the last
-`ui_messages.json` tool ask (`tool`, `command`, `use_mcp_server`,
-`browser_action_launch`, ...) at or before the API message, the id the
-`ui_messages.json` rows give that call, or empty when there is none.
-
-The editor's `state.vscdb` (`<User dir>/globalStorage/state.vscdb`), the
-`pearai.pearai-roo-cline` row of `ItemTable`: one `system` row per
-`taskHistory[]` entry (`id`, `number`, `ts`, `task`, `tokensIn`,
-`tokensOut`, `cacheWrites`, `cacheReads`, `totalCost`, `size`, `workspace`,
-`creatorModeConfig{creatorMode, newProjectType, newProjectPath}`), `task:
-<task> | tokensIn=.. tokensOut=.. totalCost=.. number=<n>`, ending
-` | creator mode: newProjectType=<t> newProjectPath=<p>` for a task
-PearAI Creator started, at the entry's `ts`, with the task id as
-`session_id` and `workspace` as `project_path`, so a task whose directory
-is missing from the collection still shows (the agent's own delete removes
-the entry with the directory). Then one `permission setting: <key>=<value> (from
-state.vscdb pearai.pearai-roo-cline, file mtime)` row per standing
-auto-approval key present (`autoApprovalEnabled`, `alwaysAllowReadOnly`,
-`alwaysAllowReadOnlyOutsideWorkspace`, `alwaysAllowWrite`,
-`alwaysAllowWriteOutsideWorkspace`, `alwaysAllowBrowser`,
-`alwaysApproveResubmit`, `alwaysAllowMcp`, `alwaysAllowModeSwitch`,
-`alwaysAllowSubtasks`, `alwaysAllowExecute`, `allowedCommands`), at the
-file's modification time. A database without the row yields nothing; a
-damaged one or a value that is not JSON is one `parser:` row.
-
-Secondary sources of the chat surface (`secondary()` is True for them):
-
-* The `PearAI` output channel log, `<User data dir>/logs/<YYYYMMDDTHHMMSS>/
-  window<N>/exthost/output_logging_<time>/<n>-PearAI.log`. Each write is two
-  lines of 74 `=` followed by either `Settings:` (`key: value` lines, the
-  `model` among them, a blank line, a line of 44 `#`, a blank line and the
-  prompt) or `Completion:`, a blank line and the reply. A prompt in the
-  `<role>` form of `_formatChatMessages` (`<system>`, `<user>` and
-  `<assistant>` blocks) yields its last `<user>` block as a `user` row; any
-  other prompt (autocomplete's `<prefix><FIM><suffix>`, a templated prompt)
-  is a `system` row `model request: <prompt>`. A `Completion:` record is an
-  `assistant` row after a `<role>` prompt and a `system` row `model
-  completion: <reply>` otherwise. A request's `model` value yields `model:
-  <id>` and `model: <old> -> <new>` rows tracked over the file. The file
-  records no time, session or project, so every row has an empty
-  `timestamp_utc`, `session_id` and `project_path` and matches on text
-  alone; a prompt sent with context items carries them in its `<user>`
-  block and so never pairs with the session's `user` row. A record that
-  starts with neither header, or a `Settings:` record with no `#` rule (a
-  write cut off), is `parser: unparseable record (<reason>): <record>`, the
-  record as read, at its first line.
-* `.pearai/dev_data/chat.jsonl`, one line per prompt log of an item the
-  user rated: `completionOptions.model`, `prompt`, `completion`,
-  `feedback` (a boolean) and `sessionId`. The prompt yields a `user` row
-  as above, the completion an `assistant` row, then `user feedback:
-  <true|false> (from dev_data/chat.jsonl)`, all with the line's
-  `sessionId`, the session's `workspaceDirectory` from `sessions.json`, the
-  model in the `model` column and an empty `timestamp_utc`.
-
-`.pearai/dev_data/tokens_generated.jsonl` (`model`, `provider`,
-`promptTokens`, `generatedTokens`, one line per model request) repeats no
-event of the session files, so it is a primary source: one `system` row
-per line, `tokens generated: model=<model> provider=<provider>
-promptTokens=<n> generatedTokens=<n>`, with the model in the `model`
-column and an empty `timestamp_utc`, `session_id` and `project_path`. Every
-bad line of either `dev_data` file is its own `parser:` row.
+No git branch is recorded; the chat surface has no tools or permission state.
 """
 
 from __future__ import annotations
@@ -236,7 +123,7 @@ TASK_RX = re.compile(r"^\s*<task>\s*(.*?)\s*</task>\s*$", re.S)
 
 
 def permission_decision(text: str) -> str:
-    """The decision a Roo 3.15 tool result block records, or ""."""
+    """Return the decision a Roo 3.15 tool result block records, or ""."""
     text = text.lstrip()
     for prefix, decision in PERMISSION_TEXTS:
         if text.startswith(prefix):
@@ -245,9 +132,11 @@ def permission_decision(text: str) -> str:
 
 
 def prompt_turn(prompt: str) -> tuple[str, str]:
-    """(turn_type, text) for a logged prompt: the last `<user>` block of a
-    prompt in `_formatChatMessages` form as `user`, any other prompt as a
-    `system` row `model request: <prompt>`."""
+    """Return (turn_type, text) for a logged prompt.
+
+    A prompt in `_formatChatMessages` form gives its last `<user>` block as
+    `user`; any other prompt is a `system` row `model request: <prompt>`.
+    """
     blocks = list(ROLE_BLOCK_RX.finditer(prompt))
     if not blocks or blocks[0].start() != 0:
         return "system", "model request: " + prompt
@@ -260,7 +149,7 @@ def prompt_turn(prompt: str) -> tuple[str, str]:
 
 
 def xml_blocks(text: str, include_thinking: bool) -> Iterator[tuple[str, str, str]]:
-    """(turn_type, text, tool_name) for Roo assistant text with XML tool tags."""
+    """Yield (turn_type, text, tool_name) for Roo assistant text with XML tool tags."""
     pos = 0
     for match in BLOCK_RX.finditer(text):
         before = text[pos : match.start()].strip()
@@ -280,6 +169,8 @@ def xml_blocks(text: str, include_thinking: bool) -> Iterator[tuple[str, str, st
 
 
 class PearAiParser(LegacyTaskParser):
+    """Parse PearAI's chat sessions, agent tasks, editor state and chat logs."""
+
     agent = "pearai"
     name = "pearai"
     has_secondary = True
@@ -287,12 +178,13 @@ class PearAiParser(LegacyTaskParser):
     PROJECT_KEY = "workspace"
 
     def __init__(self) -> None:
+        """Start with a Continue parser for its index reader and an empty state cache."""
         super().__init__()
         self._continue = ContinueParser()  # for its cached sessions.json reader
         self._state: dict[tuple, tuple[object, list[str]]] = {}
 
     def wants(self, artifact: Artifact) -> bool:
-        # sessions.json too, for the rows that say what the index lost
+        """Return True for a session (the index included), task, log, dev_data or state file."""
         rel = artifact.rel
         return bool(
             SESSION_RX.match(rel)
@@ -303,10 +195,12 @@ class PearAiParser(LegacyTaskParser):
         )
 
     def secondary(self, artifact: Artifact) -> bool:
+        """Return True for the output channel log or `dev_data/chat.jsonl`."""
         match = DEVDATA_RX.match(artifact.rel)
         return bool(LOG_RX.match(artifact.rel) or (match and match.group(1) == "chat"))
 
     def parse(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield the rows of one PearAI file."""
         match = SESSION_RX.match(artifact.rel)
         dev = DEVDATA_RX.match(artifact.rel)
         if match and match.group(1) + ".json" == INDEX_NAME:
@@ -328,7 +222,7 @@ class PearAiParser(LegacyTaskParser):
     # ---- agent tasks (Roo fork) ------------------------------------------------
 
     def _global_state(self, database: Path) -> tuple[object, list[str]]:
-        """The extension's global state from `state.vscdb`, and problems."""
+        """Return the extension's global state from `state.vscdb`, and its problems."""
         try:
             stat = database.lstat()
         except OSError:
@@ -339,6 +233,7 @@ class PearAiParser(LegacyTaskParser):
         return self._state[key]
 
     def history_item(self, task_dir: Path, root: Path, task_id: str) -> dict | None:
+        """Return the task's `taskHistory[]` entry from the editor's global state, or None."""
         state = self._global_state(root.parent / "state.vscdb")[0]
         items = state.get("taskHistory") if isinstance(state, dict) else None
         for entry in items if isinstance(items, list) else []:
@@ -347,6 +242,7 @@ class PearAiParser(LegacyTaskParser):
         return None
 
     def parse_task_file(self, artifact: Artifact, opts: Options) -> Iterator[Row]:
+        """Yield a task file's rows; beside `ui_messages.json`, the API history's decisions only."""
         name = artifact.disk_path.name.lower()
         if name in API_FILES and (artifact.disk_path.parent / UI_FILE).is_file():
             # ui_messages.json holds the transcript; the API history alone
@@ -438,6 +334,12 @@ class PearAiParser(LegacyTaskParser):
     def api_content_rows(
         self, msg: dict, n: int, base_turn: str, include_thinking: bool
     ) -> Iterator[tuple[str, str, str, str]]:
+        """Yield (turn_type, text, tool_name, tool_use_id) for one API history message.
+
+        Assistant text is split at its XML tool tags; a user message's
+        `[<tool> ...] Result:` blocks become `tool_result` rows, each followed
+        by the permission decision its text records.
+        """
         content = msg.get("content")
         if base_turn == "assistant":
             k = 0

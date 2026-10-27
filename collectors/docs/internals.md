@@ -211,7 +211,14 @@ case-insensitive filesystem ([coverage.md](coverage.md#case-variants)):
   device and inode (`file_id`) of the colliding paths only, drops a second
   spelling of the same file with a `#|` log line for `collect_catalog`, and
   respells a match inside another match's differently spelled directory
-  with that match's prefix, so the nested claim prunes it.
+  with that match's prefix, so the nested claim prunes it. The
+  instructions `classify_case_matches` prints, one per match in catalog
+  order, are `K|agent|glob|path` (keep it), `@|path` then
+  `D|agent|glob|path` (it folds to the earlier match at `path`: drop it if
+  it is the same file), and `@|path`, `^|prefix`, `R|agent|glob|rest` (it
+  folds to a path inside the match at `path`, spelled differently: respell
+  `prefix` as that path's if it is the same directory; the shortest such
+  parent is chosen).
 - PowerShell: `Get-OnDiskName` returns the on-disk spelling of a literal
   segment, so two such lines expand to the same path, and `Expand-Catalog`
   keeps the first and lists the other with an empty agent, which
